@@ -1,0 +1,25 @@
+commit-msg:
+  commands:
+    commitlint:
+      run: commitlint --edit {1}
+
+pre-commit:
+  parallel: true
+  commands:
+    nixfmt:
+      glob: "*.nix"
+      run: bash -c 'mapfile -t files < <(git ls-files "*.nix"); ((${#files[@]} == 0)) || nixfmt --check "${files[@]}"'
+    statix:
+      glob: "*.nix"
+      run: statix check .
+    deadnix:
+      glob: "*.nix"
+      run: deadnix --fail .
+    fmt:
+      glob: "*.rs"
+      run: cargo fmt --check
+    clippy:
+      glob: "*.rs"
+      run: cargo clippy -- -D warnings
+    ls-lint:
+      run: git ls-files -z | xargs -0 ls_lint
