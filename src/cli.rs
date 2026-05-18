@@ -27,8 +27,8 @@ struct GenerateFileArgs {
     #[arg(long, default_value = ".")]
     source: PathBuf,
 
-    #[arg(long)]
-    out: PathBuf,
+    #[arg(short, long)]
+    output: PathBuf,
 }
 
 #[derive(Debug, clap::Args)]
@@ -39,8 +39,8 @@ struct GenerateSkillsArgs {
     #[arg(long, value_enum)]
     provider: Provider,
 
-    #[arg(long)]
-    out: PathBuf,
+    #[arg(short, long)]
+    output: PathBuf,
 }
 
 #[derive(Debug, clap::Args)]
@@ -49,7 +49,7 @@ struct InstallArgs {
     source: PathBuf,
 
     #[arg(long)]
-    out: Option<PathBuf>,
+    prefix: Option<PathBuf>,
 
     #[arg(long, value_enum, default_value_t = InstallMode::Copy)]
     mode: InstallMode,
@@ -79,7 +79,7 @@ struct SyncCodexConfigArgs {
 #[derive(Debug, clap::Args)]
 struct VerifyArgs {
     #[arg(long)]
-    root: Option<PathBuf>,
+    prefix: Option<PathBuf>,
 }
 
 /// Parse CLI arguments and execute the selected command.
@@ -91,24 +91,24 @@ struct VerifyArgs {
 pub fn run() -> Result<()> {
     match Cli::parse().command {
         Command::GenerateClaudeSettings(args) => {
-            render::generate_claude_settings(&args.source, &args.out)
+            render::generate_claude_settings(&args.source, &args.output)
         }
         Command::GenerateCodexConfigSource(args) => {
-            render::generate_codex_config_source(&args.source, &args.out)
+            render::generate_codex_config_source(&args.source, &args.output)
         }
         Command::GenerateSkills(args) => {
-            render::generate_skills(&args.source, args.provider.into(), &args.out)
+            render::generate_skills(&args.source, args.provider.into(), &args.output)
         }
         Command::Install(args) => {
-            let out = args.out.unwrap_or_else(default_home_dir);
-            render::install(&args.source, &out, args.mode.into())
+            let prefix = args.prefix.unwrap_or_else(default_home_dir);
+            render::install(&args.source, &prefix, args.mode.into())
         }
         Command::SyncCodexConfig(args) => {
             codex_config::sync_managed_config(&args.source, &args.target)
         }
         Command::Verify(args) => {
-            let root = args.root.unwrap_or_else(default_home_dir);
-            render::verify(&root)
+            let prefix = args.prefix.unwrap_or_else(default_home_dir);
+            render::verify(&prefix)
         }
     }
 }
