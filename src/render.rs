@@ -10,6 +10,14 @@ pub enum InstallMode {
     Symlink,
 }
 
+pub fn generate_claude_settings(source: &Path, out: &Path) -> Result<()> {
+    fs_ops::copy_file(&source.join("claude/settings.base.json"), out)
+}
+
+pub fn generate_codex_config_source(source: &Path, out: &Path) -> Result<()> {
+    fs_ops::copy_file(&source.join("codex/config.toml"), out)
+}
+
 pub fn render(source: &Path, out: &Path) -> Result<()> {
     if out.exists() {
         std::fs::remove_dir_all(out)
@@ -34,14 +42,8 @@ pub fn render(source: &Path, out: &Path) -> Result<()> {
         &source.join("claude/statusline"),
         &out.join("claude/statusline"),
     )?;
-    fs_ops::copy_file(
-        &source.join("claude/settings.base.json"),
-        &out.join("claude/settings.json"),
-    )?;
-    fs_ops::copy_file(
-        &source.join("codex/config.toml"),
-        &out.join("codex/config-source.toml"),
-    )?;
+    generate_claude_settings(source, &out.join("claude/settings.json"))?;
+    generate_codex_config_source(source, &out.join("codex/config-source.toml"))?;
 
     Ok(())
 }
@@ -99,6 +101,36 @@ mod tests {
         assert!(out.join("claude/skills/example/SKILL.md").is_file());
         assert!(out.join("codex/config-source.toml").is_file());
         assert!(out.join("claude/settings.json").is_file());
+
+        std::fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn generate_claude_settings_writes_final_file_output() -> Result<()> {
+        let root = test_root("generate_claude_settings_writes_final_file_output")?;
+        let source = root.join("source");
+        let out = root.join("settings.json");
+        write_minimal_source(&source)?;
+
+        generate_claude_settings(&source, &out)?;
+
+        assert_eq!(std::fs::read_to_string(&out)?, "{}\n");
+
+        std::fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn generate_codex_config_source_writes_final_file_output() -> Result<()> {
+        let root = test_root("generate_codex_config_source_writes_final_file_output")?;
+        let source = root.join("source");
+        let out = root.join("config-source.toml");
+        write_minimal_source(&source)?;
+
+        generate_codex_config_source(&source, &out)?;
+
+        assert_eq!(std::fs::read_to_string(&out)?, "model = \"gpt-5.5\"\n");
 
         std::fs::remove_dir_all(root)?;
         Ok(())
