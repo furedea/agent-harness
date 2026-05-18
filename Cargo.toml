@@ -4,7 +4,14 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+toml_edit = "0.25"
+
+[lints.rust]
+unsafe_code = "forbid"
 
 [lints.clippy]
-all = { level = "warn", priority = -1 }
-pedantic = { level = "warn", priority = -1 }
+dbg_macro = "deny"
+todo = "deny"
+unimplemented = "deny"
