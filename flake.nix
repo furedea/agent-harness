@@ -27,6 +27,7 @@
       devShells.${system}.default = pkgs.mkShell {
         packages = with pkgs; [
           cargo
+          cargo-machete
           clippy
           commitlint
           deadnix
