@@ -1,0 +1,157 @@
+use std::path::Path;
+
+use anyhow::{Context, Result};
+
+use crate::fs_ops;
+
+const GLOB_SCAN_MAX_DEPTH: u64 = 5;
+
+/// Write the Codex guarded filesystem fragment as TOML.
+///
+/// # Errors
+///
+/// Returns an error when harness files cannot be enumerated or the output file
+/// cannot be written.
+pub fn write_codex_config_fragment(source: &Path, path: &Path) -> Result<()> {
+    write_file(path, &codex_config_fragment(source)?)
+}
+
+pub fn codex_config_fragment(source: &Path) -> Result<String> {
+    let mut content = String::from("[permissions.guarded.filesystem]\n");
+
+    for path in protected_paths(source)? {
+        content.push_str(&format!("\"{}\" = \"read\"\n", toml_escape(&path)));
+    }
+    content.push_str(&format!("glob_scan_max_depth = {GLOB_SCAN_MAX_DEPTH}\n"));
+
+    Ok(content)
+}
+
+pub fn protected_paths(source: &Path) -> Result<Vec<String>> {
+    let agent_hooks = relative_files(&source.join("agents/hooks"))?;
+    let codex_hooks = relative_files(&source.join("codex/hooks"))?;
+    let mut paths = Vec::new();
+
+    paths.extend(home_agent_hook_paths(&agent_hooks));
+    paths.extend(home_codex_hook_paths(&codex_hooks));
+    paths.extend([
+        "~/.claude/CLAUDE.md".to_string(),
+        "~/.claude/rules/forbidden_commands.json".to_string(),
+        "~/.claude/settings.json".to_string(),
+        "~/.codex/AGENTS.md".to_string(),
+        "~/.codex/hooks.json".to_string(),
+        "~/.codex/rules/default.rules".to_string(),
+    ]);
+    paths.extend(source_agent_hook_paths(source, &agent_hooks));
+    paths.extend(source_codex_hook_paths(source, &codex_hooks));
+    paths.push(source.join("agents/AGENTS.md").display().to_string());
+
+    Ok(paths)
+}
+
+fn relative_files(root: &Path) -> Result<Vec<String>> {
+    fs_ops::regular_files(root)?
+        .into_iter()
+        .map(|path| {
+            let relative = path
+                .strip_prefix(root)
+                .with_context(|| format!("failed to strip prefix {}", root.display()))?;
+            Ok(relative.to_string_lossy().replace('\\', "/"))
+        })
+        .collect()
+}
+
+fn home_agent_hook_paths(paths: &[String]) -> Vec<String> {
+    paths
+        .iter()
+        .map(|path| format!("~/.claude/hooks/{path}"))
+        .collect()
+}
+
+fn home_codex_hook_paths(paths: &[String]) -> Vec<String> {
+    paths
+        .iter()
+        .map(|path| format!("~/.codex/hooks/{path}"))
+        .collect()
+}
+
+fn source_agent_hook_paths(source: &Path, paths: &[String]) -> Vec<String> {
+    paths
+        .iter()
+        .map(|path| source.join("agents/hooks").join(path).display().to_string())
+        .collect()
+}
+
+fn source_codex_hook_paths(source: &Path, paths: &[String]) -> Vec<String> {
+    paths
+        .iter()
+        .map(|path| source.join("codex/hooks").join(path).display().to_string())
+        .collect()
+}
+
+fn toml_escape(value: &str) -> String {
+    value.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+fn write_file(path: &Path, content: &str) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create directory {}", parent.display()))?;
+    }
+    std::fs::write(path, content).with_context(|| format!("failed to write {}", path.display()))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use super::*;
+
+    #[test]
+    fn protected_paths_include_home_and_source_harness_files() -> Result<()> {
+        let root = test_root("protected_paths_include_home_and_source_harness_files")?;
+        write_minimal_source(&root)?;
+
+        let paths = protected_paths(&root)?;
+
+        assert!(paths.contains(&"~/.claude/hooks/guard.sh".to_string()));
+        assert!(paths.contains(&"~/.codex/hooks/adapt.sh".to_string()));
+        assert!(paths.contains(&"~/.codex/hooks.json".to_string()));
+        assert!(paths.contains(&root.join("agents/hooks/guard.sh").display().to_string()));
+        assert!(paths.contains(&root.join("codex/hooks/adapt.sh").display().to_string()));
+        assert!(paths.contains(&root.join("agents/AGENTS.md").display().to_string()));
+
+        std::fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn codex_config_fragment_writes_guarded_filesystem_toml() -> Result<()> {
+        let root = test_root("codex_config_fragment_writes_guarded_filesystem_toml")?;
+        write_minimal_source(&root)?;
+
+        let content = codex_config_fragment(&root)?;
+
+        assert!(content.contains("[permissions.guarded.filesystem]"));
+        assert!(content.contains("\"~/.claude/hooks/guard.sh\" = \"read\""));
+        assert!(content.contains("glob_scan_max_depth = 5"));
+
+        std::fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    fn test_root(name: &str) -> Result<PathBuf> {
+        let nanos = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
+        let root = std::env::temp_dir().join(format!("agent-harness-{name}-{nanos}"));
+        std::fs::create_dir_all(&root)?;
+        Ok(root)
+    }
+
+    fn write_minimal_source(source: &Path) -> Result<()> {
+        write_file(&source.join("agents/AGENTS.md"), "agent instructions\n")?;
+        write_file(&source.join("agents/hooks/guard.sh"), "#!/bin/bash\n")?;
+        write_file(&source.join("codex/hooks/adapt.sh"), "#!/bin/bash\n")?;
+        Ok(())
+    }
+}
