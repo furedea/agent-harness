@@ -11,27 +11,27 @@ let
   claudeSettings = pkgs.runCommand "claude-settings.json" { } ''
     ${lib.getExe cfg.package} generate-claude-settings \
       --source ${cfg.source} \
-      --out $out
+      --output $out
   '';
 
   codexConfigSource = pkgs.runCommand "codex-config-source.toml" { } ''
     ${lib.getExe cfg.package} generate-codex-config-source \
       --source ${cfg.source} \
-      --out $out
+      --output $out
   '';
 
   codexSkills = pkgs.runCommand "codex-skills" { } ''
     ${lib.getExe cfg.package} generate-skills \
       --source ${cfg.source} \
       --provider codex \
-      --out $out
+      --output $out
   '';
 
   claudeSkills = pkgs.runCommand "claude-skills" { } ''
     ${lib.getExe cfg.package} generate-skills \
       --source ${cfg.source} \
       --provider claude \
-      --out $out
+      --output $out
   '';
 in
 {
