@@ -1,0 +1,85 @@
+{
+  "agents/hooks/lib/audit_log.sh": [
+    "tests/hooks/claude/guard_allowed_commands.bats",
+    "tests/hooks/claude/guard_dangerous_git.bats"
+  ],
+  "agents/hooks/lib/shell_parse.sh": [
+    "tests/hooks/claude/guard_dangerous_git.bats",
+    "tests/hooks/claude/guard_allowed_commands.bats",
+    "tests/hooks/codex/adapt_shell_command.bats"
+  ],
+  "agents/hooks/lib/lint_format.sh": [
+    "tests/hooks/claude/lint_format_hooks.bats",
+    "tests/hooks/claude/lint_format_js.bats",
+    "tests/hooks/claude/lint_format_py.bats",
+    "tests/hooks/claude/lint_format_rs.bats",
+    "tests/hooks/claude/lint_format_sh.bats",
+    "tests/hooks/codex/adapt_lint_format.bats"
+  ],
+  "agents/hooks/notify_macos_done.sh": [
+    "tests/hooks/claude/notify_macos.bats"
+  ],
+  "agents/hooks/notify_macos_await.sh": [
+    "tests/hooks/claude/notify_macos.bats"
+  ],
+  "agents/hooks/guard_secret_content.sh": [
+    "tests/hooks/codex/adapt_guard_secret_content.bats"
+  ],
+  "agents/hooks/lint_format_*.sh": [
+    "tests/hooks/claude/lint_format_hooks.bats"
+  ],
+  "agents/hooks/rules/secret_content_patterns.json": [
+    "tests/hooks/config/secret_patterns.bats",
+    "tests/hooks/claude/related_test_rules.bats"
+  ],
+  "agents/hooks/rules/related_test_*.json": [
+    "tests/hooks/claude/related_test_rules.bats"
+  ],
+  "codex/config.toml": [
+    "tests/hooks/config/codex_config_sync.bats",
+    "tests/hooks/config/codex_generated_settings.bats"
+  ],
+  "codex/hooks.json": [
+    "tests/hooks/config/codex_hooks_sync.bats",
+    "tests/hooks/config/codex_generated_settings.bats"
+  ],
+  "codex/rules/*": [
+    "tests/hooks/config/codex_rules_sync.bats",
+    "tests/hooks/config/codex_generated_settings.bats"
+  ],
+  "codex/sync_config.py": [
+    "tests/hooks/config/codex_config_sync.bats",
+    "tests/hooks/config/codex_hooks_sync.bats",
+    "tests/hooks/config/codex_rules_sync.bats",
+    "tests/hooks/config/claude_settings_sync.bats"
+  ],
+  "claude/settings.base.json": [
+    "tests/hooks/config/claude_generated_settings.bats",
+    "tests/hooks/config/codex_generated_settings.bats",
+    "tests/hooks/claude/guard_allowed_commands.bats"
+  ],
+  "claude/statusline/*.sh": [
+    "tests/hooks/claude/statusline.bats"
+  ],
+  "claude/statusline/*.json": [
+    "tests/hooks/claude/statusline.bats"
+  ],
+  "nix/agents/claude_settings.nix": [
+    "tests/hooks/config/claude_generated_settings.bats"
+  ],
+  "nix/agents/codex_settings.nix": [
+    "tests/hooks/config/codex_generated_settings.bats",
+    "tests/hooks/config/codex_config_sync.bats"
+  ],
+  "nix/agents/command_policy.nix": [
+    "tests/hooks/config/claude_generated_settings.bats",
+    "tests/hooks/config/codex_generated_settings.bats",
+    "tests/hooks/claude/guard_allowed_commands.bats"
+  ],
+  "nix/agents/skills.nix": [
+    "tests/hooks/config/agent_skills_render.bats"
+  ],
+  "agents/skills/*": [
+    "tests/hooks/config/agent_skills_render.bats"
+  ]
+}

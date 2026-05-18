@@ -1,0 +1,54 @@
+model = "gpt-5.5"
+model_reasoning_effort = "medium"
+personality = "pragmatic"
+approval_policy = "on-request"
+sandbox_mode = "read-only"
+approvals_reviewer = "guardian_subagent"
+# `[permissions.guarded.filesystem]` is appended by nix/agents/codex_settings.nix
+# at evaluation time. Do not set `default_permissions = "guarded"` by default:
+# Codex treats that profile as the full filesystem sandbox policy, so a profile
+# containing only harness files prevents even read-only commands from starting.
+
+[notice]
+fast_default_opt_out = true
+hide_rate_limit_model_nudge = true
+
+[notice.model_migrations]
+"gpt-5.3-codex" = "gpt-5.4"
+
+[tui]
+use_theme_colors = true
+status_line = [
+  "project-root",
+  "git-branch",
+  "model-with-reasoning",
+  "context-used",
+  "five-hour-limit",
+  "weekly-limit",
+]
+notifications = true
+notification_condition = "always"
+notification_method = "bel"
+
+[tui.model_availability_nux]
+"gpt-5.5" = 1
+
+[plugins."browser-use@openai-bundled"]
+enabled = false
+
+[plugins."documents@openai-primary-runtime"]
+enabled = true
+
+[plugins."spreadsheets@openai-primary-runtime"]
+enabled = true
+
+[plugins."presentations@openai-primary-runtime"]
+enabled = true
+
+[plugins."computer-use@openai-bundled"]
+enabled = false
+
+[features]
+hooks = true
+remote_connections = true
+external_migration = true
