@@ -6,5 +6,6 @@ mod fs_ops;
 mod hooks;
 mod protection;
 mod render;
+mod skills;
 
 pub use cli::run;

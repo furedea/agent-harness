@@ -2,7 +2,7 @@ use std::path::Path;
 
 use anyhow::Result;
 
-use crate::{claude_config, codex_config, command_policy, fs_ops, hooks};
+use crate::{claude_config, codex_config, command_policy, fs_ops, hooks, skills};
 
 #[derive(Debug, Clone, Copy)]
 pub enum InstallMode {
@@ -24,8 +24,8 @@ pub fn generate_codex_config_source(source: &Path, out: &Path) -> Result<()> {
     codex_config::write_config_source(source, out)
 }
 
-pub fn generate_skills(source: &Path, _provider: Provider, out: &Path) -> Result<()> {
-    fs_ops::copy_dir(&source.join("agents/skills"), out)
+pub fn generate_skills(source: &Path, provider: Provider, out: &Path) -> Result<()> {
+    skills::render_skills(source, provider, out)
 }
 
 pub fn install(source: &Path, out: &Path, mode: InstallMode) -> Result<()> {
@@ -216,6 +216,10 @@ mod tests {
         write_file(
             &source.join("agents/skills/example/SKILL.md"),
             "---\nname: example\n---\n",
+        )?;
+        write_file(
+            &source.join("agents/skills/git-commit-split/SKILL.md"),
+            "---\nname: git-commit-split\ndescription: commit split\n---\n",
         )?;
         write_file(
             &source.join("claude/statusline/statusline.sh"),

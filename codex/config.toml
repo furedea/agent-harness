@@ -4,8 +4,8 @@ personality = "pragmatic"
 approval_policy = "on-request"
 sandbox_mode = "read-only"
 approvals_reviewer = "guardian_subagent"
-# `[permissions.guarded.filesystem]` is appended by nix/agents/codex_settings.nix
-# at evaluation time. Do not set `default_permissions = "guarded"` by default:
+# `[permissions.guarded.filesystem]` is appended by `agent-harness
+# generate-codex-config-source`. Do not set `default_permissions = "guarded"` by default:
 # Codex treats that profile as the full filesystem sandbox policy, so a profile
 # containing only harness files prevents even read-only commands from starting.
 
