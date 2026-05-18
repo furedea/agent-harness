@@ -28,6 +28,7 @@ let
 
   codexHooks = pkgs.runCommand "codex-hooks.json" { } ''
     ${lib.getExe cfg.package} generate-codex-hooks \
+      --source ${cfg.source} \
       --output $out
   '';
 

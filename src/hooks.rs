@@ -1,233 +1,57 @@
 use std::path::Path;
 
-use anyhow::{Context, Result};
-use serde_json::{Value, json};
+use anyhow::{Context, Result, bail};
+use serde::Deserialize;
+use serde_json::Value;
+
+#[derive(Debug, Deserialize)]
+struct HookConfig {
+    version: u64,
+    claude: Value,
+    codex: Value,
+}
 
 /// Write Claude Code hook settings as JSON.
 ///
 /// # Errors
 ///
-/// Returns an error when the output directory cannot be created or the file
-/// cannot be written.
-pub fn write_claude_hooks(path: &Path) -> Result<()> {
-    write_json(path, &claude_hooks())
+/// Returns an error when the source hook configuration cannot be read or the
+/// output directory cannot be created or written.
+pub fn write_claude_hooks(source: &Path, path: &Path) -> Result<()> {
+    write_json(path, &read_hooks(source)?.claude)
 }
 
 /// Write Codex hook settings as JSON.
 ///
 /// # Errors
 ///
-/// Returns an error when the output directory cannot be created or the file
-/// cannot be written.
-pub fn write_codex_hooks(path: &Path) -> Result<()> {
-    write_json(path, &codex_hooks())
+/// Returns an error when the source hook configuration cannot be read or the
+/// output directory cannot be created or written.
+pub fn write_codex_hooks(source: &Path, path: &Path) -> Result<()> {
+    write_json(path, &read_hooks(source)?.codex)
 }
 
-pub fn claude_hooks() -> Value {
-    json!({
-        "UserPromptSubmit": [
-            {
-                "matcher": "",
-                "hooks": [claude_hook("$HOME/.claude/hooks/guard_secret_content.sh prompt")]
-            }
-        ],
-        "PreToolUse": [
-            {
-                "matcher": "Bash",
-                "hooks": [
-                    claude_hook("$HOME/.claude/hooks/audit_tool_call.sh"),
-                    claude_hook("$HOME/.claude/hooks/guard_forbidden_commands.sh"),
-                    claude_hook("$HOME/.claude/hooks/guard_secret_commit.sh"),
-                    claude_hook("$HOME/.claude/hooks/guard_dangerous_git.sh"),
-                    claude_hook("$HOME/.claude/hooks/guard_allowed_commands.sh")
-                ]
-            },
-            {
-                "matcher": "Read",
-                "hooks": [
-                    claude_hook("$HOME/.claude/hooks/audit_tool_call.sh"),
-                    claude_hook("$HOME/.claude/hooks/guard_secret_content.sh read")
-                ]
-            },
-            {
-                "matcher": "Write|Edit|MultiEdit",
-                "hooks": [
-                    claude_hook("$HOME/.claude/hooks/audit_tool_call.sh"),
-                    claude_hook("$HOME/.claude/hooks/guard_harness_files.sh"),
-                    claude_hook("$HOME/.claude/hooks/guard_secret_content.sh write")
-                ]
-            }
-        ],
-        "PostToolUse": [
-            {
-                "matcher": "Write|Edit|MultiEdit",
-                "hooks": [
-                    claude_hook_if("$HOME/.claude/hooks/lint_format_py.sh", "Write(*.py)|Edit(*.py)|MultiEdit(*.py)"),
-                    claude_hook_if("$HOME/.claude/hooks/lint_format_sh.sh", "Write(*.sh)|Edit(*.sh)|MultiEdit(*.sh)"),
-                    claude_hook_if("$HOME/.claude/hooks/lint_format_js.sh", "Write(*.js)|Edit(*.js)|MultiEdit(*.js)|Write(*.ts)|Edit(*.ts)|MultiEdit(*.ts)|Write(*.jsx)|Edit(*.jsx)|MultiEdit(*.jsx)|Write(*.tsx)|Edit(*.tsx)|MultiEdit(*.tsx)"),
-                    claude_hook_if("$HOME/.claude/hooks/lint_format_rs.sh", "Write(*.rs)|Edit(*.rs)|MultiEdit(*.rs)"),
-                    claude_hook_if("$HOME/.claude/hooks/lint_format_nix.sh", "Write(*.nix)|Edit(*.nix)|MultiEdit(*.nix)"),
-                    claude_hook_if("$HOME/.claude/hooks/lint_format_md.sh", "Write(*.md)|Edit(*.md)|MultiEdit(*.md)|Write(*.markdown)|Edit(*.markdown)|MultiEdit(*.markdown)"),
-                    claude_hook_if("$HOME/.claude/hooks/lint_format_json_toml.sh", "Write(*.json)|Edit(*.json)|MultiEdit(*.json)|Write(*.toml)|Edit(*.toml)|MultiEdit(*.toml)"),
-                    claude_hook_if("$HOME/.claude/hooks/lint_format_gha.sh", "Write(*.yml)|Edit(*.yml)|MultiEdit(*.yml)|Write(*.yaml)|Edit(*.yaml)|MultiEdit(*.yaml)"),
-                    claude_hook_if("$HOME/.claude/hooks/lint_format_txt.sh", "Write(*.txt)|Edit(*.txt)|MultiEdit(*.txt)"),
-                    claude_hook_if("$HOME/.claude/hooks/lint_format_lua.sh", "Write(*.lua)|Edit(*.lua)|MultiEdit(*.lua)"),
-                    claude_hook_if("$HOME/.claude/hooks/lint_format_tex.sh", "Write(*.tex)|Edit(*.tex)|MultiEdit(*.tex)|Write(*.bib)|Edit(*.bib)|MultiEdit(*.bib)|Write(*.cls)|Edit(*.cls)|MultiEdit(*.cls)|Write(*.sty)|Edit(*.sty)|MultiEdit(*.sty)")
-                ]
-            },
-            {
-                "matcher": "Bash|Edit|MultiEdit|Write|WebFetch|WebSearch|Task|Agent",
-                "hooks": [claude_hook("$HOME/.claude/hooks/audit_tool_call.sh")]
-            }
-        ],
-        "Stop": [
-            {
-                "matcher": "",
-                "hooks": [
-                    claude_hook("$HOME/.claude/hooks/run_related_tests.sh"),
-                    claude_hook("$HOME/.claude/hooks/notify_macos_done.sh")
-                ]
-            }
-        ],
-        "SubagentStop": [
-            {
-                "matcher": "",
-                "hooks": [claude_hook("$HOME/.claude/hooks/notify_macos_done.sh")]
-            }
-        ],
-        "Notification": [
-            {
-                "matcher": "",
-                "hooks": [claude_hook("$HOME/.claude/hooks/notify_macos_await.sh")]
-            }
-        ],
-        "PermissionDenied": [
-            {
-                "hooks": [claude_hook("$HOME/.claude/hooks/audit_permission_denied.sh")]
-            }
-        ],
-        "PreCompact": [
-            {
-                "matcher": "",
-                "hooks": [claude_hook("$HOME/.claude/hooks/audit_compaction.sh")]
-            }
-        ],
-        "SessionStart": [
-            {
-                "matcher": "compact|resume",
-                "hooks": [claude_hook("$HOME/.claude/hooks/audit_compaction.sh")]
-            }
-        ]
-    })
+fn read_hooks(source: &Path) -> Result<HookConfig> {
+    let path = source.join("agents/hooks.json");
+    let content = std::fs::read_to_string(&path)
+        .with_context(|| format!("failed to read {}", path.display()))?;
+    let config: HookConfig = serde_json::from_str(&content)
+        .with_context(|| format!("failed to parse {}", path.display()))?;
+    validate_hooks(&config)?;
+    Ok(config)
 }
 
-pub fn codex_hooks() -> Value {
-    let shell_matcher = "^(Bash|exec_command|functions\\.exec_command)$";
-    let edit_matcher = "^apply_patch$|^Edit$|^Write$";
-
-    json!({
-        "hooks": {
-            "UserPromptSubmit": [
-                {
-                    "hooks": [
-                        codex_hook(
-                            "$HOME/.codex/hooks/adapt_guard_secret_content.sh prompt",
-                            "Scanning prompt for sensitive information",
-                            30
-                        )
-                    ]
-                }
-            ],
-            "PreToolUse": [
-                {
-                    "matcher": shell_matcher,
-                    "hooks": [
-                        codex_hook(
-                            "$HOME/.codex/hooks/adapt_shell_command.sh $HOME/.claude/hooks/guard_forbidden_commands.sh",
-                            "Checking forbidden command prefixes",
-                            30
-                        ),
-                        codex_hook(
-                            "$HOME/.codex/hooks/adapt_shell_command.sh $HOME/.claude/hooks/guard_secret_commit.sh",
-                            "Checking staged files for secrets",
-                            30
-                        ),
-                        codex_hook(
-                            "$HOME/.codex/hooks/adapt_shell_command.sh $HOME/.claude/hooks/guard_dangerous_git.sh",
-                            "Checking for dangerous git operations",
-                            30
-                        ),
-                        codex_hook(
-                            "$HOME/.codex/hooks/adapt_shell_command.sh $HOME/.claude/hooks/guard_allowed_commands.sh",
-                            "Checking command policy",
-                            30
-                        )
-                    ]
-                },
-                {
-                    "matcher": edit_matcher,
-                    "hooks": [
-                        codex_hook(
-                            "$HOME/.codex/hooks/adapt_harness_files.sh",
-                            "Checking harness boundaries",
-                            30
-                        ),
-                        codex_hook(
-                            "$HOME/.codex/hooks/adapt_guard_secret_content.sh apply-patch",
-                            "Scanning patch for sensitive information",
-                            30
-                        )
-                    ]
-                }
-            ],
-            "PostToolUse": [
-                {
-                    "matcher": edit_matcher,
-                    "hooks": [
-                        codex_hook(
-                            "$HOME/.codex/hooks/adapt_lint_format.sh",
-                            "Running lint/format hooks",
-                            120
-                        )
-                    ]
-                },
-                {
-                    "matcher": ".",
-                    "hooks": [
-                        codex_hook(
-                            "$HOME/.claude/hooks/audit_tool_call.sh",
-                            "Logging tool call",
-                            10
-                        )
-                    ]
-                }
-            ]
-        }
-    })
-}
-
-fn claude_hook(command: &str) -> Value {
-    json!({
-        "command": command,
-        "type": "command"
-    })
-}
-
-fn claude_hook_if(command: &str, condition: &str) -> Value {
-    json!({
-        "command": command,
-        "type": "command",
-        "if": condition
-    })
-}
-
-fn codex_hook(command: &str, status_message: &str, timeout: u64) -> Value {
-    json!({
-        "command": command,
-        "statusMessage": status_message,
-        "timeout": timeout,
-        "type": "command"
-    })
+fn validate_hooks(config: &HookConfig) -> Result<()> {
+    if config.version != 1 {
+        bail!("unsupported hook config version: {}", config.version);
+    }
+    if !config.claude.is_object() {
+        bail!("hook config claude section must be a JSON object");
+    }
+    if !config.codex.is_object() {
+        bail!("hook config codex section must be a JSON object");
+    }
+    Ok(())
 }
 
 fn write_json(path: &Path, value: &Value) -> Result<()> {
@@ -242,33 +66,115 @@ fn write_json(path: &Path, value: &Value) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
     use super::*;
 
     #[test]
-    fn claude_hooks_include_shell_and_lint_guards() {
-        let hooks = claude_hooks();
+    fn write_claude_hooks_reads_shared_hook_config() -> Result<()> {
+        let root = test_root("write_claude_hooks_reads_shared_hook_config")?;
+        write_hook_config(&root)?;
+        let output = root.join("claude-hooks.json");
 
+        write_claude_hooks(&root, &output)?;
+
+        let hooks: Value = serde_json::from_str(&std::fs::read_to_string(&output)?)?;
         assert_eq!(
-            hooks["PreToolUse"][0]["hooks"][1]["command"].as_str(),
+            hooks["PreToolUse"][0]["hooks"][0]["command"].as_str(),
             Some("$HOME/.claude/hooks/guard_forbidden_commands.sh"),
         );
-        assert_eq!(
-            hooks["PostToolUse"][0]["hooks"][3]["if"].as_str(),
-            Some("Write(*.rs)|Edit(*.rs)|MultiEdit(*.rs)"),
-        );
+
+        std::fs::remove_dir_all(root)?;
+        Ok(())
     }
 
     #[test]
-    fn codex_hooks_include_adapters_for_shell_and_patch_tools() {
-        let hooks = codex_hooks();
+    fn write_codex_hooks_reads_shared_hook_config() -> Result<()> {
+        let root = test_root("write_codex_hooks_reads_shared_hook_config")?;
+        write_hook_config(&root)?;
+        let output = root.join("codex-hooks.json");
 
+        write_codex_hooks(&root, &output)?;
+
+        let hooks: Value = serde_json::from_str(&std::fs::read_to_string(&output)?)?;
         assert_eq!(
             hooks["hooks"]["PreToolUse"][0]["matcher"].as_str(),
             Some("^(Bash|exec_command|functions\\.exec_command)$"),
         );
-        assert_eq!(
-            hooks["hooks"]["PreToolUse"][1]["hooks"][0]["command"].as_str(),
-            Some("$HOME/.codex/hooks/adapt_harness_files.sh"),
-        );
+
+        std::fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn read_hooks_rejects_unsupported_version() -> Result<()> {
+        let root = test_root("read_hooks_rejects_unsupported_version")?;
+        write_file(
+            &root.join("agents/hooks.json"),
+            r#"{"version":2,"claude":{},"codex":{}}"#,
+        )?;
+
+        let error = read_hooks(&root).unwrap_err().to_string();
+
+        assert!(error.contains("unsupported hook config version"));
+
+        std::fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    fn test_root(name: &str) -> Result<PathBuf> {
+        let nanos = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
+        let root = std::env::temp_dir().join(format!("agent-harness-{name}-{nanos}"));
+        std::fs::create_dir_all(&root)?;
+        Ok(root)
+    }
+
+    fn write_hook_config(root: &Path) -> Result<()> {
+        write_file(
+            &root.join("agents/hooks.json"),
+            r#"{
+  "version": 1,
+  "claude": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "command": "$HOME/.claude/hooks/guard_forbidden_commands.sh",
+            "type": "command"
+          }
+        ]
+      }
+    ]
+  },
+  "codex": {
+    "hooks": {
+      "PreToolUse": [
+        {
+          "matcher": "^(Bash|exec_command|functions\\.exec_command)$",
+          "hooks": [
+            {
+              "command": "$HOME/.codex/hooks/adapt_shell_command.sh",
+              "statusMessage": "Checking command policy",
+              "timeout": 30,
+              "type": "command"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
+"#,
+        )
+    }
+
+    fn write_file(path: &Path, content: &str) -> Result<()> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(path, content)?;
+        Ok(())
     }
 }

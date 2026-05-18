@@ -48,7 +48,7 @@ pub fn install(source: &Path, out: &Path, mode: InstallMode) -> Result<()> {
         &out.join(".claude/statusline"),
         mode,
     )?;
-    hooks::write_codex_hooks(&out.join(".codex/hooks.json"))?;
+    hooks::write_codex_hooks(source, &out.join(".codex/hooks.json"))?;
     generate_skills(source, Provider::Codex, &out.join(".codex/skills"))?;
     generate_skills(source, Provider::Claude, &out.join(".claude/skills"))?;
     generate_claude_settings(source, &out.join(".claude/settings.json"))?;
@@ -197,6 +197,17 @@ mod tests {
 "#,
         )?;
         write_file(&source.join("agents/hooks/hook.sh"), "#!/bin/bash\n")?;
+        write_file(
+            &source.join("agents/hooks.json"),
+            r#"{
+  "version": 1,
+  "claude": {},
+  "codex": {
+    "hooks": {}
+  }
+}
+"#,
+        )?;
         write_file(&source.join("codex/hooks/hook.sh"), "#!/bin/bash\n")?;
         write_file(
             &source.join("agents/skills/example/SKILL.md"),

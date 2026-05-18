@@ -15,9 +15,9 @@ pub struct Cli {
 #[derive(Debug, Subcommand)]
 enum Command {
     GenerateClaudeSettings(GenerateFileArgs),
-    GenerateClaudeHooks(GenerateOutputArgs),
+    GenerateClaudeHooks(GenerateFileArgs),
     GenerateCodexConfigSource(GenerateFileArgs),
-    GenerateCodexHooks(GenerateOutputArgs),
+    GenerateCodexHooks(GenerateFileArgs),
     GenerateCodexRules(GenerateFileArgs),
     GenerateForbiddenCommands(GenerateFileArgs),
     GenerateSkills(GenerateSkillsArgs),
@@ -31,12 +31,6 @@ struct GenerateFileArgs {
     #[arg(long, default_value = ".")]
     source: PathBuf,
 
-    #[arg(short, long)]
-    output: PathBuf,
-}
-
-#[derive(Debug, clap::Args)]
-struct GenerateOutputArgs {
     #[arg(short, long)]
     output: PathBuf,
 }
@@ -103,11 +97,11 @@ pub fn run() -> Result<()> {
         Command::GenerateClaudeSettings(args) => {
             render::generate_claude_settings(&args.source, &args.output)
         }
-        Command::GenerateClaudeHooks(args) => hooks::write_claude_hooks(&args.output),
+        Command::GenerateClaudeHooks(args) => hooks::write_claude_hooks(&args.source, &args.output),
         Command::GenerateCodexConfigSource(args) => {
             render::generate_codex_config_source(&args.source, &args.output)
         }
-        Command::GenerateCodexHooks(args) => hooks::write_codex_hooks(&args.output),
+        Command::GenerateCodexHooks(args) => hooks::write_codex_hooks(&args.source, &args.output),
         Command::GenerateCodexRules(args) => {
             command_policy::write_codex_rules(&args.source, &args.output)
         }

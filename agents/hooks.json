@@ -1,0 +1,301 @@
+{
+  "version": 1,
+  "claude": {
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "command": "$HOME/.claude/hooks/guard_secret_content.sh prompt",
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "command": "$HOME/.claude/hooks/audit_tool_call.sh",
+            "type": "command"
+          },
+          {
+            "command": "$HOME/.claude/hooks/guard_forbidden_commands.sh",
+            "type": "command"
+          },
+          {
+            "command": "$HOME/.claude/hooks/guard_secret_commit.sh",
+            "type": "command"
+          },
+          {
+            "command": "$HOME/.claude/hooks/guard_dangerous_git.sh",
+            "type": "command"
+          },
+          {
+            "command": "$HOME/.claude/hooks/guard_allowed_commands.sh",
+            "type": "command"
+          }
+        ]
+      },
+      {
+        "matcher": "Read",
+        "hooks": [
+          {
+            "command": "$HOME/.claude/hooks/audit_tool_call.sh",
+            "type": "command"
+          },
+          {
+            "command": "$HOME/.claude/hooks/guard_secret_content.sh read",
+            "type": "command"
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "command": "$HOME/.claude/hooks/audit_tool_call.sh",
+            "type": "command"
+          },
+          {
+            "command": "$HOME/.claude/hooks/guard_harness_files.sh",
+            "type": "command"
+          },
+          {
+            "command": "$HOME/.claude/hooks/guard_secret_content.sh write",
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "command": "$HOME/.claude/hooks/lint_format_py.sh",
+            "if": "Write(*.py)|Edit(*.py)|MultiEdit(*.py)",
+            "type": "command"
+          },
+          {
+            "command": "$HOME/.claude/hooks/lint_format_sh.sh",
+            "if": "Write(*.sh)|Edit(*.sh)|MultiEdit(*.sh)",
+            "type": "command"
+          },
+          {
+            "command": "$HOME/.claude/hooks/lint_format_js.sh",
+            "if": "Write(*.js)|Edit(*.js)|MultiEdit(*.js)|Write(*.ts)|Edit(*.ts)|MultiEdit(*.ts)|Write(*.jsx)|Edit(*.jsx)|MultiEdit(*.jsx)|Write(*.tsx)|Edit(*.tsx)|MultiEdit(*.tsx)",
+            "type": "command"
+          },
+          {
+            "command": "$HOME/.claude/hooks/lint_format_rs.sh",
+            "if": "Write(*.rs)|Edit(*.rs)|MultiEdit(*.rs)",
+            "type": "command"
+          },
+          {
+            "command": "$HOME/.claude/hooks/lint_format_nix.sh",
+            "if": "Write(*.nix)|Edit(*.nix)|MultiEdit(*.nix)",
+            "type": "command"
+          },
+          {
+            "command": "$HOME/.claude/hooks/lint_format_md.sh",
+            "if": "Write(*.md)|Edit(*.md)|MultiEdit(*.md)|Write(*.markdown)|Edit(*.markdown)|MultiEdit(*.markdown)",
+            "type": "command"
+          },
+          {
+            "command": "$HOME/.claude/hooks/lint_format_json_toml.sh",
+            "if": "Write(*.json)|Edit(*.json)|MultiEdit(*.json)|Write(*.toml)|Edit(*.toml)|MultiEdit(*.toml)",
+            "type": "command"
+          },
+          {
+            "command": "$HOME/.claude/hooks/lint_format_gha.sh",
+            "if": "Write(*.yml)|Edit(*.yml)|MultiEdit(*.yml)|Write(*.yaml)|Edit(*.yaml)|MultiEdit(*.yaml)",
+            "type": "command"
+          },
+          {
+            "command": "$HOME/.claude/hooks/lint_format_txt.sh",
+            "if": "Write(*.txt)|Edit(*.txt)|MultiEdit(*.txt)",
+            "type": "command"
+          },
+          {
+            "command": "$HOME/.claude/hooks/lint_format_lua.sh",
+            "if": "Write(*.lua)|Edit(*.lua)|MultiEdit(*.lua)",
+            "type": "command"
+          },
+          {
+            "command": "$HOME/.claude/hooks/lint_format_tex.sh",
+            "if": "Write(*.tex)|Edit(*.tex)|MultiEdit(*.tex)|Write(*.bib)|Edit(*.bib)|MultiEdit(*.bib)|Write(*.cls)|Edit(*.cls)|MultiEdit(*.cls)|Write(*.sty)|Edit(*.sty)|MultiEdit(*.sty)",
+            "type": "command"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash|Edit|MultiEdit|Write|WebFetch|WebSearch|Task|Agent",
+        "hooks": [
+          {
+            "command": "$HOME/.claude/hooks/audit_tool_call.sh",
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "command": "$HOME/.claude/hooks/run_related_tests.sh",
+            "type": "command"
+          },
+          {
+            "command": "$HOME/.claude/hooks/notify_macos_done.sh",
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "command": "$HOME/.claude/hooks/notify_macos_done.sh",
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "command": "$HOME/.claude/hooks/notify_macos_await.sh",
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "PermissionDenied": [
+      {
+        "hooks": [
+          {
+            "command": "$HOME/.claude/hooks/audit_permission_denied.sh",
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "command": "$HOME/.claude/hooks/audit_compaction.sh",
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "compact|resume",
+        "hooks": [
+          {
+            "command": "$HOME/.claude/hooks/audit_compaction.sh",
+            "type": "command"
+          }
+        ]
+      }
+    ]
+  },
+  "codex": {
+    "hooks": {
+      "UserPromptSubmit": [
+        {
+          "hooks": [
+            {
+              "command": "$HOME/.codex/hooks/adapt_guard_secret_content.sh prompt",
+              "statusMessage": "Scanning prompt for sensitive information",
+              "timeout": 30,
+              "type": "command"
+            }
+          ]
+        }
+      ],
+      "PreToolUse": [
+        {
+          "matcher": "^(Bash|exec_command|functions\\.exec_command)$",
+          "hooks": [
+            {
+              "command": "$HOME/.codex/hooks/adapt_shell_command.sh $HOME/.claude/hooks/guard_forbidden_commands.sh",
+              "statusMessage": "Checking forbidden command prefixes",
+              "timeout": 30,
+              "type": "command"
+            },
+            {
+              "command": "$HOME/.codex/hooks/adapt_shell_command.sh $HOME/.claude/hooks/guard_secret_commit.sh",
+              "statusMessage": "Checking staged files for secrets",
+              "timeout": 30,
+              "type": "command"
+            },
+            {
+              "command": "$HOME/.codex/hooks/adapt_shell_command.sh $HOME/.claude/hooks/guard_dangerous_git.sh",
+              "statusMessage": "Checking for dangerous git operations",
+              "timeout": 30,
+              "type": "command"
+            },
+            {
+              "command": "$HOME/.codex/hooks/adapt_shell_command.sh $HOME/.claude/hooks/guard_allowed_commands.sh",
+              "statusMessage": "Checking command policy",
+              "timeout": 30,
+              "type": "command"
+            }
+          ]
+        },
+        {
+          "matcher": "^apply_patch$|^Edit$|^Write$",
+          "hooks": [
+            {
+              "command": "$HOME/.codex/hooks/adapt_harness_files.sh",
+              "statusMessage": "Checking harness boundaries",
+              "timeout": 30,
+              "type": "command"
+            },
+            {
+              "command": "$HOME/.codex/hooks/adapt_guard_secret_content.sh apply-patch",
+              "statusMessage": "Scanning patch for sensitive information",
+              "timeout": 30,
+              "type": "command"
+            }
+          ]
+        }
+      ],
+      "PostToolUse": [
+        {
+          "matcher": "^apply_patch$|^Edit$|^Write$",
+          "hooks": [
+            {
+              "command": "$HOME/.codex/hooks/adapt_lint_format.sh",
+              "statusMessage": "Running lint/format hooks",
+              "timeout": 120,
+              "type": "command"
+            }
+          ]
+        },
+        {
+          "matcher": ".",
+          "hooks": [
+            {
+              "command": "$HOME/.claude/hooks/audit_tool_call.sh",
+              "statusMessage": "Logging tool call",
+              "timeout": 10,
+              "type": "command"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
