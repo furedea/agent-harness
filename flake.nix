@@ -6,12 +6,24 @@
   };
 
   outputs =
-    { nixpkgs, ... }:
+    { self, nixpkgs, ... }:
     let
       system = "aarch64-darwin";
       pkgs = import nixpkgs { inherit system; };
     in
     {
+      packages.${system}.default = pkgs.rustPlatform.buildRustPackage {
+        pname = "agent-harness";
+        version = "0.1.0";
+        src = ./.;
+
+        cargoLock.lockFile = ./Cargo.lock;
+
+        meta.mainProgram = "agent-harness";
+      };
+
+      homeManagerModules.default = import ./nix/home_manager_module.nix { inherit self; };
+
       devShells.${system}.default = pkgs.mkShell {
         packages = with pkgs; [
           cargo
