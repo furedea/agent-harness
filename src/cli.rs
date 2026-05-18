@@ -16,19 +16,10 @@ pub struct Cli {
 enum Command {
     GenerateClaudeSettings(GenerateFileArgs),
     GenerateCodexConfigSource(GenerateFileArgs),
-    Render(RenderArgs),
+    GenerateSkills(GenerateSkillsArgs),
     Install(InstallArgs),
     SyncCodexConfig(SyncCodexConfigArgs),
     Verify(VerifyArgs),
-}
-
-#[derive(Debug, clap::Args)]
-struct RenderArgs {
-    #[arg(long, default_value = ".")]
-    source: PathBuf,
-
-    #[arg(long)]
-    out: PathBuf,
 }
 
 #[derive(Debug, clap::Args)]
@@ -41,12 +32,24 @@ struct GenerateFileArgs {
 }
 
 #[derive(Debug, clap::Args)]
+struct GenerateSkillsArgs {
+    #[arg(long, default_value = ".")]
+    source: PathBuf,
+
+    #[arg(long, value_enum)]
+    provider: Provider,
+
+    #[arg(long)]
+    out: PathBuf,
+}
+
+#[derive(Debug, clap::Args)]
 struct InstallArgs {
     #[arg(long, default_value = ".")]
     source: PathBuf,
 
     #[arg(long)]
-    home: Option<PathBuf>,
+    out: Option<PathBuf>,
 
     #[arg(long, value_enum, default_value_t = InstallMode::Copy)]
     mode: InstallMode,
@@ -56,6 +59,12 @@ struct InstallArgs {
 enum InstallMode {
     Copy,
     Symlink,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum Provider {
+    Claude,
+    Codex,
 }
 
 #[derive(Debug, clap::Args)]
@@ -70,7 +79,7 @@ struct SyncCodexConfigArgs {
 #[derive(Debug, clap::Args)]
 struct VerifyArgs {
     #[arg(long)]
-    home: Option<PathBuf>,
+    root: Option<PathBuf>,
 }
 
 /// Parse CLI arguments and execute the selected command.
@@ -87,17 +96,19 @@ pub fn run() -> Result<()> {
         Command::GenerateCodexConfigSource(args) => {
             render::generate_codex_config_source(&args.source, &args.out)
         }
-        Command::Render(args) => render::render(&args.source, &args.out),
+        Command::GenerateSkills(args) => {
+            render::generate_skills(&args.source, args.provider.into(), &args.out)
+        }
         Command::Install(args) => {
-            let home = args.home.unwrap_or_else(default_home_dir);
-            render::install(&args.source, &home, args.mode.into())
+            let out = args.out.unwrap_or_else(default_home_dir);
+            render::install(&args.source, &out, args.mode.into())
         }
         Command::SyncCodexConfig(args) => {
             codex_config::sync_managed_config(&args.source, &args.target)
         }
         Command::Verify(args) => {
-            let home = args.home.unwrap_or_else(default_home_dir);
-            render::verify(&home)
+            let root = args.root.unwrap_or_else(default_home_dir);
+            render::verify(&root)
         }
     }
 }
@@ -111,6 +122,15 @@ impl From<InstallMode> for render::InstallMode {
         match mode {
             InstallMode::Copy => Self::Copy,
             InstallMode::Symlink => Self::Symlink,
+        }
+    }
+}
+
+impl From<Provider> for render::Provider {
+    fn from(provider: Provider) -> Self {
+        match provider {
+            Provider::Claude => Self::Claude,
+            Provider::Codex => Self::Codex,
         }
     }
 }
