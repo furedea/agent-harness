@@ -14,6 +14,8 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    GenerateClaudeSettings(GenerateFileArgs),
+    GenerateCodexConfigSource(GenerateFileArgs),
     Render(RenderArgs),
     Install(InstallArgs),
     SyncCodexConfig(SyncCodexConfigArgs),
@@ -22,6 +24,15 @@ enum Command {
 
 #[derive(Debug, clap::Args)]
 struct RenderArgs {
+    #[arg(long, default_value = ".")]
+    source: PathBuf,
+
+    #[arg(long)]
+    out: PathBuf,
+}
+
+#[derive(Debug, clap::Args)]
+struct GenerateFileArgs {
     #[arg(long, default_value = ".")]
     source: PathBuf,
 
@@ -70,6 +81,12 @@ struct VerifyArgs {
 /// verify harness files.
 pub fn run() -> Result<()> {
     match Cli::parse().command {
+        Command::GenerateClaudeSettings(args) => {
+            render::generate_claude_settings(&args.source, &args.out)
+        }
+        Command::GenerateCodexConfigSource(args) => {
+            render::generate_codex_config_source(&args.source, &args.out)
+        }
         Command::Render(args) => render::render(&args.source, &args.out),
         Command::Install(args) => {
             let home = args.home.unwrap_or_else(default_home_dir);

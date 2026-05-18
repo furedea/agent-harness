@@ -8,8 +8,14 @@
 let
   cfg = config.programs.agent-harness;
 
-  rendered = pkgs.runCommand "agent-harness-rendered" { } ''
-    ${lib.getExe cfg.package} render \
+  claudeSettings = pkgs.runCommand "claude-settings.json" { } ''
+    ${lib.getExe cfg.package} generate-claude-settings \
+      --source ${cfg.source} \
+      --out $out
+  '';
+
+  codexConfigSource = pkgs.runCommand "codex-config-source.toml" { } ''
+    ${lib.getExe cfg.package} generate-codex-config-source \
       --source ${cfg.source} \
       --out $out
   '';
@@ -49,23 +55,23 @@ in
 
       file = lib.mkMerge [
         (lib.mkIf cfg.codex.enable {
-          ".codex/AGENTS.md".source = "${rendered}/codex/AGENTS.md";
-          ".codex/hooks".source = "${rendered}/codex/hooks";
-          ".codex/skills".source = "${rendered}/codex/skills";
+          ".codex/AGENTS.md".source = "${cfg.source}/agents/AGENTS.md";
+          ".codex/hooks".source = "${cfg.source}/codex/hooks";
+          ".codex/skills".source = "${cfg.source}/agents/skills";
         })
         (lib.mkIf cfg.claude.enable {
-          ".claude/CLAUDE.md".source = "${rendered}/claude/CLAUDE.md";
-          ".claude/hooks".source = "${rendered}/claude/hooks";
-          ".claude/settings.json".source = "${rendered}/claude/settings.json";
-          ".claude/skills".source = "${rendered}/claude/skills";
-          ".claude/statusline".source = "${rendered}/claude/statusline";
+          ".claude/CLAUDE.md".source = "${cfg.source}/agents/AGENTS.md";
+          ".claude/hooks".source = "${cfg.source}/agents/hooks";
+          ".claude/settings.json".source = claudeSettings;
+          ".claude/skills".source = "${cfg.source}/agents/skills";
+          ".claude/statusline".source = "${cfg.source}/claude/statusline";
         })
       ];
 
       activation.agentHarnessCodexConfig = lib.mkIf cfg.codex.enable (
         lib.hm.dag.entryAfter [ "writeBoundary" ] ''
           ${lib.getExe cfg.package} sync-codex-config \
-            --source ${rendered}/codex/config-source.toml \
+            --source ${codexConfigSource} \
             --target "$HOME/.codex/config.toml"
         ''
       );
