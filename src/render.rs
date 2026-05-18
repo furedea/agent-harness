@@ -2,7 +2,7 @@ use std::path::Path;
 
 use anyhow::Result;
 
-use crate::{codex_config, command_policy, fs_ops};
+use crate::{codex_config, command_policy, fs_ops, hooks};
 
 #[derive(Debug, Clone, Copy)]
 pub enum InstallMode {
@@ -48,6 +48,7 @@ pub fn install(source: &Path, out: &Path, mode: InstallMode) -> Result<()> {
         &out.join(".claude/statusline"),
         mode,
     )?;
+    hooks::write_codex_hooks(&out.join(".codex/hooks.json"))?;
     generate_skills(source, Provider::Codex, &out.join(".codex/skills"))?;
     generate_skills(source, Provider::Claude, &out.join(".claude/skills"))?;
     generate_claude_settings(source, &out.join(".claude/settings.json"))?;
@@ -68,6 +69,7 @@ pub fn install(source: &Path, out: &Path, mode: InstallMode) -> Result<()> {
 pub fn verify(root: &Path) -> Result<()> {
     for path in [
         root.join(".codex/AGENTS.md"),
+        root.join(".codex/hooks.json"),
         root.join(".codex/rules/default.rules"),
         root.join(".codex/skills"),
         root.join(".claude/CLAUDE.md"),
@@ -106,6 +108,7 @@ mod tests {
         install(&source, &out, InstallMode::Copy)?;
 
         assert!(out.join(".codex/AGENTS.md").is_file());
+        assert!(out.join(".codex/hooks.json").is_file());
         assert!(out.join(".claude/CLAUDE.md").is_file());
         assert!(out.join(".codex/skills/example/SKILL.md").is_file());
         assert!(out.join(".codex/rules/default.rules").is_file());

@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use anyhow::Result;
 use clap::{Parser, Subcommand, ValueEnum};
 
-use crate::{codex_config, command_policy, render};
+use crate::{codex_config, command_policy, hooks, render};
 
 #[derive(Debug, Parser)]
 #[command(version, about = "Install and verify AI agent harness files")]
@@ -15,7 +15,9 @@ pub struct Cli {
 #[derive(Debug, Subcommand)]
 enum Command {
     GenerateClaudeSettings(GenerateFileArgs),
+    GenerateClaudeHooks(GenerateOutputArgs),
     GenerateCodexConfigSource(GenerateFileArgs),
+    GenerateCodexHooks(GenerateOutputArgs),
     GenerateCodexRules(GenerateFileArgs),
     GenerateForbiddenCommands(GenerateFileArgs),
     GenerateSkills(GenerateSkillsArgs),
@@ -101,9 +103,11 @@ pub fn run() -> Result<()> {
         Command::GenerateClaudeSettings(args) => {
             render::generate_claude_settings(&args.source, &args.output)
         }
+        Command::GenerateClaudeHooks(args) => hooks::write_claude_hooks(&args.output),
         Command::GenerateCodexConfigSource(args) => {
             render::generate_codex_config_source(&args.source, &args.output)
         }
+        Command::GenerateCodexHooks(args) => hooks::write_codex_hooks(&args.output),
         Command::GenerateCodexRules(args) => {
             command_policy::write_codex_rules(&args.source, &args.output)
         }
