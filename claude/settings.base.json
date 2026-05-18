@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "cleanupPeriodDays": 9999,
+  "env": {
+    "CLAUDE_CODE_NO_FLICKER": "1",
+    "ENABLE_TOOL_SEARCH": "true",
+    "CLAUDE_CODE_DISABLE_1M_CONTEXT": "1"
+  },
+  "permissions": {
+    "allow": [],
+    "deny": [
+      "Read(.env*)",
+      "Read(**/*key*)",
+      "Read(**/*token*)",
+      "Read(**/.netrc)",
+      "Read(**/secrets/**)",
+      "Read(~/.aws/**)",
+      "Read(~/.bash_history)",
+      "Read(~/.config/gh/hosts.yml)",
+      "Read(~/.docker/config.json)",
+      "Read(~/.gnupg/**)",
+      "Read(~/.kube/**)",
+      "Read(~/.ssh/**)",
+      "Read(~/.zsh_history)",
+      "Read(credentials.json)",
+      "Read(id_ed25519)",
+      "Read(id_rsa)",
+      "Read(service-account*.json)",
+      "Write(.env*)",
+      "Write(**/secrets/**)"
+    ],
+    "defaultMode": "auto"
+  },
+  "model": "opus",
+  "enableAllProjectMcpServers": false,
+  "statusLine": {
+    "type": "command",
+    "command": "$HOME/.claude/statusline/statusline.sh"
+  },
+  "enabledPlugins": {
+    "skill-creator@claude-plugins-official": true,
+    "ralph-loop@claude-plugins-official": true,
+    "feature-dev@claude-plugins-official": true,
+    "security-guidance@claude-plugins-official": true,
+    "pyright-lsp@claude-plugins-official": true,
+    "rust-analyzer-lsp@claude-plugins-official": true,
+    "typescript-lsp@claude-plugins-official": true,
+    "lua-lsp@claude-plugins-official": true,
+    "playwright@claude-plugins-official": false,
+    "chrome-devtools-mcp@claude-plugins-official": false,
+    "frontend-design@claude-plugins-official": false,
+    "codex@openai-codex": true
+  },
+  "extraKnownMarketplaces": {
+    "openai-codex": {
+      "source": {
+        "source": "github",
+        "repo": "openai/codex-plugin-cc"
+      }
+    }
+  },
+  "language": "Japanese",
+  "sandbox": {
+    "enabled": true,
+    "autoAllowBashIfSandboxed": false,
+    "allowUnsandboxedCommands": true,
+    "filesystem": {
+      "allowWrite": [
+        "$HOME/.cache/nix"
+      ]
+    },
+    "network": {
+      "allowedDomains": [
+        "api.day.app"
+      ]
+    },
+    "excludedCommands": [
+      "docker",
+      "watchman"
+    ]
+  },
+  "effortLevel": "xhigh",
+  "autoMemoryEnabled": false,
+  "skipAutoPermissionPrompt": true,
+  "feedbackSurveyState": {
+    "lastShownTime": 1754030513973
+  }
+}
