@@ -7,17 +7,21 @@ This repository owns reusable agent assets such as skills, hooks, command policy
 ## Commands
 
 ```bash
-agent-harness install --source . --home "$HOME" --mode copy
+agent-harness install --source . --out "$HOME" --mode copy
 agent-harness generate-claude-settings \
   --source . \
   --out "$HOME/.claude/settings.json"
 agent-harness generate-codex-config-source \
   --source . \
   --out /tmp/codex-config-source.toml
+agent-harness generate-skills \
+  --source . \
+  --provider codex \
+  --out "$HOME/.codex/skills"
 agent-harness sync-codex-config \
   --source /tmp/codex-config-source.toml \
   --target "$HOME/.codex/config.toml"
-agent-harness verify --home "$HOME"
+agent-harness verify --root "$HOME"
 ```
 
 ## Nix

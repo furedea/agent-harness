@@ -1,13 +1,19 @@
 use std::path::Path;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 
-use crate::fs_ops;
+use crate::{codex_config, fs_ops};
 
 #[derive(Debug, Clone, Copy)]
 pub enum InstallMode {
     Copy,
     Symlink,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum Provider {
+    Claude,
+    Codex,
 }
 
 pub fn generate_claude_settings(source: &Path, out: &Path) -> Result<()> {
@@ -18,52 +24,49 @@ pub fn generate_codex_config_source(source: &Path, out: &Path) -> Result<()> {
     fs_ops::copy_file(&source.join("codex/config.toml"), out)
 }
 
-pub fn render(source: &Path, out: &Path) -> Result<()> {
-    if out.exists() {
-        std::fs::remove_dir_all(out)
-            .with_context(|| format!("failed to remove directory {}", out.display()))?;
-    }
-    std::fs::create_dir_all(out)
-        .with_context(|| format!("failed to create directory {}", out.display()))?;
+pub fn generate_skills(source: &Path, _provider: Provider, out: &Path) -> Result<()> {
+    fs_ops::copy_dir(&source.join("agents/skills"), out)
+}
 
+pub fn install(source: &Path, out: &Path, mode: InstallMode) -> Result<()> {
     fs_ops::copy_file(
         &source.join("agents/AGENTS.md"),
-        &out.join("codex/AGENTS.md"),
+        &out.join(".codex/AGENTS.md"),
     )?;
     fs_ops::copy_file(
         &source.join("agents/AGENTS.md"),
-        &out.join("claude/CLAUDE.md"),
+        &out.join(".claude/CLAUDE.md"),
     )?;
-    fs_ops::copy_dir(&source.join("agents/hooks"), &out.join("claude/hooks"))?;
-    fs_ops::copy_dir(&source.join("codex/hooks"), &out.join("codex/hooks"))?;
-    fs_ops::copy_dir(&source.join("agents/skills"), &out.join("codex/skills"))?;
-    fs_ops::copy_dir(&source.join("agents/skills"), &out.join("claude/skills"))?;
-    fs_ops::copy_dir(
+    install_path(&source.join("codex/hooks"), &out.join(".codex/hooks"), mode)?;
+    install_path(
+        &source.join("agents/hooks"),
+        &out.join(".claude/hooks"),
+        mode,
+    )?;
+    install_path(
         &source.join("claude/statusline"),
-        &out.join("claude/statusline"),
+        &out.join(".claude/statusline"),
+        mode,
     )?;
-    generate_claude_settings(source, &out.join("claude/settings.json"))?;
-    generate_codex_config_source(source, &out.join("codex/config-source.toml"))?;
+    generate_skills(source, Provider::Codex, &out.join(".codex/skills"))?;
+    generate_skills(source, Provider::Claude, &out.join(".claude/skills"))?;
+    generate_claude_settings(source, &out.join(".claude/settings.json"))?;
+
+    codex_config::sync_managed_config(
+        &source.join("codex/config.toml"),
+        &out.join(".codex/config.toml"),
+    )?;
 
     Ok(())
 }
 
-pub fn install(source: &Path, home: &Path, mode: InstallMode) -> Result<()> {
-    let data_dir = home.join(".local/share/agent-harness");
-    render(source, &data_dir)?;
-
-    install_path(&data_dir.join("codex"), &home.join(".codex"), mode)?;
-    install_path(&data_dir.join("claude"), &home.join(".claude"), mode)?;
-
-    Ok(())
-}
-
-pub fn verify(home: &Path) -> Result<()> {
+pub fn verify(root: &Path) -> Result<()> {
     for path in [
-        home.join(".codex/AGENTS.md"),
-        home.join(".codex/skills"),
-        home.join(".claude/CLAUDE.md"),
-        home.join(".claude/skills"),
+        root.join(".codex/AGENTS.md"),
+        root.join(".codex/skills"),
+        root.join(".claude/CLAUDE.md"),
+        root.join(".claude/settings.json"),
+        root.join(".claude/skills"),
     ] {
         if !path.exists() {
             anyhow::bail!("missing harness path: {}", path.display());
@@ -87,20 +90,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn render_places_codex_and_claude_entry_files() -> Result<()> {
-        let root = test_root("render_places_codex_and_claude_entry_files")?;
+    fn install_places_codex_and_claude_files_under_output_root() -> Result<()> {
+        let root = test_root("install_places_codex_and_claude_files_under_output_root")?;
         let source = root.join("source");
         let out = root.join("out");
         write_minimal_source(&source)?;
 
-        render(&source, &out)?;
+        install(&source, &out, InstallMode::Copy)?;
 
-        assert!(out.join("codex/AGENTS.md").is_file());
-        assert!(out.join("claude/CLAUDE.md").is_file());
-        assert!(out.join("codex/skills/example/SKILL.md").is_file());
-        assert!(out.join("claude/skills/example/SKILL.md").is_file());
-        assert!(out.join("codex/config-source.toml").is_file());
-        assert!(out.join("claude/settings.json").is_file());
+        assert!(out.join(".codex/AGENTS.md").is_file());
+        assert!(out.join(".claude/CLAUDE.md").is_file());
+        assert!(out.join(".codex/skills/example/SKILL.md").is_file());
+        assert!(out.join(".claude/skills/example/SKILL.md").is_file());
+        assert!(out.join(".codex/config.toml").is_file());
+        assert!(out.join(".claude/settings.json").is_file());
 
         std::fs::remove_dir_all(root)?;
         Ok(())
@@ -131,6 +134,21 @@ mod tests {
         generate_codex_config_source(&source, &out)?;
 
         assert_eq!(std::fs::read_to_string(&out)?, "model = \"gpt-5.5\"\n");
+
+        std::fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn generate_skills_writes_final_directory_output() -> Result<()> {
+        let root = test_root("generate_skills_writes_final_directory_output")?;
+        let source = root.join("source");
+        let out = root.join("skills");
+        write_minimal_source(&source)?;
+
+        generate_skills(&source, Provider::Codex, &out)?;
+
+        assert!(out.join("example/SKILL.md").is_file());
 
         std::fs::remove_dir_all(root)?;
         Ok(())
