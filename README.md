@@ -11,9 +11,15 @@ agent-harness install --source . --prefix "$HOME" --mode copy
 agent-harness generate-claude-settings \
   --source . \
   --output "$HOME/.claude/settings.json"
+agent-harness generate-claude-hooks \
+  --source . \
+  --output /tmp/claude-hooks.json
 agent-harness generate-codex-config-source \
   --source . \
   --output /tmp/codex-config-source.toml
+agent-harness generate-codex-hooks \
+  --source . \
+  --output "$HOME/.codex/hooks.json"
 agent-harness generate-codex-rules \
   --source . \
   --output "$HOME/.codex/rules/default.rules"

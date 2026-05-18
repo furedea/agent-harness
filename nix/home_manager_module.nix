@@ -26,6 +26,12 @@ let
       --output $out
   '';
 
+  codexHooks = pkgs.runCommand "codex-hooks.json" { } ''
+    ${lib.getExe cfg.package} generate-codex-hooks \
+      --source ${cfg.source} \
+      --output $out
+  '';
+
   claudeForbiddenCommands = pkgs.runCommand "claude-forbidden-commands.json" { } ''
     ${lib.getExe cfg.package} generate-forbidden-commands \
       --source ${cfg.source} \
@@ -83,6 +89,7 @@ in
         (lib.mkIf cfg.codex.enable {
           ".codex/AGENTS.md".source = "${cfg.source}/agents/AGENTS.md";
           ".codex/hooks".source = "${cfg.source}/codex/hooks";
+          ".codex/hooks.json".source = codexHooks;
           ".codex/rules/default.rules".source = codexRules;
           ".codex/skills".source = codexSkills;
         })
