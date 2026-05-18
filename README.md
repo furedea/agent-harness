@@ -14,6 +14,12 @@ agent-harness generate-claude-settings \
 agent-harness generate-codex-config-source \
   --source . \
   --output /tmp/codex-config-source.toml
+agent-harness generate-codex-rules \
+  --source . \
+  --output "$HOME/.codex/rules/default.rules"
+agent-harness generate-forbidden-commands \
+  --source . \
+  --output "$HOME/.claude/rules/forbidden_commands.json"
 agent-harness generate-skills \
   --source . \
   --provider codex \

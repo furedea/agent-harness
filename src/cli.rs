@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use anyhow::Result;
 use clap::{Parser, Subcommand, ValueEnum};
 
-use crate::{codex_config, render};
+use crate::{codex_config, command_policy, render};
 
 #[derive(Debug, Parser)]
 #[command(version, about = "Install and verify AI agent harness files")]
@@ -16,6 +16,8 @@ pub struct Cli {
 enum Command {
     GenerateClaudeSettings(GenerateFileArgs),
     GenerateCodexConfigSource(GenerateFileArgs),
+    GenerateCodexRules(GenerateFileArgs),
+    GenerateForbiddenCommands(GenerateFileArgs),
     GenerateSkills(GenerateSkillsArgs),
     Install(InstallArgs),
     SyncCodexConfig(SyncCodexConfigArgs),
@@ -27,6 +29,12 @@ struct GenerateFileArgs {
     #[arg(long, default_value = ".")]
     source: PathBuf,
 
+    #[arg(short, long)]
+    output: PathBuf,
+}
+
+#[derive(Debug, clap::Args)]
+struct GenerateOutputArgs {
     #[arg(short, long)]
     output: PathBuf,
 }
@@ -95,6 +103,12 @@ pub fn run() -> Result<()> {
         }
         Command::GenerateCodexConfigSource(args) => {
             render::generate_codex_config_source(&args.source, &args.output)
+        }
+        Command::GenerateCodexRules(args) => {
+            command_policy::write_codex_rules(&args.source, &args.output)
+        }
+        Command::GenerateForbiddenCommands(args) => {
+            command_policy::write_forbidden_commands(&args.source, &args.output)
         }
         Command::GenerateSkills(args) => {
             render::generate_skills(&args.source, args.provider.into(), &args.output)

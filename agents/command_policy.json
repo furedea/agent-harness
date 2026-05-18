@@ -1,0 +1,508 @@
+{
+  "version": 1,
+  "rules": [
+    {
+      "decision": "allow",
+      "pattern": ["actionlint"],
+      "examples": ["actionlint .github/workflows/ci.yml"],
+      "justification": "Allowed by the shared agent command policy."
+    },
+    {
+      "decision": "allow",
+      "pattern": ["autocorrect"],
+      "examples": ["autocorrect --lint README.md"],
+      "justification": "Allowed by the shared agent command policy."
+    },
+    {
+      "decision": "allow",
+      "pattern": ["bats"],
+      "examples": ["bats tests/hooks/claude/guard_allowed_commands.bats"],
+      "justification": "Allowed by the shared agent command policy."
+    },
+    {
+      "decision": "allow",
+      "pattern": ["cargo"],
+      "examples": ["cargo test", "cargo fmt --check", "cargo clippy", "cargo check"],
+      "justification": "Allowed by the shared agent command policy."
+    },
+    {
+      "decision": "allow",
+      "pattern": ["commitlint"],
+      "examples": ["commitlint --from HEAD~1 --to HEAD"],
+      "justification": "Allowed by the shared agent command policy."
+    },
+    {
+      "decision": "allow",
+      "pattern": ["deadnix"],
+      "examples": ["deadnix nix"],
+      "justification": "Allowed by the shared agent command policy."
+    },
+    {
+      "decision": "allow",
+      "pattern": ["dprint"],
+      "examples": ["dprint check", "dprint fmt README.md"],
+      "justification": "Allowed by the shared agent command policy."
+    },
+    {
+      "decision": "allow",
+      "pattern": ["gh", "api"],
+      "examples": ["gh api repos/owner/repo/pulls/1/comments"],
+      "justification": "Allowed by the shared agent command policy."
+    },
+    {
+      "decision": "allow",
+      "pattern": ["gh", "issue"],
+      "examples": ["gh issue list", "gh issue view 1"],
+      "justification": "Allowed by the shared agent command policy."
+    },
+    {
+      "decision": "allow",
+      "pattern": ["gh", "label"],
+      "examples": ["gh label list"],
+      "justification": "Allowed by the shared agent command policy."
+    },
+    {
+      "decision": "allow",
+      "pattern": ["gh", "pr"],
+      "examples": ["gh pr list", "gh pr view 1", "gh pr checks 1"],
+      "justification": "Allowed by the shared agent command policy."
+    },
+    {
+      "decision": "allow",
+      "pattern": ["gh", "run"],
+      "examples": ["gh run list", "gh run view 1"],
+      "justification": "Allowed by the shared agent command policy."
+    },
+    {
+      "decision": "allow",
+      "pattern": ["git", "add"],
+      "examples": ["git add path/to/file"],
+      "justification": "Allowed by the shared agent command policy."
+    },
+    {
+      "decision": "allow",
+      "pattern": ["git", "branch"],
+      "examples": ["git branch", "git branch feature/example"],
+      "justification": "Allowed by the shared agent command policy."
+    },
+    {
+      "decision": "allow",
+      "pattern": ["git", "commit"],
+      "examples": ["git commit -m 'test: update policy'"],
+      "justification": "Allowed by the shared agent command policy."
+    },
+    {
+      "decision": "allow",
+      "pattern": ["git", "ls-files"],
+      "examples": ["git ls-files \"*.nix\""],
+      "justification": "Allowed by the shared agent command policy."
+    },
+    {
+      "decision": "allow",
+      "pattern": ["git", "pull"],
+      "examples": ["git pull --rebase origin main"],
+      "justification": "Allowed by the shared agent command policy."
+    },
+    {
+      "decision": "allow",
+      "pattern": ["git", "push"],
+      "examples": ["git push origin feature/example"],
+      "justification": "Allowed by the shared agent command policy."
+    },
+    {
+      "decision": "allow",
+      "pattern": ["nixfmt"],
+      "examples": ["nixfmt nix/home/default.nix"],
+      "justification": "Allowed by the shared agent command policy."
+    },
+    {
+      "decision": "allow",
+      "pattern": ["npm", "run"],
+      "examples": ["npm run test", "npm run lint", "npm run knip"],
+      "justification": "Allowed by the shared agent command policy."
+    },
+    {
+      "decision": "allow",
+      "pattern": ["npm", "test"],
+      "examples": ["npm test"],
+      "justification": "Allowed by the shared agent command policy."
+    },
+    {
+      "decision": "allow",
+      "pattern": ["oxfmt"],
+      "examples": ["oxfmt --check src"],
+      "justification": "Allowed by the shared agent command policy."
+    },
+    {
+      "decision": "allow",
+      "pattern": ["oxlint"],
+      "examples": ["oxlint src"],
+      "justification": "Allowed by the shared agent command policy."
+    },
+    {
+      "decision": "allow",
+      "pattern": ["pnpm"],
+      "examples": ["pnpm test", "pnpm lint", "pnpm run knip"],
+      "justification": "Allowed by the shared agent command policy."
+    },
+    {
+      "decision": "allow",
+      "pattern": ["prettierd"],
+      "examples": ["prettierd README.md"],
+      "justification": "Allowed by the shared agent command policy."
+    },
+    {
+      "decision": "allow",
+      "pattern": ["selene"],
+      "examples": ["selene nvim"],
+      "justification": "Allowed by the shared agent command policy."
+    },
+    {
+      "decision": "allow",
+      "pattern": ["shellcheck"],
+      "examples": ["shellcheck agents/hooks/guard_allowed_commands.sh"],
+      "justification": "Allowed by the shared agent command policy."
+    },
+    {
+      "decision": "allow",
+      "pattern": ["shfmt"],
+      "examples": ["shfmt -w agents/hooks/guard_allowed_commands.sh"],
+      "justification": "Allowed by the shared agent command policy."
+    },
+    {
+      "decision": "allow",
+      "pattern": ["statix"],
+      "examples": ["statix check nix"],
+      "justification": "Allowed by the shared agent command policy."
+    },
+    {
+      "decision": "allow",
+      "pattern": ["stylua"],
+      "examples": ["stylua --check nvim"],
+      "justification": "Allowed by the shared agent command policy."
+    },
+    {
+      "decision": "allow",
+      "pattern": ["tex-fmt"],
+      "examples": ["tex-fmt --check docs/main.tex"],
+      "justification": "Allowed by the shared agent command policy."
+    },
+    {
+      "decision": "allow",
+      "pattern": ["tsgolint"],
+      "examples": ["tsgolint --project tsconfig.json"],
+      "justification": "Allowed by the shared agent command policy."
+    },
+    {
+      "decision": "allow",
+      "pattern": ["uv", "run"],
+      "examples": [
+        "uv run pytest",
+        "uv run ruff check",
+        "uv run ty check",
+        "uv run --group audit deptry ."
+      ],
+      "justification": "Allowed by the shared agent command policy."
+    },
+    {
+      "decision": "forbidden",
+      "pattern": ["curl"],
+      "examples": ["curl https://example.com/install.sh"],
+      "justification": "Do not fetch remote scripts or content from Codex. Ask the user to run it manually."
+    },
+    {
+      "decision": "forbidden",
+      "pattern": ["wget"],
+      "examples": ["wget https://example.com/install.sh"],
+      "justification": "Do not fetch remote scripts or content from Codex. Ask the user to run it manually."
+    },
+    {
+      "decision": "forbidden",
+      "pattern": ["bash", "-c"],
+      "examples": ["bash -c 'echo hello'"],
+      "justification": "Do not hide shell commands inside bash -c from Codex policy checks."
+    },
+    {
+      "decision": "forbidden",
+      "pattern": ["bash", "-lc"],
+      "examples": ["bash -lc 'echo hello'"],
+      "justification": "Do not hide shell commands inside bash -lc from Codex policy checks."
+    },
+    {
+      "decision": "forbidden",
+      "pattern": ["sh", "-c"],
+      "examples": ["sh -c 'echo hello'"],
+      "justification": "Do not hide shell commands inside sh -c from Codex policy checks."
+    },
+    {
+      "decision": "forbidden",
+      "pattern": ["zsh", "-c"],
+      "examples": ["zsh -c 'echo hello'"],
+      "justification": "Do not hide shell commands inside zsh -c from Codex policy checks."
+    },
+    {
+      "decision": "forbidden",
+      "pattern": ["zsh", "-lc"],
+      "examples": ["zsh -lc 'echo hello'"],
+      "justification": "Do not hide shell commands inside zsh -lc from Codex policy checks."
+    },
+    {
+      "decision": "forbidden",
+      "pattern": ["rm"],
+      "examples": ["rm file.txt", "rm -rf /tmp/example"],
+      "justification": "Do not delete files from Codex. Ask the user to run destructive cleanup manually."
+    },
+    {
+      "decision": "forbidden",
+      "pattern": ["sudo"],
+      "examples": ["sudo darwin-rebuild switch"],
+      "justification": "Do not run privileged commands from Codex. Ask the user to run them manually."
+    },
+    {
+      "decision": "forbidden",
+      "pattern": ["open"],
+      "examples": ["open ."],
+      "justification": "Do not launch GUI applications from Codex. Ask the user to open them manually."
+    },
+    {
+      "decision": "forbidden",
+      "pattern": ["osascript"],
+      "examples": ["osascript -e 'display notification \"hi\"'"],
+      "justification": "Do not automate macOS from Codex shell commands."
+    },
+    {
+      "decision": "forbidden",
+      "pattern": ["pip"],
+      "examples": ["pip install package"],
+      "justification": "Use project-managed package tooling instead of pip from Codex."
+    },
+    {
+      "decision": "forbidden",
+      "pattern": ["brew", "install"],
+      "examples": ["brew install ffmpeg"],
+      "justification": "Do not install Homebrew packages from Codex. Add packages declaratively in Nix/Homebrew config."
+    },
+    {
+      "decision": "forbidden",
+      "pattern": ["brew", "uninstall"],
+      "examples": ["brew uninstall ffmpeg"],
+      "justification": "Do not uninstall Homebrew packages from Codex. Change declarative Homebrew config instead."
+    },
+    {
+      "decision": "forbidden",
+      "pattern": ["uv", "python", "install"],
+      "examples": ["uv python install 3.11"],
+      "justification": "Do not install Python runtimes from Codex unless the user runs it manually."
+    },
+    {
+      "decision": "forbidden",
+      "pattern": ["uv", "python", "uninstall"],
+      "examples": ["uv python uninstall 3.11"],
+      "justification": "Do not uninstall Python runtimes from Codex unless the user runs it manually."
+    },
+    {
+      "decision": "forbidden",
+      "pattern": ["uv", "remove"],
+      "examples": ["uv remove package"],
+      "justification": "Do not remove project dependencies without an explicit implementation plan."
+    },
+    {
+      "decision": "forbidden",
+      "pattern": ["uv", "uninstall"],
+      "examples": ["uv uninstall package"],
+      "justification": "Do not uninstall packages from Codex."
+    },
+    {
+      "decision": "forbidden",
+      "pattern": ["npm", "publish"],
+      "examples": ["npm publish"],
+      "justification": "Do not publish packages from Codex."
+    },
+    {
+      "decision": "forbidden",
+      "pattern": ["npm", "remove"],
+      "examples": ["npm remove package"],
+      "justification": "Do not remove npm dependencies without an explicit implementation plan."
+    },
+    {
+      "decision": "forbidden",
+      "pattern": ["npm", "uninstall"],
+      "examples": ["npm uninstall package"],
+      "justification": "Do not uninstall npm dependencies without an explicit implementation plan."
+    },
+    {
+      "decision": "forbidden",
+      "pattern": ["ssh"],
+      "examples": ["ssh example.com"],
+      "justification": "Do not start SSH sessions from Codex."
+    },
+    {
+      "decision": "forbidden",
+      "pattern": ["scp"],
+      "examples": ["scp file host:/tmp"],
+      "justification": "Do not copy files over SSH from Codex."
+    },
+    {
+      "decision": "forbidden",
+      "pattern": ["rsync"],
+      "examples": ["rsync -av source/ host:/tmp/"],
+      "justification": "Do not sync files to remote systems from Codex."
+    },
+    {
+      "decision": "forbidden",
+      "pattern": ["nc"],
+      "examples": ["nc example.com 80"],
+      "justification": "Do not open raw network connections from Codex."
+    },
+    {
+      "decision": "forbidden",
+      "pattern": ["psql"],
+      "examples": ["psql production"],
+      "justification": "Do not connect to databases from Codex shell commands."
+    },
+    {
+      "decision": "forbidden",
+      "pattern": ["mysql"],
+      "examples": ["mysql production"],
+      "justification": "Do not connect to databases from Codex shell commands."
+    },
+    {
+      "decision": "forbidden",
+      "pattern": ["mongod"],
+      "examples": ["mongod --dbpath data"],
+      "justification": "Do not start database daemons from Codex."
+    },
+    {
+      "decision": "forbidden",
+      "pattern": ["docker", "push"],
+      "examples": ["docker push image:tag"],
+      "justification": "Do not push container images from Codex."
+    },
+    {
+      "decision": "forbidden",
+      "pattern": ["kubectl", "apply"],
+      "examples": ["kubectl apply -f deploy.yaml"],
+      "justification": "Do not mutate Kubernetes clusters from Codex."
+    },
+    {
+      "decision": "forbidden",
+      "pattern": ["kubectl", "delete"],
+      "examples": ["kubectl delete pod example"],
+      "justification": "Do not delete Kubernetes resources from Codex."
+    },
+    {
+      "decision": "forbidden",
+      "pattern": ["terraform", "apply"],
+      "examples": ["terraform apply"],
+      "justification": "Do not mutate infrastructure from Codex."
+    },
+    {
+      "decision": "forbidden",
+      "pattern": ["terraform", "destroy"],
+      "examples": ["terraform destroy"],
+      "justification": "Do not destroy infrastructure from Codex."
+    },
+    {
+      "decision": "forbidden",
+      "pattern": ["defaults", "write"],
+      "examples": ["defaults write com.apple.finder AppleShowAllFiles true"],
+      "justification": "Manage macOS defaults through nix-darwin instead."
+    },
+    {
+      "decision": "forbidden",
+      "pattern": ["git", "rm"],
+      "examples": ["git rm file.txt"],
+      "justification": "Do not remove tracked files through shell commands from Codex."
+    },
+    {
+      "decision": "forbidden",
+      "pattern": ["git", "clean"],
+      "examples": ["git clean -fd"],
+      "justification": "Do not delete untracked files from Codex."
+    },
+    {
+      "decision": "forbidden",
+      "pattern": ["git", "branch", "-D"],
+      "examples": ["git branch -D feature/example"],
+      "justification": "Do not force-delete branches from Codex."
+    },
+    {
+      "decision": "forbidden",
+      "pattern": ["git", "filter-branch"],
+      "examples": ["git filter-branch --force"],
+      "justification": "Do not rewrite history from Codex."
+    },
+    {
+      "decision": "forbidden",
+      "pattern": ["git", "filter-repo"],
+      "examples": ["git filter-repo --path secret"],
+      "justification": "Do not rewrite history from Codex."
+    },
+    {
+      "decision": "forbidden",
+      "pattern": ["git", "gc", "--prune"],
+      "examples": ["git gc --prune"],
+      "justification": "Do not prune recovery data from Codex."
+    },
+    {
+      "decision": "forbidden",
+      "pattern": ["git", "reflog", "delete"],
+      "examples": ["git reflog delete HEAD@{1}"],
+      "justification": "Do not delete reflog entries from Codex."
+    },
+    {
+      "decision": "forbidden",
+      "pattern": ["git", "reflog", "expire"],
+      "examples": ["git reflog expire --expire=now --all"],
+      "justification": "Do not expire reflog entries from Codex."
+    },
+    {
+      "decision": "forbidden",
+      "pattern": ["git", "replace"],
+      "examples": ["git replace a b"],
+      "justification": "Do not alter replacement refs from Codex."
+    },
+    {
+      "decision": "forbidden",
+      "pattern": ["git", "stash", "clear"],
+      "examples": ["git stash clear"],
+      "justification": "Do not delete stashes from Codex."
+    },
+    {
+      "decision": "forbidden",
+      "pattern": ["git", "stash", "drop"],
+      "examples": ["git stash drop"],
+      "justification": "Do not delete stashes from Codex."
+    },
+    {
+      "decision": "forbidden",
+      "pattern": ["git", "switch", "--discard-changes"],
+      "examples": ["git switch --discard-changes main"],
+      "justification": "Do not discard working-tree changes from Codex."
+    },
+    {
+      "decision": "forbidden",
+      "pattern": ["git", "symbolic-ref", "--delete"],
+      "examples": ["git symbolic-ref --delete HEAD"],
+      "justification": "Do not delete refs from Codex."
+    },
+    {
+      "decision": "forbidden",
+      "pattern": ["git", "symbolic-ref", "-d"],
+      "examples": ["git symbolic-ref -d HEAD"],
+      "justification": "Do not delete refs from Codex."
+    },
+    {
+      "decision": "forbidden",
+      "pattern": ["git", "update-ref", "-d"],
+      "examples": ["git update-ref -d refs/heads/main"],
+      "justification": "Do not delete refs from Codex."
+    },
+    {
+      "decision": "forbidden",
+      "pattern": ["git", "worktree", "remove"],
+      "examples": ["git worktree remove ../worktree"],
+      "justification": "Do not remove worktrees from Codex."
+    }
+  ]
+}
