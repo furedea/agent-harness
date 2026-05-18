@@ -2,7 +2,7 @@ use std::path::Path;
 
 use anyhow::Result;
 
-use crate::{codex_config, fs_ops};
+use crate::{codex_config, command_policy, fs_ops};
 
 #[derive(Debug, Clone, Copy)]
 pub enum InstallMode {
@@ -51,6 +51,11 @@ pub fn install(source: &Path, out: &Path, mode: InstallMode) -> Result<()> {
     generate_skills(source, Provider::Codex, &out.join(".codex/skills"))?;
     generate_skills(source, Provider::Claude, &out.join(".claude/skills"))?;
     generate_claude_settings(source, &out.join(".claude/settings.json"))?;
+    command_policy::write_codex_rules(source, &out.join(".codex/rules/default.rules"))?;
+    command_policy::write_forbidden_commands(
+        source,
+        &out.join(".claude/rules/forbidden_commands.json"),
+    )?;
 
     codex_config::sync_managed_config(
         &source.join("codex/config.toml"),
@@ -63,8 +68,10 @@ pub fn install(source: &Path, out: &Path, mode: InstallMode) -> Result<()> {
 pub fn verify(root: &Path) -> Result<()> {
     for path in [
         root.join(".codex/AGENTS.md"),
+        root.join(".codex/rules/default.rules"),
         root.join(".codex/skills"),
         root.join(".claude/CLAUDE.md"),
+        root.join(".claude/rules/forbidden_commands.json"),
         root.join(".claude/settings.json"),
         root.join(".claude/skills"),
     ] {
@@ -101,7 +108,9 @@ mod tests {
         assert!(out.join(".codex/AGENTS.md").is_file());
         assert!(out.join(".claude/CLAUDE.md").is_file());
         assert!(out.join(".codex/skills/example/SKILL.md").is_file());
+        assert!(out.join(".codex/rules/default.rules").is_file());
         assert!(out.join(".claude/skills/example/SKILL.md").is_file());
+        assert!(out.join(".claude/rules/forbidden_commands.json").is_file());
         assert!(out.join(".codex/config.toml").is_file());
         assert!(out.join(".claude/settings.json").is_file());
 
@@ -163,6 +172,27 @@ mod tests {
 
     fn write_minimal_source(source: &Path) -> Result<()> {
         write_file(&source.join("agents/AGENTS.md"), "agent instructions\n")?;
+        write_file(
+            &source.join("agents/command_policy.json"),
+            r#"{
+  "version": 1,
+  "rules": [
+    {
+      "decision": "allow",
+      "pattern": ["cargo"],
+      "examples": ["cargo test"],
+      "justification": "Allowed by the shared agent command policy."
+    },
+    {
+      "decision": "forbidden",
+      "pattern": ["curl"],
+      "examples": ["curl https://example.com/install.sh"],
+      "justification": "Do not fetch remote scripts or content from Codex."
+    }
+  ]
+}
+"#,
+        )?;
         write_file(&source.join("agents/hooks/hook.sh"), "#!/bin/bash\n")?;
         write_file(&source.join("codex/hooks/hook.sh"), "#!/bin/bash\n")?;
         write_file(
