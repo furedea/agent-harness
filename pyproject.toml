@@ -3,7 +3,9 @@ name = "agent-harness-python-tools"
 version = "0.1.0"
 description = "Python tooling and tests for agent-harness skill scripts."
 requires-python = "== 3.14.*"
-dependencies = []
+dependencies = [
+  "tiktoken==0.12.0",
+]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
@@ -11,7 +13,6 @@ testpaths = ["tests/python"]
 
 [tool.deptry]
 ignore_notebooks = true
-ignore = ["DEP003", "DEP004"]
 known_first_party = [
   "collect_skills",
   "collect_transcripts",
