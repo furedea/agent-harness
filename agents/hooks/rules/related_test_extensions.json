@@ -29,27 +29,37 @@
     "tests/hooks/claude/lint_format_hooks.bats"
   ],
   "agents/hooks/rules/secret_content_patterns.json": [
-    "tests/hooks/config/secret_patterns.bats",
+    "tests/hooks/rules/secret_patterns.bats",
     "tests/hooks/claude/related_test_rules.bats"
   ],
   "agents/hooks/rules/related_test_*.json": [
     "tests/hooks/claude/related_test_rules.bats"
   ],
+  "agents/hooks.json": [
+    "tests/generated_artifacts.rs"
+  ],
   "codex/config.toml": [
-    "tests/hooks/config/codex_config_sync.bats",
-    "tests/hooks/config/codex_generated_settings.bats"
+    "tests/generated_artifacts.rs"
   ],
-  "codex/hooks.json": [
-    "tests/hooks/config/codex_hooks_sync.bats",
-    "tests/hooks/config/codex_generated_settings.bats"
+  "src/codex_config.rs": [
+    "tests/generated_artifacts.rs"
   ],
-  "codex/rules/*": [
-    "tests/hooks/config/codex_rules_sync.bats",
-    "tests/hooks/config/codex_generated_settings.bats"
+  "src/claude_config.rs": [
+    "tests/generated_artifacts.rs"
+  ],
+  "src/hooks.rs": [
+    "tests/generated_artifacts.rs"
+  ],
+  "src/command_policy.rs": [
+    "tests/generated_artifacts.rs",
+    "tests/codex/execpolicy.bats",
+    "tests/hooks/claude/guard_allowed_commands.bats"
+  ],
+  "src/protection.rs": [
+    "tests/generated_artifacts.rs"
   ],
   "claude/settings.base.json": [
-    "tests/hooks/config/claude_generated_settings.bats",
-    "tests/hooks/config/codex_generated_settings.bats",
+    "tests/generated_artifacts.rs",
     "tests/hooks/claude/guard_allowed_commands.bats"
   ],
   "claude/statusline/*.sh": [
@@ -58,22 +68,15 @@
   "claude/statusline/*.json": [
     "tests/hooks/claude/statusline.bats"
   ],
-  "nix/agents/claude_settings.nix": [
-    "tests/hooks/config/claude_generated_settings.bats"
-  ],
-  "nix/agents/codex_settings.nix": [
-    "tests/hooks/config/codex_generated_settings.bats",
-    "tests/hooks/config/codex_config_sync.bats"
-  ],
-  "nix/agents/command_policy.nix": [
-    "tests/hooks/config/claude_generated_settings.bats",
-    "tests/hooks/config/codex_generated_settings.bats",
+  "agents/command_policy.json": [
+    "tests/generated_artifacts.rs",
+    "tests/codex/execpolicy.bats",
     "tests/hooks/claude/guard_allowed_commands.bats"
   ],
-  "nix/agents/skills.nix": [
-    "tests/hooks/config/agent_skills_render.bats"
+  "src/skills.rs": [
+    "tests/generated_artifacts.rs"
   ],
   "agents/skills/*": [
-    "tests/hooks/config/agent_skills_render.bats"
+    "tests/generated_artifacts.rs"
   ]
 }

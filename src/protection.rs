@@ -70,7 +70,12 @@ fn relative_files(root: &Path) -> Result<Vec<String>> {
                 .with_context(|| format!("failed to strip prefix {}", root.display()))?;
             Ok(relative.to_string_lossy().replace('\\', "/"))
         })
+        .filter(|path| path.as_ref().is_ok_and(|path| !is_runtime_artifact(path)))
         .collect()
+}
+
+fn is_runtime_artifact(path: &str) -> bool {
+    path.starts_with("docs/logs/")
 }
 
 fn home_agent_hook_paths(paths: &[String]) -> Vec<String> {
@@ -148,6 +153,27 @@ mod tests {
         assert!(content.contains("[permissions.guarded.filesystem]"));
         assert!(content.contains("\"~/.claude/hooks/guard.sh\" = \"read\""));
         assert!(content.contains("glob_scan_max_depth = 5"));
+
+        std::fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn protected_paths_ignore_hook_runtime_logs() -> Result<()> {
+        let root = test_root("protected_paths_ignore_hook_runtime_logs")?;
+        write_minimal_source(&root)?;
+        write_file(
+            &root.join("agents/hooks/docs/logs/audit/2026-05-19.jsonl"),
+            "{}\n",
+        )?;
+
+        let paths = protected_paths(&root)?;
+
+        assert!(
+            !paths
+                .iter()
+                .any(|path| path.contains("docs/logs/audit/2026-05-19.jsonl"))
+        );
 
         std::fs::remove_dir_all(root)?;
         Ok(())
