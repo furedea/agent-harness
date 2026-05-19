@@ -21,19 +21,33 @@ const MANAGED_KEYS: &[&str] = &[
 ];
 
 pub fn write_config_source(source: &Path, out: &Path) -> Result<()> {
-    let base_path = source.join("codex/config.toml");
-    let base = std::fs::read_to_string(&base_path)
-        .with_context(|| format!("failed to read TOML file {}", base_path.display()))?;
-    let content = format!(
-        "{}\n{}",
-        base.trim_end(),
-        protection::codex_config_fragment(source)?
-    );
-    write_file(out, &content)
+    write_file(out, &config_source_content(source)?)
+}
+
+pub fn sync_generated_config(source: &Path, target_path: &Path) -> Result<()> {
+    let source = config_source_content(source)?
+        .parse::<DocumentMut>()
+        .context("failed to parse generated Codex config source")?;
+    sync_managed_document(source, target_path)
 }
 
 pub fn sync_managed_config(source_path: &Path, target_path: &Path) -> Result<()> {
     let source = read_toml_document(source_path)?;
+    sync_managed_document(source, target_path)
+}
+
+fn config_source_content(source: &Path) -> Result<String> {
+    let base_path = source.join("codex/config.toml");
+    let base = std::fs::read_to_string(&base_path)
+        .with_context(|| format!("failed to read TOML file {}", base_path.display()))?;
+    Ok(format!(
+        "{}\n{}",
+        base.trim_end(),
+        protection::codex_config_fragment(source)?
+    ))
+}
+
+fn sync_managed_document(source: DocumentMut, target_path: &Path) -> Result<()> {
     let mut target = if target_path.exists() {
         read_toml_document(target_path)?
     } else {

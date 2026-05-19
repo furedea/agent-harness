@@ -58,10 +58,7 @@ pub fn install(source: &Path, out: &Path, mode: InstallMode) -> Result<()> {
         &out.join(".claude/rules/forbidden_commands.json"),
     )?;
 
-    codex_config::sync_managed_config(
-        &source.join("codex/config.toml"),
-        &out.join(".codex/config.toml"),
-    )?;
+    codex_config::sync_generated_config(source, &out.join(".codex/config.toml"))?;
 
     Ok(())
 }
@@ -116,6 +113,11 @@ mod tests {
         assert!(out.join(".claude/rules/forbidden_commands.json").is_file());
         assert!(out.join(".codex/config.toml").is_file());
         assert!(out.join(".claude/settings.json").is_file());
+
+        let codex_config = std::fs::read_to_string(out.join(".codex/config.toml"))?;
+        assert!(codex_config.contains("[permissions.guarded.filesystem]"));
+        assert!(codex_config.contains("\"~/.codex/hooks/hook.sh\" = \"read\""));
+        assert!(codex_config.contains("\"~/.claude/hooks/hook.sh\" = \"read\""));
 
         std::fs::remove_dir_all(root)?;
         Ok(())
