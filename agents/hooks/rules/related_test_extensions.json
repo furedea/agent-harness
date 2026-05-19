@@ -29,7 +29,7 @@
     "tests/hooks/claude/lint_format_hooks.bats"
   ],
   "agents/hooks/rules/secret_content_patterns.json": [
-    "tests/hooks/config/secret_patterns.bats",
+    "tests/hooks/rules/secret_patterns.bats",
     "tests/hooks/claude/related_test_rules.bats"
   ],
   "agents/hooks/rules/related_test_*.json": [
@@ -52,7 +52,7 @@
   ],
   "src/command_policy.rs": [
     "tests/generated_artifacts.rs",
-    "tests/hooks/config/codex_execpolicy.bats",
+    "tests/codex/execpolicy.bats",
     "tests/hooks/claude/guard_allowed_commands.bats"
   ],
   "src/protection.rs": [
@@ -70,7 +70,7 @@
   ],
   "agents/command_policy.json": [
     "tests/generated_artifacts.rs",
-    "tests/hooks/config/codex_execpolicy.bats",
+    "tests/codex/execpolicy.bats",
     "tests/hooks/claude/guard_allowed_commands.bats"
   ],
   "src/skills.rs": [

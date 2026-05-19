@@ -118,12 +118,12 @@ setup() {
 @test "command policy data triggers generated settings tests on both providers" {
   result=$(jq -r '."agents/command_policy.json"[]' "$RULES")
   [[ "$result" == *tests/generated_artifacts.rs* ]]
-  [[ "$result" == *codex_execpolicy.bats* ]]
+  [[ "$result" == *tests/codex/execpolicy.bats* ]]
   [[ "$result" == *guard_allowed_commands.bats* ]]
 
   code=$(jq -r '."src/command_policy.rs"[]' "$RULES")
   [[ "$code" == *tests/generated_artifacts.rs* ]]
-  [[ "$code" == *codex_execpolicy.bats* ]]
+  [[ "$code" == *tests/codex/execpolicy.bats* ]]
   [[ "$code" == *guard_allowed_commands.bats* ]]
 }
 

@@ -2,7 +2,7 @@
 # Validate generated Codex execpolicy rules against the installed Codex CLI.
 
 setup() {
-  REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/../../.." && pwd)"
+  REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
 }
 
 require_codex_execpolicy() {
