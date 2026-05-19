@@ -17,6 +17,9 @@ agent-harness generate-claude-hooks \
 agent-harness generate-codex-config-source \
   --source . \
   --output /tmp/codex-config-source.toml
+agent-harness generate-codex-config-fragment \
+  --source . \
+  --output /tmp/codex-config-fragment.toml
 agent-harness generate-codex-hooks \
   --source . \
   --output "$HOME/.codex/hooks.json"
