@@ -54,6 +54,7 @@ fn claude_settings_render_from_real_source() {
         .collect::<BTreeSet<_>>();
     assert!(deny_write.contains("~/.claude/hooks/guard_allowed_commands.sh"));
     assert!(deny_write.contains("~/.codex/hooks/adapt_shell_command.sh"));
+    assert!(!deny_write.iter().any(|path| path.starts_with('/')));
     assert!(!deny_write.iter().any(|path| path.contains("/skills/")));
 
     assert_all_hook_commands_resolve(&generated);
@@ -102,6 +103,7 @@ fn codex_config_outputs_render_from_real_source() {
         filesystem["~/.codex/hooks/adapt_shell_command.sh"].as_str(),
         Some("read"),
     );
+    assert!(!filesystem.iter().any(|(key, _)| key.starts_with('/')));
     assert!(!filesystem.iter().any(|(key, _)| key.contains("/skills/")));
     assert!(
         filesystem
