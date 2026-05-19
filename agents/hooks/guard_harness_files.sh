@@ -22,6 +22,8 @@ case "$FILE_PATH" in
     "~/.claude/hooks/"* | "~/.claude/rules/forbidden_commands.json" | "~/.claude/settings.json" | "~/.claude/CLAUDE.md" | \
     "$HOME/.codex/hooks/"* | "$HOME/.codex/hooks.json" | "$HOME/.codex/AGENTS.md" | "$HOME/.codex/rules/default.rules" | \
     "~/.codex/hooks/"* | "~/.codex/hooks.json" | "~/.codex/AGENTS.md" | "~/.codex/rules/default.rules" | \
+    */agent-harness/agents/hooks/* | */agent-harness/agents/AGENTS.md | \
+    */agent-harness/codex/hooks/* | */agent-harness/codex/hooks.json | \
     */dotfiles/agents/hooks/* | */dotfiles/agents/AGENTS.md | \
     */dotfiles/codex/hooks/* | */dotfiles/codex/hooks.json)
     log_blocked "$TOOL" "$FILE_PATH" "agent harness boundary is protected" guard_harness_files.sh "$SESSION"

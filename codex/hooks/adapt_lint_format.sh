@@ -63,14 +63,22 @@ function run_file_hook() {
   fi
 
   local _output
+  local _stderr_file
+  local _status
+  _stderr_file="$(mktemp)"
   _output="$(jq -n --arg file_path "$_file_path" \
     '{
 			tool_name: "Edit",
-			tool_input: {
-				file_path: $file_path
-			}
-		}' |
-    "$_hook" 2>&1)" || true
+		tool_input: {
+			file_path: $file_path
+		}
+	}' |
+    "$_hook" 2>|"$_stderr_file")" || _status=$?
+  _status="${_status:-0}"
+  if [[ "$_status" -ne 0 && -s "$_stderr_file" ]]; then
+    _output="${_output}${_output:+$'\n'}$(cat "$_stderr_file")"
+  fi
+  rm -f "$_stderr_file"
 
   [[ -z "$_output" ]] && return 0
 
