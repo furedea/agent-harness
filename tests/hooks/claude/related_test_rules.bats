@@ -95,42 +95,42 @@ setup() {
 
 @test "codex config source fans out to generated config tests" {
   result=$(jq -r '."src/codex_config.rs"[]' "$RULES")
-  [[ "$result" == *tests/generator_outputs.rs* ]]
+  [[ "$result" == *tests/generated_artifacts.rs* ]]
 
   data=$(jq -r '."codex/config.toml"[]' "$RULES")
-  [[ "$data" == *tests/generator_outputs.rs* ]]
+  [[ "$data" == *tests/generated_artifacts.rs* ]]
 }
 
 @test "hook configuration fans out to generated provider tests" {
   config=$(jq -r '."agents/hooks.json"[]' "$RULES")
-  [[ "$config" == *tests/generator_outputs.rs* ]]
+  [[ "$config" == *tests/generated_artifacts.rs* ]]
 
   code=$(jq -r '."src/hooks.rs"[]' "$RULES")
-  [[ "$code" == *tests/generator_outputs.rs* ]]
+  [[ "$code" == *tests/generated_artifacts.rs* ]]
 }
 
 @test "settings.base.json triggers lock tests and allowlist" {
   result=$(jq -r '."claude/settings.base.json"[]' "$RULES")
-  [[ "$result" == *tests/generator_outputs.rs* ]]
+  [[ "$result" == *tests/generated_artifacts.rs* ]]
   [[ "$result" == *guard_allowed_commands.bats* ]]
 }
 
 @test "command policy data triggers generated settings tests on both providers" {
   result=$(jq -r '."agents/command_policy.json"[]' "$RULES")
-  [[ "$result" == *tests/generator_outputs.rs* ]]
+  [[ "$result" == *tests/generated_artifacts.rs* ]]
   [[ "$result" == *codex_execpolicy.bats* ]]
   [[ "$result" == *guard_allowed_commands.bats* ]]
 
   code=$(jq -r '."src/command_policy.rs"[]' "$RULES")
-  [[ "$code" == *tests/generator_outputs.rs* ]]
+  [[ "$code" == *tests/generated_artifacts.rs* ]]
   [[ "$code" == *codex_execpolicy.bats* ]]
   [[ "$code" == *guard_allowed_commands.bats* ]]
 }
 
 @test "agents/skills/* triggers skills render test" {
   result=$(jq -r '."agents/skills/*"[]' "$RULES")
-  [ "$result" = "tests/generator_outputs.rs" ]
+  [ "$result" = "tests/generated_artifacts.rs" ]
 
   code=$(jq -r '."src/skills.rs"[]' "$RULES")
-  [ "$code" = "tests/generator_outputs.rs" ]
+  [ "$code" = "tests/generated_artifacts.rs" ]
 }

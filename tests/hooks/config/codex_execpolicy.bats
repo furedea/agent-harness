@@ -1,8 +1,13 @@
 #!/usr/bin/env bats
-# Validate generated Codex execpolicy rules against the Codex CLI parser.
+# Validate generated Codex execpolicy rules against the installed Codex CLI.
 
 setup() {
   REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/../../.." && pwd)"
+}
+
+require_codex_execpolicy() {
+  command -v codex >/dev/null
+  codex execpolicy check --help >/dev/null 2>&1
 }
 
 codex_rules() {
@@ -13,6 +18,8 @@ codex_rules() {
 }
 
 check_rule() {
+  require_codex_execpolicy
+
   local expected="$1"
   shift
 
