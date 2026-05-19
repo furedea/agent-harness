@@ -35,12 +35,21 @@
           lefthook
           ls-lint
           nixfmt-rfc-style
-          python3
           rustc
           rustfmt
           statix
           uv
         ];
+
+        env = {
+          UV_MANAGED_PYTHON = "1";
+        };
+
+        shellHook = ''
+          if [ -d .venv/bin ]; then
+            export PATH="$PWD/.venv/bin:$PATH"
+          fi
+        '';
       };
     };
 }
