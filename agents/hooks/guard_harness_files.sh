@@ -18,8 +18,8 @@ FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // .tool_input.path // 
 
 # shellcheck disable=SC2088  # literal "~/" patterns are matched intentionally
 case "$FILE_PATH" in
-  "$HOME/.claude/hooks/"* | "$HOME/.claude/rules/forbidden_commands.json" | "$HOME/.claude/settings.json" | "$HOME/.claude/CLAUDE.md" | \
-    "~/.claude/hooks/"* | "~/.claude/rules/forbidden_commands.json" | "~/.claude/settings.json" | "~/.claude/CLAUDE.md" | \
+  "$HOME/.claude/hooks/"* | "$HOME/.claude/settings.json" | "$HOME/.claude/CLAUDE.md" | \
+    "~/.claude/hooks/"* | "~/.claude/settings.json" | "~/.claude/CLAUDE.md" | \
     "$HOME/.codex/hooks/"* | "$HOME/.codex/hooks.json" | "$HOME/.codex/AGENTS.md" | "$HOME/.codex/rules/default.rules" | \
     "~/.codex/hooks/"* | "~/.codex/hooks.json" | "~/.codex/AGENTS.md" | "~/.codex/rules/default.rules" | \
     */agent-harness/agents/hooks/* | */agent-harness/agents/AGENTS.md | \

@@ -38,6 +38,14 @@ let
       --output $out
   '';
 
+  claudeHooks = pkgs.runCommand "claude-hooks" { } ''
+    mkdir -p $out
+    cp -R ${cfg.source}/agents/hooks/. $out/
+    chmod -R u+w $out
+    mkdir -p $out/rules
+    cp ${claudeForbiddenCommands} $out/rules/forbidden_commands.json
+  '';
+
   codexSkills = pkgs.runCommand "codex-skills" { } ''
     ${lib.getExe cfg.package} generate-skills \
       --source ${cfg.source} \
@@ -95,8 +103,7 @@ in
         })
         (lib.mkIf cfg.claude.enable {
           ".claude/CLAUDE.md".source = "${cfg.source}/agents/AGENTS.md";
-          ".claude/hooks".source = "${cfg.source}/agents/hooks";
-          ".claude/rules/forbidden_commands.json".source = claudeForbiddenCommands;
+          ".claude/hooks".source = claudeHooks;
           ".claude/settings.json".source = claudeSettings;
           ".claude/skills".source = claudeSkills;
           ".claude/statusline".source = "${cfg.source}/claude/statusline";

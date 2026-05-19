@@ -9,7 +9,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib/shell_parse.sh"
 # shellcheck disable=SC1091
 source "$(dirname "${BASH_SOURCE[0]}")/lib/audit_log.sh"
 
-readonly DEFAULT_RULES_FILE="$HOME/.claude/rules/forbidden_commands.json"
+readonly DEFAULT_RULES_FILE="$HOME/.claude/hooks/rules/forbidden_commands.json"
 readonly RULES_FILE="${AGENT_FORBIDDEN_COMMAND_RULES:-$DEFAULT_RULES_FILE}"
 
 if ! command -v jq >/dev/null 2>&1; then

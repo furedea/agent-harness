@@ -25,7 +25,12 @@ fn claude_settings_render_from_real_source() {
     assert_eq!(generated["model"], base["model"]);
     assert_eq!(generated["language"], base["language"]);
     assert!(base.get("hooks").is_none());
-    assert!(generated["hooks"]["PreToolUse"].as_array().unwrap().len() > 0);
+    assert!(
+        !generated["hooks"]["PreToolUse"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
 
     assert_eq!(
         non_generated_permissions(&generated, "allow"),
@@ -53,6 +58,8 @@ fn claude_settings_render_from_real_source() {
         .map(|value| value.as_str().unwrap().to_owned())
         .collect::<BTreeSet<_>>();
     assert!(deny_write.contains("~/.claude/hooks/guard_allowed_commands.sh"));
+    assert!(deny_write.contains("~/.claude/hooks/rules/forbidden_commands.json"));
+    assert!(!deny_write.contains("~/.claude/rules/forbidden_commands.json"));
     assert!(deny_write.contains("~/.codex/hooks/adapt_shell_command.sh"));
     assert!(!deny_write.iter().any(|path| path.starts_with('/')));
     assert!(!deny_write.iter().any(|path| path.contains("/skills/")));
@@ -98,6 +105,15 @@ fn codex_config_outputs_render_from_real_source() {
     assert_eq!(
         filesystem["~/.claude/hooks/guard_allowed_commands.sh"].as_str(),
         Some("read"),
+    );
+    assert_eq!(
+        filesystem["~/.claude/hooks/rules/forbidden_commands.json"].as_str(),
+        Some("read"),
+    );
+    assert!(
+        filesystem
+            .get("~/.claude/rules/forbidden_commands.json")
+            .is_none()
     );
     assert_eq!(
         filesystem["~/.codex/hooks/adapt_shell_command.sh"].as_str(),

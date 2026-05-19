@@ -48,7 +48,7 @@ pub fn protected_paths(source: &Path) -> Result<Vec<String>> {
     paths.extend(home_codex_hook_paths(&codex_hooks));
     paths.extend([
         "~/.claude/CLAUDE.md".to_string(),
-        "~/.claude/rules/forbidden_commands.json".to_string(),
+        "~/.claude/hooks/rules/forbidden_commands.json".to_string(),
         "~/.claude/settings.json".to_string(),
         "~/.codex/AGENTS.md".to_string(),
         "~/.codex/hooks.json".to_string(),
@@ -115,6 +115,7 @@ mod tests {
         let paths = protected_paths(&root)?;
 
         assert!(paths.contains(&"~/.claude/hooks/guard.sh".to_string()));
+        assert!(paths.contains(&"~/.claude/hooks/rules/forbidden_commands.json".to_string()));
         assert!(paths.contains(&"~/.codex/hooks/adapt.sh".to_string()));
         assert!(paths.contains(&"~/.codex/hooks.json".to_string()));
         assert!(
