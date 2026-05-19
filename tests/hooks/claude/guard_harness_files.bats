@@ -53,7 +53,7 @@ get_last_log() {
 
 @test "blocks generated forbidden command rules" {
   CLAUDE_PROJECT_DIR="$LOG_TMPDIR" run bash "$HOOK" \
-    <<<"$(make_edit_input Edit "$HOME/.claude/rules/forbidden_commands.json")"
+    <<<"$(make_edit_input Edit "$HOME/.claude/hooks/rules/forbidden_commands.json")"
 
   [ "$status" -eq 2 ]
 }

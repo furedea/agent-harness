@@ -7,7 +7,7 @@ This repository owns reusable agent assets such as skills, hooks, command policy
 ## Commands
 
 ```bash
-agent-harness install --source . --prefix "$HOME" --mode copy
+agent-harness install --source . --prefix "$HOME"
 agent-harness generate-claude-settings \
   --source . \
   --output "$HOME/.claude/settings.json"
@@ -28,7 +28,7 @@ agent-harness generate-codex-rules \
   --output "$HOME/.codex/rules/default.rules"
 agent-harness generate-forbidden-commands \
   --source . \
-  --output "$HOME/.claude/rules/forbidden_commands.json"
+  --output "$HOME/.claude/hooks/rules/forbidden_commands.json"
 agent-harness generate-skills \
   --source . \
   --provider codex \

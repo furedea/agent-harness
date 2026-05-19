@@ -31,24 +31,6 @@ pub fn copy_dir(source: &Path, target: &Path) -> Result<()> {
     Ok(())
 }
 
-pub fn symlink_dir(source: &Path, target: &Path) -> Result<()> {
-    if target.exists() {
-        std::fs::remove_dir_all(target)
-            .with_context(|| format!("failed to remove directory {}", target.display()))?;
-    }
-    if let Some(parent) = target.parent() {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("failed to create directory {}", parent.display()))?;
-    }
-    std::os::unix::fs::symlink(source, target).with_context(|| {
-        format!(
-            "failed to create symlink {} -> {}",
-            target.display(),
-            source.display(),
-        )
-    })
-}
-
 pub fn copy_file(source: &Path, target: &Path) -> Result<()> {
     if let Some(parent) = target.parent() {
         std::fs::create_dir_all(parent)

@@ -55,15 +55,6 @@ struct InstallArgs {
 
     #[arg(long)]
     prefix: Option<PathBuf>,
-
-    #[arg(long, value_enum, default_value_t = InstallMode::Copy)]
-    mode: InstallMode,
-}
-
-#[derive(Debug, Clone, Copy, ValueEnum)]
-enum InstallMode {
-    Copy,
-    Symlink,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -117,7 +108,7 @@ pub fn run() -> Result<()> {
         }
         Command::Install(args) => {
             let prefix = args.prefix.unwrap_or_else(default_home_dir);
-            render::install(&args.source, &prefix, args.mode.into())
+            render::install(&args.source, &prefix)
         }
         Command::SyncCodexConfig(args) => {
             codex_config::sync_managed_config(&args.source, &args.target)
@@ -131,15 +122,6 @@ pub fn run() -> Result<()> {
 
 fn default_home_dir() -> PathBuf {
     std::env::var_os("HOME").map_or_else(|| PathBuf::from("."), PathBuf::from)
-}
-
-impl From<InstallMode> for render::InstallMode {
-    fn from(mode: InstallMode) -> Self {
-        match mode {
-            InstallMode::Copy => Self::Copy,
-            InstallMode::Symlink => Self::Symlink,
-        }
-    }
 }
 
 impl From<Provider> for render::Provider {

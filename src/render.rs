@@ -5,12 +5,6 @@ use anyhow::Result;
 use crate::{claude_config, codex_config, command_policy, fs_ops, hooks, skills};
 
 #[derive(Debug, Clone, Copy)]
-pub enum InstallMode {
-    Copy,
-    Symlink,
-}
-
-#[derive(Debug, Clone, Copy)]
 pub enum Provider {
     Claude,
     Codex,
@@ -28,7 +22,7 @@ pub fn generate_skills(source: &Path, provider: Provider, out: &Path) -> Result<
     skills::render_skills(source, provider, out)
 }
 
-pub fn install(source: &Path, out: &Path, mode: InstallMode) -> Result<()> {
+pub fn install(source: &Path, out: &Path) -> Result<()> {
     fs_ops::copy_file(
         &source.join("agents/AGENTS.md"),
         &out.join(".codex/AGENTS.md"),
@@ -37,16 +31,11 @@ pub fn install(source: &Path, out: &Path, mode: InstallMode) -> Result<()> {
         &source.join("agents/AGENTS.md"),
         &out.join(".claude/CLAUDE.md"),
     )?;
-    install_path(&source.join("codex/hooks"), &out.join(".codex/hooks"), mode)?;
-    install_path(
-        &source.join("agents/hooks"),
-        &out.join(".claude/hooks"),
-        mode,
-    )?;
-    install_path(
+    fs_ops::copy_dir(&source.join("codex/hooks"), &out.join(".codex/hooks"))?;
+    fs_ops::copy_dir(&source.join("agents/hooks"), &out.join(".claude/hooks"))?;
+    fs_ops::copy_dir(
         &source.join("claude/statusline"),
         &out.join(".claude/statusline"),
-        mode,
     )?;
     hooks::write_codex_hooks(source, &out.join(".codex/hooks.json"))?;
     generate_skills(source, Provider::Codex, &out.join(".codex/skills"))?;
@@ -55,7 +44,7 @@ pub fn install(source: &Path, out: &Path, mode: InstallMode) -> Result<()> {
     command_policy::write_codex_rules(source, &out.join(".codex/rules/default.rules"))?;
     command_policy::write_forbidden_commands(
         source,
-        &out.join(".claude/rules/forbidden_commands.json"),
+        &out.join(".claude/hooks/rules/forbidden_commands.json"),
     )?;
 
     codex_config::sync_generated_config(source, &out.join(".codex/config.toml"))?;
@@ -70,7 +59,7 @@ pub fn verify(root: &Path) -> Result<()> {
         root.join(".codex/rules/default.rules"),
         root.join(".codex/skills"),
         root.join(".claude/CLAUDE.md"),
-        root.join(".claude/rules/forbidden_commands.json"),
+        root.join(".claude/hooks/rules/forbidden_commands.json"),
         root.join(".claude/settings.json"),
         root.join(".claude/skills"),
     ] {
@@ -79,13 +68,6 @@ pub fn verify(root: &Path) -> Result<()> {
         }
     }
     Ok(())
-}
-
-fn install_path(source: &Path, target: &Path, mode: InstallMode) -> Result<()> {
-    match mode {
-        InstallMode::Copy => fs_ops::copy_dir(source, target),
-        InstallMode::Symlink => fs_ops::symlink_dir(source, target),
-    }
 }
 
 #[cfg(test)]
@@ -102,7 +84,7 @@ mod tests {
         let out = root.join("out");
         write_minimal_source(&source)?;
 
-        install(&source, &out, InstallMode::Copy)?;
+        install(&source, &out)?;
 
         assert!(out.join(".codex/AGENTS.md").is_file());
         assert!(out.join(".codex/hooks.json").is_file());
@@ -110,7 +92,16 @@ mod tests {
         assert!(out.join(".codex/skills/example/SKILL.md").is_file());
         assert!(out.join(".codex/rules/default.rules").is_file());
         assert!(out.join(".claude/skills/example/SKILL.md").is_file());
-        assert!(out.join(".claude/rules/forbidden_commands.json").is_file());
+        assert!(
+            out.join(".claude/hooks/rules/forbidden_commands.json")
+                .is_file()
+        );
+        assert!(!out.join(".claude/rules/forbidden_commands.json").exists());
+        assert!(
+            !source
+                .join("agents/hooks/rules/forbidden_commands.json")
+                .exists()
+        );
         assert!(out.join(".codex/config.toml").is_file());
         assert!(out.join(".claude/settings.json").is_file());
 

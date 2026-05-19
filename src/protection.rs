@@ -48,16 +48,12 @@ pub fn protected_paths(source: &Path) -> Result<Vec<String>> {
     paths.extend(home_codex_hook_paths(&codex_hooks));
     paths.extend([
         "~/.claude/CLAUDE.md".to_string(),
-        "~/.claude/rules/forbidden_commands.json".to_string(),
+        "~/.claude/hooks/rules/forbidden_commands.json".to_string(),
         "~/.claude/settings.json".to_string(),
         "~/.codex/AGENTS.md".to_string(),
         "~/.codex/hooks.json".to_string(),
         "~/.codex/rules/default.rules".to_string(),
     ]);
-    paths.extend(source_agent_hook_paths(source, &agent_hooks));
-    paths.extend(source_codex_hook_paths(source, &codex_hooks));
-    paths.push(source.join("agents/AGENTS.md").display().to_string());
-
     Ok(paths)
 }
 
@@ -92,20 +88,6 @@ fn home_codex_hook_paths(paths: &[String]) -> Vec<String> {
         .collect()
 }
 
-fn source_agent_hook_paths(source: &Path, paths: &[String]) -> Vec<String> {
-    paths
-        .iter()
-        .map(|path| source.join("agents/hooks").join(path).display().to_string())
-        .collect()
-}
-
-fn source_codex_hook_paths(source: &Path, paths: &[String]) -> Vec<String> {
-    paths
-        .iter()
-        .map(|path| source.join("codex/hooks").join(path).display().to_string())
-        .collect()
-}
-
 fn toml_escape(value: &str) -> String {
     value.replace('\\', "\\\\").replace('"', "\\\"")
 }
@@ -126,18 +108,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn protected_paths_include_home_and_source_harness_files() -> Result<()> {
-        let root = test_root("protected_paths_include_home_and_source_harness_files")?;
+    fn protected_paths_include_installed_harness_files_only() -> Result<()> {
+        let root = test_root("protected_paths_include_installed_harness_files_only")?;
         write_minimal_source(&root)?;
 
         let paths = protected_paths(&root)?;
 
         assert!(paths.contains(&"~/.claude/hooks/guard.sh".to_string()));
+        assert!(paths.contains(&"~/.claude/hooks/rules/forbidden_commands.json".to_string()));
         assert!(paths.contains(&"~/.codex/hooks/adapt.sh".to_string()));
         assert!(paths.contains(&"~/.codex/hooks.json".to_string()));
-        assert!(paths.contains(&root.join("agents/hooks/guard.sh").display().to_string()));
-        assert!(paths.contains(&root.join("codex/hooks/adapt.sh").display().to_string()));
-        assert!(paths.contains(&root.join("agents/AGENTS.md").display().to_string()));
+        assert!(
+            !paths
+                .iter()
+                .any(|path| path.starts_with(&root.display().to_string()))
+        );
 
         std::fs::remove_dir_all(root)?;
         Ok(())
