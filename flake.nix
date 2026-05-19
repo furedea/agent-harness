@@ -35,9 +35,11 @@
           lefthook
           ls-lint
           nixfmt-rfc-style
+          python3
           rustc
           rustfmt
           statix
+          uv
         ];
       };
     };

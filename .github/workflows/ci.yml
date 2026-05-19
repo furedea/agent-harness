@@ -104,6 +104,49 @@ jobs:
       - name: Run tests
         run: cargo test
 
+  python-lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@ab739621df7a23f52766f9ccc97f38da6b7af14f # v31.10.5
+
+      - name: Run ruff format
+        env:
+          UV_PYTHON_DOWNLOADS: never
+        run: nix shell nixpkgs#uv nixpkgs#python314 --command uv run --frozen ruff format --check agents/skills tests/python
+
+      - name: Run ruff check
+        env:
+          UV_PYTHON_DOWNLOADS: never
+        run: nix shell nixpkgs#uv nixpkgs#python314 --command uv run --frozen ruff check agents/skills tests/python
+
+  python-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@ab739621df7a23f52766f9ccc97f38da6b7af14f # v31.10.5
+
+      - name: Run Python skill script tests
+        env:
+          UV_PYTHON_DOWNLOADS: never
+        run: nix shell nixpkgs#uv nixpkgs#python314 --command uv run --frozen pytest tests/python
+
   audit:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -123,7 +166,7 @@ jobs:
 
   all-green:
     if: always()
-    needs: [nix-lint, lint, format, test, audit]
+    needs: [nix-lint, lint, format, test, python-lint, python-test, audit]
     runs-on: ubuntu-latest
     timeout-minutes: 1
     permissions: {}

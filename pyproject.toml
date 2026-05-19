@@ -1,0 +1,106 @@
+[project]
+name = "agent-harness-python-tools"
+version = "0.1.0"
+description = "Python tooling and tests for agent-harness skill scripts."
+requires-python = "== 3.14.*"
+dependencies = []
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests/python"]
+
+[tool.uv]
+managed = true
+default-groups = ["lint", "test"]
+exclude-newer = "1 week"
+
+[dependency-groups]
+lint = [
+  "ruff==0.15.11",
+]
+test = [
+  "pytest==9.0.3",
+]
+
+[tool.ruff]
+target-version = "py314"
+src = ["agents/skills", "tests/python"]
+line-length = 119
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+docstring-code-format = true
+
+[tool.ruff.lint]
+select = [
+  "AIR",
+  "FAST",
+  "YTT",
+  "ANN",
+  "ASYNC",
+  "B",
+  "A",
+  "C4",
+  "DTZ",
+  "T10",
+  "DJ",
+  "FIX",
+  "FA",
+  "INT",
+  "LOG",
+  "G",
+  "PIE",
+  "PYI",
+  "Q",
+  "SLOT",
+  "TID",
+  "TD",
+  "ARG",
+  "PTH",
+  "FLY",
+  "I",
+  "NPY",
+  "PD",
+  "PERF",
+  "E",
+  "W",
+  "F",
+  "PGH",
+  "PLC",
+  "PLE",
+  "PLR",
+  "PLW",
+  "UP",
+  "FURB",
+  "RUF",
+  "INP",
+]
+ignore = [
+  "ANN201",
+  "ANN202",
+  "ARG001",
+  "B007",
+  "C401",
+  "DTZ005",
+  "E402",
+  "E501",
+  "F541",
+  "FURB110",
+  "FURB122",
+  "FURB162",
+  "FURB171",
+  "I001",
+  "INP001",
+  "PERF401",
+  "PGH004",
+  "PLR0913",
+  "PLR2004",
+  "PLR0911",
+  "PLR0912",
+  "PTH",
+  "PLW2901",
+  "RUF005",
+  "UP015",
+  "UP017",
+]
