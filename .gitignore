@@ -12,3 +12,37 @@ logs/
 .idea/
 
 /target
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+dist/
+build/
+*.egg-info/
+*.egg
+.ruff_cache/
+.uv-cache/
+
+# Testing
+.coverage
+.coverage.*
+*.cover
+*.py,cover
+.pytest_cache/
+.hypothesis/
+htmlcov/
+coverage.xml
+.cache
+.tox/
+.nox/
+
+# Documentation
+docs/_build/
+/site
+
+# Jupyter
+.ipynb_checkpoints
