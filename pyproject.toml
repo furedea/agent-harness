@@ -3,23 +3,48 @@ name = "agent-harness-python-tools"
 version = "0.1.0"
 description = "Python tooling and tests for agent-harness skill scripts."
 requires-python = "== 3.14.*"
-dependencies = []
+dependencies = [
+  "tiktoken==0.12.0",
+]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests/python"]
 
+[tool.deptry]
+ignore_notebooks = true
+known_first_party = [
+  "collect_skills",
+  "collect_transcripts",
+  "generate_report",
+]
+
+[tool.vulture]
+paths = ["agents/skills", "tests/python", "vulture_allowlist.py"]
+min_confidence = 100
+sort_by_size = true
+exclude = [".venv", "build", "dist"]
+
 [tool.uv]
 managed = true
-default-groups = ["lint", "test"]
+default-groups = ["lint", "typecheck", "test"]
 exclude-newer = "1 week"
 
 [dependency-groups]
 lint = [
   "ruff==0.15.11",
 ]
+typecheck = [
+  "ty==0.0.31",
+]
 test = [
   "pytest==9.0.3",
+  "pytest-cov==7.1.0",
+  "pytest-mock==3.15.1",
+]
+audit = [
+  "deptry==0.25.1",
+  "vulture==2.16",
 ]
 
 [tool.ruff]
@@ -104,3 +129,38 @@ ignore = [
   "UP015",
   "UP017",
 ]
+
+[tool.ty.src]
+include = ["agents/skills", "tests/python"]
+
+[tool.ty.analysis]
+respect-type-ignore-comments = true
+
+[tool.ty.rules]
+deprecated = "warn"
+
+invalid-argument-type = "error"
+invalid-assignment = "error"
+invalid-attribute-access = "error"
+invalid-method-override = "error"
+invalid-parameter-default = "error"
+invalid-return-type = "error"
+invalid-type-arguments = "error"
+
+missing-argument = "error"
+no-matching-overload = "error"
+not-subscriptable = "error"
+
+unresolved-attribute = "error"
+unresolved-import = "error"
+unresolved-reference = "error"
+
+possibly-missing-attribute = "warn"
+possibly-missing-import = "warn"
+possibly-unresolved-reference = "warn"
+redundant-cast = "warn"
+unknown-argument = "warn"
+unused-type-ignore-comment = "warn"
+
+[tool.ty.terminal]
+error-on-warning = false
