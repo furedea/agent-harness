@@ -2,7 +2,7 @@ use std::path::Path;
 
 use anyhow::Result;
 
-use crate::{codex_config, command_policy, fs_ops, hooks};
+use crate::{claude_config, codex_config, command_policy, fs_ops, hooks};
 
 #[derive(Debug, Clone, Copy)]
 pub enum InstallMode {
@@ -17,11 +17,11 @@ pub enum Provider {
 }
 
 pub fn generate_claude_settings(source: &Path, out: &Path) -> Result<()> {
-    fs_ops::copy_file(&source.join("claude/settings.base.json"), out)
+    claude_config::write_settings(source, out)
 }
 
 pub fn generate_codex_config_source(source: &Path, out: &Path) -> Result<()> {
-    fs_ops::copy_file(&source.join("codex/config.toml"), out)
+    codex_config::write_config_source(source, out)
 }
 
 pub fn generate_skills(source: &Path, _provider: Provider, out: &Path) -> Result<()> {
@@ -130,7 +130,9 @@ mod tests {
 
         generate_claude_settings(&source, &out)?;
 
-        assert_eq!(std::fs::read_to_string(&out)?, "{}\n");
+        let content = std::fs::read_to_string(&out)?;
+        assert!(content.contains(r#""hooks""#));
+        assert!(content.contains(r#""permissions""#));
 
         std::fs::remove_dir_all(root)?;
         Ok(())
@@ -145,7 +147,9 @@ mod tests {
 
         generate_codex_config_source(&source, &out)?;
 
-        assert_eq!(std::fs::read_to_string(&out)?, "model = \"gpt-5.5\"\n");
+        let content = std::fs::read_to_string(&out)?;
+        assert!(content.contains("model = \"gpt-5.5\""));
+        assert!(content.contains("[permissions.guarded.filesystem]"));
 
         std::fs::remove_dir_all(root)?;
         Ok(())

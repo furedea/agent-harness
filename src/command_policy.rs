@@ -53,6 +53,24 @@ pub fn write_forbidden_commands(source: &Path, path: &Path) -> Result<()> {
     write_file(path, &content)
 }
 
+pub fn claude_allow_permissions(source: &Path) -> Result<Vec<String>> {
+    Ok(read_policy(source)?
+        .rules
+        .iter()
+        .filter(|rule| rule.decision == Decision::Allow)
+        .map(|rule| claude_permission(&rule.pattern))
+        .collect())
+}
+
+pub fn claude_deny_permissions(source: &Path) -> Result<Vec<String>> {
+    Ok(read_policy(source)?
+        .rules
+        .iter()
+        .filter(|rule| rule.decision == Decision::Forbidden)
+        .map(|rule| claude_permission(&rule.pattern))
+        .collect())
+}
+
 fn read_policy(source: &Path) -> Result<CommandPolicy> {
     let path = source.join("agents/command_policy.json");
     let content = std::fs::read_to_string(&path)
@@ -143,6 +161,10 @@ fn decision_name(decision: Decision) -> &'static str {
     }
 }
 
+fn claude_permission(pattern: &[String]) -> String {
+    format!("Bash({}:*)", pattern.join(" "))
+}
+
 fn write_file(path: &Path, content: &str) -> Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
@@ -194,6 +216,18 @@ mod tests {
                 .iter()
                 .any(|rule| rule.pattern == ["cargo".to_string()])
         );
+
+        std::fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn claude_permissions_use_bash_prefix_syntax() -> Result<()> {
+        let root = test_root("claude_permissions_use_bash_prefix_syntax")?;
+        write_policy(&root)?;
+
+        assert!(claude_allow_permissions(&root)?.contains(&"Bash(cargo:*)".to_string()));
+        assert!(claude_deny_permissions(&root)?.contains(&"Bash(curl:*)".to_string()));
 
         std::fs::remove_dir_all(root)?;
         Ok(())

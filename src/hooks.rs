@@ -18,7 +18,7 @@ struct HookConfig {
 /// Returns an error when the source hook configuration cannot be read or the
 /// output directory cannot be created or written.
 pub fn write_claude_hooks(source: &Path, path: &Path) -> Result<()> {
-    write_json(path, &read_hooks(source)?.claude)
+    write_json(path, &claude_hooks(source)?)
 }
 
 /// Write Codex hook settings as JSON.
@@ -28,7 +28,15 @@ pub fn write_claude_hooks(source: &Path, path: &Path) -> Result<()> {
 /// Returns an error when the source hook configuration cannot be read or the
 /// output directory cannot be created or written.
 pub fn write_codex_hooks(source: &Path, path: &Path) -> Result<()> {
-    write_json(path, &read_hooks(source)?.codex)
+    write_json(path, &codex_hooks(source)?)
+}
+
+pub fn claude_hooks(source: &Path) -> Result<Value> {
+    Ok(read_hooks(source)?.claude)
+}
+
+fn codex_hooks(source: &Path) -> Result<Value> {
+    Ok(read_hooks(source)?.codex)
 }
 
 fn read_hooks(source: &Path) -> Result<HookConfig> {

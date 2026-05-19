@@ -3,6 +3,8 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use toml_edit::DocumentMut;
 
+use crate::protection;
+
 const MANAGED_KEYS: &[&str] = &[
     "model",
     "model_reasoning_effort",
@@ -17,6 +19,18 @@ const MANAGED_KEYS: &[&str] = &[
     "default_permissions",
     "permissions",
 ];
+
+pub fn write_config_source(source: &Path, out: &Path) -> Result<()> {
+    let base_path = source.join("codex/config.toml");
+    let base = std::fs::read_to_string(&base_path)
+        .with_context(|| format!("failed to read TOML file {}", base_path.display()))?;
+    let content = format!(
+        "{}\n{}",
+        base.trim_end(),
+        protection::codex_config_fragment(source)?
+    );
+    write_file(out, &content)
+}
 
 pub fn sync_managed_config(source_path: &Path, target_path: &Path) -> Result<()> {
     let source = read_toml_document(source_path)?;
@@ -63,6 +77,14 @@ fn write_toml_document(path: &Path, document: &DocumentMut) -> Result<()> {
         .with_context(|| format!("failed to replace TOML file {}", path.display()))
 }
 
+fn write_file(path: &Path, content: &str) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create directory {}", parent.display()))?;
+    }
+    std::fs::write(path, content).with_context(|| format!("failed to write {}", path.display()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -100,6 +122,40 @@ trust_level = "trusted"
             Some("trusted"),
         );
 
+        Ok(())
+    }
+
+    #[test]
+    fn write_config_source_appends_guarded_filesystem_fragment() -> Result<()> {
+        let root = test_root("write_config_source_appends_guarded_filesystem_fragment")?;
+        write_minimal_source(&root)?;
+        let out = root.join("config.toml");
+
+        write_config_source(&root, &out)?;
+
+        let content = std::fs::read_to_string(&out)?;
+        assert!(content.contains("model = \"gpt-5.5\""));
+        assert!(content.contains("[permissions.guarded.filesystem]"));
+        assert!(content.contains("\"~/.codex/hooks/adapt.sh\" = \"read\""));
+
+        std::fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    fn test_root(name: &str) -> Result<std::path::PathBuf> {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)?
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("agent-harness-{name}-{nanos}"));
+        std::fs::create_dir_all(&root)?;
+        Ok(root)
+    }
+
+    fn write_minimal_source(source: &Path) -> Result<()> {
+        write_file(&source.join("codex/config.toml"), "model = \"gpt-5.5\"\n")?;
+        write_file(&source.join("agents/AGENTS.md"), "agent instructions\n")?;
+        write_file(&source.join("agents/hooks/guard.sh"), "#!/bin/bash\n")?;
+        write_file(&source.join("codex/hooks/adapt.sh"), "#!/bin/bash\n")?;
         Ok(())
     }
 }

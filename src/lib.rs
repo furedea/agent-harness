@@ -1,3 +1,4 @@
+mod claude_config;
 mod cli;
 mod codex_config;
 mod command_policy;

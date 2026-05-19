@@ -27,6 +27,18 @@ pub fn codex_config_fragment(source: &Path) -> Result<String> {
     Ok(content)
 }
 
+pub fn protected_claude_deny_permissions(source: &Path) -> Result<Vec<String>> {
+    let paths = protected_paths(source)?;
+    let mut permissions = Vec::with_capacity(paths.len() * 2);
+
+    for path in paths {
+        permissions.push(format!("Edit({path})"));
+        permissions.push(format!("Write({path})"));
+    }
+
+    Ok(permissions)
+}
+
 pub fn protected_paths(source: &Path) -> Result<Vec<String>> {
     let agent_hooks = relative_files(&source.join("agents/hooks"))?;
     let codex_hooks = relative_files(&source.join("codex/hooks"))?;
