@@ -21,5 +21,14 @@ pre-commit:
     clippy:
       glob: "*.rs"
       run: cargo clippy -- -D warnings
+    ruff-format:
+      glob: "*.py"
+      run: uv run --frozen ruff format --check agents/skills tests/python
+    ruff-check:
+      glob: "*.py"
+      run: uv run --frozen ruff check agents/skills tests/python
+    ty:
+      glob: "*.py"
+      run: uv run --frozen ty check
     ls-lint:
       run: git ls-files -z | xargs -0 ls_lint

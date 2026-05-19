@@ -104,7 +104,7 @@ jobs:
       - name: Run tests
         run: cargo test
 
-  audit:
+  rust-audit:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -121,9 +121,81 @@ jobs:
       - name: Run cargo-machete
         uses: bnjbvr/cargo-machete@ac30a525c0a8d163a92d727b3ff079ee3f6ecb08 # v0.9.2
 
+  lint-python:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          python-version: "3.14"
+          enable-cache: true
+          cache-python: true
+
+      - name: Run ruff format
+        run: uv run --python 3.14 --frozen ruff format --check agents/skills tests/python
+
+      - name: Run ruff check
+        run: uv run --python 3.14 --frozen ruff check agents/skills tests/python
+
+      - name: Run ty
+        run: uv run --python 3.14 --frozen ty check
+
+  test-python:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          python-version: "3.14"
+          enable-cache: true
+          cache-python: true
+
+      - name: Run Python skill script tests
+        run: uv run --python 3.14 --frozen pytest tests/python
+
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          python-version: "3.14"
+          enable-cache: true
+          cache-python: true
+
+      - name: Run deptry
+        run: uv run --python 3.14 --group audit deptry .
+
+      - name: Run vulture
+        run: uv run --python 3.14 --group audit vulture
+
   all-green:
     if: always()
-    needs: [nix-lint, lint, format, test, audit]
+    needs: [nix-lint, lint, format, test, rust-audit, lint-python, test-python, audit]
     runs-on: ubuntu-latest
     timeout-minutes: 1
     permissions: {}
