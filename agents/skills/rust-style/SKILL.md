@@ -361,6 +361,9 @@ fn collect_regular_files_into(dir: &Path, files: &mut Vec<PathBuf>) -> Result<()
 
 ## Public API Design
 
+- Reserve `pub` for APIs intended to be consumed outside the crate.
+- Use `pub(crate)` for items shared across internal modules, including inside private modules when it clarifies that the item is not an external API.
+- Keep items private when they are only used inside the current module.
 - Keep public APIs smaller than internal APIs.
 - Avoid exposing third-party types in public APIs unless that dependency is part of the intended API.
 - Use `#[non_exhaustive]` for public enums or structs that may need new variants or fields.

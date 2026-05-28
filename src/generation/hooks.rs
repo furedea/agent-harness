@@ -4,6 +4,8 @@ use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 use serde_json::Value;
 
+use crate::generation::io;
+
 #[derive(Debug, Deserialize)]
 struct HookConfig {
     version: u64,
@@ -11,27 +13,15 @@ struct HookConfig {
     codex: Value,
 }
 
-/// Write Claude Code hook settings as JSON.
-///
-/// # Errors
-///
-/// Returns an error when the source hook configuration cannot be read or the
-/// output directory cannot be created or written.
-pub fn write_claude_hooks(source: &Path, path: &Path) -> Result<()> {
-    write_json(path, &claude_hooks(source)?)
+pub(crate) fn write_claude_hooks(source: &Path, path: &Path) -> Result<()> {
+    io::write_json(path, &claude_hooks(source)?)
 }
 
-/// Write Codex hook settings as JSON.
-///
-/// # Errors
-///
-/// Returns an error when the source hook configuration cannot be read or the
-/// output directory cannot be created or written.
-pub fn write_codex_hooks(source: &Path, path: &Path) -> Result<()> {
-    write_json(path, &codex_hooks(source)?)
+pub(crate) fn write_codex_hooks(source: &Path, path: &Path) -> Result<()> {
+    io::write_json(path, &codex_hooks(source)?)
 }
 
-pub fn claude_hooks(source: &Path) -> Result<Value> {
+pub(crate) fn claude_hooks(source: &Path) -> Result<Value> {
     Ok(read_hooks(source)?.claude)
 }
 
@@ -60,16 +50,6 @@ fn validate_hooks(config: &HookConfig) -> Result<()> {
         bail!("hook config codex section must be a JSON object");
     }
     Ok(())
-}
-
-fn write_json(path: &Path, value: &Value) -> Result<()> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("failed to create directory {}", parent.display()))?;
-    }
-
-    let content = serde_json::to_string_pretty(value)? + "\n";
-    std::fs::write(path, content).with_context(|| format!("failed to write {}", path.display()))
 }
 
 #[cfg(test)]

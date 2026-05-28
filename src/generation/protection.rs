@@ -2,21 +2,15 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 
-use crate::fs_ops;
+use crate::{fs_ops, generation::io};
 
 const GLOB_SCAN_MAX_DEPTH: u64 = 5;
 
-/// Write the Codex guarded filesystem fragment as TOML.
-///
-/// # Errors
-///
-/// Returns an error when harness files cannot be enumerated or the output file
-/// cannot be written.
-pub fn write_codex_config_fragment(source: &Path, path: &Path) -> Result<()> {
-    write_file(path, &codex_config_fragment(source)?)
+pub(crate) fn write_codex_config_fragment(source: &Path, path: &Path) -> Result<()> {
+    io::write_file(path, &codex_config_fragment(source)?)
 }
 
-pub fn codex_config_fragment(source: &Path) -> Result<String> {
+pub(crate) fn codex_config_fragment(source: &Path) -> Result<String> {
     let mut content = String::from("[permissions.guarded.filesystem]\n");
 
     for path in protected_paths(source)? {
@@ -27,7 +21,7 @@ pub fn codex_config_fragment(source: &Path) -> Result<String> {
     Ok(content)
 }
 
-pub fn protected_claude_deny_permissions(source: &Path) -> Result<Vec<String>> {
+pub(crate) fn protected_claude_deny_permissions(source: &Path) -> Result<Vec<String>> {
     let paths = protected_paths(source)?;
     let mut permissions = Vec::with_capacity(paths.len() * 2);
 
@@ -39,7 +33,7 @@ pub fn protected_claude_deny_permissions(source: &Path) -> Result<Vec<String>> {
     Ok(permissions)
 }
 
-pub fn protected_paths(source: &Path) -> Result<Vec<String>> {
+pub(crate) fn protected_paths(source: &Path) -> Result<Vec<String>> {
     let agent_hooks = relative_files(&source.join("agents/hooks"))?;
     let codex_hooks = relative_files(&source.join("codex/hooks"))?;
     let mut paths = Vec::new();
@@ -90,14 +84,6 @@ fn home_codex_hook_paths(paths: &[String]) -> Vec<String> {
 
 fn toml_escape(value: &str) -> String {
     value.replace('\\', "\\\\").replace('"', "\\\"")
-}
-
-fn write_file(path: &Path, content: &str) -> Result<()> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("failed to create directory {}", parent.display()))?;
-    }
-    std::fs::write(path, content).with_context(|| format!("failed to write {}", path.display()))
 }
 
 #[cfg(test)]
@@ -175,6 +161,14 @@ mod tests {
         write_file(&source.join("agents/AGENTS.md"), "agent instructions\n")?;
         write_file(&source.join("agents/hooks/guard.sh"), "#!/bin/bash\n")?;
         write_file(&source.join("codex/hooks/adapt.sh"), "#!/bin/bash\n")?;
+        Ok(())
+    }
+
+    fn write_file(path: &Path, content: &str) -> Result<()> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(path, content)?;
         Ok(())
     }
 }

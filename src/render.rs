@@ -2,27 +2,30 @@ use std::path::Path;
 
 use anyhow::Result;
 
-use crate::{claude_config, codex_config, command_policy, fs_ops, hooks, skills};
+use crate::{
+    fs_ops,
+    generation::{claude_config, codex_config, command_policy, hooks, skills},
+};
 
 #[derive(Debug, Clone, Copy)]
-pub enum Provider {
+pub(crate) enum Provider {
     Claude,
     Codex,
 }
 
-pub fn generate_claude_settings(source: &Path, out: &Path) -> Result<()> {
+pub(crate) fn generate_claude_settings(source: &Path, out: &Path) -> Result<()> {
     claude_config::write_settings(source, out)
 }
 
-pub fn generate_codex_config_source(source: &Path, out: &Path) -> Result<()> {
+pub(crate) fn generate_codex_config_source(source: &Path, out: &Path) -> Result<()> {
     codex_config::write_config_source(source, out)
 }
 
-pub fn generate_skills(source: &Path, provider: Provider, out: &Path) -> Result<()> {
+pub(crate) fn generate_skills(source: &Path, provider: Provider, out: &Path) -> Result<()> {
     skills::render_skills(source, provider, out)
 }
 
-pub fn install(source: &Path, out: &Path) -> Result<()> {
+pub(crate) fn install(source: &Path, out: &Path) -> Result<()> {
     fs_ops::copy_file(
         &source.join("agents/AGENTS.md"),
         &out.join(".codex/AGENTS.md"),
@@ -52,7 +55,7 @@ pub fn install(source: &Path, out: &Path) -> Result<()> {
     Ok(())
 }
 
-pub fn verify(root: &Path) -> Result<()> {
+pub(crate) fn verify(root: &Path) -> Result<()> {
     for path in [
         root.join(".codex/AGENTS.md"),
         root.join(".codex/hooks.json"),

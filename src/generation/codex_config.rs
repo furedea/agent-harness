@@ -3,7 +3,7 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use toml_edit::DocumentMut;
 
-use crate::protection;
+use crate::generation::{io, protection};
 
 const MANAGED_KEYS: &[&str] = &[
     "model",
@@ -20,18 +20,18 @@ const MANAGED_KEYS: &[&str] = &[
     "permissions",
 ];
 
-pub fn write_config_source(source: &Path, out: &Path) -> Result<()> {
-    write_file(out, &config_source_content(source)?)
+pub(crate) fn write_config_source(source: &Path, out: &Path) -> Result<()> {
+    io::write_file(out, &config_source_content(source)?)
 }
 
-pub fn sync_generated_config(source: &Path, target_path: &Path) -> Result<()> {
+pub(crate) fn sync_generated_config(source: &Path, target_path: &Path) -> Result<()> {
     let source = config_source_content(source)?
         .parse::<DocumentMut>()
         .context("failed to parse generated Codex config source")?;
     sync_managed_document(source, target_path)
 }
 
-pub fn sync_managed_config(source_path: &Path, target_path: &Path) -> Result<()> {
+pub(crate) fn sync_managed_config(source_path: &Path, target_path: &Path) -> Result<()> {
     let source = read_toml_document(source_path)?;
     sync_managed_document(source, target_path)
 }
@@ -89,14 +89,6 @@ fn write_toml_document(path: &Path, document: &DocumentMut) -> Result<()> {
     })?;
     std::fs::rename(&temp_path, path)
         .with_context(|| format!("failed to replace TOML file {}", path.display()))
-}
-
-fn write_file(path: &Path, content: &str) -> Result<()> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("failed to create directory {}", parent.display()))?;
-    }
-    std::fs::write(path, content).with_context(|| format!("failed to write {}", path.display()))
 }
 
 #[cfg(test)]
@@ -170,6 +162,14 @@ trust_level = "trusted"
         write_file(&source.join("agents/AGENTS.md"), "agent instructions\n")?;
         write_file(&source.join("agents/hooks/guard.sh"), "#!/bin/bash\n")?;
         write_file(&source.join("codex/hooks/adapt.sh"), "#!/bin/bash\n")?;
+        Ok(())
+    }
+
+    fn write_file(path: &Path, content: &str) -> Result<()> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(path, content)?;
         Ok(())
     }
 }

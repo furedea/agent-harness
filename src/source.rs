@@ -22,7 +22,7 @@ struct PackagedFile {
 include!(concat!(env!("OUT_DIR"), "/packaged_assets.rs"));
 
 #[derive(Debug)]
-pub struct SourceRoot {
+pub(crate) struct SourceRoot {
     path: PathBuf,
     cleanup: Option<PathBuf>,
 }
@@ -42,7 +42,7 @@ impl SourceRoot {
         }
     }
 
-    pub fn as_path(&self) -> &Path {
+    pub(crate) fn as_path(&self) -> &Path {
         &self.path
     }
 }
@@ -55,7 +55,7 @@ impl Drop for SourceRoot {
     }
 }
 
-pub fn resolve_source(explicit_source: Option<PathBuf>) -> Result<SourceRoot> {
+pub(crate) fn resolve_source(explicit_source: Option<PathBuf>) -> Result<SourceRoot> {
     if let Some(source) = explicit_source {
         return required_source(source, "--source");
     }
