@@ -168,6 +168,11 @@ ALLOWED_PATTERNS=(
   '^git branch [a-zA-Z0-9_./-]+$'
   # Delete a merged branch (safe -d only, not force -D): git branch -d <name>
   '^git branch -d [a-zA-Z0-9_./-]+$'
+  # Show or list branches without changing state.
+  '^git branch --show-current$'
+  '^git branch --list( [a-zA-Z0-9_./-]+)?$'
+  # Rename the current branch without force-overwriting an existing branch.
+  '^git branch -m [a-zA-Z0-9_./-]+$'
   # List branches merged into a given branch: git branch --merged <name>
   '^git branch --merged [a-zA-Z0-9_./-]+$'
 
@@ -184,21 +189,22 @@ ALLOWED_PATTERNS=(
   '^git push origin$'
   '^git push (-u |--set-upstream )?origin [a-zA-Z0-9_./-]+$'
 
-  # Python development commands. Keep pytest broad enough for TDD, but reject
-  # shell metacharacters that could trigger command injection before pytest runs.
-  '^uv run ruff( check| format --check)?$'
-  '^uv run --group audit (deptry \.|vulture)$'
+  # Python development commands. Require --frozen so agents do not implicitly
+  # resolve or update dependencies while running quality gates.
+  '^uv run --frozen ruff( check| format --check)?$'
+  '^uv run --frozen --group audit (deptry \.|vulture)$'
   '^uv run --frozen ruff (check|format)( --(fix|quiet|check))*( [^;&|<>$`]+)?$'
-  '^uv run (--frozen )?ty check$'
-  '^uv run (--frozen )?pytest( [^;&|<>$`]+)?$'
-  '^uv run --with pytest pytest( [^;&|<>$`]+)?$'
-  '^uv run python scripts/(collect_transcripts|collect_skills|generate_report|apply_patches|run_audit)\.py( [^;&|<>$`]+)?$'
+  '^uv run --frozen ty check( [^;&|<>$`]+)?$'
+  '^uv run --frozen pytest( [^;&|<>$`]+)?$'
+  '^uv run --frozen --with pytest pytest( [^;&|<>$`]+)?$'
+  '^uv run --frozen python scripts/(collect_transcripts|collect_skills|generate_report|apply_patches|run_audit)\.py( [^;&|<>$`]+)?$'
 
 )
 
 # Denied patterns for commands that belong to a governed family but must never
 # be accepted by the broad positive regexes below.
 DENIED_PATTERNS=(
+  '(^|[[:space:]])([^[:space:]]*/)?\.venv/bin/python([0-9.]*)?([[:space:]]|$)'
   '^git[[:space:]]+add[[:space:]]+(\.|-A|--all)([[:space:]]|$)'
   '(^|[[:space:]])git[[:space:]]+add[[:space:]]+(\.|-A|--all)([[:space:]]|$)'
   '^git[[:space:]]+commit([[:space:]].*)?[[:space:]]+(--no-verify|-n)([[:space:]]|$)'

@@ -46,36 +46,39 @@ run_hook() {
 }
 
 @test "allows Python TDD commands" {
-  run_hook "uv run ruff check"
+  run_hook "uv run --frozen ruff check"
   [ "$status" -eq 0 ]
 
-  run_hook "uv run ruff format --check"
+  run_hook "uv run --frozen ruff format --check"
   [ "$status" -eq 0 ]
 
-  run_hook "uv run ty check"
+  run_hook "uv run --frozen ty check"
   [ "$status" -eq 0 ]
 
-  run_hook "uv run pytest"
+  run_hook "uv run --frozen ty check src tests"
   [ "$status" -eq 0 ]
 
-  run_hook "uv run pytest tests/test_main.py -k test_main --cov"
+  run_hook "uv run --frozen pytest"
+  [ "$status" -eq 0 ]
+
+  run_hook "uv run --frozen pytest tests/test_main.py -k test_main --cov"
   [ "$status" -eq 0 ]
 
   run_hook "uv run --frozen pytest tests/test_main.py"
   [ "$status" -eq 0 ]
 
-  run_hook "uv run --with pytest pytest tests/test_main.py -k test_main"
+  run_hook "uv run --frozen --with pytest pytest tests/test_main.py -k test_main"
   [ "$status" -eq 0 ]
 
-  run_hook "uv run python scripts/run_audit.py prepare --provider codex --days 14"
+  run_hook "uv run --frozen python scripts/run_audit.py prepare --provider codex --days 14"
   [ "$status" -eq 0 ]
 }
 
 @test "allows Python and TypeScript audit commands" {
-  run_hook "uv run --group audit deptry ."
+  run_hook "uv run --frozen --group audit deptry ."
   [ "$status" -eq 0 ]
 
-  run_hook "uv run --group audit vulture"
+  run_hook "uv run --frozen --group audit vulture"
   [ "$status" -eq 0 ]
 
   run_hook "pnpm run knip"
@@ -186,22 +189,54 @@ run_hook() {
 }
 
 @test "blocks shell metacharacters in broad pytest command" {
-  run_hook 'uv run pytest $(touch /tmp/blocked)'
+  run_hook 'uv run --frozen pytest $(touch /tmp/blocked)'
   [ "$status" -eq 2 ]
 
-  run_hook 'uv run pytest `touch /tmp/blocked`'
+  run_hook 'uv run --frozen pytest `touch /tmp/blocked`'
   [ "$status" -eq 2 ]
 
-  run_hook "uv run pytest > /tmp/blocked"
+  run_hook "uv run --frozen pytest > /tmp/blocked"
   [ "$status" -eq 2 ]
 
-  run_hook 'uv run --with pytest pytest $(touch /tmp/blocked)'
+  run_hook 'uv run --frozen --with pytest pytest $(touch /tmp/blocked)'
   [ "$status" -eq 2 ]
 
   run_hook 'uv run --with ruff ruff check'
   [ "$status" -eq 2 ]
 
   run_hook 'uv run python -c "print(1)"'
+  [ "$status" -eq 2 ]
+}
+
+@test "blocks uv run commands without frozen" {
+  run_hook "uv run ruff check"
+  [ "$status" -eq 2 ]
+
+  run_hook "uv run ty check"
+  [ "$status" -eq 2 ]
+
+  run_hook "uv run pytest"
+  [ "$status" -eq 2 ]
+
+  run_hook "uv run --with pytest pytest"
+  [ "$status" -eq 2 ]
+
+  run_hook "uv run --group audit deptry ."
+  [ "$status" -eq 2 ]
+
+  run_hook "uv run python scripts/run_audit.py prepare"
+  [ "$status" -eq 2 ]
+}
+
+@test "blocks virtualenv Python interpreter bypasses" {
+  run_hook ".venv/bin/python -c 'print(1)'"
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"denied by allowlist policy"* ]]
+
+  run_hook "./.venv/bin/python3 scripts/run_audit.py"
+  [ "$status" -eq 2 ]
+
+  run_hook "/tmp/project/.venv/bin/python -m pytest"
   [ "$status" -eq 2 ]
 }
 
@@ -241,6 +276,17 @@ run_hook() {
 
   run_hook 'git ls-files "*.nix" --others'
   [ "$status" -eq 2 ]
+}
+
+@test "allows safe git branch helper operations" {
+  run_hook "git branch --show-current"
+  [ "$status" -eq 0 ]
+
+  run_hook "git branch --list feat/topic"
+  [ "$status" -eq 0 ]
+
+  run_hook "git branch -m feat/topic"
+  [ "$status" -eq 0 ]
 }
 
 @test "blocks bulk git add forms" {
