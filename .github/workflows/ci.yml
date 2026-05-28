@@ -73,6 +73,8 @@ jobs:
 
       - name: Setup shfmt
         uses: mfinelli/setup-shfmt@a25fda4c1fe115aec0f85e04126610841bc3141d # v4.0.1
+        with:
+          shfmt-version: "3.13.1"
 
       - name: Install Bats
         uses: bats-core/bats-action@77d6fb60505b4d0d1d73e48bd035b55074bbfb43 # 4.0.0
@@ -86,10 +88,10 @@ jobs:
       - name: Install Bats test tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y jq ripgrep shellcheck
-          uv tool install ruff==0.15.11
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          npm install --global @openai/codex@0.131.0 oxlint@1.67.0 oxfmt@0.52.0
+          sudo apt-get install -y --no-install-recommends jq ripgrep shellcheck
+          uv tool install --python 3.14 ruff==0.15.11
+          uv tool dir --bin >> "$GITHUB_PATH"
+          npm install --global --no-audit --no-fund @openai/codex@0.131.0 oxlint@1.67.0 oxfmt@0.52.0
 
       - name: Run Bats tests
         run: bats --recursive tests
