@@ -2,6 +2,10 @@
 # Tests for codex/hooks/adapt_lint_format.sh
 # Focuses on patch_paths extraction and hook_for_path dispatch logic.
 
+setup_file() {
+  bats_require_minimum_version 1.5.0
+}
+
 setup() {
   REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/../../.." && pwd)"
   HOOK="$REPO_ROOT/codex/hooks/adapt_lint_format.sh"
@@ -170,7 +174,7 @@ EOF
   [[ "$output" == *"plain-text hook output"* ]]
 }
 
-@test "adapter emits nothing when hook is silent (clean lint)" {
+@test "adapter emits no stdout when hook is silent (clean lint)" {
   local _tmp
   _tmp="$(mktemp -d "${BATS_TEST_TMPDIR:-/tmp}/codex.XXXXXX")"
   local _file="$_tmp/x.py"
@@ -188,7 +192,7 @@ EOF
   _input=$(jq -n --arg cwd "$_tmp" --arg cmd "*** Update File: x.py" \
     '{cwd:$cwd, tool_input:{command:$cmd}}')
 
-  run run_adapter "$_tmp" "$_input"
+  run --separate-stderr run_adapter "$_tmp" "$_input"
   [ "$status" -eq 0 ]
   [ -z "$output" ]
 }
@@ -211,7 +215,8 @@ EOF
   _input=$(jq -n --arg cwd "$_tmp" --arg cmd "*** Update File: x.py" \
     '{cwd:$cwd, tool_input:{command:$cmd}}')
 
-  run run_adapter "$_tmp" "$_input"
+  run --separate-stderr run_adapter "$_tmp" "$_input"
   [ "$status" -eq 0 ]
   [ -z "$output" ]
+  ! [[ "$stderr" == *"environment noise"* ]]
 }
