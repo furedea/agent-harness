@@ -39,18 +39,18 @@ function hook_for_path() {
   local _file_path="$1"
 
   case "$_file_path" in
-    *.py) echo "$CLAUDE_HOOKS_DIR/lint_format_py.sh" ;;
-    *.sh) echo "$CLAUDE_HOOKS_DIR/lint_format_sh.sh" ;;
-    *.js | *.ts | *.jsx | *.tsx) echo "$CLAUDE_HOOKS_DIR/lint_format_js.sh" ;;
-    *.rs) echo "$CLAUDE_HOOKS_DIR/lint_format_rs.sh" ;;
-    *.nix) echo "$CLAUDE_HOOKS_DIR/lint_format_nix.sh" ;;
-    *.md | *.markdown) echo "$CLAUDE_HOOKS_DIR/lint_format_md.sh" ;;
-    *.json | *.toml) echo "$CLAUDE_HOOKS_DIR/lint_format_json_toml.sh" ;;
-    *.yml | *.yaml) echo "$CLAUDE_HOOKS_DIR/lint_format_gha.sh" ;;
-    *.txt) echo "$CLAUDE_HOOKS_DIR/lint_format_txt.sh" ;;
-    *.lua) echo "$CLAUDE_HOOKS_DIR/lint_format_lua.sh" ;;
-    *.tex | *.bib | *.cls | *.sty) echo "$CLAUDE_HOOKS_DIR/lint_format_tex.sh" ;;
-    *) return 1 ;;
+  *.py) echo "$CLAUDE_HOOKS_DIR/lint_format_py.sh" ;;
+  *.sh) echo "$CLAUDE_HOOKS_DIR/lint_format_sh.sh" ;;
+  *.js | *.ts | *.jsx | *.tsx) echo "$CLAUDE_HOOKS_DIR/lint_format_js.sh" ;;
+  *.rs) echo "$CLAUDE_HOOKS_DIR/lint_format_rs.sh" ;;
+  *.nix) echo "$CLAUDE_HOOKS_DIR/lint_format_nix.sh" ;;
+  *.md | *.markdown) echo "$CLAUDE_HOOKS_DIR/lint_format_md.sh" ;;
+  *.json | *.toml) echo "$CLAUDE_HOOKS_DIR/lint_format_json_toml.sh" ;;
+  *.yml | *.yaml) echo "$CLAUDE_HOOKS_DIR/lint_format_gha.sh" ;;
+  *.txt) echo "$CLAUDE_HOOKS_DIR/lint_format_txt.sh" ;;
+  *.lua) echo "$CLAUDE_HOOKS_DIR/lint_format_lua.sh" ;;
+  *.tex | *.bib | *.cls | *.sty) echo "$CLAUDE_HOOKS_DIR/lint_format_tex.sh" ;;
+  *) return 1 ;;
   esac
 }
 
@@ -65,15 +65,16 @@ function run_file_hook() {
   local _output
   local _stderr_file
   local _status
+  local _hook_input
   _stderr_file="$(mktemp)"
-  _output="$(jq -n --arg file_path "$_file_path" \
+  _hook_input="$(jq -n --arg file_path "$_file_path" \
     '{
 			tool_name: "Edit",
 		tool_input: {
 			file_path: $file_path
 		}
-	}' |
-    "$_hook" 2>|"$_stderr_file")" || _status=$?
+    }')"
+  _output="$("$_hook" <<<"$_hook_input" 2>|"$_stderr_file")" || _status=$?
   _status="${_status:-0}"
   if [[ "$_status" -ne 0 && -s "$_stderr_file" ]]; then
     _output="${_output}${_output:+$'\n'}$(cat "$_stderr_file")"

@@ -42,6 +42,60 @@ jobs:
       - name: Run deadnix
         run: nix run nixpkgs#deadnix -- --fail .
 
+  bats-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Install Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@2b1f5e9b395427c92ee4e3331786ca3c37afe2d7 # v1.16.0
+        with:
+          toolchain: stable
+          rustflags: ""
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          python-version: "3.14"
+          enable-cache: true
+          cache-python: true
+
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 22
+
+      - name: Setup shfmt
+        uses: mfinelli/setup-shfmt@a25fda4c1fe115aec0f85e04126610841bc3141d # v4.0.1
+        with:
+          shfmt-version: "3.13.1"
+
+      - name: Install Bats
+        uses: bats-core/bats-action@77d6fb60505b4d0d1d73e48bd035b55074bbfb43 # 4.0.0
+        with:
+          bats-version: "1.13.0"
+          support-install: "false"
+          assert-install: "false"
+          detik-install: "false"
+          file-install: "false"
+
+      - name: Install Bats test tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends jq ripgrep shellcheck
+          uv tool install --python 3.14 ruff==0.15.11
+          uv tool dir --bin >> "$GITHUB_PATH"
+          npm install --global --no-audit --no-fund @openai/codex@0.131.0 oxlint@1.67.0 oxfmt@0.52.0
+
+      - name: Run Bats tests
+        run: bats --print-output-on-failure --recursive tests
+
   lint:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -195,7 +249,7 @@ jobs:
 
   all-green:
     if: always()
-    needs: [nix-lint, lint, format, test, rust-audit, lint-python, test-python, audit]
+    needs: [nix-lint, bats-tests, lint, format, test, rust-audit, lint-python, test-python, audit]
     runs-on: ubuntu-latest
     timeout-minutes: 1
     permissions: {}
