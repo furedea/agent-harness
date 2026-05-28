@@ -65,10 +65,10 @@ pub(crate) fn resolve_source(explicit_source: Option<PathBuf>) -> Result<SourceR
         return required_source(source, ENV_SOURCE);
     }
 
-    if let Some(source) = installed_source_dir()
-        && is_source_tree(&source)
-    {
-        return Ok(SourceRoot::external(source));
+    for source in installed_source_dirs()? {
+        if is_source_tree(&source) {
+            return Ok(SourceRoot::external(source));
+        }
     }
 
     let cwd = std::env::current_dir().context("failed to read current directory")?;
@@ -89,10 +89,22 @@ fn required_source(path: PathBuf, label: &str) -> Result<SourceRoot> {
     Ok(SourceRoot::external(path))
 }
 
-fn installed_source_dir() -> Option<PathBuf> {
-    let executable = std::env::current_exe().ok()?;
-    let prefix = executable.parent()?.parent()?;
-    Some(prefix.join("share/agent-harness"))
+fn installed_source_dirs() -> Result<Vec<PathBuf>> {
+    let executable = std::env::current_exe().context("failed to locate current executable")?;
+    Ok(installed_source_dirs_for_executable(&executable))
+}
+
+fn installed_source_dirs_for_executable(executable: &Path) -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+    if let Some(binary_dir) = executable.parent() {
+        candidates.push(binary_dir.join("share/agent-harness"));
+        if let Some(prefix) = binary_dir.parent() {
+            candidates.push(prefix.join("share/agent-harness"));
+        }
+    }
+    candidates.sort();
+    candidates.dedup();
+    candidates
 }
 
 fn materialize_packaged_source() -> Result<SourceRoot> {
@@ -165,4 +177,37 @@ fn validate_source_tree(path: &Path) -> Result<()> {
         path.display(),
         missing.join(", ")
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use super::*;
+
+    #[test]
+    fn installed_source_dirs_include_release_tarball_layout_next_to_binary() {
+        let candidates = installed_source_dirs_for_executable(Path::new(
+            "/home/user/.local/agent-harness/agent-harness",
+        ));
+
+        assert_eq!(
+            candidates,
+            vec![
+                PathBuf::from("/home/user/.local/agent-harness/share/agent-harness"),
+                PathBuf::from("/home/user/.local/share/agent-harness"),
+            ],
+        );
+    }
+
+    #[test]
+    fn installed_source_dirs_include_nix_style_prefix_layout() {
+        let candidates = installed_source_dirs_for_executable(Path::new(
+            "/nix/store/hash-agent-harness/bin/agent-harness",
+        ));
+
+        assert!(candidates.contains(&PathBuf::from(
+            "/nix/store/hash-agent-harness/share/agent-harness"
+        )));
+    }
 }

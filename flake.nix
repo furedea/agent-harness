@@ -20,7 +20,7 @@
     {
       packages.${system}.default = pkgs.rustPlatform.buildRustPackage {
         pname = "agent-harness";
-        version = "0.1.0";
+        inherit ((builtins.fromTOML (builtins.readFile ./Cargo.toml)).package) version;
         src = ./.;
 
         cargoLock.lockFile = ./Cargo.lock;
