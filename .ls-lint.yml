@@ -7,10 +7,10 @@ ignore:
   - .direnv
   - result
   - result-*
+  - docs/logs
 
   - README.md
   - agents/AGENTS.md
-  - docs/logs
   - "agents/skills/*/SKILL.md"
   - Cargo.toml
   - Cargo.lock
