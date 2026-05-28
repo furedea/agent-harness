@@ -13,7 +13,7 @@ defaults:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   release-please:
@@ -21,6 +21,7 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: write
+      issues: write
       pull-requests: write
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
@@ -71,20 +72,24 @@ jobs:
         run: |
           set -euo pipefail
 
-          rm -rf dist
-          mkdir -p "dist/agent-harness-${TARGET}/share/agent-harness"
+          readonly PACKAGE_NAME="agent-harness-${TARGET}"
+          readonly ARCHIVE_NAME="${PACKAGE_NAME}.tar.gz"
+          PACKAGE_ROOT="$(mktemp -d)"
+          readonly PACKAGE_ROOT
 
-          cp "target/${TARGET}/release/agent-harness" \
-            "dist/agent-harness-${TARGET}/agent-harness"
+          mkdir -p dist "${PACKAGE_ROOT}/${PACKAGE_NAME}/share/agent-harness"
 
-          cp -R agents claude codex \
-            "dist/agent-harness-${TARGET}/share/agent-harness/"
+          install -m 0755 \
+            "target/${TARGET}/release/agent-harness" \
+            "${PACKAGE_ROOT}/${PACKAGE_NAME}/agent-harness"
+          strip --strip-all "${PACKAGE_ROOT}/${PACKAGE_NAME}/agent-harness"
 
-          tar -C dist -czf \
-            "dist/agent-harness-${TARGET}.tar.gz" \
-            "agent-harness-${TARGET}"
+          cp -a agents claude codex \
+            "${PACKAGE_ROOT}/${PACKAGE_NAME}/share/agent-harness/"
 
-          sha256sum "dist/agent-harness-${TARGET}.tar.gz" > dist/SHA256SUMS
+          tar -C "$PACKAGE_ROOT" -czf "dist/${ARCHIVE_NAME}" "$PACKAGE_NAME"
+
+          (cd dist && sha256sum "$ARCHIVE_NAME" > SHA256SUMS)
 
       - name: Smoke test packaged tarball
         run: |
