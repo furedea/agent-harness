@@ -131,7 +131,7 @@ EOF
   _input=$(jq -n --arg cwd "$_tmp" --arg cmd "*** Update File: x.py" \
     '{cwd:$cwd, tool_input:{command:$cmd}}')
 
-  run env HOME="$_tmp" bash -c "
+  run env -u BASH_ENV HOME="$_tmp" bash --noprofile --norc -c "
     ln -sf '$_stub_dir' '$_tmp/.claude'
     mkdir -p '$_tmp/.claude'
     cp '$_stub_dir/lint_format_py.sh' '$_tmp/.claude/'
@@ -162,7 +162,7 @@ EOF
   _input=$(jq -n --arg cwd "$_tmp" --arg cmd "*** Update File: x.sh" \
     '{cwd:$cwd, tool_input:{command:$cmd}}')
 
-  run env HOME="$_tmp" bash -c "echo '$_input' | '$HOOK' 2>/dev/null"
+  run env -u BASH_ENV HOME="$_tmp" bash --noprofile --norc -c "echo '$_input' | '$HOOK' 2>/dev/null"
   [ "$status" -eq 0 ]
   [[ "$output" == *"plain-text hook output"* ]]
 }
@@ -185,7 +185,7 @@ EOF
   _input=$(jq -n --arg cwd "$_tmp" --arg cmd "*** Update File: x.py" \
     '{cwd:$cwd, tool_input:{command:$cmd}}')
 
-  run env HOME="$_tmp" bash -c "echo '$_input' | '$HOOK'"
+  run env -u BASH_ENV HOME="$_tmp" bash --noprofile --norc -c "echo '$_input' | '$HOOK'"
   [ "$status" -eq 0 ]
   [ -z "$output" ]
 }
@@ -208,7 +208,7 @@ EOF
   _input=$(jq -n --arg cwd "$_tmp" --arg cmd "*** Update File: x.py" \
     '{cwd:$cwd, tool_input:{command:$cmd}}')
 
-  run env HOME="$_tmp" bash -c "echo '$_input' | '$HOOK'"
+  run env -u BASH_ENV HOME="$_tmp" bash --noprofile --norc -c "echo '$_input' | '$HOOK'"
   [ "$status" -eq 0 ]
   [ -z "$output" ]
 }

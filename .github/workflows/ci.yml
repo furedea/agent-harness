@@ -86,10 +86,10 @@ jobs:
       - name: Install Bats test tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y jq shellcheck
+          sudo apt-get install -y jq ripgrep shellcheck
           uv tool install ruff==0.15.11
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          npm install --global oxlint@1.67.0 oxfmt@0.52.0
+          npm install --global @openai/codex@0.131.0 oxlint@1.67.0 oxfmt@0.52.0
 
       - name: Run Bats tests
         run: bats --recursive tests
