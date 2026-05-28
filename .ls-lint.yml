@@ -10,6 +10,9 @@ ignore:
   - docs/logs
 
   - README.md
+  - CHANGELOG.md
+  - .release-please-manifest.json
+  - release-please-config.json
   - agents/AGENTS.md
   - "agents/skills/*/SKILL.md"
   - Cargo.toml
