@@ -1,20 +1,21 @@
 ---
 name: git-commit-split
 description: >
-    Split pending git changes (modified, untracked, and already-staged) into multiple feature-grained commits with Conventional Commits messages, optionally pairing each commit with its own branch and draft PR. Use whenever the user asks to "commit", "コミットして", "make commits", "split into commits", "1 機能 1commit", "1 コミット 1 機能", "commit unstaged files", "未ステージを commit", "branch 切って PR", "PR 分けて", "1 機能 1PR", "stack PR", "draft PR", "ドラフト PR", or any phrasing that implies organizing pending git changes into well-structured commits. Supports two modes: `direct` (commit on the current branch) and `pr-per-feature` (one branch + one draft PR per commit, independent or stacked). The user must set the mode explicitly; never auto-detect it. Present commit grouping and branch/PR strategy as one plan for approval before any branch or commit lands. Prevent vague "update files" commits, direct pushes to protected main, and missing Conventional Commits formatting.
+    Explicit `/git-commit-split` workflow for organizing an already-dirty working tree into multiple intent-grained commits, optionally pairing each commit with its own branch and draft PR. Use only when invoked as the custom command or when the user explicitly asks to split pending changes, create one feature per commit, or create one PR per feature. General branch naming, commit granularity, and Conventional Commits rules live in git-workflow; this command owns mode selection, dirty-tree inspection, hunk splitting, plan approval, and execution.
 ---
 
 Mode argument from slash-command invocation (empty if none was passed): $ARGUMENTS
 
-# Git commit split (one feature, one commit)
+# `/git-commit-split` custom command
 
-A working tree often accumulates several unrelated changes before anyone gets around to committing — a feature, a fix, a config tweak, some stray TODO. Squashing all of that into one commit destroys the history's usefulness for `git blame`, review, revert, and bisect. The goal of this skill is to look at everything pending, group changes by intent, and emit one Conventional Commits commit per intent — going down to hunk granularity when a single file mixes intents. Optionally each commit can be packaged into its own branch and draft PR.
+This command is for a dirty working tree that already contains multiple uncommitted intents. It inspects everything pending, proposes a split plan, waits for approval, then lands one commit per approved intent. Optionally each commit can be packaged into its own branch and draft PR.
 
-The work happens in four phases: **mode → inspect → plan → execute**. This file owns mode/inspect/plan and routes execute to a mode-specific reference. Show the plan (commits _and_, in `pr-per-feature`, the branching/PR strategy) and wait for explicit user approval before any branch or commit lands; commits are easy to write and painful to undo, branch pushes and PRs are visible to others, and the small cost of a confirmation step pays for itself.
+Day-to-day implementation workflow belongs to `git-workflow`. Do not use this command as the default answer to a normal "implement/fix/refactor" request.
 
-## Files in this skill
+The work happens in four phases: **mode → inspect → plan → execute**. This file owns mode/inspect/plan and routes execute to a mode-specific reference. Show the plan and wait for explicit user approval before any branch or commit lands.
 
-- `references/conventional_commits.md`: type table, scope rule, subject style, body — read in Phase 2.
+## Files in this command
+
 - `references/hunk_split.md`: zero-context partial-apply technique — read whenever a commit splits one file's hunks across commits, in either mode.
 - `references/direct_execute.md`: Phase 3 for `direct` mode.
 - `references/pr_per_feature_execute.md`: Phase 3 for `pr-per-feature` mode (covers both `independent` and `stack`).
@@ -34,7 +35,7 @@ The first decision is _where_ the commits will live. There are exactly two deliv
 
 Resolve the mode in this order:
 
-1. If `SKILL.md` surfaced a non-empty slash-command argument and it equals `direct` or `pr-per-feature`, use that as the mode. Sub-strategy (`independent` / `stack`) is **not** taken from the argument — keep it for the dialog in step 3. If the argument is something else (typo, unrelated text), ignore it and fall through.
+1. If this command surfaced a non-empty slash-command argument and it equals `direct` or `pr-per-feature`, use that as the mode. Sub-strategy (`independent` / `stack`) is **not** taken from the argument — keep it for the dialog in step 3. If the argument is something else (typo, unrelated text), ignore it and fall through.
 2. Otherwise, if the user's prompt explicitly names the mode (e.g., "PR に分けて", "branch 切って PR", "1 機能 1PR", "draft PR", "stack PR" → `pr-per-feature`; "main に直接", "ここで commit", "この branch に commit" → `direct`), use that.
 3. Otherwise ask **one** short question and wait. Example phrasing:
 
@@ -73,22 +74,21 @@ Do not summarize prematurely. Read the actual changes — names, signatures, beh
 
 ## Phase 2 — Plan
 
-Group hunks into commits by **intent**, not by file. A single commit should answer one question: _what user-visible thing changed, and why?_ For type/scope/subject conventions used in this phase, read `references/conventional_commits.md`.
+Group hunks into commits by **intent**, not by file. Use `git-workflow` for the shared commit granularity, Conventional Commits, and branch naming rules. This command adds the dirty-tree-specific planning details: which hunks/files belong to each commit, which mode will execute them, and what branch/PR shape will be created in `pr-per-feature`.
 
 ### How to group
 
-- Same feature, multiple files → one commit.
-- Same file, multiple features → multiple commits via hunk split (see `references/hunk_split.md`).
-- Pure formatting/whitespace mixed in with logic → split into a separate `style:` commit so the logic commit stays reviewable.
-- Generated/lockfile updates (`package-lock.json`, `pnpm-lock.yaml`, `uv.lock`, …) belong with the change that caused them, not in their own commit.
-- A test for feature X lives in the same commit as feature X (TSDD-friendly), unless the user has a different convention visible in `git log`.
+- Apply `git-workflow`'s commit granularity rules first.
+- When one file contains multiple intents, split it by hunk; see `references/hunk_split.md`.
+- Keep generated files, lockfiles, and tests with the intent that caused them unless the existing repo history clearly uses a different convention.
+- Do not fabricate splits when the dirty tree is genuinely one cohesive change.
 
 ### Branch / PR plan (only for `pr-per-feature`)
 
 When the mode is `pr-per-feature`, the commit grouping is only half the plan. The user also needs to see and approve:
 
 - **Branch strategy** — `independent` or `stack`. Recommend `independent` unless the commits build on each other in a way the reviewer needs to follow in order (e.g., commit 2 is a refactor that commit 3 depends on). When in doubt, propose `independent` and explain that `stack` is available if dependencies matter.
-- **Branch names** — derived from each commit subject by `scripts/branch_name.py`. Format: `<type>/<kebab-subject>`, e.g., `feat/jwt-refresh-rotation`, `fix/parser-empty-input`. Lowercase ASCII, no scope. If a name already exists locally or remotely, the script appends `-2`, `-3`, …; surface any collision in the plan.
+- **Branch names** — generated by `scripts/branch_name.py` from each commit subject, following `git-workflow`'s branch format. If a name already exists locally or remotely, the script appends `-2`, `-3`, …; surface any collision in the plan.
 - **PR base** — for `independent`, every PR targets `<base>` (the remote default branch). For `stack`, PR `n` targets the branch from PR `n-1`; PR 1 targets `<base>`.
 - **PR shape** — every PR is created as a **draft** via `gh pr create -df` (`-d` = draft, `-f` = fill title/body from the commit). The user can promote drafts later.
 
@@ -175,12 +175,10 @@ These apply regardless of mode. Mode-specific edge cases live in each `*_execute
 - **Merge in progress** (`.git/MERGE_HEAD` exists). Don't try to split — the user is mid-merge. Surface this and ask.
 - **Submodule pointer changes.** Treat as a single file; usually goes in a `chore(submodule):` or with the feature that bumped it.
 - **Binary files.** No hunk-level split possible — commit whole or skip.
-- **One giant change that genuinely is one feature.** Don't fabricate splits. One commit is fine if the work is one cohesive thing; report that and commit once.
-- **User commits in non-English.** See `references/conventional_commits.md` for language detection. Branch names stay ASCII regardless, since some hosts and tools choke on non-ASCII refs.
+- **User commits in non-English.** Follow the language rule in `git-workflow`. Branch names stay ASCII because some hosts and tools choke on non-ASCII refs.
 
 ## Navigation map (read-on-demand)
 
-- Phase 2 (plan) — Conventional Commits type/scope/subject style: `references/conventional_commits.md`
 - Phase 3 (execute), `direct` mode: `references/direct_execute.md`
 - Phase 3 (execute), `pr-per-feature` mode (independent or stack): `references/pr_per_feature_execute.md`
 - Hunk-level partial apply (any mode, when one file's hunks split across commits): `references/hunk_split.md`

@@ -4,11 +4,11 @@ Read this when a single file mixes multiple intents and a commit needs to land o
 
 ## Build a partial patch and apply it to the index
 
-Resolve `<skill-dir>` to the directory containing `SKILL.md` — typically `~/.claude/skills/git-commit-split` (Claude Code) or `~/.codex/skills/git-commit-split` (Codex). Both point at the same files via dotfiles symlinks, so either form works.
+Resolve `<command-dir>` to the directory containing this command's files — typically the deployed `git-commit-split` directory. In this repository the source lives under `agents/skills/git-commit-split`.
 
 ```bash
 git diff -U0 --src-prefix=a/ --dst-prefix=b/ -- <file> > /tmp/cur.patch
-<skill-dir>/scripts/build_partial_patch.py \
+<command-dir>/scripts/build_partial_patch.py \
     /tmp/cur.patch '[{"file": "<file>", "hunks": [1, 3]}]' > /tmp/partial.patch
 git apply --cached --unidiff-zero /tmp/partial.patch
 git commit -m "<conventional message>"
@@ -30,7 +30,7 @@ A tempting shortcut is to `git stash`, rewrite `<file>` to a partial state, comm
 
 ## Mixed commit (some whole files + some partial hunks)
 
-Run the partial-apply step first, then `git add` the whole-file additions, then commit once. Order matters because `git add <file>` would otherwise stage the *entire* file and overwrite the just-applied partial index entry.
+Run the partial-apply step first, then `git add` the whole-file additions, then commit once. Order matters because `git add <file>` would otherwise stage the _entire_ file and overwrite the just-applied partial index entry.
 
 ## Special cases
 
