@@ -25,6 +25,11 @@
 
         cargoLock.lockFile = ./Cargo.lock;
 
+        postInstall = ''
+          mkdir -p $out/share/agent-harness
+          cp -R agents claude codex $out/share/agent-harness/
+        '';
+
         meta.mainProgram = "agent-harness";
       };
 

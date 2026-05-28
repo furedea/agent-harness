@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use anyhow::Result;
 use clap::{Parser, Subcommand, ValueEnum};
 
-use crate::{codex_config, command_policy, hooks, protection, render};
+use crate::{codex_config, command_policy, hooks, protection, render, source};
 
 #[derive(Debug, Parser)]
 #[command(version, about = "Install and verify AI agent harness files")]
@@ -29,8 +29,8 @@ enum Command {
 
 #[derive(Debug, clap::Args)]
 struct GenerateFileArgs {
-    #[arg(long, default_value = ".")]
-    source: PathBuf,
+    #[arg(long)]
+    source: Option<PathBuf>,
 
     #[arg(short, long)]
     output: PathBuf,
@@ -38,8 +38,8 @@ struct GenerateFileArgs {
 
 #[derive(Debug, clap::Args)]
 struct GenerateSkillsArgs {
-    #[arg(long, default_value = ".")]
-    source: PathBuf,
+    #[arg(long)]
+    source: Option<PathBuf>,
 
     #[arg(long, value_enum)]
     provider: Provider,
@@ -50,8 +50,8 @@ struct GenerateSkillsArgs {
 
 #[derive(Debug, clap::Args)]
 struct InstallArgs {
-    #[arg(long, default_value = ".")]
-    source: PathBuf,
+    #[arg(long)]
+    source: Option<PathBuf>,
 
     #[arg(long)]
     prefix: Option<PathBuf>,
@@ -86,30 +86,15 @@ struct VerifyArgs {
 /// verify harness files.
 pub fn run() -> Result<()> {
     match Cli::parse().command {
-        Command::GenerateClaudeSettings(args) => {
-            render::generate_claude_settings(&args.source, &args.output)
-        }
-        Command::GenerateClaudeHooks(args) => hooks::write_claude_hooks(&args.source, &args.output),
-        Command::GenerateCodexConfigSource(args) => {
-            render::generate_codex_config_source(&args.source, &args.output)
-        }
-        Command::GenerateCodexConfigFragment(args) => {
-            protection::write_codex_config_fragment(&args.source, &args.output)
-        }
-        Command::GenerateCodexHooks(args) => hooks::write_codex_hooks(&args.source, &args.output),
-        Command::GenerateCodexRules(args) => {
-            command_policy::write_codex_rules(&args.source, &args.output)
-        }
-        Command::GenerateForbiddenCommands(args) => {
-            command_policy::write_forbidden_commands(&args.source, &args.output)
-        }
-        Command::GenerateSkills(args) => {
-            render::generate_skills(&args.source, args.provider.into(), &args.output)
-        }
-        Command::Install(args) => {
-            let prefix = args.prefix.unwrap_or_else(default_home_dir);
-            render::install(&args.source, &prefix)
-        }
+        Command::GenerateClaudeSettings(args) => generate_claude_settings(args),
+        Command::GenerateClaudeHooks(args) => write_claude_hooks(args),
+        Command::GenerateCodexConfigSource(args) => generate_codex_config_source(args),
+        Command::GenerateCodexConfigFragment(args) => write_codex_config_fragment(args),
+        Command::GenerateCodexHooks(args) => write_codex_hooks(args),
+        Command::GenerateCodexRules(args) => write_codex_rules(args),
+        Command::GenerateForbiddenCommands(args) => write_forbidden_commands(args),
+        Command::GenerateSkills(args) => generate_skills(args),
+        Command::Install(args) => install(args),
         Command::SyncCodexConfig(args) => {
             codex_config::sync_managed_config(&args.source, &args.target)
         }
@@ -118,6 +103,52 @@ pub fn run() -> Result<()> {
             render::verify(&prefix)
         }
     }
+}
+
+fn generate_claude_settings(args: GenerateFileArgs) -> Result<()> {
+    let source = source::resolve_source(args.source)?;
+    render::generate_claude_settings(source.as_path(), &args.output)
+}
+
+fn write_claude_hooks(args: GenerateFileArgs) -> Result<()> {
+    let source = source::resolve_source(args.source)?;
+    hooks::write_claude_hooks(source.as_path(), &args.output)
+}
+
+fn generate_codex_config_source(args: GenerateFileArgs) -> Result<()> {
+    let source = source::resolve_source(args.source)?;
+    render::generate_codex_config_source(source.as_path(), &args.output)
+}
+
+fn write_codex_config_fragment(args: GenerateFileArgs) -> Result<()> {
+    let source = source::resolve_source(args.source)?;
+    protection::write_codex_config_fragment(source.as_path(), &args.output)
+}
+
+fn write_codex_hooks(args: GenerateFileArgs) -> Result<()> {
+    let source = source::resolve_source(args.source)?;
+    hooks::write_codex_hooks(source.as_path(), &args.output)
+}
+
+fn write_codex_rules(args: GenerateFileArgs) -> Result<()> {
+    let source = source::resolve_source(args.source)?;
+    command_policy::write_codex_rules(source.as_path(), &args.output)
+}
+
+fn write_forbidden_commands(args: GenerateFileArgs) -> Result<()> {
+    let source = source::resolve_source(args.source)?;
+    command_policy::write_forbidden_commands(source.as_path(), &args.output)
+}
+
+fn generate_skills(args: GenerateSkillsArgs) -> Result<()> {
+    let source = source::resolve_source(args.source)?;
+    render::generate_skills(source.as_path(), args.provider.into(), &args.output)
+}
+
+fn install(args: InstallArgs) -> Result<()> {
+    let source = source::resolve_source(args.source)?;
+    let prefix = args.prefix.unwrap_or_else(default_home_dir);
+    render::install(source.as_path(), &prefix)
 }
 
 fn default_home_dir() -> PathBuf {
