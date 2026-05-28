@@ -11,7 +11,7 @@ run_adapter() {
   local _home="$1"
   local _input="$2"
 
-  HOME="$_home" "$HOOK" <<<"$_input"
+  env -i HOME="$_home" PATH="$PATH" "$HOOK" <<<"$_input"
 }
 
 @test "prints usage with --help" {
