@@ -3,6 +3,8 @@ use std::path::Path;
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 
+use crate::generation::io;
+
 #[derive(Debug, Deserialize)]
 struct CommandPolicy {
     version: u64,
@@ -30,30 +32,17 @@ struct ForbiddenRule<'a> {
     justification: &'a str,
 }
 
-/// Write Codex prefix rules from the shared command policy JSON.
-///
-/// # Errors
-///
-/// Returns an error when the policy cannot be read, parsed, validated, or
-/// written to the output path.
-pub fn write_codex_rules(source: &Path, path: &Path) -> Result<()> {
+pub(crate) fn write_codex_rules(source: &Path, path: &Path) -> Result<()> {
     let policy = read_policy(source)?;
-    write_file(path, &codex_rules(&policy)?)
+    io::write_file(path, &codex_rules(&policy)?)
 }
 
-/// Write Claude forbidden command rules from the shared command policy JSON.
-///
-/// # Errors
-///
-/// Returns an error when the policy cannot be read, parsed, validated, or
-/// written to the output path.
-pub fn write_forbidden_commands(source: &Path, path: &Path) -> Result<()> {
+pub(crate) fn write_forbidden_commands(source: &Path, path: &Path) -> Result<()> {
     let policy = read_policy(source)?;
-    let content = serde_json::to_string_pretty(&forbidden_command_rules(&policy))? + "\n";
-    write_file(path, &content)
+    io::write_json(path, &forbidden_command_rules(&policy))
 }
 
-pub fn claude_allow_permissions(source: &Path) -> Result<Vec<String>> {
+pub(crate) fn claude_allow_permissions(source: &Path) -> Result<Vec<String>> {
     Ok(read_policy(source)?
         .rules
         .iter()
@@ -62,7 +51,7 @@ pub fn claude_allow_permissions(source: &Path) -> Result<Vec<String>> {
         .collect())
 }
 
-pub fn claude_deny_permissions(source: &Path) -> Result<Vec<String>> {
+pub(crate) fn claude_deny_permissions(source: &Path) -> Result<Vec<String>> {
     Ok(read_policy(source)?
         .rules
         .iter()
@@ -163,14 +152,6 @@ fn decision_name(decision: Decision) -> &'static str {
 
 fn claude_permission(pattern: &[String]) -> String {
     format!("Bash({}:*)", pattern.join(" "))
-}
-
-fn write_file(path: &Path, content: &str) -> Result<()> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("failed to create directory {}", parent.display()))?;
-    }
-    std::fs::write(path, content).with_context(|| format!("failed to write {}", path.display()))
 }
 
 #[cfg(test)]
@@ -278,5 +259,13 @@ mod tests {
 }
 "#,
         )
+    }
+
+    fn write_file(path: &Path, content: &str) -> Result<()> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(path, content)?;
+        Ok(())
     }
 }

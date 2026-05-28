@@ -2,7 +2,7 @@ use std::path::{Component, Path};
 
 use anyhow::{Context, Result, bail};
 
-use crate::{fs_ops, render::Provider};
+use crate::{fs_ops, generation::io, render::Provider};
 
 const CODEX_EXPLICIT_ONLY: &str = "policy:\n  allow_implicit_invocation: false\n";
 
@@ -16,13 +16,7 @@ struct ExtraFile {
     content: &'static str,
 }
 
-/// Render provider-specific skills into the output directory.
-///
-/// # Errors
-///
-/// Returns an error when source skills cannot be read, frontmatter contains
-/// provider-specific keys, or rendered files cannot be written.
-pub fn render_skills(source: &Path, provider: Provider, out: &Path) -> Result<()> {
+pub(crate) fn render_skills(source: &Path, provider: Provider, out: &Path) -> Result<()> {
     let skills_dir = source.join("agents/skills");
     if out.exists() {
         std::fs::remove_dir_all(out)
@@ -199,8 +193,7 @@ fn write_skill(
     }
 
     let content = format!("---\n{}\n---\n{}", frontmatter.join("\n").trim_end(), body);
-    std::fs::write(out.join("SKILL.md"), content)
-        .with_context(|| format!("failed to write {}", out.join("SKILL.md").display()))
+    io::write_file(&out.join("SKILL.md"), &content)
 }
 
 fn frontmatter_overrides(
@@ -239,12 +232,7 @@ fn frontmatter_entry(key: &str, value: FrontmatterValue) -> Result<String> {
 fn write_extra_files(out: &Path, skill_name: &str, provider: Provider) -> Result<()> {
     for file in extra_files(skill_name, provider) {
         let target = resolve_extra_file_path(out, file.relative_path)?;
-        if let Some(parent) = target.parent() {
-            std::fs::create_dir_all(parent)
-                .with_context(|| format!("failed to create directory {}", parent.display()))?;
-        }
-        std::fs::write(&target, file.content)
-            .with_context(|| format!("failed to write {}", target.display()))?;
+        io::write_file(&target, file.content)?;
     }
     Ok(())
 }

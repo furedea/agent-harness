@@ -3,18 +3,12 @@ use std::path::Path;
 use anyhow::{Context, Result, bail};
 use serde_json::{Map, Value};
 
-use crate::{command_policy, hooks, protection};
+use crate::generation::{command_policy, hooks, io, protection};
 
-/// Generate the final Claude Code settings file.
-///
-/// # Errors
-///
-/// Returns an error when the source settings cannot be read or parsed, harness
-/// files cannot be enumerated, or the output file cannot be written.
-pub fn write_settings(source: &Path, out: &Path) -> Result<()> {
+pub(crate) fn write_settings(source: &Path, out: &Path) -> Result<()> {
     let base = read_json(&source.join("claude/settings.base.json"))?;
     let settings = build_settings(source, base)?;
-    write_json(out, &settings)
+    io::write_json(out, &settings)
 }
 
 fn build_settings(source: &Path, mut settings: Value) -> Result<Value> {
@@ -107,15 +101,6 @@ fn read_json(path: &Path) -> Result<Value> {
         .with_context(|| format!("failed to read JSON file {}", path.display()))?;
     serde_json::from_str(&content)
         .with_context(|| format!("failed to parse JSON file {}", path.display()))
-}
-
-fn write_json(path: &Path, value: &Value) -> Result<()> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("failed to create directory {}", parent.display()))?;
-    }
-    let content = serde_json::to_string_pretty(value)? + "\n";
-    std::fs::write(path, content).with_context(|| format!("failed to write {}", path.display()))
 }
 
 #[cfg(test)]

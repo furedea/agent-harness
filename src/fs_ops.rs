@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 
-pub fn copy_dir(source: &Path, target: &Path) -> Result<()> {
+pub(crate) fn copy_dir(source: &Path, target: &Path) -> Result<()> {
     if target.exists() {
         std::fs::remove_dir_all(target)
             .with_context(|| format!("failed to remove directory {}", target.display()))?;
@@ -31,7 +31,7 @@ pub fn copy_dir(source: &Path, target: &Path) -> Result<()> {
     Ok(())
 }
 
-pub fn copy_file(source: &Path, target: &Path) -> Result<()> {
+pub(crate) fn copy_file(source: &Path, target: &Path) -> Result<()> {
     if let Some(parent) = target.parent() {
         std::fs::create_dir_all(parent)
             .with_context(|| format!("failed to create directory {}", parent.display()))?;
@@ -46,7 +46,7 @@ pub fn copy_file(source: &Path, target: &Path) -> Result<()> {
     Ok(())
 }
 
-pub fn regular_files(dir: &Path) -> Result<Vec<PathBuf>> {
+pub(crate) fn regular_files(dir: &Path) -> Result<Vec<PathBuf>> {
     let mut files = Vec::new();
     collect_regular_files(dir, &mut files)?;
     files.sort();

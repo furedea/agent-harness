@@ -1,13 +1,16 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 use clap::{Parser, Subcommand, ValueEnum};
 
-use crate::{codex_config, command_policy, hooks, protection, render, source};
+use crate::{
+    generation::{codex_config, command_policy, hooks, protection},
+    render, source,
+};
 
 #[derive(Debug, Parser)]
 #[command(version, about = "Install and verify AI agent harness files")]
-pub struct Cli {
+struct Cli {
     #[command(subcommand)]
     command: Command,
 }
@@ -106,40 +109,43 @@ pub fn run() -> Result<()> {
 }
 
 fn generate_claude_settings(args: GenerateFileArgs) -> Result<()> {
-    let source = source::resolve_source(args.source)?;
-    render::generate_claude_settings(source.as_path(), &args.output)
+    generate_file(args, render::generate_claude_settings)
 }
 
 fn write_claude_hooks(args: GenerateFileArgs) -> Result<()> {
-    let source = source::resolve_source(args.source)?;
-    hooks::write_claude_hooks(source.as_path(), &args.output)
+    generate_file(args, hooks::write_claude_hooks)
 }
 
 fn generate_codex_config_source(args: GenerateFileArgs) -> Result<()> {
-    let source = source::resolve_source(args.source)?;
-    render::generate_codex_config_source(source.as_path(), &args.output)
+    generate_file(args, render::generate_codex_config_source)
 }
 
 fn write_codex_config_fragment(args: GenerateFileArgs) -> Result<()> {
-    let source = source::resolve_source(args.source)?;
-    protection::write_codex_config_fragment(source.as_path(), &args.output)
+    generate_file(args, protection::write_codex_config_fragment)
 }
 
 fn write_codex_hooks(args: GenerateFileArgs) -> Result<()> {
-    let source = source::resolve_source(args.source)?;
-    hooks::write_codex_hooks(source.as_path(), &args.output)
+    generate_file(args, hooks::write_codex_hooks)
 }
 
 fn write_codex_rules(args: GenerateFileArgs) -> Result<()> {
-    let source = source::resolve_source(args.source)?;
-    command_policy::write_codex_rules(source.as_path(), &args.output)
+    generate_file(args, command_policy::write_codex_rules)
 }
 
 fn write_forbidden_commands(args: GenerateFileArgs) -> Result<()> {
-    let source = source::resolve_source(args.source)?;
-    command_policy::write_forbidden_commands(source.as_path(), &args.output)
+    generate_file(args, command_policy::write_forbidden_commands)
 }
 
+fn generate_file(
+    args: GenerateFileArgs,
+    generate: impl FnOnce(&Path, &Path) -> Result<()>,
+) -> Result<()> {
+    let source = source::resolve_source(args.source)?;
+    generate(source.as_path(), &args.output)
+}
+
+// Skills and install stay explicit because they add provider and prefix handling
+// beyond the shared source/output file generation path.
 fn generate_skills(args: GenerateSkillsArgs) -> Result<()> {
     let source = source::resolve_source(args.source)?;
     render::generate_skills(source.as_path(), args.provider.into(), &args.output)
