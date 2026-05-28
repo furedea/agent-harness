@@ -5,7 +5,7 @@ The output is a kebab-case branch slug suitable for ``git switch -c``. The
 shape is ``<type>/<kebab-subject>``; the optional commit scope is intentionally
 dropped because branch names with parentheses or slashes inside the scope
 (``feat(api/v2): ...``) confuse some tooling and add noise reviewers don't
-read. Keep this in sync with ``references/conventional_commits.md`` and
+read. Keep this in sync with ``agents/skills/git-workflow/SKILL.md`` and
 ``references/pr_per_feature_execute.md``.
 
 Usage:
@@ -37,8 +37,8 @@ import subprocess
 import sys
 import unicodedata
 
-# Conventional Commits types this skill recognizes. Keep aligned with the
-# table in ``references/conventional_commits.md``.
+# Conventional Commits types this command recognizes. Keep aligned with the
+# table in ``agents/skills/git-workflow/SKILL.md``.
 _VALID_TYPES = frozenset(
     {
         "feat",

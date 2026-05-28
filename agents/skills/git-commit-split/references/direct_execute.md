@@ -27,16 +27,19 @@ git add -N <new-file>      # only for files needing hunk split
 For each planned commit, in order:
 
 1. **Whole-file commits** (most common path):
-   ```bash
-   git add -- <file1> <file2> ...
-   git commit -m "<conventional message>"
-   ```
-   For deletions, `git add -- <deleted-file>` works too (stages the deletion).
+
+    ```bash
+    git add -- <file1> <file2> ...
+    git commit -m "<conventional message>"
+    ```
+
+    For deletions, `git add -- <deleted-file>` works too (stages the deletion).
 
 2. **Hunk-level commits** (when one file is split across commits): see `references/hunk_split.md`. After applying the partial patch:
-   ```bash
-   git commit -m "<conventional message>"
-   ```
+
+    ```bash
+    git commit -m "<conventional message>"
+    ```
 
 3. **Mixed commit** (some whole files + some partial hunks): apply the partial patch first, then `git add` the whole-file additions, then commit once.
 
@@ -63,4 +66,4 @@ Prefer `git reset --soft "$(cat /tmp/pre-split-head)"` if you want to rewrite th
 
 - **Pre-commit hook failure.** A failed hook means the commit didn't land. Read the hook output, fix the issue (typically a lint/format problem), `git add` the fix, and **create a new commit** — never `--amend` an attempted-but-failed commit, because the previous successful commit would be modified instead.
 - **Detached HEAD.** Warn the user — committing on detached HEAD risks orphaning the work. Suggest `git switch -c <branch>` first.
-- **Pushing.** This skill in `direct` mode never pushes. The user pushes on their own when they're ready. If the user wants automated push + PR, the right answer is `pr-per-feature` mode, not patching push into `direct`.
+- **Pushing.** This command in `direct` mode never pushes. The user pushes on their own when they're ready. If the user wants automated push + PR, the right answer is `pr-per-feature` mode, not patching push into `direct`.
