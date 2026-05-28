@@ -52,3 +52,36 @@ def test_apply_description_patch_updates_file_and_creates_backup(tmp_path: Path)
     assert result["status"] == "applied"
     assert "description: >\n  New text.\n" in skill.read_text(encoding="utf-8")
     assert (tmp_path / "SKILL.md.bak").is_file()
+
+
+def test_apply_description_patch_accepts_folded_current_description(tmp_path: Path) -> None:
+    skill = tmp_path / "SKILL.md"
+    skill.write_text("---\nname: example\ndescription: >\n  Old text for\n  routing.\n---\n# Body\n", encoding="utf-8")
+
+    result = apply_patches.apply_description_patch(
+        str(skill),
+        current_description="Old text for routing.",
+        proposed_description="New text.",
+        dry_run=True,
+    )
+
+    assert result["status"] == "dry_run"
+    assert result["preview"] == "description: >\n  New text."
+
+
+def test_apply_description_patch_rejects_stale_current_description(tmp_path: Path) -> None:
+    skill = tmp_path / "SKILL.md"
+    skill.write_text("---\nname: example\ndescription: Updated text.\n---\n# Body\n", encoding="utf-8")
+
+    result = apply_patches.apply_description_patch(
+        str(skill),
+        current_description="Old text.",
+        proposed_description="New text.",
+        dry_run=False,
+        backup=True,
+    )
+
+    assert result["status"] == "error"
+    assert result["detail"] == "Current description does not match patch"
+    assert "Updated text." in skill.read_text(encoding="utf-8")
+    assert not (tmp_path / "SKILL.md.bak").exists()

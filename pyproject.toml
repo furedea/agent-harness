@@ -20,7 +20,7 @@ known_first_party = [
 ]
 
 [tool.vulture]
-paths = ["agents/skills", "tests/python", "vulture_allowlist.py"]
+paths = ["agents/skills", "tests/python"]
 min_confidence = 100
 sort_by_size = true
 exclude = [".venv", "build", "dist"]

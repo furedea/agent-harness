@@ -74,7 +74,7 @@ def apply_description_patch(
         fm_content = frontmatter_match.group(2)
 
         desc_patterns = [
-            r"(description\s*:\s*[>|]-?\s*\n)((?:\s+.*\n)*)",
+            r"(description\s*:\s*[>|]-?\s*\n)((?:[ \t]+.*(?:\n|$))*)",
             r"(description\s*:\s*)(.*)",
         ]
 
@@ -82,6 +82,11 @@ def apply_description_patch(
         for pattern in desc_patterns:
             match = re.search(pattern, fm_content)
             if match:
+                if _description_text(match) != current_description:
+                    result["status"] = "error"
+                    result["detail"] = "Current description does not match patch"
+                    return result
+
                 indent = "  "
                 wrapped_lines = _wrap_text(proposed_description, width=76, indent=indent)
                 new_desc_block = f"description: >\n{wrapped_lines}\n"
@@ -115,6 +120,15 @@ def apply_description_patch(
         result["detail"] = "No YAML frontmatter found in SKILL.md"
 
     return result
+
+
+def _description_text(match: re.Match[str]) -> str:
+    raw_description = match.group(2)
+    if not match.group(1).endswith("\n"):
+        return raw_description.strip()
+    if "|" in match.group(1):
+        return "\n".join(line.strip() for line in raw_description.splitlines()).strip()
+    return " ".join(line.strip() for line in raw_description.splitlines()).strip()
 
 
 def _wrap_text(text: str, width: int = 76, indent: str = "  ") -> str:
