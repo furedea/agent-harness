@@ -3,6 +3,8 @@ commit-msg:
     commitlint:
       run: commitlint --edit {1}
 
+# pre-commit owns whole-project format check and lint. Test execution is
+# delegated to CI and the agent-harness run_related_tests hook.
 pre-commit:
   parallel: true
   commands:
