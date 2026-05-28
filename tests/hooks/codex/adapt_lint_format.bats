@@ -18,6 +18,17 @@ run_adapter() {
   env -i HOME="$_home" PATH="$PATH" "$HOOK" <<<"$_input"
 }
 
+dump_run_diagnostic() {
+  local _label="$1"
+
+  {
+    printf 'diagnostic: %s\n' "$_label"
+    printf 'status: %s\n' "$status"
+    printf 'stdout:\n%s\n' "${output:-}"
+    printf 'stderr:\n%s\n' "${stderr:-}"
+  } >&3
+}
+
 @test "prints usage with --help" {
   run "$HOOK" --help
   [ "$status" -ne 0 ]
@@ -148,7 +159,7 @@ EOF
   run run_adapter "$_tmp" "$_input"
   [ "$status" -eq 0 ]
   [[ "$output" == *"ruff: F821 undefined name"* ]]
-  ! [[ "$output" == *"hookSpecificOutput"* ]]
+  [[ "$output" != *"hookSpecificOutput"* ]]
 }
 
 @test "adapter passes through non-JSON hook output unchanged" {
@@ -216,7 +227,10 @@ EOF
     '{cwd:$cwd, tool_input:{command:$cmd}}')
 
   run --separate-stderr run_adapter "$_tmp" "$_input"
+  if [ "$status" -ne 0 ] || [ -n "$output" ] || [[ "$stderr" == *"environment noise"* ]]; then
+    dump_run_diagnostic "adapter ignores stderr from a successful lint hook"
+  fi
   [ "$status" -eq 0 ]
   [ -z "$output" ]
-  ! [[ "$stderr" == *"environment noise"* ]]
+  [[ "$stderr" != *"environment noise"* ]]
 }

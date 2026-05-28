@@ -94,7 +94,7 @@ jobs:
           npm install --global --no-audit --no-fund @openai/codex@0.131.0 oxlint@1.67.0 oxfmt@0.52.0
 
       - name: Run Bats tests
-        run: bats --recursive tests
+        run: bats --print-output-on-failure --recursive tests
 
   lint:
     runs-on: ubuntu-latest
