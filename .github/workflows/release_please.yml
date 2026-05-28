@@ -1,0 +1,132 @@
+name: Release Please
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: Existing release tag to rebuild artifacts for
+        required: true
+        type: string
+
+permissions: {}
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    if: ${{ github.event_name == 'push' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - name: Create or update release PR
+        id: release
+        uses: googleapis/release-please-action@16a9c90856f42705d54a6fda1823352bdc62cf38 # v4.4.0
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  release-artifacts:
+    needs: release-please
+    if: ${{ always() && (needs.release-please.outputs.release_created == 'true' || github.event_name == 'workflow_dispatch') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      TARGET: x86_64-unknown-linux-musl
+      TAG_NAME: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || needs.release-please.outputs.tag_name }}
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+          ref: ${{ env.TAG_NAME }}
+
+      - name: Install Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@2b1f5e9b395427c92ee4e3331786ca3c37afe2d7 # v1.16.0
+        with:
+          toolchain: stable
+          rustflags: ""
+
+      - name: Install Rust release target
+        run: rustup target add "$TARGET"
+
+      - name: Run tests
+        run: cargo test --locked
+
+      - name: Build release binary
+        run: cargo build --release --locked --target "$TARGET"
+
+      - name: Package release tarball
+        run: |
+          set -euo pipefail
+
+          readonly PACKAGE_NAME="agent-harness-${TARGET}"
+          readonly ARCHIVE_NAME="${PACKAGE_NAME}.tar.gz"
+          PACKAGE_ROOT="$(mktemp -d)"
+          readonly PACKAGE_ROOT
+
+          mkdir -p dist "${PACKAGE_ROOT}/${PACKAGE_NAME}/share/agent-harness"
+
+          install -m 0755 \
+            "target/${TARGET}/release/agent-harness" \
+            "${PACKAGE_ROOT}/${PACKAGE_NAME}/agent-harness"
+          strip --strip-all "${PACKAGE_ROOT}/${PACKAGE_NAME}/agent-harness"
+
+          cp -a agents claude codex \
+            "${PACKAGE_ROOT}/${PACKAGE_NAME}/share/agent-harness/"
+
+          tar -C "$PACKAGE_ROOT" -czf "dist/${ARCHIVE_NAME}" "$PACKAGE_NAME"
+
+          (cd dist && sha256sum "$ARCHIVE_NAME" > SHA256SUMS)
+
+      - name: Smoke test packaged tarball
+        run: |
+          set -euo pipefail
+
+          tmpdir="$(mktemp -d)"
+          mkdir -p "$tmpdir/install" "$tmpdir/home"
+
+          tar -xzf "dist/agent-harness-${TARGET}.tar.gz" \
+            -C "$tmpdir/install" \
+            --strip-components=1
+
+          "$tmpdir/install/agent-harness" --version
+          "$tmpdir/install/agent-harness" install --prefix "$tmpdir/home"
+          "$tmpdir/install/agent-harness" verify --prefix "$tmpdir/home"
+
+      - name: Attest release artifacts
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        with:
+          subject-path: |
+            dist/agent-harness-x86_64-unknown-linux-musl.tar.gz
+            dist/SHA256SUMS
+
+      - name: Upload release artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          gh release upload "$TAG_NAME" \
+            "dist/agent-harness-${TARGET}.tar.gz" \
+            dist/SHA256SUMS \
+            --clobber
