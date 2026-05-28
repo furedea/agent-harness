@@ -84,6 +84,49 @@ fn claude_settings_render_from_real_source() {
 }
 
 #[test]
+fn claude_settings_render_from_packaged_source_without_source_argument() {
+    let root = test_root("packaged-source");
+    let cwd = root.join("cwd");
+    let settings_path = root.join("settings.json");
+    std::fs::create_dir_all(&cwd).unwrap();
+
+    run_harness_in(
+        &cwd,
+        [
+            "generate-claude-settings",
+            "--output",
+            settings_path.to_str().unwrap(),
+        ],
+    );
+
+    let generated = read_json(&settings_path);
+    assert!(
+        !generated["hooks"]["PreToolUse"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+
+    remove_dir(root);
+}
+
+#[test]
+fn install_uses_packaged_source_without_source_argument() {
+    let root = test_root("packaged-install");
+    let cwd = root.join("cwd");
+    let prefix = root.join("home");
+    std::fs::create_dir_all(&cwd).unwrap();
+
+    run_harness_in(&cwd, ["install", "--prefix", prefix.to_str().unwrap()]);
+
+    assert_contains(&prefix.join(".codex/AGENTS.md"), "General");
+    assert!(prefix.join(".codex/hooks/adapt_shell_command.sh").is_file());
+    assert!(prefix.join(".claude/settings.json").is_file());
+
+    remove_dir(root);
+}
+
+#[test]
 fn codex_config_outputs_render_from_real_source() {
     let root = test_root("codex-config");
     let fragment_path = root.join("fragment.toml");
@@ -380,10 +423,17 @@ fn remove_dir(path: PathBuf) {
 }
 
 fn run_harness<const N: usize>(args: [&str; N]) {
-    let output = Command::new(env!("CARGO_BIN_EXE_agent-harness"))
-        .args(args)
-        .output()
-        .unwrap();
+    run_harness_command(Command::new(env!("CARGO_BIN_EXE_agent-harness")).args(args));
+}
+
+fn run_harness_in<const N: usize>(cwd: &Path, args: [&str; N]) {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_agent-harness"));
+    command.current_dir(cwd).args(args);
+    run_harness_command(&mut command);
+}
+
+fn run_harness_command(command: &mut Command) {
+    let output = command.output().unwrap();
     assert!(
         output.status.success(),
         "agent-harness failed\nstdout:\n{}\nstderr:\n{}",

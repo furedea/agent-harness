@@ -7,5 +7,6 @@ mod hooks;
 mod protection;
 mod render;
 mod skills;
+mod source;
 
 pub use cli::run;
