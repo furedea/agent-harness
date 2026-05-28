@@ -7,14 +7,20 @@ ignore:
   - .direnv
   - result
   - result-*
-  - "**/logs"
-  - "**/.cache"
 
-  - "**/README.md"
-  - "**/AGENTS.md"
-  - "**/CLAUDE.md"
-  - "**/SKILL.md"
+  - README.md
+  - agents/AGENTS.md
+  - docs/logs
+  - "agents/skills/*/SKILL.md"
   - Cargo.toml
   - Cargo.lock
 
+  - .coverage
+  - .venv
+  - .uv-cache
+  - .ruff_cache
+  - .pytest_cache
+  - .ipynb_checkpoints
+  - "agents/**/__pycache__"
+  - "tests/**/__pycache__"
   - target
