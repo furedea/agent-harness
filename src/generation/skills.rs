@@ -1,23 +1,66 @@
-use std::path::{Component, Path};
+use std::collections::{BTreeMap, BTreeSet};
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
+use serde::Deserialize;
 
 use crate::{fs_ops, generation::io, render::Provider};
 
-const CODEX_EXPLICIT_ONLY: &str = "policy:\n  allow_implicit_invocation: false\n";
+const SKILL_RENDERING_PATH: &str = "agents/skill_rendering.json";
+const SUPPORTED_SKILL_RENDERING_VERSION: u64 = 1;
+const CODEX_OPENAI_PATH: &str = "agents/openai.yaml";
 
-enum FrontmatterValue {
-    Bool(bool),
-    String(&'static str),
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SkillRendering {
+    version: u64,
+    #[serde(default)]
+    skills: BTreeMap<String, SkillRenderingEntry>,
 }
 
-struct ExtraFile {
-    relative_path: &'static str,
-    content: &'static str,
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SkillRenderingEntry {
+    #[serde(default)]
+    claude: ClaudeRendering,
+    #[serde(default)]
+    codex: CodexRendering,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ClaudeRendering {
+    #[serde(default)]
+    frontmatter: BTreeMap<String, FrontmatterValue>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CodexRendering {
+    #[serde(default)]
+    frontmatter: BTreeMap<String, FrontmatterValue>,
+    openai: Option<CodexOpenAi>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CodexOpenAi {
+    allow_implicit_invocation: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum FrontmatterValue {
+    Bool(bool),
+    String(String),
 }
 
 pub(crate) fn render_skills(source: &Path, provider: Provider, out: &Path) -> Result<()> {
     let skills_dir = source.join("agents/skills");
+    let skill_dirs = sorted_skill_dirs(&skills_dir)?;
+    let skill_rendering = read_skill_rendering(source)?;
+    validate_skill_rendering_targets(&skill_rendering, &skill_dirs)?;
+
     if out.exists() {
         std::fs::remove_dir_all(out)
             .with_context(|| format!("failed to remove directory {}", out.display()))?;
@@ -25,9 +68,10 @@ pub(crate) fn render_skills(source: &Path, provider: Provider, out: &Path) -> Re
     std::fs::create_dir_all(out)
         .with_context(|| format!("failed to create directory {}", out.display()))?;
 
-    for entry in sorted_skill_dirs(&skills_dir)? {
+    for entry in skill_dirs {
         render_skill_dir(
             &entry,
+            &skill_rendering,
             provider,
             &out.join(entry.file_name().unwrap_or_default()),
         )?;
@@ -36,7 +80,7 @@ pub(crate) fn render_skills(source: &Path, provider: Provider, out: &Path) -> Re
     Ok(())
 }
 
-fn sorted_skill_dirs(skills_dir: &Path) -> Result<Vec<std::path::PathBuf>> {
+fn sorted_skill_dirs(skills_dir: &Path) -> Result<Vec<PathBuf>> {
     let mut dirs = Vec::new();
     for entry in std::fs::read_dir(skills_dir)
         .with_context(|| format!("failed to read directory {}", skills_dir.display()))?
@@ -57,7 +101,12 @@ fn sorted_skill_dirs(skills_dir: &Path) -> Result<Vec<std::path::PathBuf>> {
     Ok(dirs)
 }
 
-fn render_skill_dir(source: &Path, provider: Provider, out: &Path) -> Result<()> {
+fn render_skill_dir(
+    source: &Path,
+    skill_rendering: &SkillRendering,
+    provider: Provider,
+    out: &Path,
+) -> Result<()> {
     let source_skill = source.join("SKILL.md");
     let content = std::fs::read_to_string(&source_skill)
         .with_context(|| format!("failed to read {}", source_skill.display()))?;
@@ -68,9 +117,56 @@ fn render_skill_dir(source: &Path, provider: Provider, out: &Path) -> Result<()>
         .and_then(|name| name.to_str())
         .unwrap_or_default();
 
+    let empty_rendering = SkillRenderingEntry::default();
+    let rendering = skill_rendering
+        .skills
+        .get(skill_name)
+        .unwrap_or(&empty_rendering);
+
     copy_support_files(source, out)?;
-    write_skill(out, &common_entries, skill_name, provider, body)?;
-    write_extra_files(out, skill_name, provider)
+    write_skill(out, &common_entries, rendering, provider, body)?;
+    write_extra_files(out, rendering, provider)
+}
+
+fn read_skill_rendering(source: &Path) -> Result<SkillRendering> {
+    let path = source.join(SKILL_RENDERING_PATH);
+    if !path.exists() {
+        return Ok(SkillRendering::default());
+    }
+
+    let content = std::fs::read_to_string(&path)
+        .with_context(|| format!("failed to read {}", path.display()))?;
+    let rendering: SkillRendering = serde_json::from_str(&content)
+        .with_context(|| format!("failed to parse {}", path.display()))?;
+    if rendering.version != SUPPORTED_SKILL_RENDERING_VERSION {
+        bail!("unsupported skill rendering version: {}", rendering.version);
+    }
+    Ok(rendering)
+}
+
+fn validate_skill_rendering_targets(
+    skill_rendering: &SkillRendering,
+    skill_dirs: &[PathBuf],
+) -> Result<()> {
+    let skill_names = skill_dirs
+        .iter()
+        .filter_map(|path| path.file_name().and_then(|name| name.to_str()))
+        .collect::<BTreeSet<_>>();
+    let unknown = skill_rendering
+        .skills
+        .keys()
+        .filter(|name| !skill_names.contains(name.as_str()))
+        .cloned()
+        .collect::<Vec<_>>();
+
+    if unknown.is_empty() {
+        return Ok(());
+    }
+
+    bail!(
+        "{SKILL_RENDERING_PATH} references unknown skills: {}",
+        unknown.join(", ")
+    )
 }
 
 fn split_frontmatter(content: &str) -> Result<(&str, &str)> {
@@ -183,12 +279,12 @@ fn copy_support_files(source: &Path, out: &Path) -> Result<()> {
 fn write_skill(
     out: &Path,
     common_entries: &[String],
-    skill_name: &str,
+    skill_rendering: &SkillRenderingEntry,
     provider: Provider,
     body: &str,
 ) -> Result<()> {
     let mut frontmatter = common_entries.to_vec();
-    for (key, value) in frontmatter_overrides(skill_name, provider) {
+    for (key, value) in frontmatter_overrides(skill_rendering, provider) {
         frontmatter.push(frontmatter_entry(key, value)?);
     }
 
@@ -197,31 +293,17 @@ fn write_skill(
 }
 
 fn frontmatter_overrides(
-    skill_name: &str,
+    skill_rendering: &SkillRenderingEntry,
     provider: Provider,
-) -> Vec<(&'static str, FrontmatterValue)> {
-    match (skill_name, provider) {
-        ("git-commit-split", Provider::Claude) => vec![
-            (
-                "argument-hint",
-                FrontmatterValue::String("{direct | pr-per-feature}"),
-            ),
-            ("disable-model-invocation", FrontmatterValue::Bool(true)),
-        ],
-        ("git-commit-split", Provider::Codex) => {
-            vec![(
-                "argument-hint",
-                FrontmatterValue::String("{direct | pr-per-feature}"),
-            )]
-        }
-        ("github-ci-init" | "nix-dev-init" | "skill-auditor", Provider::Claude) => {
-            vec![("disable-model-invocation", FrontmatterValue::Bool(true))]
-        }
-        _ => Vec::new(),
+) -> &BTreeMap<String, FrontmatterValue> {
+    match provider {
+        Provider::Claude => &skill_rendering.claude.frontmatter,
+        Provider::Codex => &skill_rendering.codex.frontmatter,
     }
 }
 
-fn frontmatter_entry(key: &str, value: FrontmatterValue) -> Result<String> {
+fn frontmatter_entry(key: &str, value: &FrontmatterValue) -> Result<String> {
+    validate_frontmatter_key(key)?;
     let rendered = match value {
         FrontmatterValue::Bool(value) => value.to_string(),
         FrontmatterValue::String(value) => serde_json::to_string(value)?,
@@ -229,37 +311,35 @@ fn frontmatter_entry(key: &str, value: FrontmatterValue) -> Result<String> {
     Ok(format!("{key}: {rendered}"))
 }
 
-fn write_extra_files(out: &Path, skill_name: &str, provider: Provider) -> Result<()> {
-    for file in extra_files(skill_name, provider) {
-        let target = resolve_extra_file_path(out, file.relative_path)?;
-        io::write_file(&target, file.content)?;
+fn validate_frontmatter_key(key: &str) -> Result<()> {
+    if key.is_empty()
+        || !key
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
+    {
+        bail!("skill rendering frontmatter key is invalid: {key}");
     }
     Ok(())
 }
 
-fn extra_files(skill_name: &str, provider: Provider) -> Vec<ExtraFile> {
-    match (skill_name, provider) {
-        (
-            "git-commit-split" | "github-ci-init" | "nix-dev-init" | "skill-auditor",
-            Provider::Codex,
-        ) => vec![ExtraFile {
-            relative_path: "agents/openai.yaml",
-            content: CODEX_EXPLICIT_ONLY,
-        }],
-        _ => Vec::new(),
+fn write_extra_files(
+    out: &Path,
+    skill_rendering: &SkillRenderingEntry,
+    provider: Provider,
+) -> Result<()> {
+    if let Provider::Codex = provider
+        && let Some(openai) = &skill_rendering.codex.openai
+    {
+        io::write_file(&out.join(CODEX_OPENAI_PATH), &codex_openai_content(openai))?;
     }
+    Ok(())
 }
 
-fn resolve_extra_file_path(out: &Path, relative_path: &str) -> Result<std::path::PathBuf> {
-    let path = Path::new(relative_path);
-    if path.is_absolute()
-        || path
-            .components()
-            .any(|component| matches!(component, Component::ParentDir))
-    {
-        bail!("extra file path must be relative and stay within the skill: {relative_path}");
-    }
-    Ok(out.join(path))
+fn codex_openai_content(openai: &CodexOpenAi) -> String {
+    format!(
+        "policy:\n  allow_implicit_invocation: {}\n",
+        openai.allow_implicit_invocation
+    )
 }
 
 #[cfg(test)]
@@ -272,15 +352,32 @@ mod tests {
     #[test]
     fn render_claude_skill_applies_frontmatter_overrides() -> Result<()> {
         let root = test_root("render_claude_skill_applies_frontmatter_overrides")?;
-        write_skill_source(&root, "git-commit-split")?;
+        write_skill_source(&root, "custom-command")?;
+        write_skill_rendering(
+            &root,
+            r#"{
+  "version": 1,
+  "skills": {
+    "custom-command": {
+      "claude": {
+        "frontmatter": {
+          "argument-hint": "{direct | pr-per-feature}",
+          "disable-model-invocation": true
+        }
+      }
+    }
+  }
+}
+"#,
+        )?;
         let out = root.join("out");
 
         render_skills(&root, Provider::Claude, &out)?;
 
-        let content = std::fs::read_to_string(out.join("git-commit-split/SKILL.md"))?;
+        let content = std::fs::read_to_string(out.join("custom-command/SKILL.md"))?;
         assert!(content.contains("argument-hint: \"{direct | pr-per-feature}\""));
         assert!(content.contains("disable-model-invocation: true"));
-        assert!(!out.join("git-commit-split/agents/openai.yaml").exists());
+        assert!(!out.join("custom-command/agents/openai.yaml").exists());
 
         std::fs::remove_dir_all(root)?;
         Ok(())
@@ -289,16 +386,32 @@ mod tests {
     #[test]
     fn render_codex_skill_writes_explicit_only_metadata() -> Result<()> {
         let root = test_root("render_codex_skill_writes_explicit_only_metadata")?;
-        write_skill_source(&root, "github-ci-init")?;
+        write_skill_source(&root, "custom-command")?;
+        write_skill_rendering(
+            &root,
+            r#"{
+  "version": 1,
+  "skills": {
+    "custom-command": {
+      "codex": {
+        "openai": {
+          "allow_implicit_invocation": false
+        }
+      }
+    }
+  }
+}
+"#,
+        )?;
         let out = root.join("out");
 
         render_skills(&root, Provider::Codex, &out)?;
 
-        let content = std::fs::read_to_string(out.join("github-ci-init/SKILL.md"))?;
+        let content = std::fs::read_to_string(out.join("custom-command/SKILL.md"))?;
         assert!(!content.contains("disable-model-invocation"));
         assert_eq!(
-            std::fs::read_to_string(out.join("github-ci-init/agents/openai.yaml"))?,
-            CODEX_EXPLICIT_ONLY,
+            std::fs::read_to_string(out.join("custom-command/agents/openai.yaml"))?,
+            "policy:\n  allow_implicit_invocation: false\n",
         );
 
         std::fs::remove_dir_all(root)?;
@@ -319,6 +432,12 @@ mod tests {
             skill_dir.join("SKILL.md"),
             "---\nname: example\ndescription: test skill\n---\n\nBody\n",
         )?;
+        Ok(())
+    }
+
+    fn write_skill_rendering(source: &Path, content: &str) -> Result<()> {
+        std::fs::create_dir_all(source.join("agents"))?;
+        std::fs::write(source.join("agents/skill_rendering.json"), content)?;
         Ok(())
     }
 }

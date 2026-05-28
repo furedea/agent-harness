@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "skills": {
+    "git-commit-split": {
+      "claude": {
+        "frontmatter": {
+          "argument-hint": "{direct | pr-per-feature}",
+          "disable-model-invocation": true
+        }
+      },
+      "codex": {
+        "frontmatter": {
+          "argument-hint": "{direct | pr-per-feature}"
+        },
+        "openai": {
+          "allow_implicit_invocation": false
+        }
+      }
+    },
+    "github-ci-init": {
+      "claude": {
+        "frontmatter": {
+          "disable-model-invocation": true
+        }
+      },
+      "codex": {
+        "openai": {
+          "allow_implicit_invocation": false
+        }
+      }
+    },
+    "nix-dev-init": {
+      "claude": {
+        "frontmatter": {
+          "disable-model-invocation": true
+        }
+      },
+      "codex": {
+        "openai": {
+          "allow_implicit_invocation": false
+        }
+      }
+    },
+    "skill-auditor": {
+      "claude": {
+        "frontmatter": {
+          "disable-model-invocation": true
+        }
+      },
+      "codex": {
+        "openai": {
+          "allow_implicit_invocation": false
+        }
+      }
+    }
+  }
+}
