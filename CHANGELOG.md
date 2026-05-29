@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/furedea/agent-harness/compare/agent-harness-v0.2.0...agent-harness-v0.2.1) (2026-05-29)
+
+
+### Bug Fixes
+
+* **deps:** pin dependencies ([#3](https://github.com/furedea/agent-harness/issues/3)) ([b36843c](https://github.com/furedea/agent-harness/commit/b36843cca169e221889df5c258701498e234e06c))
+
 ## [0.2.0](https://github.com/furedea/agent-harness/compare/agent-harness-v0.1.0...agent-harness-v0.2.0) (2026-05-28)
 
 
