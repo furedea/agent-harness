@@ -2,7 +2,7 @@
 name = "agent-harness-python-tools"
 version = "0.1.0"
 description = "Python tooling and tests for agent-harness skill scripts."
-requires-python = "== 3.14.*"
+requires-python = "==3.14.5"
 dependencies = [
   "tiktoken==0.12.0",
 ]
