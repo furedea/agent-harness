@@ -3,8 +3,7 @@
   "cleanupPeriodDays": 9999,
   "env": {
     "CLAUDE_CODE_NO_FLICKER": "1",
-    "ENABLE_TOOL_SEARCH": "true",
-    "CLAUDE_CODE_DISABLE_1M_CONTEXT": "1"
+    "ENABLE_TOOL_SEARCH": "true"
   },
   "permissions": {
     "defaultMode": "auto"
