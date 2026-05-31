@@ -3,7 +3,7 @@ use std::path::Path;
 use anyhow::{Context, Result, bail};
 use serde_json::{Map, Value};
 
-use crate::generation::{command_policy, hooks, io, protection};
+use crate::generation::{command_policy, hooks, io, protection, secret_path_policy};
 
 pub(crate) fn write_settings(source: &Path, out: &Path) -> Result<()> {
     let base = read_json(&source.join("claude/settings.base.json"))?;
@@ -28,6 +28,11 @@ fn merge_permissions(root: &mut Map<String, Value>, source: &Path) -> Result<()>
 
     allow.extend(
         command_policy::claude_allow_permissions(source)?
+            .into_iter()
+            .map(Value::String),
+    );
+    deny.extend(
+        secret_path_policy::claude_deny_permissions(source)?
             .into_iter()
             .map(Value::String),
     );
@@ -148,6 +153,9 @@ mod tests {
             array_strings(&settings["permissions"]["deny"]).contains(&"Bash(curl:*)".to_string())
         );
         assert!(
+            array_strings(&settings["permissions"]["deny"]).contains(&"Read(.env*)".to_string())
+        );
+        assert!(
             array_strings(&settings["sandbox"]["filesystem"]["denyWrite"])
                 .contains(&"~/.claude/hooks/guard.sh".to_string())
         );
@@ -224,6 +232,20 @@ mod tests {
 "#,
         )?;
         write_file(&source.join("codex/hooks/adapt.sh"), "#!/bin/bash\n")?;
+        write_file(
+            &source.join("agents/secret_path_policy.json"),
+            r#"{
+  "version": 1,
+  "rules": [
+    {
+      "pattern": ".env*",
+      "access": ["read"],
+      "reason": "Environment files may contain credentials."
+    }
+  ]
+}
+"#,
+        )?;
         Ok(())
     }
 

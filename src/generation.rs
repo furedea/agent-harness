@@ -4,4 +4,5 @@ pub(crate) mod command_policy;
 pub(crate) mod hooks;
 mod io;
 pub(crate) mod protection;
+pub(crate) mod secret_path_policy;
 pub(crate) mod skills;

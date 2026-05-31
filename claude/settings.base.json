@@ -7,28 +7,6 @@
     "CLAUDE_CODE_DISABLE_1M_CONTEXT": "1"
   },
   "permissions": {
-    "allow": [],
-    "deny": [
-      "Read(.env*)",
-      "Read(**/*key*)",
-      "Read(**/*token*)",
-      "Read(**/.netrc)",
-      "Read(**/secrets/**)",
-      "Read(~/.aws/**)",
-      "Read(~/.bash_history)",
-      "Read(~/.config/gh/hosts.yml)",
-      "Read(~/.docker/config.json)",
-      "Read(~/.gnupg/**)",
-      "Read(~/.kube/**)",
-      "Read(~/.ssh/**)",
-      "Read(~/.zsh_history)",
-      "Read(credentials.json)",
-      "Read(id_ed25519)",
-      "Read(id_rsa)",
-      "Read(service-account*.json)",
-      "Write(.env*)",
-      "Write(**/secrets/**)"
-    ],
     "defaultMode": "auto"
   },
   "model": "opus",
