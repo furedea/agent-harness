@@ -25,7 +25,7 @@
   "agents/hooks/guard_secret_content.sh": [
     "tests/hooks/codex/adapt_guard_secret_content.bats"
   ],
-  "agents/hooks/rules/secret_path_policy.json": [
+  "agents/secret_path_policy.json": [
     "tests/generated_artifacts.rs",
     "tests/hooks/codex/adapt_guard_secret_paths.bats",
     "tests/hooks/claude/related_test_rules.bats"

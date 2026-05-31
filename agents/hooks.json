@@ -229,6 +229,12 @@
           "matcher": "^(Bash|exec_command|functions\\.exec_command)$",
           "hooks": [
             {
+              "command": "$HOME/.codex/hooks/adapt_guard_secret_paths.sh command",
+              "statusMessage": "Checking secret path policy",
+              "timeout": 30,
+              "type": "command"
+            },
+            {
               "command": "$HOME/.codex/hooks/adapt_shell_command.sh $HOME/.claude/hooks/guard_forbidden_commands.sh",
               "statusMessage": "Checking forbidden command prefixes",
               "timeout": 30,
@@ -257,6 +263,12 @@
         {
           "matcher": "^apply_patch$|^Edit$|^Write$",
           "hooks": [
+            {
+              "command": "$HOME/.codex/hooks/adapt_guard_secret_paths.sh patch",
+              "statusMessage": "Checking secret path policy",
+              "timeout": 30,
+              "type": "command"
+            },
             {
               "command": "$HOME/.codex/hooks/adapt_harness_files.sh",
               "statusMessage": "Checking harness boundaries",

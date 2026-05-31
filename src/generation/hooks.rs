@@ -4,7 +4,7 @@ use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::generation::{io, secret_path_policy};
+use crate::generation::io;
 
 #[derive(Debug, Deserialize)]
 struct HookConfig {
@@ -26,33 +26,7 @@ pub(crate) fn claude_hooks(source: &Path) -> Result<Value> {
 }
 
 fn codex_hooks(source: &Path) -> Result<Value> {
-    let mut hooks = read_hooks(source)?.codex;
-    merge_codex_secret_path_hooks(&mut hooks)?;
-    Ok(hooks)
-}
-
-fn merge_codex_secret_path_hooks(hooks: &mut Value) -> Result<()> {
-    let root = hooks
-        .as_object_mut()
-        .context("hook config codex section must be a JSON object")?;
-    let hooks_root = root
-        .entry("hooks")
-        .or_insert_with(|| Value::Object(Default::default()));
-    let hooks_object = hooks_root
-        .as_object_mut()
-        .context("hook config codex hooks section must be a JSON object")?;
-    let pre_tool_use = hooks_object
-        .entry("PreToolUse")
-        .or_insert_with(|| Value::Array(Vec::new()));
-    let groups = pre_tool_use
-        .as_array_mut()
-        .context("hook config codex PreToolUse section must be a JSON array")?;
-
-    for group in secret_path_policy::codex_secret_path_hooks() {
-        groups.insert(0, group);
-    }
-
-    Ok(())
+    Ok(read_hooks(source)?.codex)
 }
 
 fn read_hooks(source: &Path) -> Result<HookConfig> {
@@ -114,14 +88,6 @@ mod tests {
         let hooks: Value = serde_json::from_str(&std::fs::read_to_string(&output)?)?;
         assert_eq!(
             hooks["hooks"]["PreToolUse"][0]["matcher"].as_str(),
-            Some("^apply_patch$|^Edit$|^Write$"),
-        );
-        assert_eq!(
-            hooks["hooks"]["PreToolUse"][1]["matcher"].as_str(),
-            Some("^(Bash|exec_command|functions\\.exec_command)$"),
-        );
-        assert_eq!(
-            hooks["hooks"]["PreToolUse"][2]["matcher"].as_str(),
             Some("^(Bash|exec_command|functions\\.exec_command)$"),
         );
 
@@ -140,25 +106,6 @@ mod tests {
         let error = read_hooks(&root).unwrap_err().to_string();
 
         assert!(error.contains("unsupported hook config version"));
-
-        std::fs::remove_dir_all(root)?;
-        Ok(())
-    }
-
-    #[test]
-    fn codex_hooks_create_pre_tool_use_section_when_config_has_none() -> Result<()> {
-        let root = test_root("codex_hooks_create_pre_tool_use_section_when_config_has_none")?;
-        write_file(
-            &root.join("agents/hooks.json"),
-            r#"{"version":1,"claude":{},"codex":{"hooks":{}}}"#,
-        )?;
-
-        let hooks = codex_hooks(&root)?;
-
-        assert_eq!(
-            hooks["hooks"]["PreToolUse"][0]["hooks"][0]["command"].as_str(),
-            Some("$HOME/.codex/hooks/adapt_guard_secret_paths.sh patch"),
-        );
 
         std::fs::remove_dir_all(root)?;
         Ok(())

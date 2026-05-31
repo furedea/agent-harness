@@ -2,9 +2,8 @@ use std::path::Path;
 
 use anyhow::{Context, Result, bail};
 use serde::Deserialize;
-use serde_json::{Value, json};
 
-const POLICY_PATH: &str = "agents/hooks/rules/secret_path_policy.json";
+const POLICY_PATH: &str = "agents/secret_path_policy.json";
 
 #[derive(Debug, Deserialize)]
 struct SecretPathPolicy {
@@ -39,33 +38,6 @@ pub(crate) fn claude_deny_permissions(source: &Path) -> Result<Vec<String>> {
     }
 
     Ok(permissions)
-}
-
-pub(crate) fn codex_secret_path_hooks() -> [Value; 2] {
-    [
-        json!({
-            "matcher": "^(Bash|exec_command|functions\\.exec_command)$",
-            "hooks": [
-                {
-                    "command": "$HOME/.codex/hooks/adapt_guard_secret_paths.sh command",
-                    "statusMessage": "Checking secret path policy",
-                    "timeout": 30,
-                    "type": "command"
-                }
-            ]
-        }),
-        json!({
-            "matcher": "^apply_patch$|^Edit$|^Write$",
-            "hooks": [
-                {
-                    "command": "$HOME/.codex/hooks/adapt_guard_secret_paths.sh patch",
-                    "statusMessage": "Checking secret path policy",
-                    "timeout": 30,
-                    "type": "command"
-                }
-            ]
-        }),
-    ]
 }
 
 fn read_policy(source: &Path) -> Result<SecretPathPolicy> {
