@@ -107,8 +107,9 @@ jobs:
             "${PACKAGE_ROOT}/${PACKAGE_NAME}/share/agent-harness/"
 
           tar -C "$PACKAGE_ROOT" -czf "dist/${ARCHIVE_NAME}" "$PACKAGE_NAME"
+          install -m 0644 scripts/install.sh dist/install.sh
 
-          (cd dist && sha256sum "$ARCHIVE_NAME" > SHA256SUMS)
+          (cd dist && sha256sum "$ARCHIVE_NAME" install.sh > SHA256SUMS)
 
       - name: Smoke test packaged tarball
         run: |
@@ -131,6 +132,7 @@ jobs:
           subject-path: |
             dist/agent-harness-x86_64-unknown-linux-musl.tar.gz
             dist/SHA256SUMS
+            dist/install.sh
 
       - name: Upload release artifacts
         env:
@@ -141,4 +143,5 @@ jobs:
           gh release upload "$TAG_NAME" \
             "dist/agent-harness-${TARGET}.tar.gz" \
             dist/SHA256SUMS \
+            dist/install.sh \
             --clobber
