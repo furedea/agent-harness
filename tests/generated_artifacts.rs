@@ -21,6 +21,7 @@ fn claude_settings_render_from_real_source() {
 
     let generated = read_json(&settings_path);
     let base = read_json(&repo_root().join("claude/settings.base.json"));
+    let base_deny = permission_set(&base, "deny");
 
     assert_eq!(generated["model"], base["model"]);
     assert_eq!(generated["language"], base["language"]);
@@ -36,16 +37,17 @@ fn claude_settings_render_from_real_source() {
         non_generated_permissions(&generated, "allow"),
         non_generated_permissions(&base, "allow"),
     );
-    assert_eq!(
-        non_generated_permissions(&generated, "deny"),
-        non_generated_permissions(&base, "deny"),
-    );
+    assert!(!base_deny.contains("Read(.env*)"));
+    assert!(!base_deny.contains("Write(.env*)"));
 
     let allow = permission_set(&generated, "allow");
     let deny = permission_set(&generated, "deny");
     assert!(allow.contains("Bash(uv run:*)"));
     assert!(deny.contains("Bash(rm:*)"));
     assert!(deny.contains("Bash(brew install:*)"));
+    assert!(deny.contains("Read(.env*)"));
+    assert!(deny.contains("Read(~/.docker/config.json)"));
+    assert!(deny.contains("Write(**/secrets/**)"));
 
     assert_eq!(
         generated["sandbox"]["filesystem"]["allowWrite"],
@@ -121,6 +123,16 @@ fn install_uses_packaged_source_without_source_argument() {
 
     assert_contains(&prefix.join(".codex/AGENTS.md"), "General");
     assert!(prefix.join(".codex/hooks/adapt_shell_command.sh").is_file());
+    assert!(
+        prefix
+            .join(".codex/hooks/adapt_guard_secret_paths.sh")
+            .is_file()
+    );
+    assert!(
+        prefix
+            .join(".claude/hooks/rules/secret_path_policy.json")
+            .is_file()
+    );
     assert!(prefix.join(".claude/settings.json").is_file());
 
     remove_dir(root);
@@ -282,6 +294,32 @@ fn codex_hooks_render_from_real_source() {
                             .as_str()
                             .unwrap()
                             .starts_with("$HOME/.codex/hooks/adapt_shell_command.sh ")
+                    })
+            })
+    );
+    assert!(
+        hooks["hooks"]["PreToolUse"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|group| {
+                group["matcher"].as_str().unwrap().contains("Bash")
+                    && group["hooks"].as_array().unwrap().iter().any(|hook| {
+                        hook["command"].as_str().unwrap()
+                            == "$HOME/.codex/hooks/adapt_guard_secret_paths.sh command"
+                    })
+            })
+    );
+    assert!(
+        hooks["hooks"]["PreToolUse"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|group| {
+                group["matcher"].as_str().unwrap().contains("apply_patch")
+                    && group["hooks"].as_array().unwrap().iter().any(|hook| {
+                        hook["command"].as_str().unwrap()
+                            == "$HOME/.codex/hooks/adapt_guard_secret_paths.sh patch"
                     })
             })
     );

@@ -4,10 +4,11 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use anyhow::{Context, Result, bail};
 
 const ENV_SOURCE: &str = "AGENT_HARNESS_SOURCE";
-const REQUIRED_FILES: [&str; 6] = [
+const REQUIRED_FILES: [&str; 7] = [
     "agents/AGENTS.md",
     "agents/command_policy.json",
     "agents/hooks.json",
+    "agents/hooks/rules/secret_path_policy.json",
     "agents/skill_rendering.json",
     "claude/settings.base.json",
     "codex/config.toml",

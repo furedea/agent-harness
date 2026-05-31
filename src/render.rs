@@ -99,6 +99,10 @@ mod tests {
             out.join(".claude/hooks/rules/forbidden_commands.json")
                 .is_file()
         );
+        assert!(
+            out.join(".claude/hooks/rules/secret_path_policy.json")
+                .is_file()
+        );
         assert!(!out.join(".claude/rules/forbidden_commands.json").exists());
         assert!(
             !source
@@ -197,6 +201,20 @@ mod tests {
 "#,
         )?;
         write_file(&source.join("agents/hooks/hook.sh"), "#!/bin/bash\n")?;
+        write_file(
+            &source.join("agents/hooks/rules/secret_path_policy.json"),
+            r#"{
+  "version": 1,
+  "rules": [
+    {
+      "pattern": ".env*",
+      "access": ["read"],
+      "reason": "Environment files may contain credentials."
+    }
+  ]
+}
+"#,
+        )?;
         write_file(
             &source.join("agents/hooks.json"),
             r#"{
