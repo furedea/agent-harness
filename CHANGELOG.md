@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/furedea/agent-harness/compare/agent-harness-v0.3.0...agent-harness-v0.3.1) (2026-06-01)
+
+
+### Bug Fixes
+
+* **claude:** install secret path policy with hook rules ([#53](https://github.com/furedea/agent-harness/issues/53)) ([aae3efe](https://github.com/furedea/agent-harness/commit/aae3efef48e4305baec09574f8ff27c7435402e8))
+
 ## [0.3.0](https://github.com/furedea/agent-harness/compare/agent-harness-v0.2.0...agent-harness-v0.3.0) (2026-06-01)
 
 
