@@ -315,6 +315,9 @@ run_hook() {
   run_hook "git fetch origin"
   [ "$status" -eq 0 ]
 
+  run_hook "git pull --ff-only"
+  [ "$status" -eq 0 ]
+
   run_hook "git push -u origin feat/agent-pr-delivery"
   [ "$status" -eq 0 ]
 

@@ -29,6 +29,7 @@ Use a feature branch in its own worktree for implementation work.
 Task worktree creation:
 
 ```bash
+git pull --ff-only  # when on the main worktree and updating the base branch
 git fetch origin
 git worktree add -b <branch> ../<repo-name>-<branch-path-slug> origin/<base>
 cd ../<repo-name>-<branch-path-slug>
@@ -40,6 +41,7 @@ Rules:
 - `<branch-path-slug>` is the branch name with `/` replaced by `-`.
 - Put task worktrees next to the repository root by default. For example, `agent-harness` branch `feat/worktree-branch-delivery` uses `../agent-harness-feat-worktree-branch-delivery`.
 - Append `-2`, `-3`, etc. to the worktree path if it already exists.
+- When updating `main` itself, use `git pull --ff-only` in the main worktree. Do not use `git pull --rebase origin main` for the base branch.
 - Do not remove, prune, move, or repair worktrees from the agent workflow; report stale worktrees to the user instead.
 
 Branch name format:
