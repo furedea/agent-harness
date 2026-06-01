@@ -10,7 +10,7 @@ install_policy() {
   local _home="$1"
 
   mkdir -p "$_home/.claude/hooks/rules" "$_home/.claude/hooks/lib"
-  cp "$REPO_ROOT/agents/secret_path_policy.json" "$_home/.claude/hooks/rules/"
+  cp "$REPO_ROOT/agents/hooks/rules/secret_path_policy.json" "$_home/.claude/hooks/rules/"
   cp "$REPO_ROOT/agents/hooks/lib/audit_log.sh" "$_home/.claude/hooks/lib/"
 }
 

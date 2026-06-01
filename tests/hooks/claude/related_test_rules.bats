@@ -94,7 +94,7 @@ setup() {
 }
 
 @test "secret path policy triggers generated settings and Codex hook tests" {
-  result=$(jq -r '."agents/secret_path_policy.json"[]' "$RULES")
+  result=$(jq -r '."agents/hooks/rules/secret_path_policy.json"[]' "$RULES")
   [[ "$result" == *tests/generated_artifacts.rs* ]]
   [[ "$result" == *adapt_guard_secret_paths.bats* ]]
 
