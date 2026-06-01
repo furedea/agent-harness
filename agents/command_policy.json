@@ -123,6 +123,15 @@
     },
     {
       "decision": "allow",
+      "pattern": ["git", "worktree"],
+      "examples": [
+        "git worktree list",
+        "git worktree add -b feat/example ../repo-feat-example origin/main"
+      ],
+      "justification": "Allowed only through hooks for isolated task branch worktrees."
+    },
+    {
+      "decision": "allow",
       "pattern": ["nixfmt"],
       "examples": ["nixfmt nix/home/default.nix"],
       "justification": "Allowed by the shared agent command policy."
@@ -515,6 +524,24 @@
       "pattern": ["git", "worktree", "remove"],
       "examples": ["git worktree remove ../worktree"],
       "justification": "Do not remove worktrees from Codex."
+    },
+    {
+      "decision": "forbidden",
+      "pattern": ["git", "worktree", "prune"],
+      "examples": ["git worktree prune"],
+      "justification": "Do not prune worktrees from Codex."
+    },
+    {
+      "decision": "forbidden",
+      "pattern": ["git", "worktree", "move"],
+      "examples": ["git worktree move ../old ../new"],
+      "justification": "Do not move worktrees from Codex."
+    },
+    {
+      "decision": "forbidden",
+      "pattern": ["git", "worktree", "repair"],
+      "examples": ["git worktree repair"],
+      "justification": "Do not repair worktrees from Codex."
     }
   ]
 }

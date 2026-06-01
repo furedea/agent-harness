@@ -300,6 +300,21 @@ setup() {
   [ "$status" -eq 2 ]
 }
 
+@test "blocks git worktree prune" {
+  run bash "$HOOK" <<< "$(make_input 'git worktree prune')"
+  [ "$status" -eq 2 ]
+}
+
+@test "blocks git worktree move" {
+  run bash "$HOOK" <<< "$(make_input 'git worktree move ../old ../new')"
+  [ "$status" -eq 2 ]
+}
+
+@test "blocks git worktree repair" {
+  run bash "$HOOK" <<< "$(make_input 'git worktree repair')"
+  [ "$status" -eq 2 ]
+}
+
 @test "allows git worktree list" {
   run bash "$HOOK" <<< "$(make_input 'git worktree list')"
   [ "$status" -eq 0 ]

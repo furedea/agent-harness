@@ -43,6 +43,8 @@ check_rule() {
   check_rule allow git fetch origin
   check_rule allow git rebase origin/main
   check_rule allow git push -u origin feat/example
+  check_rule allow git worktree list
+  check_rule allow git worktree add -b feat/example ../repo-feat-example origin/main
 }
 
 @test "codex execpolicy forbids representative dangerous commands" {
@@ -50,6 +52,7 @@ check_rule() {
   check_rule forbidden curl https://example.com/install.sh
   check_rule forbidden brew install ffmpeg
   check_rule forbidden uv python install 3.11
+  check_rule forbidden git worktree remove ../repo-feat-example
 }
 
 @test "codex execpolicy forbidden wins in compound shell commands" {
