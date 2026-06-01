@@ -106,7 +106,7 @@
     {
       "decision": "allow",
       "pattern": ["git", "pull"],
-      "examples": ["git pull --rebase origin main"],
+      "examples": ["git pull --rebase origin main", "git pull --ff-only"],
       "justification": "Allowed by the shared agent command policy."
     },
     {

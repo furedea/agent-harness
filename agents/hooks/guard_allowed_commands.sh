@@ -186,6 +186,7 @@ ALLOWED_PATTERNS=(
 
   # Git pull
   '^git pull( --rebase)?( origin [a-zA-Z0-9_./-]+)?$'
+  '^git pull --ff-only$'
 
   # Git fetch / rebase for pre-PR branch refresh. Keep rebase narrow: only
   # replay the current branch onto an origin/* base, or continue/abort an

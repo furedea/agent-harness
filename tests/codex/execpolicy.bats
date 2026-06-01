@@ -41,6 +41,7 @@ check_rule() {
   check_rule allow git add path/to/file
   check_rule allow git commit -m "feat(test): allow double quotes"
   check_rule allow git fetch origin
+  check_rule allow git pull --ff-only
   check_rule allow git rebase origin/main
   check_rule allow git push -u origin feat/example
   check_rule allow git worktree list
