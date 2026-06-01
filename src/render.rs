@@ -49,11 +49,6 @@ pub(crate) fn install(source: &Path, out: &Path) -> Result<()> {
         source,
         &out.join(".claude/hooks/rules/forbidden_commands.json"),
     )?;
-    fs_ops::copy_file(
-        &source.join("agents/secret_path_policy.json"),
-        &out.join(".claude/hooks/rules/secret_path_policy.json"),
-    )?;
-
     codex_config::sync_generated_config(source, &out.join(".codex/config.toml"))?;
 
     Ok(())
@@ -67,6 +62,7 @@ pub(crate) fn verify(root: &Path) -> Result<()> {
         root.join(".codex/skills"),
         root.join(".claude/CLAUDE.md"),
         root.join(".claude/hooks/rules/forbidden_commands.json"),
+        root.join(".claude/hooks/rules/secret_path_policy.json"),
         root.join(".claude/settings.json"),
         root.join(".claude/skills"),
     ] {
@@ -206,7 +202,7 @@ mod tests {
         )?;
         write_file(&source.join("agents/hooks/hook.sh"), "#!/bin/bash\n")?;
         write_file(
-            &source.join("agents/secret_path_policy.json"),
+            &source.join("agents/hooks/rules/secret_path_policy.json"),
             r#"{
   "version": 1,
   "rules": [

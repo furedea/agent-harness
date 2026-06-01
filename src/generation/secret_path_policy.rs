@@ -3,7 +3,7 @@ use std::path::Path;
 use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 
-const POLICY_PATH: &str = "agents/secret_path_policy.json";
+const POLICY_PATH: &str = "agents/hooks/rules/secret_path_policy.json";
 
 #[derive(Debug, Deserialize)]
 struct SecretPathPolicy {
