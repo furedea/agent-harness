@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.3.0](https://github.com/furedea/agent-harness/compare/agent-harness-v0.2.0...agent-harness-v0.3.0) (2026-06-01)
+
+
+### Features
+
+* **install:** add release installer script ([#42](https://github.com/furedea/agent-harness/issues/42)) ([7869923](https://github.com/furedea/agent-harness/commit/78699230215437167b75ba51e6f033f3c29306d2))
+* **release:** add cargo-dist packaging ([#47](https://github.com/furedea/agent-harness/issues/47)) ([917d4ed](https://github.com/furedea/agent-harness/commit/917d4ed5a611a15327cbba6690a8187985b057f8))
+* **workflow:** add PR delivery policy ([#48](https://github.com/furedea/agent-harness/issues/48)) ([4c0a3c8](https://github.com/furedea/agent-harness/commit/4c0a3c8c4f24a475f2408321a7afb74ec31f02ca))
+* **workflow:** add worktree branch policy ([#49](https://github.com/furedea/agent-harness/issues/49)) ([576ea6e](https://github.com/furedea/agent-harness/commit/576ea6e4af044f9718e55b2d591cd2870afb2c24))
+* **workflow:** document ff-only main updates ([#50](https://github.com/furedea/agent-harness/issues/50)) ([e54410d](https://github.com/furedea/agent-harness/commit/e54410dc32143327ddbdaef0b5969091bebdb12c))
+
+
+### Bug Fixes
+
+* **deps:** pin dependencies ([#3](https://github.com/furedea/agent-harness/issues/3)) ([b36843c](https://github.com/furedea/agent-harness/commit/b36843cca169e221889df5c258701498e234e06c))
+
 ## [0.2.0](https://github.com/furedea/agent-harness/compare/agent-harness-v0.1.0...agent-harness-v0.2.0) (2026-05-28)
 
 
