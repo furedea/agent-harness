@@ -1,14 +1,14 @@
 ---
 name: git-commit-split
 description: >
-    Explicit `/git-commit-split` workflow for organizing an already-dirty working tree into multiple intent-grained commits, optionally pairing each commit with its own branch and draft PR. Use only when invoked as the custom command or when the user explicitly asks to split pending changes, create one feature per commit, or create one PR per feature. General branch naming, commit granularity, and Conventional Commits rules live in git-workflow; this command owns mode selection, dirty-tree inspection, hunk splitting, plan approval, and execution.
+    Explicit `/git-commit-split` workflow for organizing an already-dirty working tree into multiple intent-grained commits, optionally pairing each commit with its own branch and PR. Use only when invoked as the custom command or when the user explicitly asks to split pending changes, create one feature per commit, or create one PR per feature. General branch naming, commit granularity, and Conventional Commits rules live in git-workflow; this command owns mode selection, dirty-tree inspection, hunk splitting, plan approval, and execution.
 ---
 
 Mode argument from slash-command invocation (empty if none was passed): $ARGUMENTS
 
 # `/git-commit-split` custom command
 
-This command is for a dirty working tree that already contains multiple uncommitted intents. It inspects everything pending, proposes a split plan, waits for approval, then lands one commit per approved intent. Optionally each commit can be packaged into its own branch and draft PR.
+This command is for a dirty working tree that already contains multiple uncommitted intents. It inspects everything pending, proposes a split plan, waits for approval, then lands one commit per approved intent. Optionally each commit can be packaged into its own branch and PR.
 
 Day-to-day implementation workflow belongs to `git-workflow`. Do not use this command as the default answer to a normal "implement/fix/refactor" request.
 
@@ -29,17 +29,17 @@ The first decision is _where_ the commits will live. There are exactly two deliv
 | mode | meaning |
 | --- | --- |
 | `direct` | Commit on the current branch. No branch creation, no push, no PR. Best when you're already on a feature branch, or when the repo has no protections on the current branch. |
-| `pr-per-feature` | Create one branch + one draft PR per commit. Within this mode, the **branching strategy** is a separate sub-decision presented in the plan: `independent` (each branch cut from the base, fully parallel PRs) or `stack` (each branch cut from the previous feature branch, dependent PRs). |
+| `pr-per-feature` | Create one branch + one PR per commit. Within this mode, the **branching strategy** is a separate sub-decision presented in the plan: `independent` (each branch cut from the base, fully parallel PRs) or `stack` (each branch cut from the previous feature branch, dependent PRs). |
 
 **The mode is always set explicitly by the user. Do not auto-detect it.** Auto-detection (e.g., probing `gh api .../branches/main/protection`) is unreliable across environments, silently picks the wrong workflow when authentication is missing, and can push to a protected branch by accident. The cost of asking is one short message; the cost of guessing wrong is a force-push, a denied push that confuses the user, or an unintended PR.
 
 Resolve the mode in this order:
 
 1. If this command surfaced a non-empty slash-command argument and it equals `direct` or `pr-per-feature`, use that as the mode. Sub-strategy (`independent` / `stack`) is **not** taken from the argument — keep it for the dialog in step 3. If the argument is something else (typo, unrelated text), ignore it and fall through.
-2. Otherwise, if the user's prompt explicitly names the mode (e.g., "PR に分けて", "branch 切って PR", "1 機能 1PR", "draft PR", "stack PR" → `pr-per-feature`; "main に直接", "ここで commit", "この branch に commit" → `direct`), use that.
+2. Otherwise, if the user's prompt explicitly names the mode (e.g., "PR に分けて", "branch 切って PR", "1 機能 1PR", "stack PR" → `pr-per-feature`; "main に直接", "ここで commit", "この branch に commit" → `direct`), use that.
 3. Otherwise ask **one** short question and wait. Example phrasing:
 
-    > この commit 分割は (a) 現在の branch に直接 commit する `direct` モードと，(b) 1 機能ごとに branch を切って draft PR を出す `pr-per-feature` モード のどちらで進めますか？ `pr-per-feature` の場合は，各 PR を独立に base から切る `independent` か，順番に積む `stack` かも併せて教えてください（迷う場合は `independent` が無難です）．
+    > この commit 分割は (a) 現在の branch に直接 commit する `direct` モードと，(b) 1 機能ごとに branch を切って PR を出す `pr-per-feature` モード のどちらで進めますか？ `pr-per-feature` の場合は，各 PR を独立に base から切る `independent` か，順番に積む `stack` かも併せて教えてください（迷う場合は `independent` が無難です）．
 
     When step 1 already settled the mode as `pr-per-feature`, ask only the sub-strategy half (`independent` / `stack`) instead of repeating the mode question.
 
@@ -90,7 +90,7 @@ When the mode is `pr-per-feature`, the commit grouping is only half the plan. Th
 - **Branch strategy** — `independent` or `stack`. Recommend `independent` unless the commits build on each other in a way the reviewer needs to follow in order (e.g., commit 2 is a refactor that commit 3 depends on). When in doubt, propose `independent` and explain that `stack` is available if dependencies matter.
 - **Branch names** — generated by `scripts/branch_name.py` from each commit subject, following `git-workflow`'s branch format. If a name already exists locally or remotely, the script appends `-2`, `-3`, …; surface any collision in the plan.
 - **PR base** — for `independent`, every PR targets `<base>` (the remote default branch). For `stack`, PR `n` targets the branch from PR `n-1`; PR 1 targets `<base>`.
-- **PR shape** — every PR is created as a **draft** via `gh pr create -df` (`-d` = draft, `-f` = fill title/body from the commit). The user can promote drafts later.
+- **PR shape** — every PR is created as a normal PR via `gh pr create -f --base <base>` (`-f` = fill title/body from the commit).
 
 ### Plan presentation
 
@@ -123,7 +123,7 @@ Apply this plan? (yes / edit / cancel)
 Mode: pr-per-feature
 Strategy: independent  (each PR cut from `main`, no dependencies)
 Base branch: main
-PR shape: draft (gh pr create -df)
+PR shape: normal (gh pr create -f)
 
 Proposed commits / branches (3):
 

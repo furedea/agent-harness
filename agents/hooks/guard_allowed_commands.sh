@@ -63,9 +63,11 @@ GOVERNED_PREFIXES=(
   "git add"
   "git branch"
   "git commit"
+  "git fetch"
   "git ls-files"
   "git pull"
   "git push"
+  "git rebase"
   "nixfmt"
   "npm run"
   "npm test"
@@ -183,6 +185,13 @@ ALLOWED_PATTERNS=(
 
   # Git pull
   '^git pull( --rebase)?( origin [a-zA-Z0-9_./-]+)?$'
+
+  # Git fetch / rebase for pre-PR branch refresh. Keep rebase narrow: only
+  # replay the current branch onto an origin/* base, or continue/abort an
+  # already-started rebase.
+  '^git fetch origin$'
+  '^git rebase origin/[a-zA-Z0-9_./-]+$'
+  '^git rebase --(continue|abort)$'
 
   # Git push
   '^git push$'

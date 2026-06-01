@@ -37,8 +37,12 @@ check_rule() {
   check_rule allow uv run --with pytest pytest tests
   check_rule allow uv run python scripts/run_audit.py prepare --provider codex
   check_rule allow gh pr list
+  check_rule allow gh pr create -f --base main
   check_rule allow git add path/to/file
   check_rule allow git commit -m "feat(test): allow double quotes"
+  check_rule allow git fetch origin
+  check_rule allow git rebase origin/main
+  check_rule allow git push -u origin feat/example
 }
 
 @test "codex execpolicy forbids representative dangerous commands" {

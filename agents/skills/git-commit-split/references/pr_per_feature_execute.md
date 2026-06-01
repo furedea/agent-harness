@@ -1,6 +1,6 @@
 # Phase 3 — Execute (`pr-per-feature` mode)
 
-Read this once the user has approved the plan and the mode is `pr-per-feature`. The goal is to land each planned commit on **its own branch**, push it, and open a **draft PR** — repeating for every commit in the plan. Merging is out of scope; the user decides when and how to merge.
+Read this once the user has approved the plan and the mode is `pr-per-feature`. The goal is to land each planned commit on **its own branch**, push it, and open a **normal PR** — repeating for every commit in the plan. Merging is out of scope; the user decides when and how to merge.
 
 The strategy decided in the plan (`independent` vs `stack`) only changes the **cut point** for each branch and the **PR base** — everything else is identical.
 
@@ -68,16 +68,16 @@ For each planned commit, in order. The branch creation in step 0 is what makes t
 
 3. **Mixed commit** (some whole files + some partial hunks): apply the partial patch first, then `git add` the whole-file additions, then commit once.
 
-4. **Push the branch and open a draft PR:**
+4. **Push the branch and open a PR:**
 
     ```bash
     git push -u origin "$slug"
-    gh pr create -df --base "<pr-base>"
+    gh pr create -f --base "<pr-base>"
     ```
 
-    - `-d` makes it a draft, `-f` fills the title and body from the commit. Drafts let reviewers know the work isn't yet ready and keep CI cheap until the user marks the PR ready.
+    - `-f` fills the title and body from the commit.
     - `<pr-base>` is `<base>` for `independent`, and the previous branch's slug for `stack`.
-    - If `gh pr create` fails (the repo doesn't allow drafts on this plan, the branch was just pushed and `gh` hasn't seen it, etc.), surface the error and pause — don't try clever recovery. The branch and commit are already safe; the user can run `gh pr create` themselves.
+    - If `gh pr create` fails (the branch was just pushed and `gh` hasn't seen it, authentication expired, etc.), surface the error and pause — don't try clever recovery. The branch and commit are already safe; the user can run `gh pr create` themselves.
 
 5. **Move to the next iteration's starting point.** The working tree may still hold remaining hunks for later commits.
     - **independent:** `git switch "$(cat /tmp/pre-split-branch)"` (or `git switch <base>` if the user started off the base) to return to the cut point. The remaining uncommitted changes travel with you. The next iteration's step 0 will cut a fresh branch from here.
@@ -103,20 +103,20 @@ The partial state at any failure point is _commits on local feature branches, po
 
 - **Branch created but commit failed.** Just retry the commit on the current branch. Nothing was pushed yet.
 - **Commit landed but push failed.** The local commit is safe. Diagnose (network, permissions, branch protection on `<base>` accidentally targeted) and retry `git push -u origin "$slug"`.
-- **Push succeeded but `gh pr create` failed.** The branch is on the remote with the commit; the user can open the PR manually. Tell them what to run: `gh pr create -df --base "<pr-base>"`.
+- **Push succeeded but `gh pr create` failed.** The branch is on the remote with the commit; the user can open the PR manually. Tell them what to run: `gh pr create -f --base "<pr-base>"`.
 - **You need to abort the whole session.** Use the safety net from setup, but only after confirming with the user — local commits and pushed branches will be lost on the local side, and pushed branches stay on the remote until someone deletes them:
     ```bash
     git switch "$(cat /tmp/pre-split-branch)"
     git reset --hard "$(cat /tmp/pre-split-head)"
     ```
-    Pushed branches and any draft PRs already opened are not auto-cleaned. Tell the user which branches were pushed and let them decide whether to `git push origin --delete <slug>` and close the PRs, or keep them.
+    Pushed branches and any PRs already opened are not auto-cleaned. Tell the user which branches were pushed and let them decide whether to `git push origin --delete <slug>` and close the PRs, or keep them.
 
 ## Edge cases specific to `pr-per-feature` mode
 
 - **Pre-commit hook failure.** Same handling as `direct`: fix and create a new commit, never `--amend`. The branch's first push hasn't happened yet, so retry the commit before pushing.
 - **Push rejected on the base branch.** This shouldn't happen in normal flow — every push goes to a feature slug, never to `<base>`. If it does, stop immediately. Never `--force` past a protection rule; the protected base is exactly _why_ this mode exists.
-- **`gh` not authenticated / no remote.** Phase 0 catches this, but if it surfaces mid-execution (token expired, network blip), pause and tell the user. The local commit is intact; they can re-auth and resume by running `git push -u origin "$slug"` and `gh pr create -df --base "<pr-base>"` themselves.
+- **`gh` not authenticated / no remote.** Phase 0 catches this, but if it surfaces mid-execution (token expired, network blip), pause and tell the user. The local commit is intact; they can re-auth and resume by running `git push -u origin "$slug"` and `gh pr create -f --base "<pr-base>"` themselves.
 - **Branch name collision discovered after the slug was generated.** `branch_name.py --avoid-existing` checks at slug-generation time, but a parallel session could create a colliding branch in the meantime. If `git switch -c` fails locally, regenerate the slug with `--avoid-existing` and update the plan. If `git push` is rejected as `(fetch first)`, fetch and pick a new slug — never `--force` over someone else's branch.
 - **Stack base lags after a previous PR is merged.** Out of scope for this command — it doesn't merge or rebase stacks. If the user merges PR 1 themselves while later PRs are still open, those PRs' bases will rebase on the next push; that's the user's call, not this command's.
 - **Detached HEAD.** Hard stop. This mode requires a named branch to push from.
-- **One giant change that genuinely is one feature.** This still means one branch + one PR — the mode doesn't manufacture extra branches. Land the single commit, push, open one draft PR, done.
+- **One giant change that genuinely is one feature.** This still means one branch + one PR — the mode doesn't manufacture extra branches. Land the single commit, push, open one PR, done.
