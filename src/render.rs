@@ -67,6 +67,7 @@ pub(crate) fn verify(root: &Path) -> Result<()> {
         root.join(".codex/skills"),
         root.join(".claude/CLAUDE.md"),
         root.join(".claude/hooks/rules/forbidden_commands.json"),
+        root.join(".claude/hooks/rules/secret_path_policy.json"),
         root.join(".claude/settings.json"),
         root.join(".claude/skills"),
     ] {

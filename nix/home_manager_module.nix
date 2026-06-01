@@ -44,6 +44,7 @@ let
     chmod -R u+w $out
     mkdir -p $out/rules
     cp ${claudeForbiddenCommands} $out/rules/forbidden_commands.json
+    cp ${cfg.source}/agents/secret_path_policy.json $out/rules/secret_path_policy.json
   '';
 
   codexSkills = pkgs.runCommand "codex-skills" { } ''
