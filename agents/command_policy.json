@@ -93,6 +93,12 @@
     },
     {
       "decision": "allow",
+      "pattern": ["git", "fetch"],
+      "examples": ["git fetch origin"],
+      "justification": "Allowed for refreshing remote refs before creating a pull request."
+    },
+    {
+      "decision": "allow",
       "pattern": ["git", "ls-files"],
       "examples": ["git ls-files \"*.nix\""],
       "justification": "Allowed by the shared agent command policy."
@@ -108,6 +114,12 @@
       "pattern": ["git", "push"],
       "examples": ["git push origin feature/example"],
       "justification": "Allowed by the shared agent command policy."
+    },
+    {
+      "decision": "allow",
+      "pattern": ["git", "rebase"],
+      "examples": ["git rebase origin/main", "git rebase --continue", "git rebase --abort"],
+      "justification": "Allowed only through hooks for narrow pre-PR rebases onto origin branches."
     },
     {
       "decision": "allow",

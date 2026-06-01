@@ -120,8 +120,18 @@ setup() {
   [ "$status" -eq 2 ]
 }
 
+@test "blocks HEAD:refs/heads/main refspec" {
+  run bash "$HOOK" <<< "$(make_input 'git push origin HEAD:refs/heads/main')"
+  [ "$status" -eq 2 ]
+}
+
 @test "blocks src:main refspec" {
   run bash "$HOOK" <<< "$(make_input 'git push origin feature/foo:main')"
+  [ "$status" -eq 2 ]
+}
+
+@test "blocks src:refs/heads/main refspec" {
+  run bash "$HOOK" <<< "$(make_input 'git push origin refs/heads/feature/foo:refs/heads/main')"
   [ "$status" -eq 2 ]
 }
 

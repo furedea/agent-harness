@@ -289,6 +289,45 @@ run_hook() {
   [ "$status" -eq 0 ]
 }
 
+@test "allows PR delivery commands" {
+  run_hook "git fetch origin"
+  [ "$status" -eq 0 ]
+
+  run_hook "git push -u origin feat/agent-pr-delivery"
+  [ "$status" -eq 0 ]
+
+  run_hook "git push --set-upstream origin fix/parser-empty-input"
+  [ "$status" -eq 0 ]
+
+  run_hook "gh pr create -f --base main"
+  [ "$status" -eq 0 ]
+}
+
+@test "allows narrow pre-PR rebase commands" {
+  run_hook "git rebase origin/main"
+  [ "$status" -eq 0 ]
+
+  run_hook "git rebase origin/release/1.2"
+  [ "$status" -eq 0 ]
+
+  run_hook "git rebase --continue"
+  [ "$status" -eq 0 ]
+
+  run_hook "git rebase --abort"
+  [ "$status" -eq 0 ]
+}
+
+@test "blocks broad rebase commands" {
+  run_hook "git rebase -i origin/main"
+  [ "$status" -eq 2 ]
+
+  run_hook "git rebase --onto origin/main HEAD~2"
+  [ "$status" -eq 2 ]
+
+  run_hook "git rebase main"
+  [ "$status" -eq 2 ]
+}
+
 @test "blocks bulk git add forms" {
   run_hook "git add ."
   [ "$status" -eq 2 ]

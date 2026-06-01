@@ -12,7 +12,8 @@ This skill governs the default Git shape of implementation work: which branch to
 
 - Inspect Git state before edits: current branch, `git status --porcelain=v1`, and recent commit style when commit messages will be written.
 - Never overwrite, reset, clean, or discard user changes unless the user explicitly asked for that exact destructive action.
-- Do not push, force-push, merge PRs, or open PRs unless the user explicitly asked for that delivery step.
+- Do not force-push, merge PRs, or push directly to the default / protected branch.
+- For implementation work, deliver through a feature branch and pull request unless the user explicitly asks for local-only work.
 - Prefer one coherent VCS unit per Red -> Green -> Refactor cycle. If the task is too small for multiple cycles, one commit is enough.
 - Keep branch names and commit subjects aligned with the primary intent of the change, not with filenames.
 
@@ -120,7 +121,12 @@ For implementation tasks:
 2. Move to or create the feature branch when branch policy requires it.
 3. Implement with TSDD: Red -> Green -> Refactor.
 4. Commit each coherent green unit when the user asked for commits or the repository workflow expects implementation work to be committed.
-5. Stop before push/PR unless the user explicitly requested that delivery.
+5. Unless the user asked for local-only work, push the feature branch and create a pull request:
+    - `git fetch origin`
+    - optionally `git rebase origin/<base>` before the first push when the feature branch should be refreshed onto the latest base
+    - `git push -u origin <branch>`
+    - `gh pr create -f --base <base>`
+6. Stop before merge; merging is a human decision unless the user explicitly asks for it.
 
 For explicit commit requests:
 
@@ -131,8 +137,15 @@ For explicit commit requests:
 For explicit PR requests:
 
 1. Confirm the target base branch if it is not obvious from the repo default.
-2. Push the feature branch only after the user requested PR delivery.
-3. Create a draft PR unless the user explicitly asks for a ready-for-review PR.
+2. Push the feature branch with `git push -u origin <branch>`.
+3. Create a normal PR with `gh pr create -f --base <base>`.
+
+For rebase and force-push:
+
+- `git rebase origin/<base>` is allowed before the first push for a PR branch.
+- `git rebase --continue` and `git rebase --abort` are allowed to complete or recover from that narrow workflow.
+- Interactive rebase, `--onto`, and rebasing onto local branches are outside the default workflow; ask before using them.
+- `git push --force`, `git push --force-with-lease`, and `+refspec` pushes are not part of the default workflow. Stop and ask the user if a remote history rewrite is genuinely required.
 
 ## Relationship To `/git-commit-split`
 
