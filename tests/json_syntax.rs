@@ -17,13 +17,24 @@ fn repository_json_files_are_valid() {
 }
 
 fn repository_json_files() -> Vec<PathBuf> {
-    let mut paths = Vec::new();
-    paths.push(repo_root().join("renovate.json"));
+    let mut paths = top_level_json_files(repo_root());
     for directory in ["agents", "claude", "codex"] {
         collect_json_files(&repo_root().join(directory), &mut paths);
     }
     paths.sort();
     paths
+}
+
+fn top_level_json_files(directory: &Path) -> Vec<PathBuf> {
+    std::fs::read_dir(directory)
+        .unwrap_or_else(|error| panic!("failed to read directory {}: {error}", directory.display()))
+        .filter_map(|entry| {
+            let path = path_from_entry(entry, directory);
+            path.is_file()
+                .then_some(path)
+                .filter(|path| is_json_file(path))
+        })
+        .collect()
 }
 
 fn collect_json_files(directory: &Path, paths: &mut Vec<PathBuf>) {
@@ -34,23 +45,29 @@ fn collect_json_files(directory: &Path, paths: &mut Vec<PathBuf>) {
     for entry in std::fs::read_dir(directory)
         .unwrap_or_else(|error| panic!("failed to read directory {}: {error}", directory.display()))
     {
-        let path = entry
-            .unwrap_or_else(|error| {
-                panic!(
-                    "failed to read directory entry in {}: {error}",
-                    directory.display()
-                )
-            })
-            .path();
+        let path = path_from_entry(entry, directory);
         if path.is_dir() {
             collect_json_files(&path, paths);
-        } else if path
-            .extension()
-            .is_some_and(|extension| extension == "json")
-        {
+        } else if is_json_file(&path) {
             paths.push(path);
         }
     }
+}
+
+fn path_from_entry(entry: std::io::Result<std::fs::DirEntry>, directory: &Path) -> PathBuf {
+    entry
+        .unwrap_or_else(|error| {
+            panic!(
+                "failed to read directory entry in {}: {error}",
+                directory.display()
+            )
+        })
+        .path()
+}
+
+fn is_json_file(path: &Path) -> bool {
+    path.extension()
+        .is_some_and(|extension| extension == "json")
 }
 
 fn repo_root() -> &'static Path {
