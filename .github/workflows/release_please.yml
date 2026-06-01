@@ -63,6 +63,7 @@ jobs:
       id-token: write
       attestations: write
     env:
+      CARGO_DIST_VERSION: 0.30.2
       TARGET: x86_64-unknown-linux-musl
       TAG_NAME: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || needs.release-please.outputs.tag_name }}
     steps:
@@ -81,46 +82,65 @@ jobs:
       - name: Install Rust release target
         run: rustup target add "$TARGET"
 
+      - name: Install musl build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends musl-tools
+
+      - name: Install cargo-dist
+        run: |
+          curl --proto '=https' --tlsv1.2 -LsSf \
+            "https://github.com/axodotdev/cargo-dist/releases/download/v${CARGO_DIST_VERSION}/cargo-dist-installer.sh" \
+            | sh
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
       - name: Run tests
         run: cargo test --locked
 
-      - name: Build release binary
-        run: cargo build --release --locked --target "$TARGET"
-
-      - name: Package release tarball
+      - name: Build release artifacts
         run: |
           set -euo pipefail
 
-          readonly PACKAGE_NAME="agent-harness-${TARGET}"
-          readonly ARCHIVE_NAME="${PACKAGE_NAME}.tar.gz"
-          PACKAGE_ROOT="$(mktemp -d)"
-          readonly PACKAGE_ROOT
+          dist build \
+            --tag "$TAG_NAME" \
+            --target "$TARGET" \
+            --artifacts=all \
+            --output-format=json \
+            > dist-manifest.json
+          dist print-upload-files-from-manifest \
+            --manifest dist-manifest.json \
+            > dist-upload-files.txt
 
-          mkdir -p dist "${PACKAGE_ROOT}/${PACKAGE_NAME}/share/agent-harness"
-
-          install -m 0755 \
-            "target/${TARGET}/release/agent-harness" \
-            "${PACKAGE_ROOT}/${PACKAGE_NAME}/agent-harness"
-          strip --strip-all "${PACKAGE_ROOT}/${PACKAGE_NAME}/agent-harness"
-
-          cp -a agents claude codex \
-            "${PACKAGE_ROOT}/${PACKAGE_NAME}/share/agent-harness/"
-
-          tar -C "$PACKAGE_ROOT" -czf "dist/${ARCHIVE_NAME}" "$PACKAGE_NAME"
-          install -m 0644 scripts/install.sh dist/install.sh
-
-          (cd dist && sha256sum "$ARCHIVE_NAME" install.sh > SHA256SUMS)
-
-      - name: Smoke test packaged tarball
+      - name: Smoke test packaged archive
         run: |
           set -euo pipefail
+
+          archive_path="$(
+            find target/distrib -maxdepth 1 -type f \
+              \( -name "agent-harness-${TARGET}.tar.xz" -o -name "agent-harness-${TARGET}.tar.gz" \) \
+              | head -n 1
+          )"
+
+          if [[ -z "$archive_path" ]]; then
+            echo "agent-harness archive for ${TARGET} was not produced."
+            exit 1
+          fi
 
           tmpdir="$(mktemp -d)"
           mkdir -p "$tmpdir/install" "$tmpdir/home"
 
-          tar -xzf "dist/agent-harness-${TARGET}.tar.gz" \
-            -C "$tmpdir/install" \
-            --strip-components=1
+          case "$archive_path" in
+            *.tar.xz)
+              tar -xJf "$archive_path" -C "$tmpdir/install" --strip-components=1
+              ;;
+            *.tar.gz)
+              tar -xzf "$archive_path" -C "$tmpdir/install" --strip-components=1
+              ;;
+            *)
+              echo "unsupported archive format: $archive_path"
+              exit 1
+              ;;
+          esac
 
           "$tmpdir/install/agent-harness" --version
           "$tmpdir/install/agent-harness" install --prefix "$tmpdir/home"
@@ -129,10 +149,7 @@ jobs:
       - name: Attest release artifacts
         uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
         with:
-          subject-path: |
-            dist/agent-harness-x86_64-unknown-linux-musl.tar.gz
-            dist/SHA256SUMS
-            dist/install.sh
+          subject-path: target/distrib/*
 
       - name: Upload release artifacts
         env:
@@ -140,8 +157,10 @@ jobs:
         run: |
           set -euo pipefail
 
-          gh release upload "$TAG_NAME" \
-            "dist/agent-harness-${TARGET}.tar.gz" \
-            dist/SHA256SUMS \
-            dist/install.sh \
-            --clobber
+          mapfile -t artifact_paths < dist-upload-files.txt
+          if ((${#artifact_paths[@]} == 0)); then
+            echo "cargo-dist did not report uploadable files."
+            exit 1
+          fi
+
+          gh release upload "$TAG_NAME" "${artifact_paths[@]}" --clobber

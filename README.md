@@ -10,31 +10,55 @@ Shared AI agent harness files and installer for Codex and Claude Code.
 - **Provider-specific rendering**: render the same skill sources for Codex and Claude Code with provider-specific frontmatter and metadata.
 - **Safer agent operation**: install guards for secret access, dangerous git commands, harness file edits, and command policy violations.
 - **Managed config sync**: update managed Codex config keys while preserving tool-owned and user-owned state.
-- **Portable install**: use a release installer, release tarball, Cargo, Nix, Home Manager, or a local source checkout.
+- **Portable install**: use a cargo-dist release installer, release archive, Cargo, Nix, Home Manager, or a local source checkout.
 
 ## Quick Install
 
+The release artifacts are built with cargo-dist. The quickest server install uses the generated shell installer:
+
 ```bash
-curl -fsSL https://github.com/furedea/agent-harness/releases/latest/download/install.sh | bash
+curl --proto '=https' --tlsv1.2 -LsSf \
+  https://github.com/furedea/agent-harness/releases/latest/download/agent-harness-installer.sh \
+  | sh
+```
+
+Then install or verify the managed harness files:
+
+```bash
+agent-harness install --prefix "$HOME"
 agent-harness verify --prefix "$HOME"
 ```
 
-The installer places the release archive under `$HOME/.local/agent-harness`, links the binary to `$HOME/.local/bin/agent-harness`, then runs `agent-harness install --prefix "$HOME"`.
+For a source-based Cargo install:
+
+```bash
+cargo install --locked --git https://github.com/furedea/agent-harness agent-harness
+```
+
+For Nix:
+
+```bash
+nix profile install github:furedea/agent-harness
+```
+
+Checksum files are attached to each GitHub Release. They are optional for quick bootstrap usage, but recommended when pinning a specific release in automation.
+
+Homebrew support should be enabled after a `furedea/homebrew-tap` repository and `HOMEBREW_TAP_TOKEN` secret exist. cargo-dist can then publish the formula from the same release pipeline.
 
 Make sure `$HOME/.local/bin` is on `PATH`.
 
 ## Other Installation Methods
 
-### Release Tarball
+### Release Archive
 
-Use this on servers where you want the binary release but do not want to pipe an installer into Bash.
+Use this on servers where you want the binary release but do not want to pipe an installer into Bash. The exact archive extension is produced by cargo-dist and may be `.tar.xz` or `.tar.gz`.
 
 ```bash
 mkdir -p "$HOME/.local/bin" "$HOME/.local/agent-harness"
 
 curl -fsSL \
-  https://github.com/furedea/agent-harness/releases/latest/download/agent-harness-x86_64-unknown-linux-musl.tar.gz \
-  | tar -xz -C "$HOME/.local/agent-harness" --strip-components=1
+  https://github.com/furedea/agent-harness/releases/latest/download/agent-harness-x86_64-unknown-linux-musl.tar.xz \
+  | tar -xJ -C "$HOME/.local/agent-harness" --strip-components=1
 
 ln -sf "$HOME/.local/agent-harness/agent-harness" "$HOME/.local/bin/agent-harness"
 
@@ -87,8 +111,8 @@ Use the Home Manager module when your agent config is managed by Nix. The module
 Release archives are published with a `SHA256SUMS` file.
 
 ```bash
-curl -fsSL -O https://github.com/furedea/agent-harness/releases/latest/download/agent-harness-x86_64-unknown-linux-musl.tar.gz
-curl -fsSL -O https://github.com/furedea/agent-harness/releases/latest/download/install.sh
+curl -fsSL -O https://github.com/furedea/agent-harness/releases/latest/download/agent-harness-x86_64-unknown-linux-musl.tar.xz
+curl -fsSL -O https://github.com/furedea/agent-harness/releases/latest/download/agent-harness-installer.sh
 curl -fsSL -O https://github.com/furedea/agent-harness/releases/latest/download/SHA256SUMS
 sha256sum -c SHA256SUMS
 ```
@@ -216,7 +240,7 @@ bats --print-output-on-failure --recursive tests
 
 ## Release
 
-Releases are managed by Release Please. Merging the release PR updates `Cargo.toml`, `Cargo.lock`, `.release-please-manifest.json`, and `CHANGELOG.md`, then publishes a GitHub Release with a Linux musl tarball and installer script.
+Releases are managed by Release Please. Merging the release PR updates `Cargo.toml`, `Cargo.lock`, `.release-please-manifest.json`, and `CHANGELOG.md`, then publishes a GitHub Release with cargo-dist Linux musl archives and an installer script.
 
 If the release assets need to be rebuilt for an existing tag, run the `Release Please` workflow manually with the tag name, for example:
 
