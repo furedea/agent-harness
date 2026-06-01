@@ -8,6 +8,14 @@
   ],
   "mode": "full",
   "dependencyDashboard": true,
+  "packageRules": [
+    {
+      "description": "Wait for PyPI packages to satisfy uv exclude-newer.",
+      "matchDatasources": ["pypi"],
+      "minimumReleaseAge": "7 days",
+      "internalChecksFilter": "strict"
+    }
+  ],
   "lockFileMaintenance": {
     "enabled": true
   }
