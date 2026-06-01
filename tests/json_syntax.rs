@@ -18,6 +18,7 @@ fn repository_json_files_are_valid() {
 
 fn repository_json_files() -> Vec<PathBuf> {
     let mut paths = Vec::new();
+    paths.push(repo_root().join("renovate.json"));
     for directory in ["agents", "claude", "codex"] {
         collect_json_files(&repo_root().join(directory), &mut paths);
     }
