@@ -289,6 +289,28 @@ run_hook() {
   [ "$status" -eq 0 ]
 }
 
+@test "allows worktree branch creation commands" {
+  run_hook "git worktree list"
+  [ "$status" -eq 0 ]
+
+  run_hook "git worktree add -b feat/worktree-branch-delivery ../agent-harness-feat-worktree-branch-delivery origin/main"
+  [ "$status" -eq 0 ]
+}
+
+@test "blocks worktree maintenance commands" {
+  run_hook "git worktree remove ../agent-harness-feat-worktree-branch-delivery"
+  [ "$status" -eq 2 ]
+
+  run_hook "git worktree prune"
+  [ "$status" -eq 2 ]
+
+  run_hook "git worktree move ../old ../new"
+  [ "$status" -eq 2 ]
+
+  run_hook "git worktree repair"
+  [ "$status" -eq 2 ]
+}
+
 @test "allows PR delivery commands" {
   run_hook "git fetch origin"
   [ "$status" -eq 0 ]

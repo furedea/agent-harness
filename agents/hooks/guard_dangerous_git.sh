@@ -8,7 +8,7 @@
 #   - gh pr merge --admin                            (bypasses review)
 #   - git rm / git clean / git stash drop|clear      (always destructive)
 #   - git branch -D                                  (force branch delete)
-#   - git worktree remove                            (worktree delete)
+#   - git worktree remove|prune|move|repair          (worktree maintenance)
 #   - git filter-branch / filter-repo / replace      (history rewrite)
 #   - git reflog delete | expire                     (loses recovery records)
 #   - git symbolic-ref --delete | -d                 (HEAD/ref delete)
@@ -244,7 +244,7 @@ function analyze_git_destroy() {
     '^git[[:space:]]+replace([[:space:]]|$)'
     '^git[[:space:]]+stash[[:space:]]+(drop|clear)([[:space:]]|$)'
     '^git[[:space:]]+branch[[:space:]]+(.*[[:space:]])?-D([[:space:]]|$)'
-    '^git[[:space:]]+worktree[[:space:]]+remove([[:space:]]|$)'
+    '^git[[:space:]]+worktree[[:space:]]+(remove|prune|move|repair)([[:space:]]|$)'
     '^git[[:space:]]+reflog[[:space:]]+(delete|expire)([[:space:]]|$)'
     '^git[[:space:]]+symbolic-ref[[:space:]]+(.*[[:space:]])?(--delete|-d)([[:space:]]|=|$)'
     '^git[[:space:]]+gc[[:space:]]+(.*[[:space:]])?--prune([[:space:]]|=|$)'
@@ -253,7 +253,7 @@ function analyze_git_destroy() {
   for _pat in "${_always_destructive[@]}"; do
     if printf '%s\n' "$_seg" | grep -qE "$_pat"; then
       _emit_destroy_block "$_seg" \
-        "this verb / flag combination is always destructive (rm, clean, filter-*, replace, stash drop|clear, branch -D, worktree remove, reflog delete|expire, symbolic-ref --delete, gc --prune)"
+        "this verb / flag combination is always destructive or maintenance-only (rm, clean, filter-*, replace, stash drop|clear, branch -D, worktree remove|prune|move|repair, reflog delete|expire, symbolic-ref --delete, gc --prune)"
       return 2
     fi
   done

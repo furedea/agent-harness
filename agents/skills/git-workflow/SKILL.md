@@ -19,12 +19,28 @@ This skill governs the default Git shape of implementation work: which branch to
 
 ## Branch Policy
 
-Use a feature branch for implementation work.
+Use a feature branch in its own worktree for implementation work.
 
 1. If already on a suitable non-default branch, stay there.
-2. If on `main`, `master`, a release branch, or another protected/default branch, create a task branch before edits unless the user explicitly asked to work on the current branch.
-3. If the working tree is dirty before branch creation, inspect the dirty files. If they are unrelated user changes, ask before switching or committing them.
-4. If the user asks for a PR, create the branch before implementation and keep all commits for that PR on the branch.
+2. If on `main`, `master`, a release branch, or another protected/default branch, create a task worktree before edits unless the user explicitly asked to work in the current checkout.
+3. If the current working tree is dirty before worktree creation, inspect the dirty files. If those changes belong to the new task, ask before moving or copying them; otherwise leave them in place and create a separate task worktree.
+4. If the user asks for a PR, create the branch / worktree before implementation and keep all commits for that PR there.
+
+Task worktree creation:
+
+```bash
+git fetch origin
+git worktree add -b <branch> ../<repo-name>-<branch-path-slug> origin/<base>
+cd ../<repo-name>-<branch-path-slug>
+```
+
+Rules:
+
+- `<branch>` follows the branch name format below.
+- `<branch-path-slug>` is the branch name with `/` replaced by `-`.
+- Put task worktrees next to the repository root by default. For example, `agent-harness` branch `feat/worktree-branch-delivery` uses `../agent-harness-feat-worktree-branch-delivery`.
+- Append `-2`, `-3`, etc. to the worktree path if it already exists.
+- Do not remove, prune, move, or repair worktrees from the agent workflow; report stale worktrees to the user instead.
 
 Branch name format:
 
@@ -118,7 +134,7 @@ build(deps): bump axios from 1.6.0 to 1.7.2
 For implementation tasks:
 
 1. Inspect branch and dirty state.
-2. Move to or create the feature branch when branch policy requires it.
+2. Move to or create the feature branch / worktree when branch policy requires it.
 3. Implement with TSDD: Red -> Green -> Refactor.
 4. Commit each coherent green unit when the user asked for commits or the repository workflow expects implementation work to be committed.
 5. Unless the user asked for local-only work, push the feature branch and create a pull request:

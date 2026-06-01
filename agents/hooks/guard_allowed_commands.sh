@@ -68,6 +68,7 @@ GOVERNED_PREFIXES=(
   "git pull"
   "git push"
   "git rebase"
+  "git worktree"
   "nixfmt"
   "npm run"
   "npm test"
@@ -197,6 +198,11 @@ ALLOWED_PATTERNS=(
   '^git push$'
   '^git push origin$'
   '^git push (-u |--set-upstream )?origin [a-zA-Z0-9_./-]+$'
+
+  # Git worktree operations for isolated task branches. Maintenance and
+  # deletion commands intentionally stay out of the allowlist.
+  '^git worktree list$'
+  '^git worktree add -b [a-zA-Z0-9_./-]+ [A-Za-z0-9._/-]+ origin/[a-zA-Z0-9_./-]+$'
 
   # Python development commands. Require --frozen so agents do not implicitly
   # resolve or update dependencies while running quality gates.
