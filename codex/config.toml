@@ -1,5 +1,5 @@
 model = "gpt-5.5"
-model_reasoning_effort = "high"
+model_reasoning_effort = "xhigh"
 personality = "pragmatic"
 approval_policy = "on-request"
 sandbox_mode = "read-only"
@@ -20,7 +20,6 @@ hide_rate_limit_model_nudge = true
 use_theme_colors = true
 status_line = [
   "project-root",
-  "git-branch",
   "model-with-reasoning",
   "context-used",
   "five-hour-limit",
