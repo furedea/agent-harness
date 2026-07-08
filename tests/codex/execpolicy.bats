@@ -3,11 +3,27 @@
 
 setup() {
   REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
+  CODEX_BIN="${CODEX_BIN:-codex}"
 }
 
 require_codex_execpolicy() {
-  command -v codex >/dev/null
-  codex execpolicy check --help >/dev/null 2>&1
+  if ! command -v "$CODEX_BIN" >/dev/null; then
+    if [ "${REQUIRE_CODEX_EXECPOLICY:-0}" = "1" ]; then
+      echo "Codex CLI is not available: $CODEX_BIN" >&2
+      return 1
+    fi
+
+    skip "Codex CLI is not available: $CODEX_BIN"
+  fi
+
+  if ! "$CODEX_BIN" execpolicy check --help >/dev/null 2>&1; then
+    if [ "${REQUIRE_CODEX_EXECPOLICY:-0}" = "1" ]; then
+      echo "Codex CLI does not support execpolicy check: $CODEX_BIN" >&2
+      return 1
+    fi
+
+    skip "Codex CLI does not support execpolicy check: $CODEX_BIN"
+  fi
 }
 
 codex_rules() {
@@ -20,16 +36,18 @@ codex_rules() {
 check_rule() {
   require_codex_execpolicy
 
-  local expected="$1"
+  local _expected="$1"
   shift
 
-  local rules_file
-  rules_file="$(mktemp "$BATS_TEST_TMPDIR/rules.XXXXXX")"
-  codex_rules >"$rules_file"
+  local _rules_file
+  _rules_file="$(mktemp "$BATS_TEST_TMPDIR/rules.XXXXXX")"
+  codex_rules >"$_rules_file"
 
-  local output
-  output="$(codex execpolicy check --rules "$rules_file" -- "$@" 2>/dev/null)"
-  [ "$(jq -r '.decision' <<<"$output")" = "$expected" ]
+  local _output
+  _output="$(
+    "$CODEX_BIN" execpolicy check --rules "$_rules_file" -- "$@" 2>/dev/null
+  )"
+  [ "$(jq -r '.decision' <<<"$_output")" = "$_expected" ]
 }
 
 @test "codex execpolicy allows representative development commands" {

@@ -235,7 +235,8 @@ cargo fmt --check
 cargo test
 cargo clippy -- -D warnings
 actionlint .github/workflows/*.yml
-bats --print-output-on-failure --recursive tests
+bats --print-output-on-failure --recursive tests/hooks tests/install_script.bats
+CODEX_BIN=codex bats --print-output-on-failure tests/codex/execpolicy.bats
 ```
 
 ## Release

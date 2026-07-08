@@ -3,14 +3,12 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-25.11-darwin";
-    codex-cli-nix.url = "github:sadjow/codex-cli-nix/7f0f3802287581e04501e2fea26b56d63df18ebd";
   };
 
   outputs =
     {
       self,
       nixpkgs,
-      codex-cli-nix,
       ...
     }:
     let
@@ -41,7 +39,6 @@
           cargo-deny
           cargo-machete
           clippy
-          codex-cli-nix.packages.${system}.default
           commitlint
           deadnix
           lefthook
