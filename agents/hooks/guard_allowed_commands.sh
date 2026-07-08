@@ -183,6 +183,7 @@ ALLOWED_PATTERNS=(
   "^git commit -m '[^']*('\\\\''[^']*)*'$"
   '^git commit -m "[^"$`\\]*"$'
   '^git commit --amend -m [^;&|<>$`]+$'
+  '^git commit --amend --no-edit$'
 
   # Git pull
   '^git pull( --rebase)?( origin [a-zA-Z0-9_./-]+)?$'
