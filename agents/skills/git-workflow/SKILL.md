@@ -19,12 +19,28 @@ This skill governs the default Git shape of implementation work: which branch to
 
 ## Branch Policy
 
-Use a feature branch in its own worktree for implementation work.
+Prefer a feature branch in the current checkout for a single active task. Create a separate worktree only in the cases listed below.
 
-1. If already on a suitable non-default branch, stay there.
-2. If on `main`, `master`, a release branch, or another protected/default branch, create a task worktree before edits unless the user explicitly asked to work in the current checkout.
-3. If the current working tree is dirty before worktree creation, inspect the dirty files. If those changes belong to the new task, ask before moving or copying them; otherwise leave them in place and create a separate task worktree.
-4. If the user asks for a PR, create the branch / worktree before implementation and keep all commits for that PR there.
+Choose the workspace in this order:
+
+1. If the user explicitly asks for a worktree, parallel work, isolated work, or another simultaneous task, create a sibling worktree.
+2. If the user explicitly asks to avoid worktrees or continue in the current checkout, stay in the current checkout unless doing so would overwrite or mix unrelated changes.
+3. If already on a suitable non-default branch for the task, stay there.
+4. If on `main`, `master`, a release branch, or another protected/default branch:
+    - If the working tree is clean, create the task branch in the current checkout with `git switch -c <branch>`.
+    - If dirty changes clearly belong to this task, create the task branch in the current checkout and keep those changes.
+    - If dirty changes are unrelated to this task, create a sibling worktree.
+    - If ownership of dirty changes is unclear, ask before switching branches or creating a worktree.
+5. If on a non-default branch for a different task:
+    - If the new request is a continuation of that branch, stay there.
+    - If the new request is unrelated, create a sibling worktree.
+6. If the target branch is already checked out in another worktree, use that worktree or choose a different branch name. Do not force-checkout the same branch in two places.
+
+Current-checkout branch creation:
+
+```bash
+git switch -c <branch>
+```
 
 Task worktree creation:
 
@@ -39,7 +55,8 @@ Rules:
 
 - `<branch>` follows the branch name format below.
 - `<branch-path-slug>` is the branch name with `/` replaced by `-`.
-- Put task worktrees next to the repository root by default. For example, `agent-harness` branch `feat/worktree-branch-delivery` uses `../agent-harness-feat-worktree-branch-delivery`.
+- Put task worktrees as siblings of the primary checkout under the same parent directory.
+- Example: primary checkout `/Users/kaito/ghq/github.com/furedea/agent-harness` with branch `ci/codex-conformance` uses `/Users/kaito/ghq/github.com/furedea/agent-harness-ci-codex-conformance`.
 - Append `-2`, `-3`, etc. to the worktree path if it already exists.
 - When updating `main` itself, use `git pull --ff-only` in the main worktree. Do not use `git pull --rebase origin main` for the base branch.
 - Do not remove, prune, move, or repair worktrees from the agent workflow; report stale worktrees to the user instead.
@@ -136,7 +153,7 @@ build(deps): bump axios from 1.6.0 to 1.7.2
 For implementation tasks:
 
 1. Inspect branch and dirty state.
-2. Move to or create the feature branch / worktree when branch policy requires it.
+2. Select the checkout and branch using the Branch Policy above.
 3. Implement with TSDD: Red -> Green -> Refactor.
 4. Commit each coherent green unit when the user asked for commits or the repository workflow expects implementation work to be committed.
 5. Unless the user asked for local-only work, push the feature branch and create a pull request:
