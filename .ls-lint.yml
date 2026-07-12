@@ -28,4 +28,5 @@ ignore:
   - "agents/**/__pycache__"
   - "tests/**/__pycache__"
   - node_modules
+  - agents/hooks/docs/logs
   - target
