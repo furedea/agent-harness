@@ -10,6 +10,7 @@ import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import cast
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
@@ -166,8 +167,12 @@ def build_batches(
         smallest = local_batches.pop(smallest_idx)
         best_idx = most_similar_batch_index(smallest, local_batches)
         target = local_batches[best_idx]
-        target["session_indices"].extend(smallest["session_indices"])
-        target["_local_set"] = target["_local_set"] | smallest["_local_set"]
+        target_indices = cast(list[int], target["session_indices"])
+        smallest_indices = cast(list[int], smallest["session_indices"])
+        target_local_set = cast(set[str], target["_local_set"])
+        smallest_local_set = cast(set[str], smallest["_local_set"])
+        target_indices.extend(smallest_indices)
+        target["_local_set"] = target_local_set | smallest_local_set
         merged_names = tuple(sorted(target["_local_set"]))
         target["visible_skill_names"] = global_names + list(merged_names)
         target["label"] = local_label("merged local skills", merged_names)
@@ -206,11 +211,13 @@ def local_label(prefix: str, names: tuple[str, ...]) -> str:
 
 
 def most_similar_batch_index(smallest: dict, batches: list[dict]) -> int:
+    smallest_local_set = cast(set[str], smallest["_local_set"])
     best_idx = 0
     best_extra = float("inf")
     for i, batch in enumerate(batches):
-        extra = len(smallest["_local_set"] - batch["_local_set"])
-        extra += len(batch["_local_set"] - smallest["_local_set"])
+        batch_local_set = cast(set[str], batch["_local_set"])
+        extra = len(smallest_local_set - batch_local_set)
+        extra += len(batch_local_set - smallest_local_set)
         if extra < best_extra:
             best_idx = i
             best_extra = extra
