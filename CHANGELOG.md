@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.4.0](https://github.com/furedea/agent-harness/compare/agent-harness-v0.3.1...agent-harness-v0.4.0) (2026-07-12)
+
+
+### Features
+
+* **herdr:** integrate upstream session hooks ([#76](https://github.com/furedea/agent-harness/issues/76)) ([b0ca5e3](https://github.com/furedea/agent-harness/commit/b0ca5e3d3d9a57550f3102371165c0ca8d3419ff))
+* **skills:** add herdr skill ([#69](https://github.com/furedea/agent-harness/issues/69)) ([a497000](https://github.com/furedea/agent-harness/commit/a497000d836c08c0d0bcb0d3c6eb6c748dd6781d))
+
+
+### Bug Fixes
+
+* **deps:** update rust crate serde_json to v1.0.150 ([#66](https://github.com/furedea/agent-harness/issues/66)) ([5a0f9be](https://github.com/furedea/agent-harness/commit/5a0f9beb0e87fcdaf32911346bf53ce54e56da52))
+* **hooks:** allow git commit --amend --no-edit ([#67](https://github.com/furedea/agent-harness/issues/67)) ([973b8bd](https://github.com/furedea/agent-harness/commit/973b8bd146d7fed6bfaf06a1266580bdccb11169))
+
 ## [0.3.1](https://github.com/furedea/agent-harness/compare/agent-harness-v0.3.0...agent-harness-v0.3.1) (2026-06-01)
 
 
