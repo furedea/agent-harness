@@ -62,7 +62,7 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
-          python-version: "3.14"
+          python-version: "3.14.6"
           enable-cache: true
           cache-python: true
 
@@ -89,9 +89,10 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends jq ripgrep shellcheck
-          uv tool install --python 3.14 ruff==0.15.11
+          uv tool install --python 3.14.6 ruff==0.15.11
           uv tool dir --bin >> "$GITHUB_PATH"
-          npm install --global --no-audit --no-fund oxlint@1.67.0 oxfmt@0.52.0
+          npm ci --ignore-scripts
+          echo "$PWD/node_modules/.bin" >> "$GITHUB_PATH"
 
       - name: Run Bats tests
         run: bats --print-output-on-failure --recursive tests/hooks tests/install_script.bats
@@ -189,18 +190,18 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
-          python-version: "3.14"
+          python-version: "3.14.6"
           enable-cache: true
           cache-python: true
 
       - name: Run ruff format
-        run: uv run --python 3.14 --frozen ruff format --check agents/skills tests/python
+        run: uv run --python 3.14.6 --frozen ruff format --check agents/skills tests/python
 
       - name: Run ruff check
-        run: uv run --python 3.14 --frozen ruff check agents/skills tests/python
+        run: uv run --python 3.14.6 --frozen ruff check agents/skills tests/python
 
       - name: Run ty
-        run: uv run --python 3.14 --frozen ty check
+        run: uv run --python 3.14.6 --frozen ty check
 
   test-python:
     runs-on: ubuntu-latest
@@ -216,12 +217,12 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
-          python-version: "3.14"
+          python-version: "3.14.6"
           enable-cache: true
           cache-python: true
 
       - name: Run Python skill script tests
-        run: uv run --python 3.14 --frozen pytest tests/python
+        run: uv run --python 3.14.6 --frozen pytest tests/python
 
   audit:
     runs-on: ubuntu-latest
@@ -237,15 +238,15 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
-          python-version: "3.14"
+          python-version: "3.14.6"
           enable-cache: true
           cache-python: true
 
       - name: Run deptry
-        run: uv run --python 3.14 --group audit deptry .
+        run: uv run --python 3.14.6 --group audit deptry .
 
       - name: Run vulture
-        run: uv run --python 3.14 --group audit vulture
+        run: uv run --python 3.14.6 --group audit vulture
 
   all-green:
     if: always()

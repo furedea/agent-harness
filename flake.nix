@@ -3,17 +3,20 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-25.11-darwin";
+    nixpkgs-unstable.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
   };
 
   outputs =
     {
       self,
       nixpkgs,
+      nixpkgs-unstable,
       ...
     }:
     let
       system = "aarch64-darwin";
       pkgs = import nixpkgs { inherit system; };
+      unstable = import nixpkgs-unstable { inherit system; };
     in
     {
       packages.${system}.default = pkgs.rustPlatform.buildRustPackage {
@@ -44,10 +47,11 @@
           lefthook
           ls-lint
           nixfmt-rfc-style
+          nodejs_22
           rustc
           rustfmt
           statix
-          uv
+          unstable.uv
         ];
 
         env = {
