@@ -91,7 +91,8 @@ jobs:
           sudo apt-get install -y --no-install-recommends jq ripgrep shellcheck
           uv tool install --python 3.14.6 ruff==0.15.11
           uv tool dir --bin >> "$GITHUB_PATH"
-          npm install --global --no-audit --no-fund oxlint@1.67.0 oxfmt@0.52.0
+          npm ci --ignore-scripts
+          echo "$PWD/node_modules/.bin" >> "$GITHUB_PATH"
 
       - name: Run Bats tests
         run: bats --print-output-on-failure --recursive tests/hooks tests/install_script.bats
