@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use toml_edit::DocumentMut;
+use toml_edit::{DocumentMut, Item};
 
 use crate::generation::{io, protection};
 
@@ -20,15 +20,17 @@ const MANAGED_KEYS: &[&str] = &[
     "permissions",
 ];
 
+#[cfg(test)]
 pub(crate) fn write_config_source(source: &Path, out: &Path) -> Result<()> {
-    io::write_file(out, &config_source_content(source)?)
+    write_config_source_with_herdr(source, out, None)
 }
 
-pub(crate) fn sync_generated_config(source: &Path, target_path: &Path) -> Result<()> {
-    let source = config_source_content(source)?
-        .parse::<DocumentMut>()
-        .context("failed to parse generated Codex config source")?;
-    sync_managed_document(source, target_path)
+pub(crate) fn write_config_source_with_herdr(
+    source: &Path,
+    out: &Path,
+    integration: Option<&Path>,
+) -> Result<()> {
+    io::write_file(out, &config_source_content(source, integration)?)
 }
 
 pub(crate) fn sync_managed_config(source_path: &Path, target_path: &Path) -> Result<()> {
@@ -36,15 +38,50 @@ pub(crate) fn sync_managed_config(source_path: &Path, target_path: &Path) -> Res
     sync_managed_document(source, target_path)
 }
 
-fn config_source_content(source: &Path) -> Result<String> {
+pub(crate) fn sync_generated_config_with_herdr(
+    source: &Path,
+    target_path: &Path,
+    integration: Option<&Path>,
+) -> Result<()> {
+    let source = config_source_content(source, integration)?
+        .parse::<DocumentMut>()
+        .context("failed to parse generated Codex config source")?;
+    sync_managed_document(source, target_path)
+}
+
+fn config_source_content(source: &Path, integration: Option<&Path>) -> Result<String> {
     let base_path = source.join("codex/config.toml");
     let base = std::fs::read_to_string(&base_path)
         .with_context(|| format!("failed to read TOML file {}", base_path.display()))?;
-    Ok(format!(
+    let mut document = format!(
         "{}\n{}",
         base.trim_end(),
         protection::codex_config_fragment(source)?
-    ))
+    )
+    .parse::<DocumentMut>()
+    .context("failed to parse generated Codex config")?;
+    if let Some(integration) = integration {
+        let generated = read_toml_document(&integration.join(".codex/config.toml"))?;
+        merge_document(&mut document, &generated);
+    }
+    Ok(document.to_string())
+}
+
+fn merge_document(target: &mut DocumentMut, source: &DocumentMut) {
+    for (key, item) in source.iter() {
+        merge_item(&mut target[key], item);
+    }
+}
+
+fn merge_item(target: &mut Item, source: &Item) {
+    match (target.as_table_mut(), source.as_table()) {
+        (Some(target), Some(source)) => {
+            for (key, item) in source {
+                merge_item(&mut target[key], item);
+            }
+        }
+        _ => *target = source.clone(),
+    }
 }
 
 fn sync_managed_document(source: DocumentMut, target_path: &Path) -> Result<()> {
