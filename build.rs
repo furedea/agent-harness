@@ -2,7 +2,7 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-const ASSET_DIRS: [&str; 3] = ["agents", "claude", "codex"];
+const ASSET_DIRS: [&str; 4] = ["agents", "claude", "codex", "herdr"];
 
 fn main() {
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());

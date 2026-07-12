@@ -135,6 +135,8 @@ sha256sum -c SHA256SUMS
 | `~/.claude/skills/`            | Rendered Claude Code skills         |
 | `~/.claude/statusline/`        | Claude Code status line command     |
 
+When `HERDR_ENV=1` is set while running `install` or a generation command, the harness also installs Herdr session-reporting scripts and adds their `SessionStart` hooks. For Home Manager, set `programs.agent-harness.herdr.enable = true;` to enable the same integration.
+
 `verify` checks that the required installed files exist.
 
 ## Usage

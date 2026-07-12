@@ -36,6 +36,7 @@ pub(crate) fn install(source: &Path, out: &Path) -> Result<()> {
     )?;
     fs_ops::copy_dir(&source.join("codex/hooks"), &out.join(".codex/hooks"))?;
     fs_ops::copy_dir(&source.join("agents/hooks"), &out.join(".claude/hooks"))?;
+    install_herdr_integration(source, out)?;
     fs_ops::copy_dir(
         &source.join("claude/statusline"),
         &out.join(".claude/statusline"),
@@ -52,6 +53,21 @@ pub(crate) fn install(source: &Path, out: &Path) -> Result<()> {
     codex_config::sync_generated_config(source, &out.join(".codex/config.toml"))?;
 
     Ok(())
+}
+
+fn install_herdr_integration(source: &Path, out: &Path) -> Result<()> {
+    if !crate::generation::herdr::is_enabled() {
+        return Ok(());
+    }
+
+    fs_ops::copy_file(
+        &source.join("herdr/codex_agent_state.sh.upstream"),
+        &out.join(".codex/herdr-agent-state.sh"),
+    )?;
+    fs_ops::copy_file(
+        &source.join("herdr/claude_agent_state.sh.upstream"),
+        &out.join(".claude/hooks/herdr-agent-state.sh"),
+    )
 }
 
 pub(crate) fn verify(root: &Path) -> Result<()> {
@@ -238,6 +254,14 @@ mod tests {
         write_file(
             &source.join("claude/statusline/statusline.sh"),
             "#!/bin/bash\n",
+        )?;
+        write_file(
+            &source.join("herdr/claude_agent_state.sh.upstream"),
+            "#!/bin/sh\n",
+        )?;
+        write_file(
+            &source.join("herdr/codex_agent_state.sh.upstream"),
+            "#!/bin/sh\n",
         )?;
         write_file(&source.join("claude/settings.base.json"), "{}\n")?;
         write_file(&source.join("codex/config.toml"), "model = \"gpt-5.5\"\n")?;

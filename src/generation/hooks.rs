@@ -4,7 +4,7 @@ use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::generation::io;
+use crate::generation::{herdr, io};
 
 #[derive(Debug, Deserialize)]
 struct HookConfig {
@@ -22,11 +22,11 @@ pub(crate) fn write_codex_hooks(source: &Path, path: &Path) -> Result<()> {
 }
 
 pub(crate) fn claude_hooks(source: &Path) -> Result<Value> {
-    Ok(read_hooks(source)?.claude)
+    herdr::claude_hooks(read_hooks(source)?.claude)
 }
 
 fn codex_hooks(source: &Path) -> Result<Value> {
-    Ok(read_hooks(source)?.codex)
+    herdr::codex_hooks(read_hooks(source)?.codex)
 }
 
 fn read_hooks(source: &Path) -> Result<HookConfig> {

@@ -7,15 +7,16 @@
 }:
 let
   cfg = config.programs.agent-harness;
+  herdrEnv = lib.optionalString cfg.herdr.enable "HERDR_ENV=1";
 
   claudeSettings = pkgs.runCommand "claude-settings.json" { } ''
-    ${lib.getExe cfg.package} generate-claude-settings \
+    ${herdrEnv} ${lib.getExe cfg.package} generate-claude-settings \
       --source ${cfg.source} \
       --output $out
   '';
 
   codexConfigSource = pkgs.runCommand "codex-config-source.toml" { } ''
-    ${lib.getExe cfg.package} generate-codex-config-source \
+    ${herdrEnv} ${lib.getExe cfg.package} generate-codex-config-source \
       --source ${cfg.source} \
       --output $out
   '';
@@ -27,7 +28,7 @@ let
   '';
 
   codexHooks = pkgs.runCommand "codex-hooks.json" { } ''
-    ${lib.getExe cfg.package} generate-codex-hooks \
+    ${herdrEnv} ${lib.getExe cfg.package} generate-codex-hooks \
       --source ${cfg.source} \
       --output $out
   '';
@@ -44,6 +45,9 @@ let
     chmod -R u+w $out
     mkdir -p $out/rules
     cp ${claudeForbiddenCommands} $out/rules/forbidden_commands.json
+    ${lib.optionalString cfg.herdr.enable ''
+      cp ${cfg.source}/herdr/claude_agent_state.sh.upstream $out/herdr-agent-state.sh
+    ''}
   '';
 
   codexSkills = pkgs.runCommand "codex-skills" { } ''
@@ -87,6 +91,12 @@ in
       default = true;
       description = "Whether to install Claude harness files.";
     };
+
+    herdr.enable = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = "Whether to install Herdr session-reporting hooks.";
+    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -107,6 +117,9 @@ in
           ".claude/settings.json".source = claudeSettings;
           ".claude/skills".source = claudeSkills;
           ".claude/statusline".source = "${cfg.source}/claude/statusline";
+        })
+        (lib.mkIf (cfg.codex.enable && cfg.herdr.enable) {
+          ".codex/herdr-agent-state.sh".source = "${cfg.source}/herdr/codex_agent_state.sh.upstream";
         })
       ];
 

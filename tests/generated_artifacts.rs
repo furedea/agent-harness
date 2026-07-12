@@ -11,7 +11,7 @@ fn claude_settings_render_from_real_source() {
     let root = test_root("claude-settings");
     let settings_path = root.join("settings.json");
 
-    run_harness([
+    run_harness_without_herdr([
         "generate-claude-settings",
         "--source",
         repo_root().to_str().unwrap(),
@@ -145,7 +145,7 @@ fn codex_config_outputs_render_from_real_source() {
     let source_path = root.join("source.toml");
     let target_path = root.join("target.toml");
 
-    run_harness([
+    run_harness_without_herdr([
         "generate-codex-config-fragment",
         "--source",
         repo_root().to_str().unwrap(),
@@ -271,7 +271,7 @@ fn codex_hooks_render_from_real_source() {
     let root = test_root("codex-hooks");
     let hooks_path = root.join("hooks.json");
 
-    run_harness([
+    run_harness_without_herdr([
         "generate-codex-hooks",
         "--source",
         repo_root().to_str().unwrap(),
@@ -325,6 +325,121 @@ fn codex_hooks_render_from_real_source() {
     );
 
     remove_dir(root);
+}
+
+#[test]
+fn herdr_integration_is_omitted_outside_a_herdr_environment() {
+    let root = test_root("herdr-hooks");
+    let hooks_path = root.join("hooks.json");
+    let settings_path = root.join("settings.json");
+    let prefix = root.join("home");
+
+    run_harness_without_herdr([
+        "generate-codex-hooks",
+        "--source",
+        repo_root().to_str().unwrap(),
+        "--output",
+        hooks_path.to_str().unwrap(),
+    ]);
+    let hooks = read_json(&hooks_path);
+    assert!(!hook_command_exists(
+        &hooks,
+        "bash \"$HOME/.codex/herdr-agent-state.sh\" session",
+    ));
+
+    run_harness_without_herdr([
+        "generate-claude-settings",
+        "--source",
+        repo_root().to_str().unwrap(),
+        "--output",
+        settings_path.to_str().unwrap(),
+    ]);
+    let settings = read_json(&settings_path);
+    assert!(!hook_command_exists(
+        &settings,
+        "bash \"$HOME/.claude/hooks/herdr-agent-state.sh\" session",
+    ));
+
+    run_harness_without_herdr(["install", "--prefix", prefix.to_str().unwrap()]);
+    assert!(!prefix.join(".codex/herdr-agent-state.sh").exists());
+    assert!(!prefix.join(".claude/hooks/herdr-agent-state.sh").exists());
+
+    remove_dir(root);
+}
+
+#[test]
+fn herdr_integration_renders_inside_a_herdr_environment() {
+    let root = test_root("herdr-hooks-enabled");
+    let hooks_path = root.join("hooks.json");
+    let settings_path = root.join("settings.json");
+    let prefix = root.join("home");
+
+    run_harness_in_herdr([
+        "generate-codex-hooks",
+        "--source",
+        repo_root().to_str().unwrap(),
+        "--output",
+        hooks_path.to_str().unwrap(),
+    ]);
+    let hooks = read_json(&hooks_path);
+    assert!(
+        hooks["hooks"]["SessionStart"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|group| {
+                group["hooks"].as_array().unwrap().iter().any(|hook| {
+                    hook["command"] == "bash \"$HOME/.codex/herdr-agent-state.sh\" session"
+                })
+            })
+    );
+
+    run_harness_in_herdr([
+        "generate-claude-settings",
+        "--source",
+        repo_root().to_str().unwrap(),
+        "--output",
+        settings_path.to_str().unwrap(),
+    ]);
+    let settings = read_json(&settings_path);
+    assert!(
+        settings["hooks"]["SessionStart"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|group| {
+                group["matcher"] == "*"
+                    && group["hooks"].as_array().unwrap().iter().any(|hook| {
+                        hook["command"]
+                            == "bash \"$HOME/.claude/hooks/herdr-agent-state.sh\" session"
+                    })
+            })
+    );
+
+    run_harness_in_herdr(["install", "--prefix", prefix.to_str().unwrap()]);
+    assert_eq!(
+        std::fs::read(prefix.join(".codex/herdr-agent-state.sh")).unwrap(),
+        std::fs::read(repo_root().join("herdr/codex_agent_state.sh.upstream")).unwrap(),
+    );
+    assert_eq!(
+        std::fs::read(prefix.join(".claude/hooks/herdr-agent-state.sh")).unwrap(),
+        std::fs::read(repo_root().join("herdr/claude_agent_state.sh.upstream")).unwrap(),
+    );
+
+    remove_dir(root);
+}
+
+#[test]
+fn vendored_herdr_scripts_retain_upstream_management_markers() {
+    for script in [
+        "claude_agent_state.sh.upstream",
+        "codex_agent_state.sh.upstream",
+    ] {
+        let content = std::fs::read_to_string(repo_root().join("herdr").join(script)).unwrap();
+
+        assert!(content.starts_with("#!/bin/sh\n# installed by herdr\n"));
+        assert!(content.contains("# managed by herdr; reinstalling or updating the integration"));
+    }
 }
 
 #[test]
@@ -470,6 +585,18 @@ fn run_harness_in<const N: usize>(cwd: &Path, args: [&str; N]) {
     run_harness_command(&mut command);
 }
 
+fn run_harness_in_herdr<const N: usize>(args: [&str; N]) {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_agent-harness"));
+    command.env("HERDR_ENV", "1").args(args);
+    run_harness_command(&mut command);
+}
+
+fn run_harness_without_herdr<const N: usize>(args: [&str; N]) {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_agent-harness"));
+    command.env_remove("HERDR_ENV").args(args);
+    run_harness_command(&mut command);
+}
+
 fn run_harness_command(command: &mut Command) {
     let output = command.output().unwrap();
     assert!(
@@ -545,8 +672,7 @@ fn assert_all_hook_commands_resolve(value: &Value) {
     let missing = commands
         .iter()
         .filter_map(|command| {
-            let script = command.split_whitespace().next()?;
-            let resolved = resolve_hook_script(script);
+            let resolved = resolve_hook_script(command);
             (!resolved.is_file()).then(|| format!("{command} -> {}", resolved.display()))
         })
         .collect::<Vec<_>>();
@@ -573,8 +699,21 @@ fn collect_commands(value: &Value, commands: &mut Vec<String>) {
     }
 }
 
+fn hook_command_exists(value: &Value, expected: &str) -> bool {
+    let mut commands = Vec::new();
+    collect_commands(value, &mut commands);
+    commands.iter().any(|command| command == expected)
+}
+
 fn resolve_hook_script(script: &str) -> PathBuf {
     let root = repo_root();
+    let script = hook_script_path(script);
+    if script == "$HOME/.claude/hooks/herdr-agent-state.sh" {
+        return root.join("herdr/claude_agent_state.sh.upstream");
+    }
+    if script == "$HOME/.codex/herdr-agent-state.sh" {
+        return root.join("herdr/codex_agent_state.sh.upstream");
+    }
     if let Some(path) = script.strip_prefix("$HOME/.claude/hooks/") {
         return root.join("agents/hooks").join(path);
     }
@@ -585,6 +724,18 @@ fn resolve_hook_script(script: &str) -> PathBuf {
         return root.join("codex/hooks").join(path);
     }
     PathBuf::from(script)
+}
+
+fn hook_script_path(command: &str) -> &str {
+    let mut words = command.split_whitespace();
+    match words.next() {
+        Some("bash") => words
+            .next()
+            .map(|script| script.trim_matches('"'))
+            .unwrap_or("bash"),
+        Some(script) => script.trim_matches('"'),
+        None => command,
+    }
 }
 
 fn assert_no_duplicate_commands_per_codex_group(hooks: &Value) {
