@@ -3,19 +3,20 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-25.11-darwin";
-    codex-cli-nix.url = "github:sadjow/codex-cli-nix/7f0f3802287581e04501e2fea26b56d63df18ebd";
+    nixpkgs-unstable.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
   };
 
   outputs =
     {
       self,
       nixpkgs,
-      codex-cli-nix,
+      nixpkgs-unstable,
       ...
     }:
     let
       system = "aarch64-darwin";
       pkgs = import nixpkgs { inherit system; };
+      unstable = import nixpkgs-unstable { inherit system; };
     in
     {
       packages.${system}.default = pkgs.rustPlatform.buildRustPackage {
@@ -41,16 +42,16 @@
           cargo-deny
           cargo-machete
           clippy
-          codex-cli-nix.packages.${system}.default
           commitlint
           deadnix
           lefthook
           ls-lint
           nixfmt-rfc-style
+          nodejs_22
           rustc
           rustfmt
           statix
-          uv
+          unstable.uv
         ];
 
         env = {

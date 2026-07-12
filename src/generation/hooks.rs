@@ -4,7 +4,7 @@ use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::generation::io;
+use crate::generation::{herdr, io};
 
 #[derive(Debug, Deserialize)]
 struct HookConfig {
@@ -14,19 +14,36 @@ struct HookConfig {
 }
 
 pub(crate) fn write_claude_hooks(source: &Path, path: &Path) -> Result<()> {
-    io::write_json(path, &claude_hooks(source)?)
+    write_claude_hooks_with_herdr(source, path, None)
 }
 
+#[cfg(test)]
 pub(crate) fn write_codex_hooks(source: &Path, path: &Path) -> Result<()> {
-    io::write_json(path, &codex_hooks(source)?)
+    write_codex_hooks_with_herdr(source, path, None)
 }
 
-pub(crate) fn claude_hooks(source: &Path) -> Result<Value> {
-    Ok(read_hooks(source)?.claude)
+pub(crate) fn write_claude_hooks_with_herdr(
+    source: &Path,
+    path: &Path,
+    integration: Option<&Path>,
+) -> Result<()> {
+    io::write_json(path, &claude_hooks_with_herdr(source, integration)?)
 }
 
-fn codex_hooks(source: &Path) -> Result<Value> {
-    Ok(read_hooks(source)?.codex)
+pub(crate) fn write_codex_hooks_with_herdr(
+    source: &Path,
+    path: &Path,
+    integration: Option<&Path>,
+) -> Result<()> {
+    io::write_json(path, &codex_hooks_with_herdr(source, integration)?)
+}
+
+pub(crate) fn claude_hooks_with_herdr(source: &Path, integration: Option<&Path>) -> Result<Value> {
+    herdr::merge_claude_hooks(read_hooks(source)?.claude, integration)
+}
+
+fn codex_hooks_with_herdr(source: &Path, integration: Option<&Path>) -> Result<Value> {
+    herdr::merge_codex_hooks(read_hooks(source)?.codex, integration)
 }
 
 fn read_hooks(source: &Path) -> Result<HookConfig> {
