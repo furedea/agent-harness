@@ -47,6 +47,7 @@
           lefthook
           ls-lint
           nixfmt-rfc-style
+          nodejs_22
           rustc
           rustfmt
           statix
