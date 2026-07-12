@@ -13,10 +13,12 @@ pub(crate) enum Provider {
     Codex,
 }
 
+#[cfg(test)]
 pub(crate) fn generate_claude_settings(source: &Path, out: &Path) -> Result<()> {
     claude_config::write_settings(source, out)
 }
 
+#[cfg(test)]
 pub(crate) fn generate_codex_config_source(source: &Path, out: &Path) -> Result<()> {
     codex_config::write_config_source(source, out)
 }
@@ -25,7 +27,7 @@ pub(crate) fn generate_skills(source: &Path, provider: Provider, out: &Path) -> 
     skills::render_skills(source, provider, out)
 }
 
-pub(crate) fn install(source: &Path, out: &Path) -> Result<()> {
+pub(crate) fn install(source: &Path, out: &Path, integration: Option<&Path>) -> Result<()> {
     fs_ops::copy_file(
         &source.join("agents/AGENTS.md"),
         &out.join(".codex/AGENTS.md"),
@@ -36,20 +38,31 @@ pub(crate) fn install(source: &Path, out: &Path) -> Result<()> {
     )?;
     fs_ops::copy_dir(&source.join("codex/hooks"), &out.join(".codex/hooks"))?;
     fs_ops::copy_dir(&source.join("agents/hooks"), &out.join(".claude/hooks"))?;
+    if let Some(integration) = integration {
+        crate::generation::herdr::copy_scripts(integration, out)?;
+    }
     fs_ops::copy_dir(
         &source.join("claude/statusline"),
         &out.join(".claude/statusline"),
     )?;
-    hooks::write_codex_hooks(source, &out.join(".codex/hooks.json"))?;
+    hooks::write_codex_hooks_with_herdr(source, &out.join(".codex/hooks.json"), integration)?;
     generate_skills(source, Provider::Codex, &out.join(".codex/skills"))?;
     generate_skills(source, Provider::Claude, &out.join(".claude/skills"))?;
-    generate_claude_settings(source, &out.join(".claude/settings.json"))?;
+    claude_config::write_settings_with_herdr(
+        source,
+        &out.join(".claude/settings.json"),
+        integration,
+    )?;
     command_policy::write_codex_rules(source, &out.join(".codex/rules/default.rules"))?;
     command_policy::write_forbidden_commands(
         source,
         &out.join(".claude/hooks/rules/forbidden_commands.json"),
     )?;
-    codex_config::sync_generated_config(source, &out.join(".codex/config.toml"))?;
+    codex_config::sync_generated_config_with_herdr(
+        source,
+        &out.join(".codex/config.toml"),
+        integration,
+    )?;
 
     Ok(())
 }
@@ -87,7 +100,7 @@ mod tests {
         let out = root.join("out");
         write_minimal_source(&source)?;
 
-        install(&source, &out)?;
+        install(&source, &out, None)?;
 
         assert!(out.join(".codex/AGENTS.md").is_file());
         assert!(out.join(".codex/hooks.json").is_file());

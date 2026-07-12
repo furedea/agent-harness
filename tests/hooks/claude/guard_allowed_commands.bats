@@ -383,6 +383,9 @@ run_hook() {
 
   run_hook "git commit --amend -m fix"
   [ "$status" -eq 0 ]
+
+  run_hook "git commit --amend --no-edit"
+  [ "$status" -eq 0 ]
 }
 
 @test "blocks git commit no-verify bypass forms" {

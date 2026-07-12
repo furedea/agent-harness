@@ -4,7 +4,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand, ValueEnum};
 
 use crate::{
-    generation::{codex_config, command_policy, hooks, protection},
+    generation::{codex_config, command_policy, herdr, hooks, protection},
     render, source,
 };
 
@@ -24,6 +24,7 @@ enum Command {
     GenerateCodexHooks(GenerateFileArgs),
     GenerateCodexRules(GenerateFileArgs),
     GenerateForbiddenCommands(GenerateFileArgs),
+    GenerateHerdrIntegration(GenerateHerdrIntegrationArgs),
     GenerateSkills(GenerateSkillsArgs),
     Install(InstallArgs),
     SyncCodexConfig(SyncCodexConfigArgs),
@@ -34,6 +35,18 @@ enum Command {
 struct GenerateFileArgs {
     #[arg(long)]
     source: Option<PathBuf>,
+
+    #[arg(short, long)]
+    output: PathBuf,
+
+    #[arg(long)]
+    herdr_integration: Option<PathBuf>,
+}
+
+#[derive(Debug, clap::Args)]
+struct GenerateHerdrIntegrationArgs {
+    #[arg(long)]
+    herdr_bin: PathBuf,
 
     #[arg(short, long)]
     output: PathBuf,
@@ -58,6 +71,12 @@ struct InstallArgs {
 
     #[arg(long)]
     prefix: Option<PathBuf>,
+
+    #[arg(long)]
+    enable_herdr: bool,
+
+    #[arg(long, default_value = "herdr")]
+    herdr_bin: PathBuf,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -96,6 +115,7 @@ pub fn run() -> Result<()> {
         Command::GenerateCodexHooks(args) => write_codex_hooks(args),
         Command::GenerateCodexRules(args) => write_codex_rules(args),
         Command::GenerateForbiddenCommands(args) => write_forbidden_commands(args),
+        Command::GenerateHerdrIntegration(args) => herdr::generate(&args.herdr_bin, &args.output),
         Command::GenerateSkills(args) => generate_skills(args),
         Command::Install(args) => install(args),
         Command::SyncCodexConfig(args) => {
@@ -109,7 +129,12 @@ pub fn run() -> Result<()> {
 }
 
 fn generate_claude_settings(args: GenerateFileArgs) -> Result<()> {
-    generate_file(args, render::generate_claude_settings)
+    let source = source::resolve_source(args.source)?;
+    crate::generation::claude_config::write_settings_with_herdr(
+        source.as_path(),
+        &args.output,
+        args.herdr_integration.as_deref(),
+    )
 }
 
 fn write_claude_hooks(args: GenerateFileArgs) -> Result<()> {
@@ -117,7 +142,12 @@ fn write_claude_hooks(args: GenerateFileArgs) -> Result<()> {
 }
 
 fn generate_codex_config_source(args: GenerateFileArgs) -> Result<()> {
-    generate_file(args, render::generate_codex_config_source)
+    let source = source::resolve_source(args.source)?;
+    codex_config::write_config_source_with_herdr(
+        source.as_path(),
+        &args.output,
+        args.herdr_integration.as_deref(),
+    )
 }
 
 fn write_codex_config_fragment(args: GenerateFileArgs) -> Result<()> {
@@ -125,7 +155,12 @@ fn write_codex_config_fragment(args: GenerateFileArgs) -> Result<()> {
 }
 
 fn write_codex_hooks(args: GenerateFileArgs) -> Result<()> {
-    generate_file(args, hooks::write_codex_hooks)
+    let source = source::resolve_source(args.source)?;
+    hooks::write_codex_hooks_with_herdr(
+        source.as_path(),
+        &args.output,
+        args.herdr_integration.as_deref(),
+    )
 }
 
 fn write_codex_rules(args: GenerateFileArgs) -> Result<()> {
@@ -154,7 +189,15 @@ fn generate_skills(args: GenerateSkillsArgs) -> Result<()> {
 fn install(args: InstallArgs) -> Result<()> {
     let source = source::resolve_source(args.source)?;
     let prefix = args.prefix.unwrap_or_else(default_home_dir);
-    render::install(source.as_path(), &prefix)
+    let integration = args
+        .enable_herdr
+        .then(|| herdr::TemporaryIntegration::generate(&args.herdr_bin))
+        .transpose()?;
+    render::install(
+        source.as_path(),
+        &prefix,
+        integration.as_ref().map(herdr::TemporaryIntegration::path),
+    )
 }
 
 fn default_home_dir() -> PathBuf {

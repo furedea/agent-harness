@@ -5,16 +5,28 @@ use serde_json::{Map, Value};
 
 use crate::generation::{command_policy, hooks, io, protection, secret_path_policy};
 
+#[cfg(test)]
 pub(crate) fn write_settings(source: &Path, out: &Path) -> Result<()> {
+    write_settings_with_herdr(source, out, None)
+}
+
+pub(crate) fn write_settings_with_herdr(
+    source: &Path,
+    out: &Path,
+    integration: Option<&Path>,
+) -> Result<()> {
     let base = read_json(&source.join("claude/settings.base.json"))?;
-    let settings = build_settings(source, base)?;
+    let settings = build_settings(source, base, integration)?;
     io::write_json(out, &settings)
 }
 
-fn build_settings(source: &Path, mut settings: Value) -> Result<Value> {
+fn build_settings(source: &Path, mut settings: Value, integration: Option<&Path>) -> Result<Value> {
     let root = object_mut(&mut settings, "Claude settings root")?;
 
-    root.insert("hooks".to_string(), hooks::claude_hooks(source)?);
+    root.insert(
+        "hooks".to_string(),
+        hooks::claude_hooks_with_herdr(source, integration)?,
+    );
     merge_permissions(root, source)?;
     merge_sandbox(root, source)?;
 
@@ -134,7 +146,7 @@ mod tests {
             }
         });
 
-        let settings = build_settings(&root, base)?;
+        let settings = build_settings(&root, base, None)?;
 
         assert_eq!(
             settings["hooks"]["PreToolUse"][0]["hooks"][1]["command"].as_str(),
