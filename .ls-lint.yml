@@ -13,6 +13,7 @@ ignore:
   - CHANGELOG.md
   - .release-please-manifest.json
   - release-please-config.json
+  - package-lock.json
   - agents/AGENTS.md
   - "agents/skills/*/SKILL.md"
   - Cargo.toml
@@ -26,4 +27,5 @@ ignore:
   - .ipynb_checkpoints
   - "agents/**/__pycache__"
   - "tests/**/__pycache__"
+  - node_modules
   - target
