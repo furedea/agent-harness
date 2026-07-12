@@ -2,10 +2,7 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 
-use crate::{
-    fs_ops,
-    generation::{herdr, io},
-};
+use crate::{fs_ops, generation::io};
 
 const GLOB_SCAN_MAX_DEPTH: u64 = 5;
 
@@ -51,12 +48,6 @@ pub(crate) fn protected_paths(source: &Path) -> Result<Vec<String>> {
         "~/.codex/hooks.json".to_string(),
         "~/.codex/rules/default.rules".to_string(),
     ]);
-    if herdr::is_enabled() {
-        paths.extend([
-            "~/.claude/hooks/herdr-agent-state.sh".to_string(),
-            "~/.codex/herdr-agent-state.sh".to_string(),
-        ]);
-    }
     Ok(paths)
 }
 

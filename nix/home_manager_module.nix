@@ -7,17 +7,25 @@
 }:
 let
   cfg = config.programs.agent-harness;
-  herdrEnv = lib.optionalString cfg.herdr.enable "HERDR_ENV=1";
+  herdrArgs = lib.optionalString cfg.herdr.enable "--herdr-integration ${herdrIntegration}";
+
+  herdrIntegration = pkgs.runCommand "agent-harness-herdr-integration" { } ''
+    ${lib.getExe cfg.package} generate-herdr-integration \
+      --herdr-bin ${lib.getExe cfg.herdr.package} \
+      --output $out
+  '';
 
   claudeSettings = pkgs.runCommand "claude-settings.json" { } ''
-    ${herdrEnv} ${lib.getExe cfg.package} generate-claude-settings \
+    ${lib.getExe cfg.package} generate-claude-settings \
       --source ${cfg.source} \
+      ${herdrArgs} \
       --output $out
   '';
 
   codexConfigSource = pkgs.runCommand "codex-config-source.toml" { } ''
-    ${herdrEnv} ${lib.getExe cfg.package} generate-codex-config-source \
+    ${lib.getExe cfg.package} generate-codex-config-source \
       --source ${cfg.source} \
+      ${herdrArgs} \
       --output $out
   '';
 
@@ -28,8 +36,9 @@ let
   '';
 
   codexHooks = pkgs.runCommand "codex-hooks.json" { } ''
-    ${herdrEnv} ${lib.getExe cfg.package} generate-codex-hooks \
+    ${lib.getExe cfg.package} generate-codex-hooks \
       --source ${cfg.source} \
+      ${herdrArgs} \
       --output $out
   '';
 
@@ -46,7 +55,7 @@ let
     mkdir -p $out/rules
     cp ${claudeForbiddenCommands} $out/rules/forbidden_commands.json
     ${lib.optionalString cfg.herdr.enable ''
-      cp ${cfg.source}/herdr/claude_agent_state.sh.upstream $out/herdr-agent-state.sh
+      cp ${herdrIntegration}/.claude/hooks/herdr-agent-state.sh $out/herdr-agent-state.sh
     ''}
   '';
 
@@ -97,9 +106,22 @@ in
       default = false;
       description = "Whether to install Herdr session-reporting hooks.";
     };
+
+    herdr.package = lib.mkOption {
+      type = lib.types.nullOr lib.types.package;
+      default = null;
+      description = "Herdr package used to generate upstream integration artifacts.";
+    };
   };
 
   config = lib.mkIf cfg.enable {
+    assertions = [
+      {
+        assertion = !cfg.herdr.enable || cfg.herdr.package != null;
+        message = "programs.agent-harness.herdr.package must be set when Herdr integration is enabled.";
+      }
+    ];
+
     home = {
       packages = [ cfg.package ];
 
@@ -119,7 +141,7 @@ in
           ".claude/statusline".source = "${cfg.source}/claude/statusline";
         })
         (lib.mkIf (cfg.codex.enable && cfg.herdr.enable) {
-          ".codex/herdr-agent-state.sh".source = "${cfg.source}/herdr/codex_agent_state.sh.upstream";
+          ".codex/herdr-agent-state.sh".source = "${herdrIntegration}/.codex/herdr-agent-state.sh";
         })
       ];
 

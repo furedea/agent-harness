@@ -328,7 +328,7 @@ fn codex_hooks_render_from_real_source() {
 }
 
 #[test]
-fn herdr_integration_is_omitted_outside_a_herdr_environment() {
+fn herdr_integration_is_omitted_without_explicit_opt_in() {
     let root = test_root("herdr-hooks");
     let hooks_path = root.join("hooks.json");
     let settings_path = root.join("settings.json");
@@ -368,78 +368,41 @@ fn herdr_integration_is_omitted_outside_a_herdr_environment() {
 }
 
 #[test]
-fn herdr_integration_renders_inside_a_herdr_environment() {
+fn install_can_generate_herdr_integration_from_an_explicit_binary() {
     let root = test_root("herdr-hooks-enabled");
-    let hooks_path = root.join("hooks.json");
-    let settings_path = root.join("settings.json");
     let prefix = root.join("home");
+    let herdr = write_fake_herdr(&root);
 
-    run_harness_in_herdr([
-        "generate-codex-hooks",
-        "--source",
-        repo_root().to_str().unwrap(),
-        "--output",
-        hooks_path.to_str().unwrap(),
+    run_harness_without_herdr([
+        "install",
+        "--prefix",
+        prefix.to_str().unwrap(),
+        "--enable-herdr",
+        "--herdr-bin",
+        herdr.to_str().unwrap(),
     ]);
-    let hooks = read_json(&hooks_path);
-    assert!(
-        hooks["hooks"]["SessionStart"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|group| {
-                group["hooks"].as_array().unwrap().iter().any(|hook| {
-                    hook["command"] == "bash \"$HOME/.codex/herdr-agent-state.sh\" session"
-                })
-            })
+    let hooks = read_json(&prefix.join(".codex/hooks.json"));
+    let settings = read_json(&prefix.join(".claude/settings.json"));
+    let config = read_toml(&prefix.join(".codex/config.toml"));
+    assert!(hook_command_exists(
+        &hooks,
+        "bash \"$HOME/.codex/herdr-agent-state.sh\" session"
+    ));
+    assert!(hook_command_exists(
+        &settings,
+        "bash \"$HOME/.claude/hooks/herdr-agent-state.sh\" session"
+    ));
+    assert_eq!(config["features"]["hooks"].as_bool(), Some(true));
+    assert_contains(
+        &prefix.join(".codex/herdr-agent-state.sh"),
+        "codex generated",
     );
-
-    run_harness_in_herdr([
-        "generate-claude-settings",
-        "--source",
-        repo_root().to_str().unwrap(),
-        "--output",
-        settings_path.to_str().unwrap(),
-    ]);
-    let settings = read_json(&settings_path);
-    assert!(
-        settings["hooks"]["SessionStart"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|group| {
-                group["matcher"] == "*"
-                    && group["hooks"].as_array().unwrap().iter().any(|hook| {
-                        hook["command"]
-                            == "bash \"$HOME/.claude/hooks/herdr-agent-state.sh\" session"
-                    })
-            })
-    );
-
-    run_harness_in_herdr(["install", "--prefix", prefix.to_str().unwrap()]);
-    assert_eq!(
-        std::fs::read(prefix.join(".codex/herdr-agent-state.sh")).unwrap(),
-        std::fs::read(repo_root().join("herdr/codex_agent_state.sh.upstream")).unwrap(),
-    );
-    assert_eq!(
-        std::fs::read(prefix.join(".claude/hooks/herdr-agent-state.sh")).unwrap(),
-        std::fs::read(repo_root().join("herdr/claude_agent_state.sh.upstream")).unwrap(),
+    assert_contains(
+        &prefix.join(".claude/hooks/herdr-agent-state.sh"),
+        "claude generated",
     );
 
     remove_dir(root);
-}
-
-#[test]
-fn vendored_herdr_scripts_retain_upstream_management_markers() {
-    for script in [
-        "claude_agent_state.sh.upstream",
-        "codex_agent_state.sh.upstream",
-    ] {
-        let content = std::fs::read_to_string(repo_root().join("herdr").join(script)).unwrap();
-
-        assert!(content.starts_with("#!/bin/sh\n# installed by herdr\n"));
-        assert!(content.contains("# managed by herdr; reinstalling or updating the integration"));
-    }
 }
 
 #[test]
@@ -585,16 +548,38 @@ fn run_harness_in<const N: usize>(cwd: &Path, args: [&str; N]) {
     run_harness_command(&mut command);
 }
 
-fn run_harness_in_herdr<const N: usize>(args: [&str; N]) {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_agent-harness"));
-    command.env("HERDR_ENV", "1").args(args);
-    run_harness_command(&mut command);
-}
-
 fn run_harness_without_herdr<const N: usize>(args: [&str; N]) {
     let mut command = Command::new(env!("CARGO_BIN_EXE_agent-harness"));
     command.env_remove("HERDR_ENV").args(args);
     run_harness_command(&mut command);
+}
+
+fn write_fake_herdr(root: &Path) -> PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+
+    let path = root.join("herdr");
+    std::fs::write(
+        &path,
+        r##"#!/bin/bash
+set -eu
+provider="$3"
+if [ "$provider" = "claude" ]; then
+  mkdir -p "$HOME/.claude/hooks"
+  printf '#!/bin/sh\n# claude generated\n' > "$HOME/.claude/hooks/herdr-agent-state.sh"
+  printf '{"hooks":{"SessionStart":[{"matcher":"*","hooks":[{"command":"bash '\''%s/.claude/hooks/herdr-agent-state.sh'\'' session","timeout":10,"type":"command"}]}]}}\n' "$HOME" > "$HOME/.claude/settings.json"
+else
+  mkdir -p "$HOME/.codex"
+  printf '#!/bin/sh\n# codex generated\n' > "$HOME/.codex/herdr-agent-state.sh"
+  printf '{"hooks":{"SessionStart":[{"hooks":[{"command":"bash '\''%s/.codex/herdr-agent-state.sh'\'' session","timeout":10,"type":"command"}]}]}}\n' "$HOME" > "$HOME/.codex/hooks.json"
+  printf '[features]\nhooks = true\n' > "$HOME/.codex/config.toml"
+fi
+"##,
+    )
+    .unwrap();
+    let mut permissions = std::fs::metadata(&path).unwrap().permissions();
+    permissions.set_mode(0o755);
+    std::fs::set_permissions(&path, permissions).unwrap();
+    path
 }
 
 fn run_harness_command(command: &mut Command) {
@@ -708,12 +693,6 @@ fn hook_command_exists(value: &Value, expected: &str) -> bool {
 fn resolve_hook_script(script: &str) -> PathBuf {
     let root = repo_root();
     let script = hook_script_path(script);
-    if script == "$HOME/.claude/hooks/herdr-agent-state.sh" {
-        return root.join("herdr/claude_agent_state.sh.upstream");
-    }
-    if script == "$HOME/.codex/herdr-agent-state.sh" {
-        return root.join("herdr/codex_agent_state.sh.upstream");
-    }
     if let Some(path) = script.strip_prefix("$HOME/.claude/hooks/") {
         return root.join("agents/hooks").join(path);
     }

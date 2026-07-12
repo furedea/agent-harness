@@ -135,7 +135,16 @@ sha256sum -c SHA256SUMS
 | `~/.claude/skills/`            | Rendered Claude Code skills         |
 | `~/.claude/statusline/`        | Claude Code status line command     |
 
-When `HERDR_ENV=1` is set while running `install` or a generation command, the harness also installs Herdr session-reporting scripts and adds their `SessionStart` hooks. For Home Manager, set `programs.agent-harness.herdr.enable = true;` to enable the same integration.
+`agent-harness install --enable-herdr` runs `herdr integration install` for Claude and Codex in a temporary home, then merges the generated hooks and Codex feature settings into the harness output. Use `--herdr-bin PATH` when `herdr` is not on `PATH`.
+
+For Home Manager, explicitly enable the integration and provide the Herdr package:
+
+```nix
+programs.agent-harness.herdr = {
+  enable = true;
+  package = pkgs.herdr;
+};
+```
 
 `verify` checks that the required installed files exist.
 
@@ -145,6 +154,8 @@ Most users only need:
 
 ```bash
 agent-harness install --prefix "$HOME"
+# With Herdr session reporting:
+agent-harness install --prefix "$HOME" --enable-herdr
 agent-harness verify --prefix "$HOME"
 ```
 
