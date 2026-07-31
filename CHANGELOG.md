@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/furedea/agent-harness/compare/agent-harness-v0.4.0...agent-harness-v0.4.1) (2026-07-31)
+
+
+### Bug Fixes
+
+* **deps:** update rust crate toml_edit to v0.25.13 ([#79](https://github.com/furedea/agent-harness/issues/79)) ([b615094](https://github.com/furedea/agent-harness/commit/b615094168ed58821dae0d835dcf280390217b47))
+
 ## [0.4.0](https://github.com/furedea/agent-harness/compare/agent-harness-v0.3.1...agent-harness-v0.4.0) (2026-07-12)
 
 
