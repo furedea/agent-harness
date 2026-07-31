@@ -485,6 +485,7 @@ def filter_by_date(sessions: list[dict], days: int) -> list[dict]:
 
 def collect(
     project_path: str,
+    *,
     days: int = 14,
     min_turns: int = 1,
     verbose: bool = False,
