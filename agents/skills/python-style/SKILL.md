@@ -75,12 +75,15 @@ Async test pattern:
 # conftest.py
 import pytest
 
+
 @pytest.fixture
 def anyio_backend() -> str:
     return "asyncio"
 
+
 # tests/test_xxx.py
 import pytest
+
 
 @pytest.mark.anyio
 async def test_something() -> None:
@@ -126,17 +129,18 @@ class Age:
 ```python
 from typing import Self
 
+
 @dataclass(frozen=True, slots=True)
 class SWEInstance:
     instance_id: str
     repo: str
 
     @classmethod
-    def from_dict(cls, data: dict[str, str]) -> Self:   # pure → classmethod
+    def from_dict(cls, data: dict[str, str]) -> Self:  # pure → classmethod
         return cls(instance_id=data["id"], repo=data["repo"])
 
 
-def load_instance(instance_id: str) -> SWEInstance:     # I/O → module-level function
+def load_instance(instance_id: str) -> SWEInstance:  # I/O → module-level function
     row = fetch_from_dataset(instance_id)
     return SWEInstance.from_dict(row)
 
@@ -191,11 +195,7 @@ class FrozenModel(pydantic.BaseModel):
 Write in dictionary format. Add extensive logging at critical system points where failures would be hard to diagnose (CSV file references, before/after raise statements, etc.).
 
 ```python
-logger.info({
-    "action": "save",
-    "csv_file": self.csv_file,
-    "status": "run"
-})
+logger.info({"action": "save", "csv_file": self.csv_file, "status": "run"})
 ```
 
 ## Naming Conventions
@@ -267,12 +267,14 @@ sections = [problem_statement, *_file_sections(files), "Please output a unified 
 # File level
 """Explanation of file functionality"""
 
+
 # Class & method level
 class MyClass:
     """Class functionality explanation"""
 
     def method(self):
         """Method functionality explanation"""
+
 
 # Function level
 def function_name(arg1, arg2):

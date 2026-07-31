@@ -101,6 +101,7 @@ for s in manifest["skills"]:
     if s["scope"] == "project-local" and s.get("project_path"):
         project_local[s["project_path"]].append(s)
 
+
 # Helper: does this encoded project_dir match a project_path with locals?
 def find_local_skills(project_dir):
     for pp, skills in project_local.items():
@@ -109,8 +110,9 @@ def find_local_skills(project_dir):
             return skills
     return []
 
+
 # Separate sessions: projects with local skills vs global-only
-global_only_indices = []            # can be pooled
+global_only_indices = []  # can be pooled
 local_project_groups = defaultdict(list)  # project_dir -> indices
 
 for i, s in enumerate(sessions):
@@ -128,12 +130,14 @@ batches = []
 
 # 1) Pool all global-only sessions together
 for chunk_start in range(0, len(global_only_indices), batch_size):
-    chunk = global_only_indices[chunk_start:chunk_start + batch_size]
-    batches.append({
-        "session_indices": chunk,
-        "label": "global-only (mixed projects)",
-        "visible_skill_names": global_names,
-    })
+    chunk = global_only_indices[chunk_start : chunk_start + batch_size]
+    batches.append(
+        {
+            "session_indices": chunk,
+            "label": "global-only (mixed projects)",
+            "visible_skill_names": global_names,
+        }
+    )
 
 # 2) Group projects with same local skill set, then batch together
 by_skill_set = defaultdict(list)  # tuple of local names -> indices
@@ -145,13 +149,15 @@ local_batches = []
 for local_names, indices in by_skill_set.items():
     visible = global_names + list(local_names)
     for chunk_start in range(0, len(indices), batch_size):
-        chunk = indices[chunk_start:chunk_start + batch_size]
-        local_batches.append({
-            "session_indices": chunk,
-            "label": f"local skills: {', '.join(local_names[:3])}{'...' if len(local_names) > 3 else ''}",
-            "visible_skill_names": visible,
-            "_local_set": set(local_names),
-        })
+        chunk = indices[chunk_start : chunk_start + batch_size]
+        local_batches.append(
+            {
+                "session_indices": chunk,
+                "label": f"local skills: {', '.join(local_names[:3])}{'...' if len(local_names) > 3 else ''}",
+                "visible_skill_names": visible,
+                "_local_set": set(local_names),
+            }
+        )
 
 # 3) Merge if too many batches — greedily merge smallest into most similar
 remaining_budget = MAX_BATCHES - len(batches)
@@ -179,8 +185,7 @@ for b in local_batches:
     batches.append(b)
 
 for i, b in enumerate(batches):
-    print(f"Batch {i}: {len(b['session_indices'])} sessions, "
-          f"{len(b['visible_skill_names'])} skills — {b['label']}")
+    print(f"Batch {i}: {len(b['session_indices'])} sessions, {len(b['visible_skill_names'])} skills — {b['label']}")
 ```
 
 Before spawning, build a DMI list per batch from the manifest:
