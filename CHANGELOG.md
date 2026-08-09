@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.5.0](https://github.com/furedea/agent-harness/compare/agent-harness-v0.4.0...agent-harness-v0.5.0) (2026-08-09)
+
+
+### Features
+
+* **skills:** add external skill sources ([#88](https://github.com/furedea/agent-harness/issues/88)) ([8445c1c](https://github.com/furedea/agent-harness/commit/8445c1cd49625999c19962580bdf7f2626ba8145))
+
+
+### Bug Fixes
+
+* **deps:** update rust crate anyhow to v1.0.104 ([#86](https://github.com/furedea/agent-harness/issues/86)) ([6f7e089](https://github.com/furedea/agent-harness/commit/6f7e089c63fdca9222741d08bb51824d5fa09646))
+* **deps:** update rust crate clap to v4.6.6 ([#87](https://github.com/furedea/agent-harness/issues/87)) ([c4ea6d3](https://github.com/furedea/agent-harness/commit/c4ea6d398ad2e17482e90d9427ff44decd7b8079))
+* **deps:** update rust crate toml_edit to v0.25.13 ([#79](https://github.com/furedea/agent-harness/issues/79)) ([b615094](https://github.com/furedea/agent-harness/commit/b615094168ed58821dae0d835dcf280390217b47))
+
 ## [0.4.0](https://github.com/furedea/agent-harness/compare/agent-harness-v0.3.1...agent-harness-v0.4.0) (2026-07-12)
 
 
