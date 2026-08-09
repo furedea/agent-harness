@@ -517,6 +517,48 @@ fn skills_render_from_real_source() {
     remove_dir(root);
 }
 
+#[test]
+fn generate_skills_accepts_an_external_skill_directory() {
+    let root = test_root("external-skill");
+    let external_skill = root.join("upstream/external-tool");
+    let out = root.join("out");
+    std::fs::create_dir_all(external_skill.join("references")).unwrap();
+    std::fs::write(
+        external_skill.join("SKILL.md"),
+        "---\nname: external-tool\ndescription: upstream skill\n---\n\nBody\n",
+    )
+    .unwrap();
+    std::fs::write(
+        external_skill.join("references/commands.md"),
+        "Upstream commands\n",
+    )
+    .unwrap();
+    let external_skill_arg = format!("external-tool={}", external_skill.display());
+
+    run_harness([
+        "generate-skills",
+        "--source",
+        repo_root().to_str().unwrap(),
+        "--provider",
+        "codex",
+        "--extra-skill",
+        &external_skill_arg,
+        "--output",
+        out.to_str().unwrap(),
+    ]);
+
+    assert_contains(
+        &out.join("external-tool/SKILL.md"),
+        "description: upstream skill",
+    );
+    assert_contains(
+        &out.join("external-tool/references/commands.md"),
+        "Upstream commands",
+    );
+
+    remove_dir(root);
+}
+
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }

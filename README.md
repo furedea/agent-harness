@@ -106,6 +106,18 @@ Use the Home Manager module when your agent config is managed by Nix. The module
 }
 ```
 
+Additional skill directories can be composed into both providers without copying them into this
+repository:
+
+```nix
+programs.agent-harness = {
+  enable = true;
+  skills.extra.external-tool = ./skills/external-tool;
+};
+```
+
+The directory must contain `SKILL.md`. Its contents and support files are copied verbatim.
+
 ## Optional Integrity Check
 
 Release archives are published with a `SHA256SUMS` file.
@@ -164,6 +176,7 @@ The CLI also exposes lower-level generation commands for inspecting or composing
 ```bash
 agent-harness generate-skills \
   --provider codex \
+  --extra-skill external-tool=/path/to/external-tool \
   --output "$HOME/.codex/skills"
 
 agent-harness generate-skills \
@@ -191,19 +204,19 @@ agent-harness generate-claude-settings \
 
 Edit the source files, then run `agent-harness install --source <path> --prefix "$HOME"` or set `AGENT_HARNESS_SOURCE`.
 
-| Goal | Edit |
-| --- | --- |
-| Change shared agent instructions | `agents/AGENTS.md` |
-| Add or edit a skill | `agents/skills/<name>/SKILL.md` |
-| Change provider-specific skill metadata | `agents/skill_rendering.json` |
-| Allow or forbid shell commands | `agents/command_policy.json` |
-| Add or change hook wiring | `agents/hooks.json` |
-| Add or change Claude hooks | `agents/hooks/*.sh` |
-| Add or change Codex hook adapters | `codex/hooks/*.sh` |
-| Change Codex base config | `codex/config.toml` |
-| Change Claude base settings | `claude/settings.base.json` |
-| Add related-test mappings | `agents/hooks/rules/related_test_extensions.json` |
-| Add secret detection patterns | `agents/hooks/rules/secret_content_patterns.json` |
+| Goal                                    | Edit                                              |
+| --------------------------------------- | ------------------------------------------------- |
+| Change shared agent instructions        | `agents/AGENTS.md`                                |
+| Add or edit a skill                     | `agents/skills/<name>/SKILL.md`                   |
+| Change provider-specific skill metadata | `agents/skill_rendering.json`                     |
+| Allow or forbid shell commands          | `agents/command_policy.json`                      |
+| Add or change hook wiring               | `agents/hooks.json`                               |
+| Add or change Claude hooks              | `agents/hooks/*.sh`                               |
+| Add or change Codex hook adapters       | `codex/hooks/*.sh`                                |
+| Change Codex base config                | `codex/config.toml`                               |
+| Change Claude base settings             | `claude/settings.base.json`                       |
+| Add related-test mappings               | `agents/hooks/rules/related_test_extensions.json` |
+| Add secret detection patterns           | `agents/hooks/rules/secret_content_patterns.json` |
 
 ### Local Source Checkout
 
