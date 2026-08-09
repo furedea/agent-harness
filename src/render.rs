@@ -23,8 +23,13 @@ pub(crate) fn generate_codex_config_source(source: &Path, out: &Path) -> Result<
     codex_config::write_config_source(source, out)
 }
 
-pub(crate) fn generate_skills(source: &Path, provider: Provider, out: &Path) -> Result<()> {
-    skills::render_skills(source, provider, out)
+pub(crate) fn generate_skills(
+    source: &Path,
+    provider: Provider,
+    external_skills: &[skills::ExternalSkill],
+    out: &Path,
+) -> Result<()> {
+    skills::render_skills(source, provider, external_skills, out)
 }
 
 pub(crate) fn install(source: &Path, out: &Path, integration: Option<&Path>) -> Result<()> {
@@ -46,8 +51,8 @@ pub(crate) fn install(source: &Path, out: &Path, integration: Option<&Path>) -> 
         &out.join(".claude/statusline"),
     )?;
     hooks::write_codex_hooks_with_herdr(source, &out.join(".codex/hooks.json"), integration)?;
-    generate_skills(source, Provider::Codex, &out.join(".codex/skills"))?;
-    generate_skills(source, Provider::Claude, &out.join(".claude/skills"))?;
+    generate_skills(source, Provider::Codex, &[], &out.join(".codex/skills"))?;
+    generate_skills(source, Provider::Claude, &[], &out.join(".claude/skills"))?;
     claude_config::write_settings_with_herdr(
         source,
         &out.join(".claude/settings.json"),
@@ -175,7 +180,7 @@ mod tests {
         let out = root.join("skills");
         write_minimal_source(&source)?;
 
-        generate_skills(&source, Provider::Codex, &out)?;
+        generate_skills(&source, Provider::Codex, &[], &out)?;
 
         assert!(out.join("example/SKILL.md").is_file());
 

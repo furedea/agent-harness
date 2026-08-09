@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 
 use anyhow::{Context, Result, bail};
 use serde::Deserialize;
@@ -9,6 +10,58 @@ use crate::{fs_ops, generation::io, render::Provider};
 const SKILL_RENDERING_PATH: &str = "agents/skill_rendering.json";
 const SUPPORTED_SKILL_RENDERING_VERSION: u64 = 1;
 const CODEX_OPENAI_PATH: &str = "agents/openai.yaml";
+
+#[derive(Clone, Debug)]
+pub(crate) struct ExternalSkill {
+    name: SkillName,
+    source: PathBuf,
+}
+
+impl ExternalSkill {
+    pub(crate) fn new(name: impl Into<String>, source: PathBuf) -> Result<Self> {
+        Ok(Self {
+            name: SkillName::parse(name)?,
+            source,
+        })
+    }
+}
+
+impl FromStr for ExternalSkill {
+    type Err = String;
+
+    fn from_str(value: &str) -> std::result::Result<Self, Self::Err> {
+        let (name, source) = value
+            .split_once('=')
+            .ok_or_else(|| "external skill must use NAME=PATH format".to_string())?;
+        if source.is_empty() {
+            return Err("external skill path must not be empty".to_string());
+        }
+        Self::new(name, PathBuf::from(source)).map_err(|error| error.to_string())
+    }
+}
+
+#[derive(Clone, Debug)]
+struct SkillName(String);
+
+impl SkillName {
+    fn parse(value: impl Into<String>) -> Result<Self> {
+        let value = value.into();
+        let is_valid = !value.is_empty()
+            && value
+                .chars()
+                .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '-');
+        if !is_valid {
+            bail!(
+                "external skill name must contain only lowercase ASCII letters, digits, and hyphens: {value}"
+            );
+        }
+        Ok(Self(value))
+    }
+
+    fn as_str(&self) -> &str {
+        &self.0
+    }
+}
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -55,11 +108,17 @@ enum FrontmatterValue {
     String(String),
 }
 
-pub(crate) fn render_skills(source: &Path, provider: Provider, out: &Path) -> Result<()> {
+pub(crate) fn render_skills(
+    source: &Path,
+    provider: Provider,
+    external_skills: &[ExternalSkill],
+    out: &Path,
+) -> Result<()> {
     let skills_dir = source.join("agents/skills");
     let skill_dirs = sorted_skill_dirs(&skills_dir)?;
     let skill_rendering = read_skill_rendering(source)?;
     validate_skill_rendering_targets(&skill_rendering, &skill_dirs)?;
+    validate_external_skills(&skill_dirs, external_skills)?;
 
     if out.exists() {
         std::fs::remove_dir_all(out)
@@ -75,6 +134,10 @@ pub(crate) fn render_skills(source: &Path, provider: Provider, out: &Path) -> Re
             provider,
             &out.join(entry.file_name().unwrap_or_default()),
         )?;
+    }
+
+    for skill in external_skills {
+        fs_ops::copy_dir(&skill.source, &out.join(skill.name.as_str()))?;
     }
 
     Ok(())
@@ -167,6 +230,37 @@ fn validate_skill_rendering_targets(
         "{SKILL_RENDERING_PATH} references unknown skills: {}",
         unknown.join(", ")
     )
+}
+
+fn validate_external_skills(
+    skill_dirs: &[PathBuf],
+    external_skills: &[ExternalSkill],
+) -> Result<()> {
+    let built_in_names = skill_dirs
+        .iter()
+        .filter_map(|path| path.file_name().and_then(|name| name.to_str()))
+        .collect::<BTreeSet<_>>();
+    let mut external_names = BTreeSet::new();
+
+    for skill in external_skills {
+        if !skill.source.join("SKILL.md").is_file() {
+            bail!(
+                "external skill directory must contain SKILL.md: {}",
+                skill.source.display()
+            );
+        }
+        if built_in_names.contains(skill.name.as_str()) {
+            bail!(
+                "external skill shadows a built-in skill: {}",
+                skill.name.as_str()
+            );
+        }
+        if !external_names.insert(skill.name.as_str()) {
+            bail!("duplicate external skill name: {}", skill.name.as_str());
+        }
+    }
+
+    Ok(())
 }
 
 fn split_frontmatter(content: &str) -> Result<(&str, &str)> {
@@ -372,7 +466,7 @@ mod tests {
         )?;
         let out = root.join("out");
 
-        render_skills(&root, Provider::Claude, &out)?;
+        render_skills(&root, Provider::Claude, &[], &out)?;
 
         let content = std::fs::read_to_string(out.join("custom-command/SKILL.md"))?;
         assert!(content.contains("argument-hint: \"{direct | pr-per-feature}\""));
@@ -405,7 +499,7 @@ mod tests {
         )?;
         let out = root.join("out");
 
-        render_skills(&root, Provider::Codex, &out)?;
+        render_skills(&root, Provider::Codex, &[], &out)?;
 
         let content = std::fs::read_to_string(out.join("custom-command/SKILL.md"))?;
         assert!(!content.contains("disable-model-invocation"));
@@ -414,6 +508,103 @@ mod tests {
             "policy:\n  allow_implicit_invocation: false\n",
         );
 
+        std::fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn render_skills_copies_an_external_skill_directory_verbatim() -> Result<()> {
+        let root = test_root("render_skills_copies_an_external_skill_directory_verbatim")?;
+        write_skill_source(&root, "built-in")?;
+        let external_skill_dir = root.join("external/herdr");
+        let external_skill_content =
+            "---\nname: herdr\ndescription: upstream skill\nlicense: Apache-2.0\n---\n\nBody\n";
+        write_file(&external_skill_dir.join("SKILL.md"), external_skill_content)?;
+        write_file(
+            &external_skill_dir.join("references/commands.md"),
+            "Upstream commands\n",
+        )?;
+        let external_skills = [ExternalSkill::new("herdr", external_skill_dir)?];
+        let out = root.join("out");
+
+        render_skills(&root, Provider::Codex, &external_skills, &out)?;
+
+        assert_eq!(
+            std::fs::read_to_string(out.join("herdr/SKILL.md"))?,
+            external_skill_content,
+        );
+        assert_eq!(
+            std::fs::read_to_string(out.join("herdr/references/commands.md"))?,
+            "Upstream commands\n",
+        );
+
+        std::fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn external_skill_rejects_a_name_that_escapes_the_output_directory() {
+        let result = ExternalSkill::new("../herdr", PathBuf::from("/external/herdr"));
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn render_skills_rejects_an_external_skill_that_shadows_a_built_in_skill() -> Result<()> {
+        let root =
+            test_root("render_skills_rejects_an_external_skill_that_shadows_a_built_in_skill")?;
+        write_skill_source(&root, "herdr")?;
+        let external_skill_dir = root.join("external/herdr");
+        write_file(
+            &external_skill_dir.join("SKILL.md"),
+            "---\nname: herdr\ndescription: upstream skill\n---\n\nBody\n",
+        )?;
+        let external_skills = [ExternalSkill::new("herdr", external_skill_dir)?];
+
+        let result = render_skills(&root, Provider::Codex, &external_skills, &root.join("out"));
+
+        assert!(result.is_err());
+        std::fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn render_skills_rejects_duplicate_external_skill_names() -> Result<()> {
+        let root = test_root("render_skills_rejects_duplicate_external_skill_names")?;
+        write_skill_source(&root, "built-in")?;
+        let first_source = root.join("external/first");
+        let second_source = root.join("external/second");
+        write_file(
+            &first_source.join("SKILL.md"),
+            "---\nname: shared\ndescription: first\n---\n\nBody\n",
+        )?;
+        write_file(
+            &second_source.join("SKILL.md"),
+            "---\nname: shared\ndescription: second\n---\n\nBody\n",
+        )?;
+        let external_skills = [
+            ExternalSkill::new("shared", first_source)?,
+            ExternalSkill::new("shared", second_source)?,
+        ];
+
+        let result = render_skills(&root, Provider::Codex, &external_skills, &root.join("out"));
+
+        assert!(result.is_err());
+        std::fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn render_skills_rejects_an_external_directory_without_a_skill_file() -> Result<()> {
+        let root = test_root("render_skills_rejects_an_external_directory_without_a_skill_file")?;
+        write_skill_source(&root, "built-in")?;
+        let external_skill_dir = root.join("external/incomplete");
+        std::fs::create_dir_all(&external_skill_dir)?;
+        let external_skills = [ExternalSkill::new("incomplete", external_skill_dir)?];
+
+        let result = render_skills(&root, Provider::Codex, &external_skills, &root.join("out"));
+
+        assert!(result.is_err());
         std::fs::remove_dir_all(root)?;
         Ok(())
     }
@@ -438,6 +629,12 @@ mod tests {
     fn write_skill_rendering(source: &Path, content: &str) -> Result<()> {
         std::fs::create_dir_all(source.join("agents"))?;
         std::fs::write(source.join("agents/skill_rendering.json"), content)?;
+        Ok(())
+    }
+
+    fn write_file(path: &Path, content: &str) -> Result<()> {
+        std::fs::create_dir_all(path.parent().unwrap_or_else(|| Path::new(".")))?;
+        std::fs::write(path, content)?;
         Ok(())
     }
 }

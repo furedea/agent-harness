@@ -8,6 +8,14 @@
 let
   cfg = config.programs.agent-harness;
   herdrArgs = lib.optionalString cfg.herdr.enable "--herdr-integration ${herdrIntegration}";
+  extraSkillArgs = lib.escapeShellArgs (
+    lib.concatLists (
+      lib.mapAttrsToList (name: source: [
+        "--extra-skill"
+        "${name}=${source}"
+      ]) cfg.skills.extra
+    )
+  );
 
   herdrIntegration = pkgs.runCommand "agent-harness-herdr-integration" { } ''
     ${lib.getExe cfg.package} generate-herdr-integration \
@@ -63,6 +71,7 @@ let
     ${lib.getExe cfg.package} generate-skills \
       --source ${cfg.source} \
       --provider codex \
+      ${extraSkillArgs} \
       --output $out
   '';
 
@@ -70,6 +79,7 @@ let
     ${lib.getExe cfg.package} generate-skills \
       --source ${cfg.source} \
       --provider claude \
+      ${extraSkillArgs} \
       --output $out
   '';
 in
@@ -99,6 +109,12 @@ in
       type = lib.types.bool;
       default = true;
       description = "Whether to install Claude harness files.";
+    };
+
+    skills.extra = lib.mkOption {
+      type = lib.types.attrsOf (lib.types.either lib.types.path lib.types.package);
+      default = { };
+      description = "Additional skill directories keyed by installed skill name.";
     };
 
     herdr.enable = lib.mkOption {

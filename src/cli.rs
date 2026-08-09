@@ -4,7 +4,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand, ValueEnum};
 
 use crate::{
-    generation::{codex_config, command_policy, herdr, hooks, protection},
+    generation::{codex_config, command_policy, herdr, hooks, protection, skills::ExternalSkill},
     render, source,
 };
 
@@ -59,6 +59,9 @@ struct GenerateSkillsArgs {
 
     #[arg(long, value_enum)]
     provider: Provider,
+
+    #[arg(long, value_name = "NAME=PATH")]
+    extra_skill: Vec<ExternalSkill>,
 
     #[arg(short, long)]
     output: PathBuf,
@@ -183,7 +186,12 @@ fn generate_file(
 // beyond the shared source/output file generation path.
 fn generate_skills(args: GenerateSkillsArgs) -> Result<()> {
     let source = source::resolve_source(args.source)?;
-    render::generate_skills(source.as_path(), args.provider.into(), &args.output)
+    render::generate_skills(
+        source.as_path(),
+        args.provider.into(),
+        &args.extra_skill,
+        &args.output,
+    )
 }
 
 fn install(args: InstallArgs) -> Result<()> {
