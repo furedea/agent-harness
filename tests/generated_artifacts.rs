@@ -113,6 +113,19 @@ fn claude_settings_render_from_packaged_source_without_source_argument() {
 }
 
 #[test]
+fn list_skills_uses_packaged_source_without_source_argument() {
+    let root = test_root("packaged-list");
+    let cwd = root.join("cwd");
+    std::fs::create_dir_all(&cwd).unwrap();
+
+    let stdout = run_harness_in_stdout(&cwd, ["list", "skills"]);
+
+    assert!(stdout.contains("adr               Architecture Decision Records"));
+
+    remove_dir(root);
+}
+
+#[test]
 fn install_uses_packaged_source_without_source_argument() {
     let root = test_root("packaged-install");
     let cwd = root.join("cwd");
@@ -518,6 +531,133 @@ fn skills_render_from_real_source() {
 }
 
 #[test]
+fn list_skills_prints_titles_and_invocation_modes_in_name_order() {
+    let stdout = run_harness_stdout(["list", "skills", "--source", repo_root().to_str().unwrap()]);
+    let skills = [
+        ("adr", "Architecture Decision Records", "implicit"),
+        (
+            "bash-style",
+            "Shell Script Coding Style Guidelines",
+            "implicit",
+        ),
+        ("gha-style", "GitHub Actions Coding Conventions", "implicit"),
+        (
+            "git-commit-split",
+            "/git-commit-split custom command",
+            "explicit",
+        ),
+        ("git-workflow", "Git Workflow", "implicit"),
+        ("github-ci-init", "GitHub CI Init Workflow", "explicit"),
+        ("marp-style", "Marp Slide Creation", "implicit"),
+        ("nix-dev-init", "Nix Dev Init Workflow", "explicit"),
+        (
+            "nix-dotfiles",
+            "Nix Configuration — Dotfiles Reference",
+            "implicit",
+        ),
+        ("python-style", "Python Coding Style Guidelines", "implicit"),
+        ("rust-style", "Rust Coding Style Guidelines", "implicit"),
+        ("skill-auditor", "Skill Auditor", "explicit"),
+        ("tsdd", "Test-Spec Driven Development (TSDD)", "implicit"),
+    ];
+    let mut expected = format!(
+        "Skills ({})\n\n{:<18}{:<44}{:<10}{}\n",
+        skills.len(),
+        "NAME",
+        "TITLE",
+        "CLAUDE",
+        "CODEX",
+    );
+    for (name, title, invocation) in skills {
+        expected.push_str(&format!(
+            "{name:<18}{title:<44}{invocation:<10}{invocation}\n"
+        ));
+    }
+
+    assert_eq!(stdout, expected);
+}
+
+#[test]
+fn list_hooks_groups_commands_by_provider_event_and_matcher() {
+    let stdout = run_harness_stdout(["list", "hooks", "--source", repo_root().to_str().unwrap()]);
+
+    assert!(stdout.starts_with(concat!(
+        "Hooks\n\n",
+        "Claude\n\n",
+        "SessionStart\n",
+        "  matcher: compact | resume\n",
+        "    audit_compaction.sh\n",
+    )));
+    assert!(stdout.contains(concat!(
+        "PreToolUse\n",
+        "  matcher: Bash\n",
+        "    audit_tool_call.sh\n",
+        "    guard_forbidden_commands.sh\n",
+        "    guard_secret_commit.sh\n",
+        "    guard_dangerous_git.sh\n",
+        "    guard_allowed_commands.sh\n",
+    )));
+    assert!(stdout.contains("lint_format_js.sh            when: *.js, *.ts, *.jsx, *.tsx"));
+    assert!(stdout.contains(concat!(
+        "Codex\n\n",
+        "UserPromptSubmit\n",
+        "  matcher: any\n",
+        "    adapt_guard_secret_content.sh prompt\n",
+    )));
+    assert!(stdout.contains("adapt_shell_command.sh -> guard_forbidden_commands.sh"));
+    assert!(!stdout.contains("$HOME/"));
+    assert!(!stdout.contains("Write(*.js)|Edit(*.js)"));
+}
+
+#[test]
+fn list_hooks_filters_entries_by_provider() {
+    let stdout = run_harness_stdout([
+        "list",
+        "hooks",
+        "--provider",
+        "codex",
+        "--source",
+        repo_root().to_str().unwrap(),
+    ]);
+
+    assert!(stdout.contains("\nCodex\n"));
+    assert!(!stdout.contains("\nClaude\n"));
+}
+
+#[test]
+fn list_summarizes_skills_and_hook_events() {
+    let stdout = run_harness_stdout(["list", "--source", repo_root().to_str().unwrap()]);
+    let hooks = read_json(&repo_root().join("agents/hooks.json"));
+    let skill_count = std::fs::read_dir(repo_root().join("agents/skills"))
+        .unwrap()
+        .filter_map(Result::ok)
+        .filter(|entry| entry.path().join("SKILL.md").is_file())
+        .count();
+    let expected = format!(
+        "Agent Harness inventory\n\n\
+         Skills                  {skill_count}\n\
+         Claude hook events      {}\n\
+         Codex hook events       {}\n",
+        hooks["claude"].as_object().unwrap().len(),
+        hooks["codex"]["hooks"].as_object().unwrap().len(),
+    );
+
+    assert_eq!(stdout, expected);
+}
+
+#[test]
+fn list_help_describes_the_inventory_interface() {
+    let stdout = run_harness_stdout(["list", "--help"]);
+
+    assert!(stdout.starts_with("Inspect the Agent Harness inventory\n\nUsage:"));
+    assert!(stdout.contains("hooks   List hooks grouped by provider, event, and matcher"));
+    assert!(stdout.contains("skills  List skill titles and invocation modes"));
+    assert!(stdout.contains(
+        "--source <SOURCE>  Read inventory data from the specified agent-harness source tree"
+    ));
+}
+
+#[test]
 fn generate_skills_accepts_an_external_skill_directory() {
     let root = test_root("external-skill");
     let external_skill = root.join("upstream/external-tool");
@@ -584,10 +724,27 @@ fn run_harness<const N: usize>(args: [&str; N]) {
     run_harness_command(Command::new(env!("CARGO_BIN_EXE_agent-harness")).args(args));
 }
 
+fn run_harness_stdout<const N: usize>(args: [&str; N]) -> String {
+    let output =
+        run_harness_command_output(Command::new(env!("CARGO_BIN_EXE_agent-harness")).args(args));
+    String::from_utf8(output.stdout).unwrap()
+}
+
 fn run_harness_in<const N: usize>(cwd: &Path, args: [&str; N]) {
     let mut command = Command::new(env!("CARGO_BIN_EXE_agent-harness"));
     command.current_dir(cwd).args(args);
     run_harness_command(&mut command);
+}
+
+fn run_harness_in_stdout<const N: usize>(cwd: &Path, args: [&str; N]) -> String {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_agent-harness"));
+    let output = run_harness_command_output(
+        command
+            .current_dir(cwd)
+            .env_remove("AGENT_HARNESS_SOURCE")
+            .args(args),
+    );
+    String::from_utf8(output.stdout).unwrap()
 }
 
 fn run_harness_without_herdr<const N: usize>(args: [&str; N]) {
@@ -625,6 +782,10 @@ fi
 }
 
 fn run_harness_command(command: &mut Command) {
+    run_harness_command_output(command);
+}
+
+fn run_harness_command_output(command: &mut Command) -> std::process::Output {
     let output = command.output().unwrap();
     assert!(
         output.status.success(),
@@ -632,6 +793,7 @@ fn run_harness_command(command: &mut Command) {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr),
     );
+    output
 }
 
 fn read_json(path: &Path) -> Value {

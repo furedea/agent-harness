@@ -212,6 +212,15 @@ agent-harness install --prefix "$HOME" --enable-herdr
 agent-harness verify --prefix "$HOME"
 ```
 
+Inspect the built-in components managed by the resolved harness source:
+
+```bash
+agent-harness list
+agent-harness list skills
+agent-harness list hooks
+agent-harness list hooks --provider codex
+```
+
 The CLI also exposes lower-level generation commands for inspecting or composing individual outputs:
 
 | Command                          | Output                                             |
@@ -276,17 +285,7 @@ Edit the source files, then run `agent-harness install --source <path> --prefix 
 | Add related-test mappings               | `agents/hooks/rules/related_test_extensions.json` |
 | Add secret detection patterns           | `agents/hooks/rules/secret_content_patterns.json` |
 
-### Local Source Checkout
-
-```bash
-git clone https://github.com/furedea/agent-harness
-cd agent-harness
-
-cargo run -- install --source "$PWD" --prefix "$HOME"
-cargo run -- verify --prefix "$HOME"
-```
-
-Or use the installed binary with a local source tree:
+Use the installed binary with a local source tree:
 
 ```bash
 agent-harness install --source /path/to/agent-harness --prefix "$HOME"
@@ -312,52 +311,7 @@ When `--source` is omitted, `agent-harness` resolves assets in this order:
 
 This lets the same binary work from release tarballs, Nix builds, Cargo installs, and local checkouts.
 
-## Development
+## Contributing
 
-Enter the Nix development shell on Apple Silicon macOS:
-
-```bash
-nix develop
-```
-
-Run the Rust gates:
-
-```bash
-cargo fmt --check
-cargo clippy -- -D warnings
-cargo test
-```
-
-Run the Python skill-script gates:
-
-```bash
-uv run --python 3.14.6 --frozen ruff format --check agents/skills tests/python
-uv run --python 3.14.6 --frozen ruff check agents/skills tests/python
-uv run --python 3.14.6 --frozen ty check
-uv run --python 3.14.6 --frozen pytest tests/python
-```
-
-Run the hook and Codex policy tests after installing their external test tools:
-
-```bash
-npm ci --ignore-scripts
-bats --print-output-on-failure --recursive tests/hooks tests/install_script.bats
-CODEX_BIN=codex bats --print-output-on-failure tests/codex/execpolicy.bats
-```
-
-CI additionally runs Nix linting, dependency audits, GitHub Actions linting, dependency review, and
-CodeQL.
-
-## Release
-
-Releases are managed by Release Please. Merging the release PR updates `Cargo.toml`, `Cargo.lock`,
-`.release-please-manifest.json`, and `CHANGELOG.md`, then publishes a GitHub Release with the
-`x86_64-unknown-linux-musl` cargo-dist archive, its checksum, a shell installer, and build provenance
-attestations.
-
-If the release assets need to be rebuilt for an existing tag, run the `Release Please` workflow
-manually with the tag name, for example:
-
-```text
-agent-harness-v0.5.0
-```
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the development environment, local checkout commands,
+quality gates, and release process.

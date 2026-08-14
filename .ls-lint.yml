@@ -10,6 +10,7 @@ ignore:
   - docs/logs
 
   - README.md
+  - CONTRIBUTING.md
   - CHANGELOG.md
   - .release-please-manifest.json
   - release-please-config.json
