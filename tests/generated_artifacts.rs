@@ -646,6 +646,18 @@ fn list_summarizes_skills_and_hook_events() {
 }
 
 #[test]
+fn list_help_describes_the_inventory_interface() {
+    let stdout = run_harness_stdout(["list", "--help"]);
+
+    assert!(stdout.starts_with("Inspect the Agent Harness inventory\n\nUsage:"));
+    assert!(stdout.contains("hooks   List hooks grouped by provider, event, and matcher"));
+    assert!(stdout.contains("skills  List skill titles and invocation modes"));
+    assert!(stdout.contains(
+        "--source <SOURCE>  Read inventory data from the specified agent-harness source tree"
+    ));
+}
+
+#[test]
 fn generate_skills_accepts_an_external_skill_directory() {
     let root = test_root("external-skill");
     let external_skill = root.join("upstream/external-tool");

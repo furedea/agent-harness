@@ -28,6 +28,7 @@ enum Command {
     GenerateHerdrIntegration(GenerateHerdrIntegrationArgs),
     GenerateSkills(GenerateSkillsArgs),
     Install(InstallArgs),
+    /// Inspect the Agent Harness inventory.
     List(ListArgs),
     SyncCodexConfig(SyncCodexConfigArgs),
     Verify(VerifyArgs),
@@ -35,6 +36,7 @@ enum Command {
 
 #[derive(Debug, clap::Args)]
 struct ListArgs {
+    /// Read inventory data from the specified agent-harness source tree.
     #[arg(long, global = true)]
     source: Option<PathBuf>,
 
@@ -44,12 +46,15 @@ struct ListArgs {
 
 #[derive(Debug, Subcommand)]
 enum ListCommand {
+    /// List hooks grouped by provider, event, and matcher.
     Hooks(ListHooksArgs),
+    /// List skill titles and invocation modes.
     Skills,
 }
 
 #[derive(Debug, clap::Args)]
 struct ListHooksArgs {
+    /// Show hooks for one provider.
     #[arg(long, value_enum)]
     provider: Option<Provider>,
 }
