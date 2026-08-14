@@ -18,19 +18,31 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    /// Generate complete Claude Code settings.
     GenerateClaudeSettings(GenerateFileArgs),
+    /// Generate Claude Code hook configuration.
     GenerateClaudeHooks(GenerateFileArgs),
+    /// Generate complete managed Codex configuration.
     GenerateCodexConfigSource(GenerateFileArgs),
+    /// Generate the protected-files Codex fragment.
     GenerateCodexConfigFragment(GenerateFileArgs),
+    /// Generate Codex hook configuration.
     GenerateCodexHooks(GenerateFileArgs),
+    /// Generate Codex execpolicy rules.
     GenerateCodexRules(GenerateFileArgs),
+    /// Generate Claude Code forbidden-command rules.
     GenerateForbiddenCommands(GenerateFileArgs),
+    /// Generate Claude and Codex integration files with Herdr.
     GenerateHerdrIntegration(GenerateHerdrIntegrationArgs),
+    /// Render provider-specific skill directories.
     GenerateSkills(GenerateSkillsArgs),
+    /// Install all managed files under a target prefix.
     Install(InstallArgs),
     /// Inspect the Agent Harness inventory.
     List(ListArgs),
+    /// Merge managed keys into an existing Codex config.
     SyncCodexConfig(SyncCodexConfigArgs),
+    /// Verify that required managed files are installed.
     Verify(VerifyArgs),
 }
 
@@ -276,6 +288,26 @@ impl Provider {
         match self {
             Self::Claude => hooks::HookProvider::Claude,
             Self::Codex => hooks::HookProvider::Codex,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use clap::CommandFactory;
+
+    use super::Cli;
+
+    #[test]
+    fn every_top_level_command_has_a_description() {
+        let command = Cli::command();
+
+        for subcommand in command.get_subcommands() {
+            assert!(
+                subcommand.get_about().is_some(),
+                "{} has no description",
+                subcommand.get_name(),
+            );
         }
     }
 }
