@@ -1,7 +1,7 @@
 ---
 name: tsdd
 description: >
-    Test-Spec Driven Development (TSDD): tests are the durable specification, TDD is the operating discipline, prose carries only Why, and `CLAUDE.md` stays a navigation map. Load before production code, tests, ADRs, architectural decisions, `CLAUDE.md` edits, or any durable prose artifact that would duplicate tests or code. Also load when the user asks to write tests or define test behavior before implementation, including "test 書いて", "test 書いて", "テスト書いて", "pytest", "テスト環境", "TSDD", "Test-Spec Driven Development", "TDD で実装", "ADR を書いて", "decision record", or "executable specification".
+  Test-Spec Driven Development (TSDD): tests are the durable specification, TDD is the operating discipline, prose carries only Why, and `CLAUDE.md` stays a navigation map. Load before production code, tests, ADRs, architectural decisions, `CLAUDE.md` edits, or any durable prose artifact that would duplicate tests or code. Also load when the user asks to write tests or define test behavior before implementation, including "test 書いて", "test 書いて", "テスト書いて", "pytest", "テスト環境", "TSDD", "Test-Spec Driven Development", "TDD で実装", "ADR を書いて", "decision record", or "executable specification".
 ---
 
 # Test-Spec Driven Development (TSDD)
@@ -23,7 +23,7 @@ If a rule below starts feeling like a language-specific implementation detail, i
 
 **The spec is the test suite. Prose documents carry only Why.**
 
-Natural-language specification documents become a second source of truth that drifts from the code, violates DRY, and doubles the cost of every requirement change. Under this methodology, requirements live inside executable tests, implementation is self-documenting via code and types, and the only human-written prose captures *why* a decision was made — which code cannot express anyway, so no duplication occurs.
+Natural-language specification documents become a second source of truth that drifts from the code, violates DRY, and doubles the cost of every requirement change. Under this methodology, requirements live inside executable tests, implementation is self-documenting via code and types, and the only human-written prose captures _why_ a decision was made — which code cannot express anyway, so no duplication occurs.
 
 ### Why this matters especially for AI coding agents
 
@@ -33,19 +33,19 @@ An AI agent's bottleneck is not typing speed. It is distinguishing "my output is
 
 Every artifact in the codebase has exactly one of four homes. If the same information appears in two homes, delete it from the wrong one — do not "sync" them.
 
-| Layer | Lives in | Role |
-|---|---|---|
-| **What** (requirements) | Tests | Executable specification. Cannot drift from code because it is executed against code. |
-| **How** (implementation) | Code + types | Self-documenting via naming, structure, Value Objects, and type constraints. |
-| **Why** (decisions) | ADR under `docs/adr/` for broad / architectural Why; inline code comments for local Why | Both carry rationale that code cannot express. They differ in scope (see "ADR vs inline comments"). |
-| **Navigation** | `CLAUDE.md` | Entry map for the AI agent. Points to the other layers; never copies them. |
+| Layer                    | Lives in                                                                                | Role                                                                                                |
+| ------------------------ | --------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| **What** (requirements)  | Tests                                                                                   | Executable specification. Cannot drift from code because it is executed against code.               |
+| **How** (implementation) | Code + types                                                                            | Self-documenting via naming, structure, Value Objects, and type constraints.                        |
+| **Why** (decisions)      | ADR under `docs/adr/` for broad / architectural Why; inline code comments for local Why | Both carry rationale that code cannot express. They differ in scope (see "ADR vs inline comments"). |
+| **Navigation**           | `CLAUDE.md`                                                                             | Entry map for the AI agent. Points to the other layers; never copies them.                          |
 
 **Anti-patterns**:
 
 - A durable prose artifact that restates what the tests or code already say. Delete it; let the tests be the spec.
 - A living document that is expected to be kept in sync with behavior or implementation. It will not be. Write tests and code instead.
 
-**Exception**: in heavily regulated domains (medical device, safety-critical, finance with audit obligation) a natural-language spec may be legally required. In that case keep it, but treat the tests as the *authoritative* spec and the document as a derivative that the tests cross-check.
+**Exception**: in heavily regulated domains (medical device, safety-critical, finance with audit obligation) a natural-language spec may be legally required. In that case keep it, but treat the tests as the _authoritative_ spec and the document as a derivative that the tests cross-check.
 
 ## Transient Natural-Language Planning
 
@@ -84,19 +84,20 @@ Only rules that are part of the development methodology live here. Mocking libra
 
 - **Test name = requirement sentence.** The name is a human-readable statement of the behavior being verified. `test_registering_with_empty_password_raises_validation_error` is a spec line; `test_1`, `test_user_ok`, `test_happy_path` are not. Treat the name as the specification channel — wasting it loses the whole point of executable specs.
 - **Expected outcome first.** Decide the observable outcome before arrange and act. When the language and framework make it natural, write the assertion first; otherwise keep the test shaped around the expected behavior, not around convenient setup.
+- **Avoid overspecification.** Every assertion must protect an observable contract. Omit wording, formatting, ordering, internal structure, and other details that can change without violating a requirement. Do not assert that Markdown contains prescribed prose as a proxy for underlying behavior. Assert an exact representation only when it is itself the contract.
 - **One concept per test.** If the test name needs the word "and", split the test.
 - **Do not re-test what the type system already guarantees.** If a parameter is `NonEmptyString`, do not write `test_empty_string_rejected` on every consumer — the constructor already enforces it. Test the invariant once, at the boundary where it is created.
 
 ### AI-specific failure modes and their guards
 
-| Failure mode | Guard |
-|---|---|
-| Agent writes implementation first, then bolts on tests | TDD-enforcing workflow / wrapper command; state in `CLAUDE.md` that production code without a corresponding failing-then-passing test is a defect |
-| Agent writes many tests all Red and then batch-implements | Rule: at most one Red test at a time. If you catch yourself queuing more, delete them and reintroduce them one cycle at a time |
-| Agent writes generic test names (`test_success`, `test_case_1`) | Require full-sentence names describing the observable behavior; reject PRs otherwise |
-| Agent skips the Refactor step because tests are green | Treat Refactor as a mandatory third phase, not an optional cleanup. List it explicitly in `CLAUDE.md` alongside Red and Green |
-| Agent writes a test for behavior the type system already guarantees | Review test diffs against type signatures; delete redundant coverage |
-| Agent writes durable prose "to plan the feature" | Plan in a scratchpad or the chat; once planning ends, encode the plan as tests. Do not record planning prose as a durable project artifact |
+| Failure mode                                                        | Guard                                                                                                                                             |
+| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Agent writes implementation first, then bolts on tests              | TDD-enforcing workflow / wrapper command; state in `CLAUDE.md` that production code without a corresponding failing-then-passing test is a defect |
+| Agent writes many tests all Red and then batch-implements           | Rule: at most one Red test at a time. If you catch yourself queuing more, delete them and reintroduce them one cycle at a time                    |
+| Agent writes generic test names (`test_success`, `test_case_1`)     | Require full-sentence names describing the observable behavior; reject PRs otherwise                                                              |
+| Agent skips the Refactor step because tests are green               | Treat Refactor as a mandatory third phase, not an optional cleanup. List it explicitly in `CLAUDE.md` alongside Red and Green                     |
+| Agent writes a test for behavior the type system already guarantees | Review test diffs against type signatures; delete redundant coverage                                                                              |
+| Agent writes durable prose "to plan the feature"                    | Plan in a scratchpad or the chat; once planning ends, encode the plan as tests. Do not record planning prose as a durable project artifact        |
 
 ## ADR (Architecture Decision Record) Operation
 
@@ -169,7 +170,7 @@ Do **not** write one for:
 
 They are complementary, not competing, forms of Why.
 
-- **Inline comment** — Why *this specific line or block* is the way it is. Local, narrow, moves and dies with the code.
+- **Inline comment** — Why _this specific line or block_ is the way it is. Local, narrow, moves and dies with the code.
 - **ADR** — Why the broader approach was chosen. Spans files, survives refactors, carries the rejected alternatives.
 
 Rule of thumb: if the same Why would have to be pasted into three different files' comments, it belongs in an ADR. If it applies to a single tricky line, it belongs inline.
@@ -241,7 +242,7 @@ A methodology that relies on the agent remembering to follow it will drift. Buil
 ## Interaction with other skills
 
 - **`*-style` (`python-style`, `bash-style`, `gha-style`, ...)** — language-specific conventions. This skill sits on top of them; both are usually loaded together when implementing.
-- **`*-init` (`nix-dev-init`, `github-ci-init`)** — project and CI bootstrap. Runs *before* this skill applies; this skill governs the code written *inside* the bootstrapped project.
+- **`*-init` (`nix-dev-init`, `github-ci-init`)** — project and CI bootstrap. Runs _before_ this skill applies; this skill governs the code written _inside_ the bootstrapped project.
 
 ## Summary
 
