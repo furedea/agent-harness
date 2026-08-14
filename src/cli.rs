@@ -1,15 +1,16 @@
 use std::path::{Path, PathBuf};
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
 
 use crate::{
     generation::{codex_config, command_policy, herdr, hooks, protection, skills::ExternalSkill},
+    inventory::Inventory,
     render, source,
 };
 
 #[derive(Debug, Parser)]
-#[command(version, about = "Install and verify AI agent harness files")]
+#[command(version, about = "Install, inspect, and verify AI agent harness files")]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -27,8 +28,30 @@ enum Command {
     GenerateHerdrIntegration(GenerateHerdrIntegrationArgs),
     GenerateSkills(GenerateSkillsArgs),
     Install(InstallArgs),
+    List(ListArgs),
     SyncCodexConfig(SyncCodexConfigArgs),
     Verify(VerifyArgs),
+}
+
+#[derive(Debug, clap::Args)]
+struct ListArgs {
+    #[arg(long, global = true)]
+    source: Option<PathBuf>,
+
+    #[command(subcommand)]
+    command: Option<ListCommand>,
+}
+
+#[derive(Debug, Subcommand)]
+enum ListCommand {
+    Hooks(ListHooksArgs),
+    Skills,
+}
+
+#[derive(Debug, clap::Args)]
+struct ListHooksArgs {
+    #[arg(long, value_enum)]
+    provider: Option<Provider>,
 }
 
 #[derive(Debug, clap::Args)]
@@ -121,6 +144,7 @@ pub fn run() -> Result<()> {
         Command::GenerateHerdrIntegration(args) => herdr::generate(&args.herdr_bin, &args.output),
         Command::GenerateSkills(args) => generate_skills(args),
         Command::Install(args) => install(args),
+        Command::List(args) => list(args),
         Command::SyncCodexConfig(args) => {
             codex_config::sync_managed_config(&args.source, &args.target)
         }
@@ -208,6 +232,27 @@ fn install(args: InstallArgs) -> Result<()> {
     )
 }
 
+fn list(args: ListArgs) -> Result<()> {
+    let source = source::resolve_source(args.source)?;
+    let inventory = Inventory::load(source.as_path())?;
+    let output = match args.command {
+        Some(ListCommand::Hooks(hook_args)) => {
+            inventory.hooks(hook_args.provider.map(Provider::hook_provider))
+        }
+        Some(ListCommand::Skills) => inventory.skills(),
+        None => inventory.summary(),
+    };
+    write_stdout(&output)
+}
+
+fn write_stdout(content: &str) -> Result<()> {
+    use std::io::Write;
+
+    std::io::stdout()
+        .write_all(content.as_bytes())
+        .context("failed to write command output")
+}
+
 fn default_home_dir() -> PathBuf {
     std::env::var_os("HOME").map_or_else(|| PathBuf::from("."), PathBuf::from)
 }
@@ -217,6 +262,15 @@ impl From<Provider> for render::Provider {
         match provider {
             Provider::Claude => Self::Claude,
             Provider::Codex => Self::Codex,
+        }
+    }
+}
+
+impl Provider {
+    fn hook_provider(self) -> hooks::HookProvider {
+        match self {
+            Self::Claude => hooks::HookProvider::Claude,
+            Self::Codex => hooks::HookProvider::Codex,
         }
     }
 }

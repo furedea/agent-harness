@@ -212,6 +212,15 @@ agent-harness install --prefix "$HOME" --enable-herdr
 agent-harness verify --prefix "$HOME"
 ```
 
+Inspect the built-in components managed by the resolved harness source:
+
+```bash
+agent-harness list
+agent-harness list skills
+agent-harness list hooks
+agent-harness list hooks --provider codex
+```
+
 The CLI also exposes lower-level generation commands for inspecting or composing individual outputs:
 
 | Command                          | Output                                             |

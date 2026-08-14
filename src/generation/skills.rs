@@ -11,6 +11,12 @@ const SKILL_RENDERING_PATH: &str = "agents/skill_rendering.json";
 const SUPPORTED_SKILL_RENDERING_VERSION: u64 = 1;
 const CODEX_OPENAI_PATH: &str = "agents/openai.yaml";
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct SkillMetadata {
+    pub(crate) name: String,
+    pub(crate) description: String,
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct ExternalSkill {
     name: SkillName,
@@ -141,6 +147,16 @@ pub(crate) fn render_skills(
     }
 
     Ok(())
+}
+
+pub(crate) fn built_in_skill_metadata(source: &Path) -> Result<Vec<SkillMetadata>> {
+    let skills_dir = source.join("agents/skills");
+    let mut metadata = sorted_skill_dirs(&skills_dir)?
+        .iter()
+        .map(|skill_dir| read_skill_metadata(&skill_dir.join("SKILL.md")))
+        .collect::<Result<Vec<_>>>()?;
+    metadata.sort_by(|left, right| left.name.cmp(&right.name));
+    Ok(metadata)
 }
 
 fn sorted_skill_dirs(skills_dir: &Path) -> Result<Vec<PathBuf>> {
@@ -275,6 +291,44 @@ fn split_frontmatter(content: &str) -> Result<(&str, &str)> {
     let end = end + "---\n".len();
 
     Ok((&content["---\n".len()..end], &content[end + marker.len()..]))
+}
+
+fn read_skill_metadata(path: &Path) -> Result<SkillMetadata> {
+    let content = std::fs::read_to_string(path)
+        .with_context(|| format!("failed to read {}", path.display()))?;
+    let (frontmatter, _body) = split_frontmatter(&content)?;
+    let entries = split_entries(frontmatter)?;
+    let name = frontmatter_text(&entries, "name")?;
+    let description = frontmatter_text(&entries, "description")?;
+    Ok(SkillMetadata { name, description })
+}
+
+fn frontmatter_text(entries: &[(String, String)], target: &str) -> Result<String> {
+    let entry = entries
+        .iter()
+        .find_map(|(name, entry)| (name == target).then_some(entry))
+        .with_context(|| format!("SKILL.md frontmatter must contain {target}"))?;
+    let (_name, first_line) = entry
+        .lines()
+        .next()
+        .and_then(|line| line.split_once(':'))
+        .with_context(|| format!("SKILL.md frontmatter {target} is invalid"))?;
+    let first_line = first_line.trim();
+    let value = if matches!(first_line, ">" | ">-" | "|" | "|-") {
+        entry
+            .lines()
+            .skip(1)
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .collect::<Vec<_>>()
+            .join(" ")
+    } else {
+        first_line.trim_matches('"').to_owned()
+    };
+    if value.is_empty() {
+        bail!("SKILL.md frontmatter {target} must not be empty");
+    }
+    Ok(value)
 }
 
 fn common_frontmatter_entries(path: &Path, frontmatter: &str) -> Result<Vec<String>> {

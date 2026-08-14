@@ -113,6 +113,19 @@ fn claude_settings_render_from_packaged_source_without_source_argument() {
 }
 
 #[test]
+fn list_skills_uses_packaged_source_without_source_argument() {
+    let root = test_root("packaged-list");
+    let cwd = root.join("cwd");
+    std::fs::create_dir_all(&cwd).unwrap();
+
+    let stdout = run_harness_in_stdout(&cwd, ["list", "skills"]);
+
+    assert!(stdout.contains("- adr: Architecture Decision Record"));
+
+    remove_dir(root);
+}
+
+#[test]
 fn install_uses_packaged_source_without_source_argument() {
     let root = test_root("packaged-install");
     let cwd = root.join("cwd");
@@ -518,6 +531,73 @@ fn skills_render_from_real_source() {
 }
 
 #[test]
+fn list_skills_prints_built_in_metadata_in_name_order() {
+    let stdout = run_harness_stdout(["list", "skills", "--source", repo_root().to_str().unwrap()]);
+
+    assert!(stdout.starts_with("Skills\n"));
+    assert!(stdout.contains("- adr: Architecture Decision Record"));
+    assert!(stdout.contains("- tsdd: Test-Spec Driven Development"));
+    assert!(stdout.find("- adr:") < stdout.find("- bash-style:"));
+}
+
+#[test]
+fn list_hooks_prints_provider_event_matcher_and_command() {
+    let stdout = run_harness_stdout(["list", "hooks", "--source", repo_root().to_str().unwrap()]);
+
+    assert!(stdout.starts_with("Hooks\n"));
+    assert!(
+        stdout.contains(
+            "- claude / PreToolUse / Bash: $HOME/.claude/hooks/guard_forbidden_commands.sh",
+        )
+    );
+    assert!(stdout.contains(
+        "- codex / UserPromptSubmit / *: $HOME/.codex/hooks/adapt_guard_secret_content.sh prompt",
+    ));
+}
+
+#[test]
+fn list_hooks_filters_entries_by_provider() {
+    let stdout = run_harness_stdout([
+        "list",
+        "hooks",
+        "--provider",
+        "codex",
+        "--source",
+        repo_root().to_str().unwrap(),
+    ]);
+
+    assert!(stdout.contains("- codex /"));
+    assert!(!stdout.contains("- claude /"));
+}
+
+#[test]
+fn list_summarizes_managed_component_counts_and_sources() {
+    let stdout = run_harness_stdout(["list", "--source", repo_root().to_str().unwrap()]);
+    let hooks = read_json(&repo_root().join("agents/hooks.json"));
+    let skill_count = std::fs::read_dir(repo_root().join("agents/skills"))
+        .unwrap()
+        .filter_map(Result::ok)
+        .filter(|entry| entry.path().join("SKILL.md").is_file())
+        .count();
+
+    assert!(stdout.starts_with("Managed components\n"));
+    assert!(stdout.contains(&format!("- skills: {skill_count}")));
+    assert!(stdout.contains(&format!(
+        "- claude hooks: {}",
+        hook_command_count(&hooks["claude"]),
+    )));
+    assert!(stdout.contains(&format!(
+        "- codex hooks: {}",
+        hook_command_count(&hooks["codex"]),
+    )));
+    assert!(stdout.contains("- agent instructions: agents/AGENTS.md"));
+    assert!(stdout.contains("- command policy: agents/command_policy.json"));
+    assert!(stdout.contains("- claude settings: claude/settings.base.json"));
+    assert!(stdout.contains("- codex config: codex/config.toml"));
+    assert!(stdout.contains("- claude statusline: claude/statusline"));
+}
+
+#[test]
 fn generate_skills_accepts_an_external_skill_directory() {
     let root = test_root("external-skill");
     let external_skill = root.join("upstream/external-tool");
@@ -584,10 +664,27 @@ fn run_harness<const N: usize>(args: [&str; N]) {
     run_harness_command(Command::new(env!("CARGO_BIN_EXE_agent-harness")).args(args));
 }
 
+fn run_harness_stdout<const N: usize>(args: [&str; N]) -> String {
+    let output =
+        run_harness_command_output(Command::new(env!("CARGO_BIN_EXE_agent-harness")).args(args));
+    String::from_utf8(output.stdout).unwrap()
+}
+
 fn run_harness_in<const N: usize>(cwd: &Path, args: [&str; N]) {
     let mut command = Command::new(env!("CARGO_BIN_EXE_agent-harness"));
     command.current_dir(cwd).args(args);
     run_harness_command(&mut command);
+}
+
+fn run_harness_in_stdout<const N: usize>(cwd: &Path, args: [&str; N]) -> String {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_agent-harness"));
+    let output = run_harness_command_output(
+        command
+            .current_dir(cwd)
+            .env_remove("AGENT_HARNESS_SOURCE")
+            .args(args),
+    );
+    String::from_utf8(output.stdout).unwrap()
 }
 
 fn run_harness_without_herdr<const N: usize>(args: [&str; N]) {
@@ -625,6 +722,10 @@ fi
 }
 
 fn run_harness_command(command: &mut Command) {
+    run_harness_command_output(command);
+}
+
+fn run_harness_command_output(command: &mut Command) -> std::process::Output {
     let output = command.output().unwrap();
     assert!(
         output.status.success(),
@@ -632,6 +733,7 @@ fn run_harness_command(command: &mut Command) {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr),
     );
+    output
 }
 
 fn read_json(path: &Path) -> Value {
@@ -730,6 +832,12 @@ fn hook_command_exists(value: &Value, expected: &str) -> bool {
     let mut commands = Vec::new();
     collect_commands(value, &mut commands);
     commands.iter().any(|command| command == expected)
+}
+
+fn hook_command_count(value: &Value) -> usize {
+    let mut commands = Vec::new();
+    collect_commands(value, &mut commands);
+    commands.len()
 }
 
 fn resolve_hook_script(script: &str) -> PathBuf {
