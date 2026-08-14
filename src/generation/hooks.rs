@@ -20,15 +20,15 @@ pub(crate) enum HookProvider {
 }
 
 impl HookProvider {
-    pub(crate) fn as_str(self) -> &'static str {
+    pub(crate) fn display_name(self) -> &'static str {
         match self {
-            Self::Claude => "claude",
-            Self::Codex => "codex",
+            Self::Claude => "Claude",
+            Self::Codex => "Codex",
         }
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct HookMetadata {
     pub(crate) provider: HookProvider,
     pub(crate) event: String,
@@ -74,8 +74,28 @@ pub(crate) fn built_in_hook_metadata(source: &Path) -> Result<Vec<HookMetadata>>
         .context("hook config codex section must contain hooks")?;
     let mut metadata = hook_metadata(HookProvider::Claude, &config.claude)?;
     metadata.extend(hook_metadata(HookProvider::Codex, codex)?);
-    metadata.sort();
+    metadata.sort_by(|left, right| {
+        left.provider
+            .cmp(&right.provider)
+            .then_with(|| hook_event_rank(&left.event).cmp(&hook_event_rank(&right.event)))
+            .then_with(|| left.event.cmp(&right.event))
+    });
     Ok(metadata)
+}
+
+fn hook_event_rank(event: &str) -> usize {
+    match event {
+        "SessionStart" => 0,
+        "UserPromptSubmit" => 1,
+        "PreToolUse" => 2,
+        "PostToolUse" => 3,
+        "PermissionDenied" => 4,
+        "Notification" => 5,
+        "SubagentStop" => 6,
+        "Stop" => 7,
+        "PreCompact" => 8,
+        _ => usize::MAX,
+    }
 }
 
 fn codex_hooks_with_herdr(source: &Path, integration: Option<&Path>) -> Result<Value> {

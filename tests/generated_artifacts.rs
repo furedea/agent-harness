@@ -120,7 +120,7 @@ fn list_skills_uses_packaged_source_without_source_argument() {
 
     let stdout = run_harness_in_stdout(&cwd, ["list", "skills"]);
 
-    assert!(stdout.contains("- adr: Architecture Decision Record"));
+    assert!(stdout.contains("adr               Architecture Decision Records"));
 
     remove_dir(root);
 }
@@ -531,28 +531,82 @@ fn skills_render_from_real_source() {
 }
 
 #[test]
-fn list_skills_prints_built_in_metadata_in_name_order() {
+fn list_skills_prints_titles_and_invocation_modes_in_name_order() {
     let stdout = run_harness_stdout(["list", "skills", "--source", repo_root().to_str().unwrap()]);
+    let skills = [
+        ("adr", "Architecture Decision Records", "implicit"),
+        (
+            "bash-style",
+            "Shell Script Coding Style Guidelines",
+            "implicit",
+        ),
+        ("gha-style", "GitHub Actions Coding Conventions", "implicit"),
+        (
+            "git-commit-split",
+            "/git-commit-split custom command",
+            "explicit",
+        ),
+        ("git-workflow", "Git Workflow", "implicit"),
+        ("github-ci-init", "GitHub CI Init Workflow", "explicit"),
+        ("marp-style", "Marp Slide Creation", "implicit"),
+        ("nix-dev-init", "Nix Dev Init Workflow", "explicit"),
+        (
+            "nix-dotfiles",
+            "Nix Configuration — Dotfiles Reference",
+            "implicit",
+        ),
+        ("python-style", "Python Coding Style Guidelines", "implicit"),
+        ("rust-style", "Rust Coding Style Guidelines", "implicit"),
+        ("skill-auditor", "Skill Auditor", "explicit"),
+        ("tsdd", "Test-Spec Driven Development (TSDD)", "implicit"),
+    ];
+    let mut expected = format!(
+        "Skills ({})\n\n{:<18}{:<44}{:<10}{}\n",
+        skills.len(),
+        "NAME",
+        "TITLE",
+        "CLAUDE",
+        "CODEX",
+    );
+    for (name, title, invocation) in skills {
+        expected.push_str(&format!(
+            "{name:<18}{title:<44}{invocation:<10}{invocation}\n"
+        ));
+    }
 
-    assert!(stdout.starts_with("Skills\n"));
-    assert!(stdout.contains("- adr: Architecture Decision Record"));
-    assert!(stdout.contains("- tsdd: Test-Spec Driven Development"));
-    assert!(stdout.find("- adr:") < stdout.find("- bash-style:"));
+    assert_eq!(stdout, expected);
 }
 
 #[test]
-fn list_hooks_prints_provider_event_matcher_and_command() {
+fn list_hooks_groups_commands_by_provider_event_and_matcher() {
     let stdout = run_harness_stdout(["list", "hooks", "--source", repo_root().to_str().unwrap()]);
 
-    assert!(stdout.starts_with("Hooks\n"));
-    assert!(
-        stdout.contains(
-            "- claude / PreToolUse / Bash: $HOME/.claude/hooks/guard_forbidden_commands.sh",
-        )
-    );
-    assert!(stdout.contains(
-        "- codex / UserPromptSubmit / *: $HOME/.codex/hooks/adapt_guard_secret_content.sh prompt",
-    ));
+    assert!(stdout.starts_with(concat!(
+        "Hooks\n\n",
+        "Claude\n\n",
+        "SessionStart\n",
+        "  matcher: compact | resume\n",
+        "    audit_compaction.sh\n",
+    )));
+    assert!(stdout.contains(concat!(
+        "PreToolUse\n",
+        "  matcher: Bash\n",
+        "    audit_tool_call.sh\n",
+        "    guard_forbidden_commands.sh\n",
+        "    guard_secret_commit.sh\n",
+        "    guard_dangerous_git.sh\n",
+        "    guard_allowed_commands.sh\n",
+    )));
+    assert!(stdout.contains("lint_format_js.sh            when: *.js, *.ts, *.jsx, *.tsx"));
+    assert!(stdout.contains(concat!(
+        "Codex\n\n",
+        "UserPromptSubmit\n",
+        "  matcher: any\n",
+        "    adapt_guard_secret_content.sh prompt\n",
+    )));
+    assert!(stdout.contains("adapt_shell_command.sh -> guard_forbidden_commands.sh"));
+    assert!(!stdout.contains("$HOME/"));
+    assert!(!stdout.contains("Write(*.js)|Edit(*.js)"));
 }
 
 #[test]
@@ -566,12 +620,12 @@ fn list_hooks_filters_entries_by_provider() {
         repo_root().to_str().unwrap(),
     ]);
 
-    assert!(stdout.contains("- codex /"));
-    assert!(!stdout.contains("- claude /"));
+    assert!(stdout.contains("\nCodex\n"));
+    assert!(!stdout.contains("\nClaude\n"));
 }
 
 #[test]
-fn list_summarizes_managed_component_counts_and_sources() {
+fn list_summarizes_skills_and_hook_events() {
     let stdout = run_harness_stdout(["list", "--source", repo_root().to_str().unwrap()]);
     let hooks = read_json(&repo_root().join("agents/hooks.json"));
     let skill_count = std::fs::read_dir(repo_root().join("agents/skills"))
@@ -579,22 +633,16 @@ fn list_summarizes_managed_component_counts_and_sources() {
         .filter_map(Result::ok)
         .filter(|entry| entry.path().join("SKILL.md").is_file())
         .count();
+    let expected = format!(
+        "Agent Harness inventory\n\n\
+         Skills                  {skill_count}\n\
+         Claude hook events      {}\n\
+         Codex hook events       {}\n",
+        hooks["claude"].as_object().unwrap().len(),
+        hooks["codex"]["hooks"].as_object().unwrap().len(),
+    );
 
-    assert!(stdout.starts_with("Managed components\n"));
-    assert!(stdout.contains(&format!("- skills: {skill_count}")));
-    assert!(stdout.contains(&format!(
-        "- claude hooks: {}",
-        hook_command_count(&hooks["claude"]),
-    )));
-    assert!(stdout.contains(&format!(
-        "- codex hooks: {}",
-        hook_command_count(&hooks["codex"]),
-    )));
-    assert!(stdout.contains("- agent instructions: agents/AGENTS.md"));
-    assert!(stdout.contains("- command policy: agents/command_policy.json"));
-    assert!(stdout.contains("- claude settings: claude/settings.base.json"));
-    assert!(stdout.contains("- codex config: codex/config.toml"));
-    assert!(stdout.contains("- claude statusline: claude/statusline"));
+    assert_eq!(stdout, expected);
 }
 
 #[test]
@@ -832,12 +880,6 @@ fn hook_command_exists(value: &Value, expected: &str) -> bool {
     let mut commands = Vec::new();
     collect_commands(value, &mut commands);
     commands.iter().any(|command| command == expected)
-}
-
-fn hook_command_count(value: &Value) -> usize {
-    let mut commands = Vec::new();
-    collect_commands(value, &mut commands);
-    commands.len()
 }
 
 fn resolve_hook_script(script: &str) -> PathBuf {

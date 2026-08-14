@@ -14,7 +14,24 @@ const CODEX_OPENAI_PATH: &str = "agents/openai.yaml";
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct SkillMetadata {
     pub(crate) name: String,
-    pub(crate) description: String,
+    pub(crate) title: String,
+    pub(crate) claude_invocation: SkillInvocation,
+    pub(crate) codex_invocation: SkillInvocation,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum SkillInvocation {
+    Implicit,
+    Explicit,
+}
+
+impl SkillInvocation {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Implicit => "implicit",
+            Self::Explicit => "explicit",
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -93,12 +110,30 @@ struct ClaudeRendering {
     frontmatter: BTreeMap<String, FrontmatterValue>,
 }
 
+impl ClaudeRendering {
+    fn invocation(&self) -> SkillInvocation {
+        match self.frontmatter.get("disable-model-invocation") {
+            Some(FrontmatterValue::Bool(true)) => SkillInvocation::Explicit,
+            _ => SkillInvocation::Implicit,
+        }
+    }
+}
+
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct CodexRendering {
     #[serde(default)]
     frontmatter: BTreeMap<String, FrontmatterValue>,
     openai: Option<CodexOpenAi>,
+}
+
+impl CodexRendering {
+    fn invocation(&self) -> SkillInvocation {
+        match &self.openai {
+            Some(openai) if !openai.allow_implicit_invocation => SkillInvocation::Explicit,
+            _ => SkillInvocation::Implicit,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -151,9 +186,23 @@ pub(crate) fn render_skills(
 
 pub(crate) fn built_in_skill_metadata(source: &Path) -> Result<Vec<SkillMetadata>> {
     let skills_dir = source.join("agents/skills");
-    let mut metadata = sorted_skill_dirs(&skills_dir)?
+    let skill_dirs = sorted_skill_dirs(&skills_dir)?;
+    let skill_rendering = read_skill_rendering(source)?;
+    validate_skill_rendering_targets(&skill_rendering, &skill_dirs)?;
+    let default_rendering = SkillRenderingEntry::default();
+    let mut metadata = skill_dirs
         .iter()
-        .map(|skill_dir| read_skill_metadata(&skill_dir.join("SKILL.md")))
+        .map(|skill_dir| {
+            let name = skill_dir
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or_default();
+            let rendering = skill_rendering
+                .skills
+                .get(name)
+                .unwrap_or(&default_rendering);
+            read_skill_metadata(&skill_dir.join("SKILL.md"), rendering)
+        })
         .collect::<Result<Vec<_>>>()?;
     metadata.sort_by(|left, right| left.name.cmp(&right.name));
     Ok(metadata)
@@ -293,14 +342,27 @@ fn split_frontmatter(content: &str) -> Result<(&str, &str)> {
     Ok((&content["---\n".len()..end], &content[end + marker.len()..]))
 }
 
-fn read_skill_metadata(path: &Path) -> Result<SkillMetadata> {
+fn read_skill_metadata(path: &Path, rendering: &SkillRenderingEntry) -> Result<SkillMetadata> {
     let content = std::fs::read_to_string(path)
         .with_context(|| format!("failed to read {}", path.display()))?;
-    let (frontmatter, _body) = split_frontmatter(&content)?;
+    let (frontmatter, body) = split_frontmatter(&content)?;
     let entries = split_entries(frontmatter)?;
     let name = frontmatter_text(&entries, "name")?;
-    let description = frontmatter_text(&entries, "description")?;
-    Ok(SkillMetadata { name, description })
+    frontmatter_text(&entries, "description")?;
+    let title = skill_title(body)?;
+    Ok(SkillMetadata {
+        name,
+        title,
+        claude_invocation: rendering.claude.invocation(),
+        codex_invocation: rendering.codex.invocation(),
+    })
+}
+
+fn skill_title(body: &str) -> Result<String> {
+    body.lines()
+        .find_map(|line| line.strip_prefix("# "))
+        .map(|title| title.replace('`', ""))
+        .context("SKILL.md body must contain a level-one heading")
 }
 
 fn frontmatter_text(entries: &[(String, String)], target: &str) -> Result<String> {
