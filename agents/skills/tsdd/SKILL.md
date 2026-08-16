@@ -74,6 +74,11 @@ When current behavior has a real gap from an independently required observable c
 
 ### Red eligibility
 
+Before choosing a development cycle, use this gate to determine whether current behavior has a real gap from an independently required observable contract:
+
+- **Gap exists** → Expected outcome → Red → Green → Refactor → Green.
+- **No gap exists** → Green baseline → behavior-preserving change or Refactor → Green.
+
 Red is evidence of a real gap between current behavior and an independently required observable contract; it is not a deliverable to manufacture. Before writing a failing test, identify the contract and a requirement source outside the test or planned implementation. Valid sources include an explicit user requirement, a public interface or external standard, a reproduced defect, or behavior intentionally preserved for compatibility. A test name, planned implementation, current wording or internal structure, coverage target, or desire to demonstrate TDD does not create a requirement.
 
 Use Red → Green → Refactor only when such a gap exists. Reuse an existing failing test when it already demonstrates the gap; never add or tighten an assertion solely to obtain Red. If no contract gap exists, establish a Green baseline and use the relevant verification gates. A passing characterization test is allowed when needed to protect required behavior during a behavior-preserving change.
@@ -82,12 +87,24 @@ Use Red → Green → Refactor only when such a gap exists. Reuse an existing fa
 
 These rules apply when Red is eligible:
 
+Before establishing Red, choose one contract example, decide the expected outcome, and apply the Test quality rules so the test asserts the minimum required contract and behaviorally equivalent implementations can pass.
+
 1. **Establish one failing test for one contract gap.** Use an existing failing test when it already proves the gap; otherwise write one. Not three. Not ten. One.
 2. **Run the verification gate and confirm the test fails for the expected reason.** Prefer the full suite. If the repo is large or already has unrelated failures, first establish the baseline, then run the narrowest suite that proves the executable spec is Red without hiding known failures.
 3. **Write the minimum code to pass.** Obvious implementation if the path is clear; "fake it" (hardcode the answer) or triangulate with a second example if it is not.
 4. **Run the verification gate and confirm Green.** Prefer the full suite; otherwise run the narrow suite plus the project's agreed quality gates, and explicitly report any pre-existing failures that remain.
 5. **Refactor with the suite green.** Remove duplication, rename for clarity, extract functions / types. Re-run the suite after each small change.
-6. **Record the change as one coherent VCS unit.** Commit each Red → Green → Refactor cycle so it remains reviewable as one logical unit.
+6. **Record the change as one coherent VCS unit.** Commit each Red → Green → Refactor → Green cycle so it remains reviewable as one logical unit.
+
+### Work without a contract gap
+
+When Red is not eligible:
+
+1. **Establish a Green baseline.** Run the existing tests and relevant verification gates before the change.
+2. **Protect required behavior when necessary.** Add a passing characterization test only when required behavior lacks sufficient coverage.
+3. **Make the behavior-preserving change or Refactor.** Do not change the required observable contract.
+4. **Confirm Green again.** Re-run the relevant tests and verification gates after the change.
+5. **Record one coherent VCS unit.**
 
 ### Test quality rules (methodology-level)
 
@@ -101,14 +118,14 @@ Only rules that are part of the development methodology live here. Mocking libra
 
 ### AI-specific failure modes and their guards
 
-| Failure mode                                                                   | Guard                                                                                                                           |
-| ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
-| Agent writes implementation first for a real contract gap, then bolts on tests | Require Red before implementation when Red is eligible; otherwise require a Green baseline                                      |
-| Agent writes many tests all Red and then batch-implements                      | When Red is eligible, allow at most one Red test at a time; reintroduce additional tests one cycle at a time                    |
-| Agent writes generic test names (`test_success`, `test_case_1`)                | Require full-sentence names describing independently required behavior; reject PRs otherwise                                    |
-| Agent skips the Refactor step because tests are green                          | Treat Refactor as the mandatory final phase of an eligible cycle; point `CLAUDE.md` to TSDD instead of duplicating the rule     |
-| Agent writes a test for behavior the type system already guarantees            | Review test diffs against type signatures; delete redundant coverage                                                            |
-| Agent writes durable prose "to plan the feature"                               | Plan transiently, then resolve each note through the Information Placement Matrix; do not assume every plan item becomes a test |
+| Failure mode                                                                   | Guard                                                                                                                                  |
+| ------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Agent writes implementation first for a real contract gap, then bolts on tests | Require Red before implementation when Red is eligible; otherwise require a Green baseline                                             |
+| Agent writes many tests all Red and then batch-implements                      | When Red is eligible, allow at most one Red test at a time; reintroduce additional tests one cycle at a time                           |
+| Agent writes generic test names (`test_success`, `test_case_1`)                | Require full-sentence names describing independently required behavior; reject PRs otherwise                                           |
+| Agent skips the Refactor step because tests are green                          | Treat Refactor as the mandatory final phase of an eligible cycle, require final Green after either path, and point `CLAUDE.md` to TSDD |
+| Agent writes a test for behavior the type system already guarantees            | Review test diffs against type signatures; delete redundant coverage                                                                   |
+| Agent writes durable prose "to plan the feature"                               | Plan transiently, then resolve each note through the Information Placement Matrix; do not assume every plan item becomes a test        |
 
 ## ADR (Architecture Decision Record) Operation
 
@@ -164,14 +181,14 @@ If `CLAUDE.md` grows past roughly 200 lines it has started duplicating another l
 
 A methodology that relies on the agent remembering to follow it will drift. Build guardrails that make the right path the default:
 
-- **TDD-enforcing workflow / wrapper command** that requires Red before implementation for a real contract gap, or a Green baseline when no gap exists, and never forces Red solely to advance.
+- **TDD-enforcing workflow / wrapper command** that selects the applicable path, requires Red or a Green baseline before the change, requires final Green after Refactor or a behavior-preserving change, and never forces Red solely to advance.
 - **CI gates**: tests pass; type checker clean.
-- **PR template** with checkboxes: "Real contract gap?", "Red or Green baseline confirmed?", "ADR added or superseded?", "No durable prose duplicated tests or code?".
+- **PR template** with checkboxes: "Real contract gap?", "Red or Green baseline confirmed?", "Final Green confirmed?", "ADR added or superseded?", "No durable prose duplicated tests or code?".
 - **`CLAUDE.md`** points to `docs/adr/` as a consulting resource (read on demand), not a bulk-load target.
 
 ## Agent self-check before finishing a task
 
-1. Was there a real gap between current behavior and an independently required observable contract? If yes, did a relevant test fail for the expected reason before the change and pass afterward? If no, did I establish a Green baseline without manufacturing Red?
+1. Which path applied? For a real contract gap, did I confirm the expected Red, reach Green, Refactor, and confirm Green again? Without a contract gap, did I establish a Green baseline, make only a behavior-preserving change, and confirm Green again without manufacturing Red?
 2. Would a behaviorally equivalent implementation or harmless rewording pass each added or changed test? If not, is the exact representation explicitly required by the contract? If no → relax or delete the assertion.
 3. Does each test name describe an independently required behavior without acting as its requirement source? If no → rename or delete the test.
 4. Did I introduce an architectural choice not already covered by an ADR? If yes → load the `adr` skill.
@@ -179,7 +196,7 @@ A methodology that relies on the agent remembering to follow it will drift. Buil
 6. Did I leave transient planning prose in the repository? If yes → convert it to the correct durable home or delete it.
 7. Did I write a test for behavior the type system already guarantees? If yes → delete it.
 8. Is `CLAUDE.md` still a map, or has it started duplicating another layer? If duplicating → prune.
-9. Did I skip the Refactor step when Red was eligible because everything was green? If yes → return to it.
+9. Did I stop at the first Green? If yes → complete the applicable Refactor or behavior-preserving change and re-run the relevant verification gates.
 
 ## Interaction with other skills
 
