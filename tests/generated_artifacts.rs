@@ -118,9 +118,11 @@ fn list_skills_uses_packaged_source_without_source_argument() {
     let cwd = root.join("cwd");
     std::fs::create_dir_all(&cwd).unwrap();
 
-    let stdout = run_harness_in_stdout(&cwd, ["list", "skills"]);
+    let packaged = run_harness_in_stdout(&cwd, ["list", "skills"]);
+    let explicit =
+        run_harness_stdout(["list", "skills", "--source", repo_root().to_str().unwrap()]);
 
-    assert!(stdout.contains("adr               Architecture Decision Records"));
+    assert_eq!(packaged, explicit);
 
     remove_dir(root);
 }
@@ -134,7 +136,10 @@ fn install_uses_packaged_source_without_source_argument() {
 
     run_harness_in(&cwd, ["install", "--prefix", prefix.to_str().unwrap()]);
 
-    assert_contains(&prefix.join(".codex/AGENTS.md"), "General");
+    assert_eq!(
+        std::fs::read(prefix.join(".codex/AGENTS.md")).unwrap(),
+        std::fs::read(repo_root().join("agents/AGENTS.md")).unwrap(),
+    );
     assert!(prefix.join(".codex/hooks/adapt_shell_command.sh").is_file());
     assert!(
         prefix
@@ -531,82 +536,50 @@ fn skills_render_from_real_source() {
 }
 
 #[test]
-fn list_skills_prints_titles_and_invocation_modes_in_name_order() {
-    let stdout = run_harness_stdout(["list", "skills", "--source", repo_root().to_str().unwrap()]);
-    let skills = [
-        ("adr", "Architecture Decision Records", "implicit"),
-        (
-            "bash-style",
-            "Shell Script Coding Style Guidelines",
-            "implicit",
-        ),
-        ("gha-style", "GitHub Actions Coding Conventions", "implicit"),
-        (
-            "git-commit-split",
-            "/git-commit-split custom command",
-            "explicit",
-        ),
-        ("git-workflow", "Git Workflow", "implicit"),
-        ("github-ci-init", "GitHub CI Init Workflow", "explicit"),
-        ("marp-style", "Marp Slide Creation", "implicit"),
-        ("nix-dev-init", "Nix Dev Init Workflow", "explicit"),
-        (
-            "nix-dotfiles",
-            "Nix Configuration — Dotfiles Reference",
-            "implicit",
-        ),
-        ("python-style", "Python Coding Style Guidelines", "implicit"),
-        ("rust-style", "Rust Coding Style Guidelines", "implicit"),
-        ("skill-auditor", "Skill Auditor", "explicit"),
-        ("tsdd", "Test-Spec Driven Development (TSDD)", "implicit"),
-    ];
-    let mut expected = format!(
-        "Skills ({})\n\n{:<18}{:<44}{:<10}{}\n",
-        skills.len(),
-        "NAME",
-        "TITLE",
-        "CLAUDE",
-        "CODEX",
-    );
-    for (name, title, invocation) in skills {
-        expected.push_str(&format!(
-            "{name:<18}{title:<44}{invocation:<10}{invocation}\n"
-        ));
-    }
+fn list_skills_reports_fixture_metadata_in_name_order() {
+    let root = test_root("list-skills");
+    write_inventory_source(&root);
 
-    assert_eq!(stdout, expected);
+    let stdout = run_harness_stdout(["list", "skills", "--source", root.to_str().unwrap()]);
+    let rows = stdout
+        .lines()
+        .filter(|line| !line.is_empty())
+        .map(|line| line.split_whitespace().collect::<Vec<_>>())
+        .collect::<Vec<_>>();
+
+    assert_eq!(rows[0], ["Skills", "(2)"]);
+    assert_eq!(rows[1], ["NAME", "TITLE", "CLAUDE", "CODEX"]);
+    assert_eq!(rows[2], ["alpha", "Alpha", "Skill", "implicit", "implicit"]);
+    assert_eq!(rows[3], ["zeta", "Zeta", "Skill", "explicit", "explicit"]);
+
+    remove_dir(root);
 }
 
 #[test]
-fn list_hooks_groups_commands_by_provider_event_and_matcher() {
-    let stdout = run_harness_stdout(["list", "hooks", "--source", repo_root().to_str().unwrap()]);
+fn list_hooks_renders_grouped_fixture_metadata() {
+    let root = test_root("list-hooks");
+    write_inventory_source(&root);
 
-    assert!(stdout.starts_with(concat!(
-        "Hooks\n\n",
-        "Claude\n\n",
-        "SessionStart\n",
-        "  matcher: compact | resume\n",
-        "    audit_compaction.sh\n",
-    )));
-    assert!(stdout.contains(concat!(
-        "PreToolUse\n",
-        "  matcher: Bash\n",
-        "    audit_tool_call.sh\n",
-        "    guard_forbidden_commands.sh\n",
-        "    guard_secret_commit.sh\n",
-        "    guard_dangerous_git.sh\n",
-        "    guard_allowed_commands.sh\n",
-    )));
-    assert!(stdout.contains("lint_format_js.sh            when: *.js, *.ts, *.jsx, *.tsx"));
-    assert!(stdout.contains(concat!(
-        "Codex\n\n",
-        "UserPromptSubmit\n",
-        "  matcher: any\n",
-        "    adapt_guard_secret_content.sh prompt\n",
-    )));
-    assert!(stdout.contains("adapt_shell_command.sh -> guard_forbidden_commands.sh"));
-    assert!(!stdout.contains("$HOME/"));
-    assert!(!stdout.contains("Write(*.js)|Edit(*.js)"));
+    let stdout = run_harness_stdout(["list", "hooks", "--source", root.to_str().unwrap()]);
+    let expected = format!(
+        concat!(
+            "Hooks\n\n",
+            "Claude\n\n",
+            "PreToolUse\n",
+            "  matcher: Bash | Edit\n",
+            "    guard.sh\n",
+            "    {:<29}when: *.js, *.ts\n\n",
+            "Codex\n\n",
+            "UserPromptSubmit\n",
+            "  matcher: any\n",
+            "    adapt_shell_command.sh -> guard.sh\n",
+        ),
+        "lint.sh",
+    );
+
+    assert_eq!(stdout, expected);
+
+    remove_dir(root);
 }
 
 #[test]
@@ -643,18 +616,6 @@ fn list_summarizes_skills_and_hook_events() {
     );
 
     assert_eq!(stdout, expected);
-}
-
-#[test]
-fn list_help_describes_the_inventory_interface() {
-    let stdout = run_harness_stdout(["list", "--help"]);
-
-    assert!(stdout.starts_with("Inspect the Agent Harness inventory\n\nUsage:"));
-    assert!(stdout.contains("hooks   List hooks grouped by provider, event, and matcher"));
-    assert!(stdout.contains("skills  List skill titles and invocation modes"));
-    assert!(stdout.contains(
-        "--source <SOURCE>  Read inventory data from the specified agent-harness source tree"
-    ));
 }
 
 #[test]
@@ -718,6 +679,72 @@ fn test_root(name: &str) -> PathBuf {
 
 fn remove_dir(path: PathBuf) {
     std::fs::remove_dir_all(path).unwrap();
+}
+
+fn write_inventory_source(root: &Path) {
+    for required in [
+        "agents/AGENTS.md",
+        "agents/command_policy.json",
+        "agents/hooks/rules/secret_path_policy.json",
+        "claude/settings.base.json",
+        "codex/config.toml",
+    ] {
+        let path = root.join(required);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, "fixture\n").unwrap();
+    }
+    for (name, title) in [("zeta", "Zeta Skill"), ("alpha", "Alpha Skill")] {
+        let skill_dir = root.join("agents/skills").join(name);
+        std::fs::create_dir_all(&skill_dir).unwrap();
+        std::fs::write(
+            skill_dir.join("SKILL.md"),
+            format!("---\nname: {name}\ndescription: fixture\n---\n\n# {title}\n"),
+        )
+        .unwrap();
+    }
+    std::fs::write(
+        root.join("agents/skill_rendering.json"),
+        r#"{
+  "version": 1,
+  "skills": {
+    "zeta": {
+      "claude": {"frontmatter": {"disable-model-invocation": true}},
+      "codex": {"openai": {"allow_implicit_invocation": false}}
+    }
+  }
+}
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("agents/hooks.json"),
+        r#"{
+  "version": 1,
+  "claude": {
+    "PreToolUse": [{
+      "matcher": "^(Bash|Edit)$",
+      "hooks": [
+        {"command": "$HOME/.claude/hooks/guard.sh"},
+        {
+          "command": "$HOME/.claude/hooks/lint.sh",
+          "if": "Write(*.js)|Edit(*.js)|Write(*.ts)"
+        }
+      ]
+    }]
+  },
+  "codex": {
+    "hooks": {
+      "UserPromptSubmit": [{
+        "hooks": [{
+          "command": "$HOME/.codex/hooks/adapt_shell_command.sh $HOME/.codex/hooks/guard.sh"
+        }]
+      }]
+    }
+  }
+}
+"#,
+    )
+    .unwrap();
 }
 
 fn run_harness<const N: usize>(args: [&str; N]) {

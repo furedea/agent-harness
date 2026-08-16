@@ -139,7 +139,7 @@ def test_merge_audit_reports_recalculates_skill_accuracy() -> None:
     assert merged["meta"]["turns_analyzed"] == 5
 
 
-def test_write_agent_prompts_creates_codex_reusable_prompts(tmp_path: Path) -> None:
+def test_write_agent_prompts_includes_the_requested_language_in_every_prompt(tmp_path: Path) -> None:
     batches = [
         {
             "batch_index": 0,
@@ -151,8 +151,11 @@ def test_write_agent_prompts_creates_codex_reusable_prompts(tmp_path: Path) -> N
 
     run_audit.write_agent_prompts(tmp_path, batches, "Japanese")
 
-    prompt = tmp_path / "agent-prompts" / "routing_batch_0.md"
-    assert prompt.is_file()
-    assert "Write all human-readable output text in Japanese." in prompt.read_text(encoding="utf-8")
-    assert (tmp_path / "agent-prompts" / "portfolio_analysis.md").is_file()
-    assert (tmp_path / "agent-prompts" / "improvement_plan.md").is_file()
+    prompt_paths = (
+        tmp_path / "agent-prompts" / "routing_batch_0.md",
+        tmp_path / "agent-prompts" / "portfolio_analysis.md",
+        tmp_path / "agent-prompts" / "improvement_plan.md",
+    )
+    for prompt_path in prompt_paths:
+        instruction = prompt_path.read_text(encoding="utf-8").split("\n\n", maxsplit=1)[0]
+        assert "Japanese" in instruction
