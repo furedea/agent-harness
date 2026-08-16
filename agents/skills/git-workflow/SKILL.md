@@ -14,7 +14,7 @@ This skill governs the default Git shape of implementation work: which branch to
 - Never overwrite, reset, clean, or discard user changes unless the user explicitly asked for that exact destructive action.
 - Do not force-push, merge PRs, or push directly to the default / protected branch.
 - For implementation work, deliver through a feature branch and pull request unless the user explicitly asks for local-only work.
-- Prefer one coherent VCS unit per Red -> Green -> Refactor cycle. If the task is too small for multiple cycles, one commit is enough.
+- Prefer one coherent VCS unit per applicable TSDD path. Both paths end Green. If the task is too small for multiple cycles, one commit is enough.
 - Keep branch names and commit subjects aligned with the primary intent of the change, not with filenames.
 
 ## Branch Policy
@@ -154,7 +154,7 @@ For implementation tasks:
 
 1. Inspect branch and dirty state.
 2. Select the checkout and branch using the Branch Policy above.
-3. Implement with TSDD: Red -> Green -> Refactor.
+3. Classify the work under TSDD: use Red -> Green -> Refactor -> Green for a real contract gap; otherwise use Green baseline -> behavior-preserving change or Refactor -> Green.
 4. Commit each coherent green unit when the user asked for commits or the repository workflow expects implementation work to be committed.
 5. Unless the user asked for local-only work, push the feature branch and create a pull request:
     - `git fetch origin`
