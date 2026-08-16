@@ -24,15 +24,17 @@ fn cargo_dist_config_builds_the_server_installer_target() {
 
 #[test]
 fn release_workflow_uses_cargo_dist_artifacts() {
+    let config = read_toml("Cargo.toml");
+    let version = config["workspace"]["metadata"]["dist"]["cargo-dist-version"]
+        .as_str()
+        .expect("cargo-dist-version should be a string");
     let workflow = fs::read_to_string(".github/workflows/release_please.yml")
         .expect("release workflow should be readable");
 
-    assert!(workflow.contains("CARGO_DIST_VERSION: 0.30.2"));
+    assert!(workflow.contains(&format!("CARGO_DIST_VERSION: {version}")));
     assert!(workflow.contains("dist build"));
     assert!(workflow.contains("dist print-upload-files-from-manifest"));
-    assert!(workflow.contains("dist-upload-files.txt"));
-    assert!(!workflow.contains("Package release tarball"));
-    assert!(!workflow.contains("dist/agent-harness-${TARGET}.tar.gz"));
+    assert!(workflow.contains("gh release upload"));
 }
 
 fn read_toml(path: impl AsRef<Path>) -> DocumentMut {

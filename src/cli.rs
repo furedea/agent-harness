@@ -310,4 +310,26 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn list_command_exposes_inventory_subcommands() {
+        let command = Cli::command();
+        let list = command.find_subcommand("list").unwrap();
+
+        for name in ["hooks", "skills"] {
+            assert!(list.find_subcommand(name).is_some(), "missing {name}");
+        }
+    }
+
+    #[test]
+    fn list_command_accepts_a_source_tree() {
+        let command = Cli::command();
+        let list = command.find_subcommand("list").unwrap();
+        let source = list
+            .get_arguments()
+            .find(|argument| argument.get_id() == "source")
+            .unwrap();
+
+        assert_eq!(source.get_long(), Some("source"));
+    }
 }
