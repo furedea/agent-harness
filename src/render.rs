@@ -4,7 +4,10 @@ use anyhow::Result;
 
 use crate::{
     fs_ops,
-    generation::{claude_config, codex_config, command_policy, hooks, skills},
+    generation::{
+        claude_config, codex_config, command_policy, external_hooks::ExternalHookBundle, hooks,
+        skills,
+    },
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -32,7 +35,12 @@ pub(crate) fn generate_skills(
     skills::render_skills(source, provider, external_skills, out)
 }
 
-pub(crate) fn install(source: &Path, out: &Path, integration: Option<&Path>) -> Result<()> {
+pub(crate) fn install(
+    source: &Path,
+    out: &Path,
+    integration: Option<&Path>,
+    external_hooks: &[ExternalHookBundle],
+) -> Result<()> {
     fs_ops::copy_file(
         &source.join("agents/AGENTS.md"),
         &out.join(".codex/AGENTS.md"),
@@ -46,27 +54,37 @@ pub(crate) fn install(source: &Path, out: &Path, integration: Option<&Path>) -> 
     if let Some(integration) = integration {
         crate::generation::herdr::copy_scripts(integration, out)?;
     }
+    for bundle in external_hooks {
+        bundle.copy_assets(out)?;
+    }
     fs_ops::copy_dir(
         &source.join("claude/statusline"),
         &out.join(".claude/statusline"),
     )?;
-    hooks::write_codex_hooks_with_herdr(source, &out.join(".codex/hooks.json"), integration)?;
+    hooks::write_codex_hooks_with_integrations(
+        source,
+        &out.join(".codex/hooks.json"),
+        integration,
+        external_hooks,
+    )?;
     generate_skills(source, Provider::Codex, &[], &out.join(".codex/skills"))?;
     generate_skills(source, Provider::Claude, &[], &out.join(".claude/skills"))?;
-    claude_config::write_settings_with_herdr(
+    claude_config::write_settings_with_integrations(
         source,
         &out.join(".claude/settings.json"),
         integration,
+        external_hooks,
     )?;
     command_policy::write_codex_rules(source, &out.join(".codex/rules/default.rules"))?;
     command_policy::write_forbidden_commands(
         source,
         &out.join(".claude/hooks/rules/forbidden_commands.json"),
     )?;
-    codex_config::sync_generated_config_with_herdr(
+    codex_config::sync_generated_config_with_integrations(
         source,
         &out.join(".codex/config.toml"),
         integration,
+        external_hooks,
     )?;
 
     Ok(())
@@ -105,7 +123,7 @@ mod tests {
         let out = root.join("out");
         write_minimal_source(&source)?;
 
-        install(&source, &out, None)?;
+        install(&source, &out, None, &[])?;
 
         assert!(out.join(".codex/AGENTS.md").is_file());
         assert!(out.join(".codex/hooks.json").is_file());

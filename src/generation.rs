@@ -1,7 +1,9 @@
 pub(crate) mod claude_config;
 pub(crate) mod codex_config;
 pub(crate) mod command_policy;
+pub(crate) mod external_hooks;
 pub(crate) mod herdr;
+pub(crate) mod hook_bundle;
 pub(crate) mod hooks;
 mod io;
 pub(crate) mod protection;

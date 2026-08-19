@@ -3,29 +3,37 @@ use std::path::Path;
 use anyhow::{Context, Result, bail};
 use serde_json::{Map, Value};
 
-use crate::generation::{command_policy, hooks, io, protection, secret_path_policy};
+use crate::generation::{
+    command_policy, external_hooks::ExternalHookBundle, hooks, io, protection, secret_path_policy,
+};
 
 #[cfg(test)]
 pub(crate) fn write_settings(source: &Path, out: &Path) -> Result<()> {
-    write_settings_with_herdr(source, out, None)
+    write_settings_with_integrations(source, out, None, &[])
 }
 
-pub(crate) fn write_settings_with_herdr(
+pub(crate) fn write_settings_with_integrations(
     source: &Path,
     out: &Path,
     integration: Option<&Path>,
+    external_hooks: &[ExternalHookBundle],
 ) -> Result<()> {
     let base = read_json(&source.join("claude/settings.base.json"))?;
-    let settings = build_settings(source, base, integration)?;
+    let settings = build_settings(source, base, integration, external_hooks)?;
     io::write_json(out, &settings)
 }
 
-fn build_settings(source: &Path, mut settings: Value, integration: Option<&Path>) -> Result<Value> {
+fn build_settings(
+    source: &Path,
+    mut settings: Value,
+    integration: Option<&Path>,
+    external_hooks: &[ExternalHookBundle],
+) -> Result<Value> {
     let root = object_mut(&mut settings, "Claude settings root")?;
 
     root.insert(
         "hooks".to_string(),
-        hooks::claude_hooks_with_herdr(source, integration)?,
+        hooks::claude_hooks_with_integrations(source, integration, external_hooks)?,
     );
     merge_permissions(root, source)?;
     merge_sandbox(root, source)?;
@@ -146,7 +154,7 @@ mod tests {
             }
         });
 
-        let settings = build_settings(&root, base, None)?;
+        let settings = build_settings(&root, base, None, &[])?;
 
         assert_eq!(
             settings["hooks"]["PreToolUse"][0]["hooks"][1]["command"].as_str(),
