@@ -3,7 +3,7 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use toml_edit::{DocumentMut, Item};
 
-use crate::generation::{io, protection};
+use crate::generation::{external_hooks::ExternalHookBundle, io, protection};
 
 const MANAGED_KEYS: &[&str] = &[
     "model",
@@ -22,15 +22,19 @@ const MANAGED_KEYS: &[&str] = &[
 
 #[cfg(test)]
 pub(crate) fn write_config_source(source: &Path, out: &Path) -> Result<()> {
-    write_config_source_with_herdr(source, out, None)
+    write_config_source_with_integrations(source, out, None, &[])
 }
 
-pub(crate) fn write_config_source_with_herdr(
+pub(crate) fn write_config_source_with_integrations(
     source: &Path,
     out: &Path,
     integration: Option<&Path>,
+    external_hooks: &[ExternalHookBundle],
 ) -> Result<()> {
-    io::write_file(out, &config_source_content(source, integration)?)
+    io::write_file(
+        out,
+        &config_source_content(source, integration, external_hooks)?,
+    )
 }
 
 pub(crate) fn sync_managed_config(source_path: &Path, target_path: &Path) -> Result<()> {
@@ -38,18 +42,23 @@ pub(crate) fn sync_managed_config(source_path: &Path, target_path: &Path) -> Res
     sync_managed_document(source, target_path)
 }
 
-pub(crate) fn sync_generated_config_with_herdr(
+pub(crate) fn sync_generated_config_with_integrations(
     source: &Path,
     target_path: &Path,
     integration: Option<&Path>,
+    external_hooks: &[ExternalHookBundle],
 ) -> Result<()> {
-    let source = config_source_content(source, integration)?
+    let source = config_source_content(source, integration, external_hooks)?
         .parse::<DocumentMut>()
         .context("failed to parse generated Codex config source")?;
     sync_managed_document(source, target_path)
 }
 
-fn config_source_content(source: &Path, integration: Option<&Path>) -> Result<String> {
+fn config_source_content(
+    source: &Path,
+    integration: Option<&Path>,
+    external_hooks: &[ExternalHookBundle],
+) -> Result<String> {
     let base_path = source.join("codex/config.toml");
     let base = std::fs::read_to_string(&base_path)
         .with_context(|| format!("failed to read TOML file {}", base_path.display()))?;
@@ -64,7 +73,31 @@ fn config_source_content(source: &Path, integration: Option<&Path>) -> Result<St
         let generated = read_toml_document(&integration.join(".codex/config.toml"))?;
         merge_document(&mut document, &generated);
     }
+    for bundle in external_hooks {
+        let Some(path) = bundle.codex_config_path()? else {
+            continue;
+        };
+        let generated = read_toml_document(&path)?;
+        merge_external_features(&mut document, &generated, &path)?;
+    }
     Ok(document.to_string())
+}
+
+fn merge_external_features(
+    target: &mut DocumentMut,
+    source: &DocumentMut,
+    path: &Path,
+) -> Result<()> {
+    for (key, item) in source.iter() {
+        if key != "features" {
+            anyhow::bail!(
+                "external hook config {} contains unsupported top-level key: {key}",
+                path.display(),
+            );
+        }
+        merge_item(&mut target[key], item);
+    }
+    Ok(())
 }
 
 fn merge_document(target: &mut DocumentMut, source: &DocumentMut) {

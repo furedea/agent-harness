@@ -7,7 +7,6 @@
 }:
 let
   cfg = config.programs.agent-harness;
-  herdrArgs = lib.optionalString cfg.herdr.enable "--herdr-integration ${herdrIntegration}";
   extraSkillArgs = lib.escapeShellArgs (
     lib.concatLists (
       lib.mapAttrsToList (name: source: [
@@ -16,55 +15,33 @@ let
       ]) cfg.skills.extra
     )
   );
+  extraHookArgs = lib.escapeShellArgs (
+    lib.concatLists (
+      lib.mapAttrsToList (name: source: [
+        "--extra-hook"
+        "${name}=${source}"
+      ]) cfg.hooks.extra
+    )
+  );
+  herdrArgs = lib.optionals cfg.herdr.enable [
+    "--enable-herdr"
+    "--herdr-bin"
+    (lib.getExe cfg.herdr.package)
+  ];
+  renderedHarnessArgs = lib.escapeShellArgs herdrArgs;
 
-  herdrIntegration = pkgs.runCommand "agent-harness-herdr-integration" { } ''
-    ${lib.getExe cfg.package} generate-herdr-integration \
-      --herdr-bin ${lib.getExe cfg.herdr.package} \
-      --output $out
-  '';
-
-  claudeSettings = pkgs.runCommand "claude-settings.json" { } ''
-    ${lib.getExe cfg.package} generate-claude-settings \
-      --source ${cfg.source} \
-      ${herdrArgs} \
-      --output $out
-  '';
-
-  codexConfigSource = pkgs.runCommand "codex-config-source.toml" { } ''
-    ${lib.getExe cfg.package} generate-codex-config-source \
-      --source ${cfg.source} \
-      ${herdrArgs} \
-      --output $out
+  renderedHarness = pkgs.runCommand "agent-harness-rendered" { } ''
+    ${lib.getExe cfg.package} install \
+      --source ${lib.escapeShellArg (toString cfg.source)} \
+      --prefix "$out" \
+      ${renderedHarnessArgs} \
+      ${extraHookArgs}
   '';
 
   codexRules = pkgs.runCommand "codex-default.rules" { } ''
     ${lib.getExe cfg.package} generate-codex-rules \
       --source ${cfg.source} \
       --output $out
-  '';
-
-  codexHooks = pkgs.runCommand "codex-hooks.json" { } ''
-    ${lib.getExe cfg.package} generate-codex-hooks \
-      --source ${cfg.source} \
-      ${herdrArgs} \
-      --output $out
-  '';
-
-  claudeForbiddenCommands = pkgs.runCommand "claude-forbidden-commands.json" { } ''
-    ${lib.getExe cfg.package} generate-forbidden-commands \
-      --source ${cfg.source} \
-      --output $out
-  '';
-
-  claudeHooks = pkgs.runCommand "claude-hooks" { } ''
-    mkdir -p $out
-    cp -R ${cfg.source}/agents/hooks/. $out/
-    chmod -R u+w $out
-    mkdir -p $out/rules
-    cp ${claudeForbiddenCommands} $out/rules/forbidden_commands.json
-    ${lib.optionalString cfg.herdr.enable ''
-      cp ${herdrIntegration}/.claude/hooks/herdr-agent-state.sh $out/herdr-agent-state.sh
-    ''}
   '';
 
   codexSkills = pkgs.runCommand "codex-skills" { } ''
@@ -117,6 +94,12 @@ in
       description = "Additional skill directories keyed by installed skill name.";
     };
 
+    hooks.extra = lib.mkOption {
+      type = lib.types.attrsOf (lib.types.either lib.types.path lib.types.package);
+      default = { };
+      description = "External hook bundle directories keyed by installed bundle name.";
+    };
+
     herdr.enable = lib.mkOption {
       type = lib.types.bool;
       default = false;
@@ -136,6 +119,10 @@ in
         assertion = !cfg.herdr.enable || cfg.herdr.package != null;
         message = "programs.agent-harness.herdr.package must be set when Herdr integration is enabled.";
       }
+      {
+        assertion = !cfg.herdr.enable || !(cfg.hooks.extra ? herdr);
+        message = "Use either programs.agent-harness.herdr or hooks.extra.herdr, not both.";
+      }
     ];
 
     home = {
@@ -144,27 +131,27 @@ in
       file = lib.mkMerge [
         (lib.mkIf cfg.codex.enable {
           ".codex/AGENTS.md".source = "${cfg.source}/agents/AGENTS.md";
-          ".codex/hooks".source = "${cfg.source}/codex/hooks";
-          ".codex/hooks.json".source = codexHooks;
+          ".codex/hooks".source = "${renderedHarness}/.codex/hooks";
+          ".codex/hooks.json".source = "${renderedHarness}/.codex/hooks.json";
           ".codex/rules/default.rules".source = codexRules;
           ".codex/skills".source = codexSkills;
         })
         (lib.mkIf cfg.claude.enable {
           ".claude/CLAUDE.md".source = "${cfg.source}/agents/AGENTS.md";
-          ".claude/hooks".source = claudeHooks;
-          ".claude/settings.json".source = claudeSettings;
+          ".claude/hooks".source = "${renderedHarness}/.claude/hooks";
+          ".claude/settings.json".source = "${renderedHarness}/.claude/settings.json";
           ".claude/skills".source = claudeSkills;
           ".claude/statusline".source = "${cfg.source}/claude/statusline";
         })
         (lib.mkIf (cfg.codex.enable && cfg.herdr.enable) {
-          ".codex/herdr-agent-state.sh".source = "${herdrIntegration}/.codex/herdr-agent-state.sh";
+          ".codex/herdr-agent-state.sh".source = "${renderedHarness}/.codex/herdr-agent-state.sh";
         })
       ];
 
       activation.agentHarnessCodexConfig = lib.mkIf cfg.codex.enable (
         lib.hm.dag.entryAfter [ "writeBoundary" ] ''
           ${lib.getExe cfg.package} sync-codex-config \
-            --source ${codexConfigSource} \
+            --source ${renderedHarness}/.codex/config.toml \
             --target "$HOME/.codex/config.toml"
         ''
       );

@@ -1,6 +1,6 @@
 # ADR-0003: Generate Herdr integrations at install time
 
-- Status: Accepted
+- Status: Superseded by ADR-0006
 - Date: 2026-07-12
 - Supersedes: ADR-0002
 

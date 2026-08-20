@@ -4,7 +4,7 @@ use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::generation::{herdr, io};
+use crate::generation::{external_hooks::ExternalHookBundle, herdr, io};
 
 #[derive(Debug, Deserialize)]
 struct HookConfig {
@@ -37,33 +37,51 @@ pub(crate) struct HookMetadata {
     pub(crate) command: String,
 }
 
+#[cfg(test)]
 pub(crate) fn write_claude_hooks(source: &Path, path: &Path) -> Result<()> {
-    write_claude_hooks_with_herdr(source, path, None)
+    write_claude_hooks_with_integrations(source, path, None, &[])
 }
 
 #[cfg(test)]
 pub(crate) fn write_codex_hooks(source: &Path, path: &Path) -> Result<()> {
-    write_codex_hooks_with_herdr(source, path, None)
+    write_codex_hooks_with_integrations(source, path, None, &[])
 }
 
-pub(crate) fn write_claude_hooks_with_herdr(
+pub(crate) fn write_claude_hooks_with_integrations(
     source: &Path,
     path: &Path,
     integration: Option<&Path>,
+    external_hooks: &[ExternalHookBundle],
 ) -> Result<()> {
-    io::write_json(path, &claude_hooks_with_herdr(source, integration)?)
+    io::write_json(
+        path,
+        &claude_hooks_with_integrations(source, integration, external_hooks)?,
+    )
 }
 
-pub(crate) fn write_codex_hooks_with_herdr(
+pub(crate) fn write_codex_hooks_with_integrations(
     source: &Path,
     path: &Path,
     integration: Option<&Path>,
+    external_hooks: &[ExternalHookBundle],
 ) -> Result<()> {
-    io::write_json(path, &codex_hooks_with_herdr(source, integration)?)
+    let mut hooks = codex_hooks_with_herdr(source, integration)?;
+    for bundle in external_hooks {
+        bundle.merge_codex_hooks(&mut hooks)?;
+    }
+    io::write_json(path, &hooks)
 }
 
-pub(crate) fn claude_hooks_with_herdr(source: &Path, integration: Option<&Path>) -> Result<Value> {
-    herdr::merge_claude_hooks(read_hooks(source)?.claude, integration)
+pub(crate) fn claude_hooks_with_integrations(
+    source: &Path,
+    integration: Option<&Path>,
+    external_hooks: &[ExternalHookBundle],
+) -> Result<Value> {
+    let mut hooks = herdr::merge_claude_hooks(read_hooks(source)?.claude, integration)?;
+    for bundle in external_hooks {
+        bundle.merge_claude_hooks(&mut hooks)?;
+    }
+    Ok(hooks)
 }
 
 pub(crate) fn built_in_hook_metadata(source: &Path) -> Result<Vec<HookMetadata>> {
