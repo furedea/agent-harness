@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.6.0](https://github.com/furedea/agent-harness/compare/agent-harness-v0.5.0...agent-harness-v0.6.0) (2026-08-20)
+
+
+### Features
+
+* **cli:** describe top-level commands ([#95](https://github.com/furedea/agent-harness/issues/95)) ([5191269](https://github.com/furedea/agent-harness/commit/5191269971ef74e2b83c830e6266fff303a657ef))
+* **cli:** list managed harness components ([#92](https://github.com/furedea/agent-harness/issues/92)) ([28e5096](https://github.com/furedea/agent-harness/commit/28e509637e3d2a6203f2ec99a3ddf7b05827784e))
+* compose external hook bundles ([#100](https://github.com/furedea/agent-harness/issues/100)) ([240334a](https://github.com/furedea/agent-harness/commit/240334a210c114edba9fc8bc359b0a3ab102d55e))
+
 ## [0.5.0](https://github.com/furedea/agent-harness/compare/agent-harness-v0.4.0...agent-harness-v0.5.0) (2026-08-09)
 
 
