@@ -1,5 +1,5 @@
 #!/bin/bash
-# Claude Code PreToolUse hook: block edits to the agent harness itself.
+# Claude Code PreToolUse hook: block edits to installed harness files.
 # The permissions/sandbox layer is the hard boundary; this hook adds an
 # explanatory block reason plus audit logging before that boundary is reached.
 # Exit code 0 = allow, exit code 2 = block.
@@ -18,30 +18,27 @@ FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // .tool_input.path // 
 
 # shellcheck disable=SC2088  # literal "~/" patterns are matched intentionally
 case "$FILE_PATH" in
-  "$HOME/.claude/hooks/"* | "$HOME/.claude/settings.json" | "$HOME/.claude/CLAUDE.md" | \
-    "~/.claude/hooks/"* | "~/.claude/settings.json" | "~/.claude/CLAUDE.md" | \
-    "$HOME/.codex/hooks/"* | "$HOME/.codex/hooks.json" | "$HOME/.codex/AGENTS.md" | "$HOME/.codex/rules/default.rules" | \
-    "~/.codex/hooks/"* | "~/.codex/hooks.json" | "~/.codex/AGENTS.md" | "~/.codex/rules/default.rules" | \
-    */agent-harness/agents/hooks/* | */agent-harness/agents/AGENTS.md | \
-    */agent-harness/codex/hooks/* | */agent-harness/codex/hooks.json | \
-    */dotfiles/agents/hooks/* | */dotfiles/agents/AGENTS.md | \
-    */dotfiles/codex/hooks/* | */dotfiles/codex/hooks.json)
-    log_blocked "$TOOL" "$FILE_PATH" "agent harness boundary is protected" guard_harness_files.sh "$SESSION"
-    cat >&2 <<ERRMSG
+"$HOME/.claude/hooks/"* | "$HOME/.claude/settings.json" | "$HOME/.claude/CLAUDE.md" | \
+  "~/.claude/hooks/"* | "~/.claude/settings.json" | "~/.claude/CLAUDE.md" | \
+  "$HOME/.codex/hooks/"* | "$HOME/.codex/hooks.json" | "$HOME/.codex/AGENTS.md" | "$HOME/.codex/rules/default.rules" | \
+  "~/.codex/hooks/"* | "~/.codex/hooks.json" | "~/.codex/AGENTS.md" | "~/.codex/rules/default.rules" | \
+  */dotfiles/agents/hooks/* | */dotfiles/agents/AGENTS.md | \
+  */dotfiles/codex/hooks/* | */dotfiles/codex/hooks.json)
+  log_blocked "$TOOL" "$FILE_PATH" "agent harness boundary is protected" guard_harness_files.sh "$SESSION"
+  cat >&2 <<ERRMSG
 BLOCKED: $FILE_PATH is part of the agent harness boundary.
 
-Why: Hooks, agent instructions, and generated permission bindings protect the
-     safety checks themselves. Change the calling code or tests instead of
-     weakening the harness from inside an agent run.
+Why: Installed hooks, agent instructions, and generated permission bindings
+     protect the safety checks themselves. Change the agent-harness source and
+     regenerate these files instead of editing generated output.
 
 What to do:
-  Claude Code: Stop and ask the user to make or explicitly authorize this
-               harness change.
-  User: Edit the harness manually or temporarily adjust permissions outside
-        the protected agent session.
+  Claude Code: Change the agent-harness source, then regenerate the installed
+               files.
+  User: Review and authorize the source change as usual.
 ERRMSG
-    exit 2
-    ;;
+  exit 2
+  ;;
 esac
 
 exit 0

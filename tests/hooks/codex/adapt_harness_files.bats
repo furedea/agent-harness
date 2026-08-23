@@ -21,7 +21,7 @@ install_shared_hook() {
   [[ "$output" == *"Usage:"* ]]
 }
 
-@test "blocks Codex apply_patch to harness hook source path" {
+@test "allows Codex apply_patch to harness hook source path" {
   local _tmp
   _tmp="$(mktemp -d "$BATS_TEST_TMPDIR/codex.XXXXXX")"
   install_shared_hook "$_tmp"
@@ -39,27 +39,26 @@ install_shared_hook() {
     '{cwd:$cwd,tool_input:{command:$command},session_id:"sess-codex"}')"
 
   run env HOME="$_tmp" CLAUDE_PROJECT_DIR="$_tmp" bash -c "printf '%s' '$_input' | '$HOOK'"
-  [ "$status" -eq 2 ]
-  [[ "$output" == *"BLOCKED"* ]]
-  [[ "$output" == *"agents/hooks/guard_allowed_commands.sh"* ]]
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
 }
 
-@test "blocks Codex apply_patch when any patched file is protected" {
+@test "blocks Codex apply_patch when any generated harness file is protected" {
   local _tmp
   _tmp="$(mktemp -d "$BATS_TEST_TMPDIR/codex.XXXXXX")"
   install_shared_hook "$_tmp"
 
   local _patch
-  _patch='*** Begin Patch
+  _patch="*** Begin Patch
 *** Update File: src/app.py
 @@
 -old
 +new
-*** Update File: codex/hooks/adapt_shell_command.sh
+*** Update File: $_tmp/.codex/hooks/adapt_shell_command.sh
 @@
 -#!/bin/bash
 +#!/bin/bash
-*** End Patch'
+*** End Patch"
 
   local _input
   _input="$(jq -n --arg cwd "$REPO_ROOT" --arg command "$_patch" \
@@ -67,7 +66,7 @@ install_shared_hook() {
 
   run env HOME="$_tmp" CLAUDE_PROJECT_DIR="$_tmp" bash -c "printf '%s' '$_input' | '$HOOK'"
   [ "$status" -eq 2 ]
-  [[ "$output" == *"codex/hooks/adapt_shell_command.sh"* ]]
+  [[ "$output" == *"$_tmp/.codex/hooks/adapt_shell_command.sh"* ]]
 }
 
 @test "allows Codex apply_patch to normal project files" {
