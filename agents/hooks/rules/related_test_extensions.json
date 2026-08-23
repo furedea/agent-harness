@@ -1,12 +1,19 @@
 {
   "agents/hooks/lib/audit_log.sh": [
     "tests/hooks/claude/guard_allowed_commands.bats",
+    "tests/hooks/claude/guard_forbidden_commands.bats",
     "tests/hooks/claude/guard_dangerous_git.bats"
   ],
   "agents/hooks/lib/shell_parse.sh": [
     "tests/hooks/claude/guard_dangerous_git.bats",
     "tests/hooks/claude/guard_allowed_commands.bats",
+    "tests/hooks/claude/guard_forbidden_commands.bats",
     "tests/hooks/codex/adapt_shell_command.bats"
+  ],
+  "agents/hooks/lib/command_rules.sh": [
+    "tests/hooks/claude/command_policy_sync.bats",
+    "tests/hooks/claude/guard_allowed_commands.bats",
+    "tests/hooks/claude/guard_forbidden_commands.bats"
   ],
   "agents/hooks/lib/lint_format.sh": [
     "tests/hooks/claude/lint_format_hooks.bats",
@@ -29,6 +36,15 @@
     "tests/generated_artifacts.rs",
     "tests/hooks/codex/adapt_guard_secret_paths.bats",
     "tests/hooks/claude/related_test_rules.bats"
+  ],
+  "agents/hooks/rules/allowed_commands.json": [
+    "tests/generated_artifacts.rs",
+    "tests/hooks/claude/command_policy_sync.bats",
+    "tests/hooks/claude/guard_allowed_commands.bats"
+  ],
+  "agents/hooks/rules/forbidden_commands.json": [
+    "tests/generated_artifacts.rs",
+    "tests/hooks/claude/guard_forbidden_commands.bats"
   ],
   "agents/hooks/lint_format_*.sh": [
     "tests/hooks/claude/lint_format_hooks.bats"
@@ -59,12 +75,14 @@
     "tests/generated_artifacts.rs",
     "tests/hooks/codex/adapt_guard_secret_paths.bats"
   ],
-  "src/command_policy.rs": [
+  "src/generation/command_policy.rs": [
     "tests/generated_artifacts.rs",
     "tests/codex/execpolicy.bats",
-    "tests/hooks/claude/guard_allowed_commands.bats"
+    "tests/hooks/claude/command_policy_sync.bats",
+    "tests/hooks/claude/guard_allowed_commands.bats",
+    "tests/hooks/claude/guard_forbidden_commands.bats"
   ],
-  "src/protection.rs": [
+  "src/generation/protection.rs": [
     "tests/generated_artifacts.rs"
   ],
   "claude/settings.base.json": [
@@ -80,7 +98,9 @@
   "agents/command_policy.json": [
     "tests/generated_artifacts.rs",
     "tests/codex/execpolicy.bats",
-    "tests/hooks/claude/guard_allowed_commands.bats"
+    "tests/hooks/claude/command_policy_sync.bats",
+    "tests/hooks/claude/guard_allowed_commands.bats",
+    "tests/hooks/claude/guard_forbidden_commands.bats"
   ],
   "src/skills.rs": [
     "tests/generated_artifacts.rs"

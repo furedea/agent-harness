@@ -5,13 +5,13 @@ use serde::{Deserialize, Serialize};
 
 use crate::generation::io;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 struct CommandPolicy {
     version: u64,
     rules: Vec<Rule>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 struct Rule {
     decision: Decision,
     pattern: Vec<String>,
@@ -26,10 +26,16 @@ enum Decision {
     Forbidden,
 }
 
-#[derive(Debug, Serialize)]
-struct ForbiddenRule<'a> {
-    pattern: &'a [String],
-    justification: &'a str,
+#[derive(Debug, Deserialize, Serialize)]
+struct RegexPolicy {
+    version: u64,
+    rules: Vec<RegexRule>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct RegexRule {
+    patterns: Vec<String>,
+    justification: String,
 }
 
 pub(crate) fn write_codex_rules(source: &Path, path: &Path) -> Result<()> {
@@ -37,9 +43,16 @@ pub(crate) fn write_codex_rules(source: &Path, path: &Path) -> Result<()> {
     io::write_file(path, &codex_rules(&policy)?)
 }
 
+pub(crate) fn write_runtime_policy(source: &Path, path: &Path) -> Result<()> {
+    io::write_json(path, &read_policy(source)?)
+}
+
+pub(crate) fn write_allowed_commands(source: &Path, path: &Path) -> Result<()> {
+    io::write_json(path, &read_regex_policy(source, "allowed_commands.json")?)
+}
+
 pub(crate) fn write_forbidden_commands(source: &Path, path: &Path) -> Result<()> {
-    let policy = read_policy(source)?;
-    io::write_json(path, &forbidden_command_rules(&policy))
+    io::write_json(path, &read_regex_policy(source, "forbidden_commands.json")?)
 }
 
 pub(crate) fn claude_allow_permissions(source: &Path) -> Result<Vec<String>> {
@@ -68,6 +81,37 @@ fn read_policy(source: &Path) -> Result<CommandPolicy> {
         .with_context(|| format!("failed to parse command policy {}", path.display()))?;
     validate_policy(&policy)?;
     Ok(policy)
+}
+
+fn read_regex_policy(source: &Path, file_name: &str) -> Result<RegexPolicy> {
+    let path = source.join("agents/hooks/rules").join(file_name);
+    let content = std::fs::read_to_string(&path)
+        .with_context(|| format!("failed to read command regex policy {}", path.display()))?;
+    let policy: RegexPolicy = serde_json::from_str(&content)
+        .with_context(|| format!("failed to parse command regex policy {}", path.display()))?;
+    validate_regex_policy(&policy)?;
+    Ok(policy)
+}
+
+fn validate_regex_policy(policy: &RegexPolicy) -> Result<()> {
+    if policy.version != 1 {
+        bail!(
+            "unsupported command regex policy version: {}",
+            policy.version
+        );
+    }
+    if policy.rules.is_empty() {
+        bail!("command regex policy must contain at least one rule");
+    }
+    for (index, rule) in policy.rules.iter().enumerate() {
+        if rule.patterns.is_empty() || rule.patterns.iter().any(|pattern| pattern.is_empty()) {
+            bail!("command regex policy rule {index} must contain non-empty patterns");
+        }
+        if rule.justification.trim().is_empty() {
+            bail!("command regex policy rule {index} must have a non-empty justification");
+        }
+    }
+    Ok(())
 }
 
 fn validate_policy(policy: &CommandPolicy) -> Result<()> {
@@ -131,18 +175,6 @@ fn codex_rule(rule: &Rule) -> Result<String> {
     ))
 }
 
-fn forbidden_command_rules(policy: &CommandPolicy) -> Vec<ForbiddenRule<'_>> {
-    policy
-        .rules
-        .iter()
-        .filter(|rule| rule.decision == Decision::Forbidden)
-        .map(|rule| ForbiddenRule {
-            pattern: &rule.pattern,
-            justification: &rule.justification,
-        })
-        .collect()
-}
-
 fn decision_name(decision: Decision) -> &'static str {
     match decision {
         Decision::Allow => "allow",
@@ -179,24 +211,41 @@ mod tests {
     }
 
     #[test]
-    fn forbidden_commands_json_contains_only_forbidden_rules() -> Result<()> {
-        let root = test_root("forbidden_commands_json_contains_only_forbidden_rules")?;
+    fn forbidden_commands_json_contains_fine_regex_rules() -> Result<()> {
+        let root = test_root("forbidden_commands_json_contains_fine_regex_rules")?;
+        write_file(
+            &root.join("agents/hooks/rules/forbidden_commands.json"),
+            r#"{"version":1,"rules":[{"patterns":["^git add \\.$"],"justification":"No bulk staging."}]}"#,
+        )?;
+
+        let policy = read_regex_policy(&root, "forbidden_commands.json")?;
+
+        assert_eq!(policy.rules[0].patterns, [r"^git add \.$"]);
+        assert_eq!(policy.rules[0].justification, "No bulk staging.");
+
+        std::fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn runtime_command_policy_contains_allow_and_forbidden_prefixes() -> Result<()> {
+        let root = test_root("runtime_command_policy_contains_allow_and_forbidden_prefixes")?;
         write_policy(&root)?;
 
         let policy = read_policy(&root)?;
-        let rules = forbidden_command_rules(&policy);
+        let value = serde_json::to_value(&policy)?;
 
-        assert!(
-            rules
-                .iter()
-                .any(|rule| rule.pattern == ["curl".to_string()])
-        );
-        assert!(rules.iter().all(|rule| !rule.justification.is_empty()));
-        assert!(
-            !rules
-                .iter()
-                .any(|rule| rule.pattern == ["cargo".to_string()])
-        );
+        assert_eq!(value["version"], 1);
+        assert!(value["rules"].as_array().is_some_and(|rules| {
+            rules.iter().any(|rule| {
+                rule["decision"] == "allow" && rule["pattern"] == serde_json::json!(["cargo"])
+            })
+        }));
+        assert!(value["rules"].as_array().is_some_and(|rules| {
+            rules.iter().any(|rule| {
+                rule["decision"] == "forbidden" && rule["pattern"] == serde_json::json!(["curl"])
+            })
+        }));
 
         std::fs::remove_dir_all(root)?;
         Ok(())

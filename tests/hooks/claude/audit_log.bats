@@ -96,14 +96,16 @@ get_last_log() {
 # End-to-end: real block hook must emit a Blocked audit row
 # ============================================================
 
-@test "guard_allowed_commands.sh emits a Blocked row for no-verify" {
-  CLAUDE_PROJECT_DIR="$LOG_TMPDIR" run bash "$HOOK_DIR/guard_allowed_commands.sh" \
+@test "guard_forbidden_commands.sh emits a Blocked row for no-verify" {
+  AGENT_COMMAND_POLICY="$REPO_ROOT/agents/command_policy.json" \
+    AGENT_FORBIDDEN_COMMAND_RULES="$REPO_ROOT/agents/hooks/rules/forbidden_commands.json" \
+    CLAUDE_PROJECT_DIR="$LOG_TMPDIR" run bash "$HOOK_DIR/guard_forbidden_commands.sh" \
     <<<"$(jq -n '{tool_input:{command:"git commit --no-verify -m x"},session_id:"sess-e2e"}')"
   [ "$status" -eq 2 ]
   local entry
   entry=$(get_last_log)
   [[ $(echo "$entry" | jq -r '.event') == "Blocked" ]]
-  [[ $(echo "$entry" | jq -r '.hook') == "guard_allowed_commands.sh" ]]
+  [[ $(echo "$entry" | jq -r '.hook') == "guard_forbidden_commands.sh" ]]
   [[ $(echo "$entry" | jq -r '.session') == "sess-e2e" ]]
   [[ $(echo "$entry" | jq -r '.tool') == "Bash" ]]
 }

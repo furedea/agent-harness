@@ -76,6 +76,14 @@ pub(crate) fn install(
         external_hooks,
     )?;
     command_policy::write_codex_rules(source, &out.join(".codex/rules/default.rules"))?;
+    command_policy::write_runtime_policy(
+        source,
+        &out.join(".claude/hooks/rules/command_policy.json"),
+    )?;
+    command_policy::write_allowed_commands(
+        source,
+        &out.join(".claude/hooks/rules/allowed_commands.json"),
+    )?;
     command_policy::write_forbidden_commands(
         source,
         &out.join(".claude/hooks/rules/forbidden_commands.json"),
@@ -97,6 +105,8 @@ pub(crate) fn verify(root: &Path) -> Result<()> {
         root.join(".codex/rules/default.rules"),
         root.join(".codex/skills"),
         root.join(".claude/CLAUDE.md"),
+        root.join(".claude/hooks/rules/allowed_commands.json"),
+        root.join(".claude/hooks/rules/command_policy.json"),
         root.join(".claude/hooks/rules/forbidden_commands.json"),
         root.join(".claude/hooks/rules/secret_path_policy.json"),
         root.join(".claude/settings.json"),
@@ -136,14 +146,25 @@ mod tests {
                 .is_file()
         );
         assert!(
+            out.join(".claude/hooks/rules/command_policy.json")
+                .is_file()
+        );
+        let forbidden =
+            std::fs::read_to_string(out.join(".claude/hooks/rules/forbidden_commands.json"))?;
+        assert!(forbidden.contains("never-match-forbidden"));
+        assert!(
+            out.join(".claude/hooks/rules/allowed_commands.json")
+                .is_file()
+        );
+        assert!(
             out.join(".claude/hooks/rules/secret_path_policy.json")
                 .is_file()
         );
         assert!(!out.join(".claude/rules/forbidden_commands.json").exists());
         assert!(
-            !source
+            source
                 .join("agents/hooks/rules/forbidden_commands.json")
-                .exists()
+                .is_file()
         );
         assert!(out.join(".codex/config.toml").is_file());
         assert!(out.join(".claude/settings.json").is_file());
@@ -250,6 +271,14 @@ mod tests {
   ]
 }
 "#,
+        )?;
+        write_file(
+            &source.join("agents/hooks/rules/allowed_commands.json"),
+            r#"{"version":1,"rules":[{"patterns":["^cargo test$"],"justification":"test"}]}"#,
+        )?;
+        write_file(
+            &source.join("agents/hooks/rules/forbidden_commands.json"),
+            r#"{"version":1,"rules":[{"patterns":["^never-match-forbidden$"],"justification":"test"}]}"#,
         )?;
         write_file(
             &source.join("agents/hooks.json"),

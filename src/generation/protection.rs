@@ -42,7 +42,7 @@ pub(crate) fn protected_paths(source: &Path) -> Result<Vec<String>> {
     paths.extend(home_codex_hook_paths(&codex_hooks));
     paths.extend([
         "~/.claude/CLAUDE.md".to_string(),
-        "~/.claude/hooks/rules/forbidden_commands.json".to_string(),
+        "~/.claude/hooks/rules/command_policy.json".to_string(),
         "~/.claude/settings.json".to_string(),
         "~/.codex/AGENTS.md".to_string(),
         "~/.codex/hooks.json".to_string(),
@@ -101,6 +101,8 @@ mod tests {
         let paths = protected_paths(&root)?;
 
         assert!(paths.contains(&"~/.claude/hooks/guard.sh".to_string()));
+        assert!(paths.contains(&"~/.claude/hooks/rules/allowed_commands.json".to_string()));
+        assert!(paths.contains(&"~/.claude/hooks/rules/command_policy.json".to_string()));
         assert!(paths.contains(&"~/.claude/hooks/rules/forbidden_commands.json".to_string()));
         assert!(paths.contains(&"~/.codex/hooks/adapt.sh".to_string()));
         assert!(paths.contains(&"~/.codex/hooks.json".to_string()));
@@ -160,6 +162,14 @@ mod tests {
     fn write_minimal_source(source: &Path) -> Result<()> {
         write_file(&source.join("agents/AGENTS.md"), "agent instructions\n")?;
         write_file(&source.join("agents/hooks/guard.sh"), "#!/bin/bash\n")?;
+        write_file(
+            &source.join("agents/hooks/rules/allowed_commands.json"),
+            "{}\n",
+        )?;
+        write_file(
+            &source.join("agents/hooks/rules/forbidden_commands.json"),
+            "{}\n",
+        )?;
         write_file(&source.join("codex/hooks/adapt.sh"), "#!/bin/bash\n")?;
         Ok(())
     }

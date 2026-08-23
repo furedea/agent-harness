@@ -33,6 +33,8 @@ enum Command {
     GenerateCodexHooks(GenerateFileArgs),
     /// Generate Codex execpolicy rules.
     GenerateCodexRules(GenerateFileArgs),
+    /// Generate the shared runtime command prefix policy.
+    GenerateCommandPolicy(GenerateFileArgs),
     /// Generate Claude Code forbidden-command rules.
     GenerateForbiddenCommands(GenerateFileArgs),
     /// Generate Claude and Codex integration files with Herdr.
@@ -177,6 +179,7 @@ pub fn run() -> Result<()> {
         Command::GenerateCodexConfigFragment(args) => write_codex_config_fragment(args),
         Command::GenerateCodexHooks(args) => write_codex_hooks(args),
         Command::GenerateCodexRules(args) => write_codex_rules(args),
+        Command::GenerateCommandPolicy(args) => write_command_policy(args),
         Command::GenerateForbiddenCommands(args) => write_forbidden_commands(args),
         Command::GenerateHerdrIntegration(args) => herdr::generate(&args.herdr_bin, &args.output),
         Command::GenerateHookBundle(args) => hook_bundle::generate(&args.spec, &args.output),
@@ -239,6 +242,10 @@ fn write_codex_hooks(args: GenerateFileArgs) -> Result<()> {
 
 fn write_codex_rules(args: GenerateFileArgs) -> Result<()> {
     generate_file(args, command_policy::write_codex_rules)
+}
+
+fn write_command_policy(args: GenerateFileArgs) -> Result<()> {
+    generate_file(args, command_policy::write_runtime_policy)
 }
 
 fn write_forbidden_commands(args: GenerateFileArgs) -> Result<()> {

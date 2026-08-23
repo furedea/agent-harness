@@ -129,12 +129,27 @@ setup() {
   result=$(jq -r '."agents/command_policy.json"[]' "$RULES")
   [[ "$result" == *tests/generated_artifacts.rs* ]]
   [[ "$result" == *tests/codex/execpolicy.bats* ]]
+  [[ "$result" == *command_policy_sync.bats* ]]
   [[ "$result" == *guard_allowed_commands.bats* ]]
+  [[ "$result" == *guard_forbidden_commands.bats* ]]
 
-  code=$(jq -r '."src/command_policy.rs"[]' "$RULES")
+  code=$(jq -r '."src/generation/command_policy.rs"[]' "$RULES")
   [[ "$code" == *tests/generated_artifacts.rs* ]]
   [[ "$code" == *tests/codex/execpolicy.bats* ]]
+  [[ "$code" == *command_policy_sync.bats* ]]
   [[ "$code" == *guard_allowed_commands.bats* ]]
+  [[ "$code" == *guard_forbidden_commands.bats* ]]
+}
+
+@test "precise command rules trigger their runtime guards" {
+  allowed=$(jq -r '."agents/hooks/rules/allowed_commands.json"[]' "$RULES")
+  [[ "$allowed" == *tests/generated_artifacts.rs* ]]
+  [[ "$allowed" == *command_policy_sync.bats* ]]
+  [[ "$allowed" == *guard_allowed_commands.bats* ]]
+
+  forbidden=$(jq -r '."agents/hooks/rules/forbidden_commands.json"[]' "$RULES")
+  [[ "$forbidden" == *tests/generated_artifacts.rs* ]]
+  [[ "$forbidden" == *guard_forbidden_commands.bats* ]]
 }
 
 @test "agents/skills/* triggers skills render test" {

@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "rules": [
+    {
+      "patterns": [
+        "(^|[[:space:]])([^[:space:]]*/)?\\.venv/bin/python([0-9.]*)?([[:space:]]|$)",
+        "^git[[:space:]]+add[[:space:]]+(\\.|-A|--all)([[:space:]]|$)",
+        "(^|[[:space:]])git[[:space:]]+add[[:space:]]+(\\.|-A|--all)([[:space:]]|$)",
+        "^git[[:space:]]+commit([[:space:]].*)?[[:space:]]+(--no-verify|-n)([[:space:]]|$)",
+        "(^|[[:space:]])git[[:space:]]+commit([[:space:]].*)?[[:space:]]+(--no-verify|-n)([[:space:]]|$)"
+      ],
+      "justification": "Do not allow dependency, staging, or verification bypasses hidden inside otherwise approved command families."
+    }
+  ]
+}
