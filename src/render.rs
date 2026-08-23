@@ -41,6 +41,7 @@ pub(crate) fn install(
     integration: Option<&Path>,
     external_hooks: &[ExternalHookBundle],
 ) -> Result<()> {
+    command_policy::validate_regex_policies(source)?;
     fs_ops::copy_file(
         &source.join("agents/AGENTS.md"),
         &out.join(".codex/AGENTS.md"),
@@ -79,14 +80,6 @@ pub(crate) fn install(
     command_policy::write_runtime_policy(
         source,
         &out.join(".claude/hooks/rules/command_policy.json"),
-    )?;
-    command_policy::write_allowed_commands(
-        source,
-        &out.join(".claude/hooks/rules/allowed_commands.json"),
-    )?;
-    command_policy::write_forbidden_commands(
-        source,
-        &out.join(".claude/hooks/rules/forbidden_commands.json"),
     )?;
     codex_config::sync_generated_config_with_integrations(
         source,
@@ -173,6 +166,34 @@ mod tests {
         assert!(codex_config.contains("[permissions.guarded.filesystem]"));
         assert!(codex_config.contains("\"~/.codex/hooks/hook.sh\" = \"read\""));
         assert!(codex_config.contains("\"~/.claude/hooks/hook.sh\" = \"read\""));
+
+        std::fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn install_accepts_read_only_command_regex_source_files() -> Result<()> {
+        let root = test_root("install_accepts_read_only_command_regex_source_files")?;
+        let source = root.join("source");
+        let out = root.join("out");
+        write_minimal_source(&source)?;
+        for file_name in ["allowed_commands.json", "forbidden_commands.json"] {
+            let path = source.join("agents/hooks/rules").join(file_name);
+            let mut permissions = std::fs::metadata(&path)?.permissions();
+            permissions.set_readonly(true);
+            std::fs::set_permissions(path, permissions)?;
+        }
+
+        install(&source, &out, None, &[])?;
+
+        assert!(
+            out.join(".claude/hooks/rules/allowed_commands.json")
+                .is_file()
+        );
+        assert!(
+            out.join(".claude/hooks/rules/forbidden_commands.json")
+                .is_file()
+        );
 
         std::fs::remove_dir_all(root)?;
         Ok(())

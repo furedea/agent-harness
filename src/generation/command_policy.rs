@@ -47,12 +47,14 @@ pub(crate) fn write_runtime_policy(source: &Path, path: &Path) -> Result<()> {
     io::write_json(path, &read_policy(source)?)
 }
 
-pub(crate) fn write_allowed_commands(source: &Path, path: &Path) -> Result<()> {
-    io::write_json(path, &read_regex_policy(source, "allowed_commands.json")?)
-}
-
 pub(crate) fn write_forbidden_commands(source: &Path, path: &Path) -> Result<()> {
     io::write_json(path, &read_regex_policy(source, "forbidden_commands.json")?)
+}
+
+pub(crate) fn validate_regex_policies(source: &Path) -> Result<()> {
+    read_regex_policy(source, "allowed_commands.json")?;
+    read_regex_policy(source, "forbidden_commands.json")?;
+    Ok(())
 }
 
 pub(crate) fn claude_allow_permissions(source: &Path) -> Result<Vec<String>> {
