@@ -32,6 +32,9 @@
   "agents/hooks/guard_secret_content.sh": [
     "tests/hooks/codex/adapt_guard_secret_content.bats"
   ],
+  "agents/hooks/guard_secret_commit.sh": [
+    "tests/hooks/claude/guard_secret_commit.bats"
+  ],
   "agents/hooks/guard_harness_files.sh": [
     "tests/hooks/claude/guard_harness_files.bats",
     "tests/hooks/codex/adapt_harness_files.bats"
@@ -55,6 +58,11 @@
   ],
   "agents/hooks/rules/secret_content_patterns.json": [
     "tests/hooks/rules/secret_patterns.bats",
+    "tests/hooks/claude/related_test_rules.bats"
+  ],
+  "agents/hooks/rules/secret_commit_policy.json": [
+    "tests/hooks/rules/secret_commit_policy.bats",
+    "tests/hooks/claude/guard_secret_commit.bats",
     "tests/hooks/claude/related_test_rules.bats"
   ],
   "agents/hooks/rules/related_test_*.json": [

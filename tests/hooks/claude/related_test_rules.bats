@@ -93,6 +93,12 @@ setup() {
   [[ "$result" == *adapt_guard_secret_content.bats* ]]
 }
 
+@test "secret commit policy triggers its runtime and policy tests" {
+  result=$(jq -r '."agents/hooks/rules/secret_commit_policy.json"[]' "$RULES")
+  [[ "$result" == *guard_secret_commit.bats* ]]
+  [[ "$result" == *secret_commit_policy.bats* ]]
+}
+
 @test "secret path policy triggers generated settings and Codex hook tests" {
   result=$(jq -r '."agents/hooks/rules/secret_path_policy.json"[]' "$RULES")
   [[ "$result" == *tests/generated_artifacts.rs* ]]

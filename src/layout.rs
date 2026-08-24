@@ -5,6 +5,7 @@ const COMMAND_POLICY_PATH: &str = "agents/command_policy.json";
 const HOOK_CONFIG_PATH: &str = "agents/hooks.json";
 const ALLOWED_COMMAND_RULES_PATH: &str = "agents/hooks/rules/allowed_commands.json";
 const FORBIDDEN_COMMAND_RULES_PATH: &str = "agents/hooks/rules/forbidden_commands.json";
+const SECRET_COMMIT_POLICY_PATH: &str = "agents/hooks/rules/secret_commit_policy.json";
 const SECRET_PATH_POLICY_PATH: &str = "agents/hooks/rules/secret_path_policy.json";
 const SKILL_RENDERING_PATH: &str = "agents/skill_rendering.json";
 const CLAUDE_SETTINGS_SOURCE_PATH: &str = "claude/settings.base.json";
@@ -15,6 +16,7 @@ const REQUIRED_SOURCE_FILES: &[&str] = &[
     HOOK_CONFIG_PATH,
     ALLOWED_COMMAND_RULES_PATH,
     FORBIDDEN_COMMAND_RULES_PATH,
+    SECRET_COMMIT_POLICY_PATH,
     SECRET_PATH_POLICY_PATH,
     SKILL_RENDERING_PATH,
     CLAUDE_SETTINGS_SOURCE_PATH,
@@ -26,6 +28,7 @@ const CLAUDE_ALLOWED_COMMAND_RULES_PATH: &str = ".claude/hooks/rules/allowed_com
 const CLAUDE_COMMAND_POLICY_PATH: &str = ".claude/hooks/rules/command_policy.json";
 const CLAUDE_FORBIDDEN_COMMAND_RULES_PATH: &str = ".claude/hooks/rules/forbidden_commands.json";
 const CLAUDE_PROTECTED_PATHS_PATH: &str = ".claude/hooks/rules/protected_paths.json";
+const CLAUDE_SECRET_COMMIT_POLICY_PATH: &str = ".claude/hooks/rules/secret_commit_policy.json";
 const CLAUDE_SECRET_PATH_POLICY_PATH: &str = ".claude/hooks/rules/secret_path_policy.json";
 const CLAUDE_SETTINGS_PATH: &str = ".claude/settings.json";
 const CODEX_AGENT_INSTRUCTIONS_PATH: &str = ".codex/AGENTS.md";
@@ -175,6 +178,10 @@ impl<'a> InstalledLayout<'a> {
 
     pub(crate) fn claude_secret_path_policy(self) -> PathBuf {
         self.root.join(CLAUDE_SECRET_PATH_POLICY_PATH)
+    }
+
+    pub(crate) fn claude_secret_commit_policy(self) -> PathBuf {
+        self.root.join(CLAUDE_SECRET_COMMIT_POLICY_PATH)
     }
 
     pub(crate) fn codex_config(self) -> PathBuf {

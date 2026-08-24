@@ -104,6 +104,7 @@ pub(crate) fn verify(root: &Path) -> Result<()> {
         installed.claude_command_policy(),
         installed.claude_forbidden_command_rules(),
         installed.claude_protected_paths(),
+        installed.claude_secret_commit_policy(),
         installed.claude_secret_path_policy(),
         installed.claude_settings(),
         installed.claude_skills(),
@@ -154,6 +155,10 @@ mod tests {
         );
         assert!(
             out.join(".claude/hooks/rules/secret_path_policy.json")
+                .is_file()
+        );
+        assert!(
+            out.join(".claude/hooks/rules/secret_commit_policy.json")
                 .is_file()
         );
         assert!(!out.join(".claude/rules/forbidden_commands.json").exists());
@@ -282,6 +287,10 @@ mod tests {
 "#,
         )?;
         write_file(&source.join("agents/hooks/hook.sh"), "#!/bin/bash\n")?;
+        write_file(
+            &source.join("agents/hooks/rules/secret_commit_policy.json"),
+            r#"{"version":1,"rules":[{"pattern":"never-match","reason":"test"}]}"#,
+        )?;
         write_file(
             &source.join("agents/hooks/rules/secret_path_policy.json"),
             r#"{

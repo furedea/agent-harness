@@ -64,6 +64,7 @@ fn claude_settings_render_from_real_source() {
     assert!(deny_write.contains("~/.claude/hooks/rules/command_policy.json"));
     assert!(deny_write.contains("~/.claude/hooks/rules/forbidden_commands.json"));
     assert!(deny_write.contains("~/.claude/hooks/rules/protected_paths.json"));
+    assert!(deny_write.contains("~/.claude/hooks/rules/secret_commit_policy.json"));
     assert!(!deny_write.contains("~/.claude/rules/forbidden_commands.json"));
     assert!(deny_write.contains("~/.codex/hooks/adapt_shell_command.sh"));
     assert!(!deny_write.iter().any(|path| path.starts_with('/')));
@@ -167,6 +168,11 @@ fn install_uses_packaged_source_without_source_argument() {
     assert!(
         prefix
             .join(".claude/hooks/rules/protected_paths.json")
+            .is_file()
+    );
+    assert!(
+        prefix
+            .join(".claude/hooks/rules/secret_commit_policy.json")
             .is_file()
     );
     assert!(
@@ -770,6 +776,7 @@ fn write_inventory_source(root: &Path) {
         "agents/command_policy.json",
         "agents/hooks/rules/allowed_commands.json",
         "agents/hooks/rules/forbidden_commands.json",
+        "agents/hooks/rules/secret_commit_policy.json",
         "agents/hooks/rules/secret_path_policy.json",
         "claude/settings.base.json",
         "codex/config.toml",
