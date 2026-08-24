@@ -32,7 +32,7 @@ exclude-newer = "1 week"
 
 [dependency-groups]
 lint = [
-  "ruff==0.16.2",
+  "ruff==0.16.3",
 ]
 typecheck = [
   "ty==0.0.72",
