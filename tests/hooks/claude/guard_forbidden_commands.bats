@@ -4,27 +4,55 @@
 setup() {
   load test-helper/setup
   HOOK="$HOOK_DIR/guard_forbidden_commands.sh"
+  POLICY="$BATS_TEST_TMPDIR/command_policy.json"
   RULES="$BATS_TEST_TMPDIR/forbidden_commands.json"
+  cat >"$POLICY" <<'JSON'
+{
+  "version": 1,
+  "rules": [
+    {
+      "decision": "forbidden",
+      "pattern": ["rm"],
+      "examples": ["rm example"],
+      "justification": "Do not delete files from Codex. Ask the user to run destructive cleanup manually."
+    },
+    {
+      "decision": "forbidden",
+      "pattern": ["git", "rm"],
+      "examples": ["git rm example"],
+      "justification": "Do not remove tracked files through shell commands from Codex."
+    },
+    {
+      "decision": "forbidden",
+      "pattern": ["bash", "-c"],
+      "examples": ["bash -c echo"],
+      "justification": "Do not hide shell commands inside bash -c from Codex policy checks."
+    }
+  ]
+}
+JSON
   cat >"$RULES" <<'JSON'
-[
-  {
-    "pattern": ["rm"],
-    "justification": "Do not delete files from Codex. Ask the user to run destructive cleanup manually."
-  },
-  {
-    "pattern": ["git", "rm"],
-    "justification": "Do not remove tracked files through shell commands from Codex."
-  },
-  {
-    "pattern": ["bash", "-c"],
-    "justification": "Do not hide shell commands inside bash -c from Codex policy checks."
-  }
-]
+{
+  "version": 1,
+  "rules": [
+    {
+      "patterns": ["^never-match-this-command$"],
+      "justification": "Test-only fine-grained forbidden rule."
+    }
+  ]
+}
 JSON
 }
 
 run_hook() {
-  AGENT_FORBIDDEN_COMMAND_RULES="$RULES" bash "$HOOK" <<<"$(make_input "$1")"
+  AGENT_COMMAND_POLICY="$POLICY" AGENT_FORBIDDEN_COMMAND_RULES="$RULES" \
+    bash "$HOOK" <<<"$(make_input "$1")"
+}
+
+run_hook_with_global_rules() {
+  AGENT_COMMAND_POLICY="$REPO_ROOT/agents/command_policy.json" \
+    AGENT_FORBIDDEN_COMMAND_RULES="$REPO_ROOT/agents/hooks/rules/forbidden_commands.json" \
+    bash "$HOOK" <<<"$(make_input "$1")"
 }
 
 @test "allows non-forbidden command" {
@@ -32,10 +60,90 @@ run_hook() {
   [ "$status" -eq 0 ]
 }
 
+@test "project rules forbid a precise command" {
+  create_temp_git_repo
+  mkdir -p "$TEMP_REPO/.agents/hooks/rules"
+  cat >"$TEMP_REPO/.agents/hooks/rules/forbidden_commands.json" <<'JSON'
+{
+  "version": 1,
+  "rules": [
+    {
+      "patterns": ["^git status --porcelain$"],
+      "justification": "Use the repository status wrapper instead."
+    }
+  ]
+}
+JSON
+
+  CLAUDE_PROJECT_DIR="$TEMP_REPO" run run_hook "git status --porcelain"
+
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"Use the repository status wrapper instead."* ]]
+}
+
+@test "blocks invalid project forbidden command regex" {
+  create_temp_git_repo
+  mkdir -p "$TEMP_REPO/.agents/hooks/rules"
+  cat >"$TEMP_REPO/.agents/hooks/rules/forbidden_commands.json" <<'JSON'
+{
+  "version": 1,
+  "rules": [
+    {
+      "patterns": ["["],
+      "justification": "Invalid test regex."
+    }
+  ]
+}
+JSON
+
+  CLAUDE_PROJECT_DIR="$TEMP_REPO" run run_hook "git status"
+
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"invalid project forbidden command rules"* ]]
+}
+
+@test "global regex rules block policy bypass forms" {
+  local _command
+
+  run run_hook_with_global_rules ".venv/bin/python -c 'print(1)'"
+  [ "$status" -eq 2 ]
+
+  run run_hook_with_global_rules "./.venv/bin/python3 scripts/run_audit.py"
+  [ "$status" -eq 2 ]
+
+  run run_hook_with_global_rules "/tmp/project/.venv/bin/python -m pytest"
+  [ "$status" -eq 2 ]
+
+  run run_hook_with_global_rules "git add ."
+  [ "$status" -eq 2 ]
+
+  for _command in \
+    "git add -A" \
+    "git add --all" \
+    "ls && git add ." \
+    "echo ok | xargs -I {} git add -A" \
+    "git   add   ." \
+    "git add --all --verbose"; do
+    run run_hook_with_global_rules "$_command"
+    [ "$status" -eq 2 ]
+  done
+
+  run run_hook_with_global_rules "git commit --no-verify -m example"
+  [ "$status" -eq 2 ]
+
+  for _command in \
+    "git commit -m test --no-verify" \
+    "git commit -n -m test" \
+    "git   commit   --no-verify"; do
+    run run_hook_with_global_rules "$_command"
+    [ "$status" -eq 2 ]
+  done
+}
+
 @test "blocks rm prefix" {
   run run_hook "rm codex/hooks.json"
   [ "$status" -eq 2 ]
-  [[ "$output" == *"forbidden command prefix"* ]]
+  [[ "$output" == *"forbidden command"* ]]
   [[ "$output" == *"Do not delete files"* ]]
 }
 
@@ -58,7 +166,8 @@ run_hook() {
 }
 
 @test "blocks when generated rules file is missing" {
-  AGENT_FORBIDDEN_COMMAND_RULES="$BATS_TEST_TMPDIR/missing.json" run bash "$HOOK" <<<"$(make_input "git status")"
+  AGENT_COMMAND_POLICY="$POLICY" AGENT_FORBIDDEN_COMMAND_RULES="$BATS_TEST_TMPDIR/missing.json" \
+    run bash "$HOOK" <<<"$(make_input "git status")"
   [ "$status" -eq 2 ]
-  [[ "$output" == *"forbidden command rules were not found"* ]]
+  [[ "$output" == *"forbidden command regex rules were not found or are invalid"* ]]
 }

@@ -4,7 +4,10 @@ use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::generation::{external_hooks::ExternalHookBundle, herdr, io};
+use crate::{
+    generation::{external_hooks::ExternalHookBundle, herdr, io},
+    layout::SourceLayout,
+};
 
 #[derive(Debug, Deserialize)]
 struct HookConfig {
@@ -121,7 +124,7 @@ fn codex_hooks_with_herdr(source: &Path, integration: Option<&Path>) -> Result<V
 }
 
 fn read_hooks(source: &Path) -> Result<HookConfig> {
-    let path = source.join("agents/hooks.json");
+    let path = SourceLayout::new(source).hook_config();
     let content = std::fs::read_to_string(&path)
         .with_context(|| format!("failed to read {}", path.display()))?;
     let config: HookConfig = serde_json::from_str(&content)

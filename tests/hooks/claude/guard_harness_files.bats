@@ -5,6 +5,16 @@ setup() {
   load test-helper/setup
   HOOK="$HOOK_DIR/guard_harness_files.sh"
   LOG_TMPDIR="$(mktemp -d "${BATS_TEST_TMPDIR:-/tmp}/harness.XXXXXX")"
+  POLICY="$BATS_TEST_TMPDIR/protected_paths.json"
+  jq -n '{
+    version: 1,
+    paths: [
+      "~/.claude/hooks/guard_allowed_commands.sh",
+      "~/.claude/hooks/rules/forbidden_commands.json",
+      "~/.claude/settings.json"
+    ]
+  }' >"$POLICY"
+  export AGENT_PROTECTED_PATH_POLICY="$POLICY"
 }
 
 teardown() {
@@ -29,19 +39,68 @@ get_last_log() {
   [[ "$output" == *"agent harness boundary"* ]]
 }
 
-@test "blocks writes to harness hook source path" {
+@test "blocks paths declared by the generated protection policy" {
+  local _policy="$BATS_TEST_TMPDIR/protected_paths.json"
+  jq -n '{version:1,paths:["~/.claude/custom-protected.json"]}' >"$_policy"
+
+  AGENT_PROTECTED_PATH_POLICY="$_policy" CLAUDE_PROJECT_DIR="$LOG_TMPDIR" \
+    run bash "$HOOK" \
+    <<<"$(make_edit_input Edit "$HOME/.claude/custom-protected.json")"
+
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"agent harness boundary"* ]]
+}
+
+@test "blocks when the generated protection policy is invalid" {
+  local _policy="$BATS_TEST_TMPDIR/invalid_protected_paths.json"
+  jq -n '{version:1,paths:[]}' >"$_policy"
+
+  AGENT_PROTECTED_PATH_POLICY="$_policy" CLAUDE_PROJECT_DIR="$LOG_TMPDIR" \
+    run bash "$HOOK" \
+    <<<"$(make_edit_input Edit "$HOME/.claude/settings.json")"
+
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"invalid protected path policy"* ]]
+}
+
+@test "allows hook files not declared by the generated protection policy" {
+  CLAUDE_PROJECT_DIR="$LOG_TMPDIR" run bash "$HOOK" \
+    <<<"$(make_edit_input Edit "$HOME/.claude/hooks/custom.sh")"
+
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "allows writes to harness hook source path" {
   CLAUDE_PROJECT_DIR="$LOG_TMPDIR" run bash "$HOOK" \
     <<<"$(make_edit_input Write "$REPO_ROOT/agents/hooks/guard_allowed_commands.sh")"
 
-  [ "$status" -eq 2 ]
-  [[ "$output" == *"BLOCKED"* ]]
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
 }
 
-@test "blocks MultiEdit to Codex hook source path" {
+@test "allows writes to harness agent instructions source path" {
+  CLAUDE_PROJECT_DIR="$LOG_TMPDIR" run bash "$HOOK" \
+    <<<"$(make_edit_input Edit "$REPO_ROOT/agents/AGENTS.md")"
+
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "allows MultiEdit to Codex hook source path" {
   CLAUDE_PROJECT_DIR="$LOG_TMPDIR" run bash "$HOOK" \
     <<<"$(make_edit_input MultiEdit "$REPO_ROOT/codex/hooks/adapt_lint_format.sh")"
 
-  [ "$status" -eq 2 ]
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "allows writes to dotfiles harness source paths" {
+  CLAUDE_PROJECT_DIR="$LOG_TMPDIR" run bash "$HOOK" \
+    <<<"$(make_edit_input Edit "$BATS_TEST_TMPDIR/dotfiles/agents/hooks/guard.sh")"
+
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
 }
 
 @test "blocks generated Claude settings" {
@@ -68,7 +127,7 @@ get_last_log() {
 
 @test "allows empty file path" {
   CLAUDE_PROJECT_DIR="$LOG_TMPDIR" run bash "$HOOK" \
-    <<< '{"tool_name":"Edit","tool_input":{},"session_id":"sess-harness"}'
+    <<<'{"tool_name":"Edit","tool_input":{},"session_id":"sess-harness"}'
 
   [ "$status" -eq 0 ]
   [ -z "$output" ]

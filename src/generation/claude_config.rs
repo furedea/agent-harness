@@ -6,6 +6,7 @@ use serde_json::{Map, Value};
 use crate::generation::{
     command_policy, external_hooks::ExternalHookBundle, hooks, io, protection, secret_path_policy,
 };
+use crate::layout::SourceLayout;
 
 #[cfg(test)]
 pub(crate) fn write_settings(source: &Path, out: &Path) -> Result<()> {
@@ -18,7 +19,7 @@ pub(crate) fn write_settings_with_integrations(
     integration: Option<&Path>,
     external_hooks: &[ExternalHookBundle],
 ) -> Result<()> {
-    let base = read_json(&source.join("claude/settings.base.json"))?;
+    let base = read_json(&SourceLayout::new(source).claude_settings())?;
     let settings = build_settings(source, base, integration, external_hooks)?;
     io::write_json(out, &settings)
 }

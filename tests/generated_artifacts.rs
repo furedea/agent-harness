@@ -60,7 +60,11 @@ fn claude_settings_render_from_real_source() {
         .map(|value| value.as_str().unwrap().to_owned())
         .collect::<BTreeSet<_>>();
     assert!(deny_write.contains("~/.claude/hooks/guard_allowed_commands.sh"));
+    assert!(deny_write.contains("~/.claude/hooks/rules/allowed_commands.json"));
+    assert!(deny_write.contains("~/.claude/hooks/rules/command_policy.json"));
     assert!(deny_write.contains("~/.claude/hooks/rules/forbidden_commands.json"));
+    assert!(deny_write.contains("~/.claude/hooks/rules/protected_paths.json"));
+    assert!(deny_write.contains("~/.claude/hooks/rules/secret_commit_policy.json"));
     assert!(!deny_write.contains("~/.claude/rules/forbidden_commands.json"));
     assert!(deny_write.contains("~/.codex/hooks/adapt_shell_command.sh"));
     assert!(!deny_write.iter().any(|path| path.starts_with('/')));
@@ -148,10 +152,69 @@ fn install_uses_packaged_source_without_source_argument() {
     );
     assert!(
         prefix
+            .join(".claude/hooks/rules/allowed_commands.json")
+            .is_file()
+    );
+    assert!(
+        prefix
+            .join(".claude/hooks/rules/command_policy.json")
+            .is_file()
+    );
+    assert!(
+        prefix
+            .join(".claude/hooks/rules/forbidden_commands.json")
+            .is_file()
+    );
+    assert!(
+        prefix
+            .join(".claude/hooks/rules/protected_paths.json")
+            .is_file()
+    );
+    assert!(
+        prefix
+            .join(".claude/hooks/rules/secret_commit_policy.json")
+            .is_file()
+    );
+    assert!(
+        prefix
             .join(".claude/hooks/rules/secret_path_policy.json")
             .is_file()
     );
     assert!(prefix.join(".claude/settings.json").is_file());
+
+    remove_dir(root);
+}
+
+#[test]
+fn install_keeps_runtime_and_claude_protected_paths_aligned() {
+    let root = test_root("protected-paths");
+    let prefix = root.join("home");
+
+    run_harness_without_herdr([
+        "install",
+        "--source",
+        repo_root().to_str().unwrap(),
+        "--prefix",
+        prefix.to_str().unwrap(),
+    ]);
+
+    let policy = read_json(&prefix.join(".claude/hooks/rules/protected_paths.json"));
+    let policy_paths = policy["paths"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|value| value.as_str().unwrap().to_owned())
+        .collect::<BTreeSet<_>>();
+    let settings = read_json(&prefix.join(".claude/settings.json"));
+    let deny_write = settings["sandbox"]["filesystem"]["denyWrite"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|value| value.as_str().unwrap().to_owned())
+        .collect::<BTreeSet<_>>();
+
+    assert_eq!(policy["version"], 1);
+    assert_eq!(policy_paths, deny_write);
 
     remove_dir(root);
 }
@@ -177,6 +240,14 @@ fn codex_config_outputs_render_from_real_source() {
     assert_eq!(filesystem["glob_scan_max_depth"].as_integer(), Some(5));
     assert_eq!(
         filesystem["~/.claude/hooks/guard_allowed_commands.sh"].as_str(),
+        Some("read"),
+    );
+    assert_eq!(
+        filesystem["~/.claude/hooks/rules/allowed_commands.json"].as_str(),
+        Some("read"),
+    );
+    assert_eq!(
+        filesystem["~/.claude/hooks/rules/command_policy.json"].as_str(),
         Some("read"),
     );
     assert_eq!(
@@ -427,6 +498,7 @@ fn install_can_generate_herdr_integration_from_an_explicit_binary() {
 fn command_policy_outputs_render_from_real_source() {
     let root = test_root("command-policy");
     let rules_path = root.join("default.rules");
+    let runtime_path = root.join("command-policy.json");
     let forbidden_path = root.join("forbidden.json");
     let settings_path = root.join("settings.json");
 
@@ -445,6 +517,21 @@ fn command_policy_outputs_render_from_real_source() {
     assert!(rules.contains(r#"pattern = ["brew","install"]"#));
 
     run_harness([
+        "generate-command-policy",
+        "--source",
+        repo_root().to_str().unwrap(),
+        "--output",
+        runtime_path.to_str().unwrap(),
+    ]);
+    let runtime = read_json(&runtime_path);
+    assert!(runtime["rules"].as_array().unwrap().iter().any(|rule| {
+        rule["decision"] == "allow" && rule["pattern"] == serde_json::json!(["uv", "run"])
+    }));
+    assert!(runtime["rules"].as_array().unwrap().iter().any(|rule| {
+        rule["decision"] == "forbidden" && rule["pattern"] == serde_json::json!(["rm"])
+    }));
+
+    run_harness([
         "generate-forbidden-commands",
         "--source",
         repo_root().to_str().unwrap(),
@@ -452,9 +539,11 @@ fn command_policy_outputs_render_from_real_source() {
         forbidden_path.to_str().unwrap(),
     ]);
     let forbidden = read_json(&forbidden_path);
-    let forbidden_patterns = command_patterns(&forbidden);
-    assert!(forbidden_patterns.contains("curl"));
-    assert!(forbidden_patterns.contains("brew install"));
+    assert!(forbidden["rules"].as_array().unwrap().iter().any(|rule| {
+        rule["patterns"].as_array().unwrap().iter().any(|pattern| {
+            pattern == "^git[[:space:]]+add[[:space:]]+(\\.|-A|--all)([[:space:]]|$)"
+        })
+    }));
 
     run_harness([
         "generate-claude-settings",
@@ -685,6 +774,9 @@ fn write_inventory_source(root: &Path) {
     for required in [
         "agents/AGENTS.md",
         "agents/command_policy.json",
+        "agents/hooks/rules/allowed_commands.json",
+        "agents/hooks/rules/forbidden_commands.json",
+        "agents/hooks/rules/secret_commit_policy.json",
         "agents/hooks/rules/secret_path_policy.json",
         "claude/settings.base.json",
         "codex/config.toml",
@@ -958,23 +1050,6 @@ fn assert_no_duplicate_commands_per_codex_group(hooks: &Value) {
             }
         }
     }
-}
-
-fn command_patterns(forbidden: &Value) -> BTreeSet<String> {
-    forbidden
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|rule| {
-            rule["pattern"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|part| part.as_str().unwrap())
-                .collect::<Vec<_>>()
-                .join(" ")
-        })
-        .collect()
 }
 
 fn assert_policy_covers_permissions(policy: &Value, settings: &Value, decision: &str) {

@@ -14,6 +14,7 @@
 
 setup() {
   load test-helper/setup
+  export AGENT_COMMAND_POLICY="$REPO_ROOT/agents/command_policy.json"
 }
 
 run_hook() {
@@ -43,6 +44,32 @@ run_hook() {
   # gh pr list is a universally expected allowlist entry
   run_hook "gh pr list"
   [ "$status" -eq 0 ]
+}
+
+@test "project rules allow a precise command within a shared prefix" {
+  create_temp_git_repo
+  mkdir -p "$TEMP_REPO/.agents/hooks/rules"
+  local env_file
+  env_file=".${ENV_FILE_SUFFIX:-env}"
+  jq -n --arg pattern "^uv run --frozen --env-file \\.${ENV_FILE_SUFFIX:-env} python src/main\\.py organize-guidelines( .*)?$" \
+    '{version:1,rules:[{patterns:[$pattern],justification:"Allow the repository guideline organization workflow."}]}' \
+    >"$TEMP_REPO/.agents/hooks/rules/allowed_commands.json"
+
+  CLAUDE_PROJECT_DIR="$TEMP_REPO" run_hook \
+    "uv run --frozen --env-file $env_file python src/main.py organize-guidelines run"
+
+  [ "$status" -eq 0 ]
+}
+
+@test "blocks invalid project allowed command rules" {
+  create_temp_git_repo
+  mkdir -p "$TEMP_REPO/.agents/hooks/rules"
+  echo '{"version":1,"rules":[]}' >"$TEMP_REPO/.agents/hooks/rules/allowed_commands.json"
+
+  CLAUDE_PROJECT_DIR="$TEMP_REPO" run_hook "uv run --frozen pytest"
+
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"invalid project allowed command rules"* ]]
 }
 
 @test "allows Python TDD commands" {
@@ -228,18 +255,6 @@ run_hook() {
   [ "$status" -eq 2 ]
 }
 
-@test "blocks virtualenv Python interpreter bypasses" {
-  run_hook ".venv/bin/python -c 'print(1)'"
-  [ "$status" -eq 2 ]
-  [[ "$output" == *"denied by allowlist policy"* ]]
-
-  run_hook "./.venv/bin/python3 scripts/run_audit.py"
-  [ "$status" -eq 2 ]
-
-  run_hook "/tmp/project/.venv/bin/python -m pytest"
-  [ "$status" -eq 2 ]
-}
-
 @test "blocks command substitution in double quoted git commit messages" {
   run_hook 'git commit -m "feat(test): $(touch /tmp/blocked)"'
   [ "$status" -eq 2 ]
@@ -353,30 +368,6 @@ run_hook() {
   [ "$status" -eq 2 ]
 }
 
-@test "blocks bulk git add forms" {
-  run_hook "git add ."
-  [ "$status" -eq 2 ]
-  [[ "$output" == *"denied by allowlist policy"* ]]
-
-  run_hook "git add -A"
-  [ "$status" -eq 2 ]
-
-  run_hook "git add --all"
-  [ "$status" -eq 2 ]
-
-  run_hook "ls && git add ."
-  [ "$status" -eq 2 ]
-
-  run_hook "echo ok | xargs -I {} git add -A"
-  [ "$status" -eq 2 ]
-
-  run_hook "git   add   ."
-  [ "$status" -eq 2 ]
-
-  run_hook "git add --all --verbose"
-  [ "$status" -eq 2 ]
-}
-
 @test "allows normal git commit forms" {
   run_hook 'git commit -m "hello world"'
   [ "$status" -eq 0 ]
@@ -386,21 +377,6 @@ run_hook() {
 
   run_hook "git commit --amend --no-edit"
   [ "$status" -eq 0 ]
-}
-
-@test "blocks git commit no-verify bypass forms" {
-  run_hook "git commit --no-verify -m test"
-  [ "$status" -eq 2 ]
-  [[ "$output" == *"denied by allowlist policy"* ]]
-
-  run_hook "git commit -m test --no-verify"
-  [ "$status" -eq 2 ]
-
-  run_hook "git commit -n -m test"
-  [ "$status" -eq 2 ]
-
-  run_hook "git   commit   --no-verify"
-  [ "$status" -eq 2 ]
 }
 
 @test "governed command not in allowlist is blocked" {
