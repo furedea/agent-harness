@@ -23,21 +23,12 @@ const MANAGED_KEYS: &[&str] = &[
     "permissions",
 ];
 
-#[cfg(test)]
-pub(crate) fn write_config_source(source: &Path, out: &Path) -> Result<()> {
-    write_config_source_with_integrations(source, out, None, &[])
-}
-
-pub(crate) fn write_config_source_with_integrations(
+pub(crate) fn write_config_source(
     source: &Path,
     out: &Path,
-    integration: Option<&Path>,
     external_hooks: &[ExternalHookBundle],
 ) -> Result<()> {
-    io::write_file(
-        out,
-        &config_source_content(source, integration, external_hooks)?,
-    )
+    io::write_file(out, &config_source_content(source, external_hooks)?)
 }
 
 pub(crate) fn sync_managed_config(source_path: &Path, target_path: &Path) -> Result<()> {
@@ -45,23 +36,18 @@ pub(crate) fn sync_managed_config(source_path: &Path, target_path: &Path) -> Res
     sync_managed_document(source, target_path)
 }
 
-pub(crate) fn sync_generated_config_with_integrations(
+pub(crate) fn sync_generated_config(
     source: &Path,
     target_path: &Path,
-    integration: Option<&Path>,
     external_hooks: &[ExternalHookBundle],
 ) -> Result<()> {
-    let source = config_source_content(source, integration, external_hooks)?
+    let source = config_source_content(source, external_hooks)?
         .parse::<DocumentMut>()
         .context("failed to parse generated Codex config source")?;
     sync_managed_document(source, target_path)
 }
 
-fn config_source_content(
-    source: &Path,
-    integration: Option<&Path>,
-    external_hooks: &[ExternalHookBundle],
-) -> Result<String> {
+fn config_source_content(source: &Path, external_hooks: &[ExternalHookBundle]) -> Result<String> {
     let base_path = SourceLayout::new(source).codex_config();
     let base = std::fs::read_to_string(&base_path)
         .with_context(|| format!("failed to read TOML file {}", base_path.display()))?;
@@ -72,10 +58,6 @@ fn config_source_content(
     )
     .parse::<DocumentMut>()
     .context("failed to parse generated Codex config")?;
-    if let Some(integration) = integration {
-        let generated = read_toml_document(&integration.join(".codex/config.toml"))?;
-        merge_document(&mut document, &generated);
-    }
     for bundle in external_hooks {
         let Some(path) = bundle.codex_config_path()? else {
             continue;
@@ -101,12 +83,6 @@ fn merge_external_features(
         merge_item(&mut target[key], item);
     }
     Ok(())
-}
-
-fn merge_document(target: &mut DocumentMut, source: &DocumentMut) {
-    for (key, item) in source.iter() {
-        merge_item(&mut target[key], item);
-    }
 }
 
 fn merge_item(target: &mut Item, source: &Item) {
@@ -210,7 +186,7 @@ trust_level = "trusted"
         write_minimal_source(&root)?;
         let out = root.join("config.toml");
 
-        write_config_source(&root, &out)?;
+        write_config_source(&root, &out, &[])?;
 
         let content = std::fs::read_to_string(&out)?;
         assert!(content.contains("model = \"gpt-5.5\""));

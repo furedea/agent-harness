@@ -5,7 +5,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::{
-    generation::{external_hooks::ExternalHookBundle, herdr, io},
+    generation::{external_hooks::ExternalHookBundle, io},
     layout::SourceLayout,
 };
 
@@ -40,47 +40,28 @@ pub(crate) struct HookMetadata {
     pub(crate) command: String,
 }
 
-#[cfg(test)]
-pub(crate) fn write_claude_hooks(source: &Path, path: &Path) -> Result<()> {
-    write_claude_hooks_with_integrations(source, path, None, &[])
-}
-
-#[cfg(test)]
-pub(crate) fn write_codex_hooks(source: &Path, path: &Path) -> Result<()> {
-    write_codex_hooks_with_integrations(source, path, None, &[])
-}
-
-pub(crate) fn write_claude_hooks_with_integrations(
+pub(crate) fn write_claude_hooks(
     source: &Path,
     path: &Path,
-    integration: Option<&Path>,
     external_hooks: &[ExternalHookBundle],
 ) -> Result<()> {
-    io::write_json(
-        path,
-        &claude_hooks_with_integrations(source, integration, external_hooks)?,
-    )
+    io::write_json(path, &claude_hooks(source, external_hooks)?)
 }
 
-pub(crate) fn write_codex_hooks_with_integrations(
+pub(crate) fn write_codex_hooks(
     source: &Path,
     path: &Path,
-    integration: Option<&Path>,
     external_hooks: &[ExternalHookBundle],
 ) -> Result<()> {
-    let mut hooks = codex_hooks_with_herdr(source, integration)?;
+    let mut hooks = read_hooks(source)?.codex;
     for bundle in external_hooks {
         bundle.merge_codex_hooks(&mut hooks)?;
     }
     io::write_json(path, &hooks)
 }
 
-pub(crate) fn claude_hooks_with_integrations(
-    source: &Path,
-    integration: Option<&Path>,
-    external_hooks: &[ExternalHookBundle],
-) -> Result<Value> {
-    let mut hooks = herdr::merge_claude_hooks(read_hooks(source)?.claude, integration)?;
+pub(crate) fn claude_hooks(source: &Path, external_hooks: &[ExternalHookBundle]) -> Result<Value> {
+    let mut hooks = read_hooks(source)?.claude;
     for bundle in external_hooks {
         bundle.merge_claude_hooks(&mut hooks)?;
     }
@@ -117,10 +98,6 @@ fn hook_event_rank(event: &str) -> usize {
         "PreCompact" => 8,
         _ => usize::MAX,
     }
-}
-
-fn codex_hooks_with_herdr(source: &Path, integration: Option<&Path>) -> Result<Value> {
-    herdr::merge_codex_hooks(read_hooks(source)?.codex, integration)
 }
 
 fn read_hooks(source: &Path) -> Result<HookConfig> {
@@ -223,7 +200,7 @@ mod tests {
         write_hook_config(&root)?;
         let output = root.join("claude-hooks.json");
 
-        write_claude_hooks(&root, &output)?;
+        write_claude_hooks(&root, &output, &[])?;
 
         let hooks: Value = serde_json::from_str(&std::fs::read_to_string(&output)?)?;
         assert_eq!(
@@ -241,7 +218,7 @@ mod tests {
         write_hook_config(&root)?;
         let output = root.join("codex-hooks.json");
 
-        write_codex_hooks(&root, &output)?;
+        write_codex_hooks(&root, &output, &[])?;
 
         let hooks: Value = serde_json::from_str(&std::fs::read_to_string(&output)?)?;
         assert_eq!(

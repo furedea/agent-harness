@@ -23,18 +23,10 @@ let
       ]) cfg.hooks.extra
     )
   );
-  herdrArgs = lib.optionals cfg.herdr.enable [
-    "--enable-herdr"
-    "--herdr-bin"
-    (lib.getExe cfg.herdr.package)
-  ];
-  renderedHarnessArgs = lib.escapeShellArgs herdrArgs;
-
   renderedHarness = pkgs.runCommand "agent-harness-rendered" { } ''
     ${lib.getExe cfg.package} install \
       --source ${lib.escapeShellArg (toString cfg.source)} \
       --prefix "$out" \
-      ${renderedHarnessArgs} \
       ${extraHookArgs}
   '';
 
@@ -100,31 +92,9 @@ in
       description = "External hook bundle directories keyed by installed bundle name.";
     };
 
-    herdr.enable = lib.mkOption {
-      type = lib.types.bool;
-      default = false;
-      description = "Whether to install Herdr session-reporting hooks.";
-    };
-
-    herdr.package = lib.mkOption {
-      type = lib.types.nullOr lib.types.package;
-      default = null;
-      description = "Herdr package used to generate upstream integration artifacts.";
-    };
   };
 
   config = lib.mkIf cfg.enable {
-    assertions = [
-      {
-        assertion = !cfg.herdr.enable || cfg.herdr.package != null;
-        message = "programs.agent-harness.herdr.package must be set when Herdr integration is enabled.";
-      }
-      {
-        assertion = !cfg.herdr.enable || !(cfg.hooks.extra ? herdr);
-        message = "Use either programs.agent-harness.herdr or hooks.extra.herdr, not both.";
-      }
-    ];
-
     home = {
       packages = [ cfg.package ];
 
@@ -142,9 +112,6 @@ in
           ".claude/settings.json".source = "${renderedHarness}/.claude/settings.json";
           ".claude/skills".source = claudeSkills;
           ".claude/statusline".source = "${cfg.source}/claude/statusline";
-        })
-        (lib.mkIf (cfg.codex.enable && cfg.herdr.enable) {
-          ".codex/herdr-agent-state.sh".source = "${renderedHarness}/.codex/herdr-agent-state.sh";
         })
       ];
 
