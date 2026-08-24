@@ -21,9 +21,7 @@ case "$FILE_PATH" in
 "$HOME/.claude/hooks/"* | "$HOME/.claude/settings.json" | "$HOME/.claude/CLAUDE.md" | \
   "~/.claude/hooks/"* | "~/.claude/settings.json" | "~/.claude/CLAUDE.md" | \
   "$HOME/.codex/hooks/"* | "$HOME/.codex/hooks.json" | "$HOME/.codex/AGENTS.md" | "$HOME/.codex/rules/default.rules" | \
-  "~/.codex/hooks/"* | "~/.codex/hooks.json" | "~/.codex/AGENTS.md" | "~/.codex/rules/default.rules" | \
-  */dotfiles/agents/hooks/* | */dotfiles/agents/AGENTS.md | \
-  */dotfiles/codex/hooks/* | */dotfiles/codex/hooks.json)
+  "~/.codex/hooks/"* | "~/.codex/hooks.json" | "~/.codex/AGENTS.md" | "~/.codex/rules/default.rules")
   log_blocked "$TOOL" "$FILE_PATH" "agent harness boundary is protected" guard_harness_files.sh "$SESSION"
   cat >&2 <<ERRMSG
 BLOCKED: $FILE_PATH is part of the agent harness boundary.

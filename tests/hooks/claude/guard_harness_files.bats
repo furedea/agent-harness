@@ -53,6 +53,14 @@ get_last_log() {
   [ -z "$output" ]
 }
 
+@test "allows writes to dotfiles harness source paths" {
+  CLAUDE_PROJECT_DIR="$LOG_TMPDIR" run bash "$HOOK" \
+    <<<"$(make_edit_input Edit "$BATS_TEST_TMPDIR/dotfiles/agents/hooks/guard.sh")"
+
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
 @test "blocks generated Claude settings" {
   CLAUDE_PROJECT_DIR="$LOG_TMPDIR" run bash "$HOOK" \
     <<<"$(make_edit_input Edit "$HOME/.claude/settings.json")"
