@@ -3,18 +3,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result, bail};
 
+use crate::layout::SourceLayout;
+
 const ENV_SOURCE: &str = "AGENT_HARNESS_SOURCE";
-const REQUIRED_FILES: [&str; 9] = [
-    "agents/AGENTS.md",
-    "agents/command_policy.json",
-    "agents/hooks.json",
-    "agents/hooks/rules/allowed_commands.json",
-    "agents/hooks/rules/forbidden_commands.json",
-    "agents/hooks/rules/secret_path_policy.json",
-    "agents/skill_rendering.json",
-    "claude/settings.base.json",
-    "codex/config.toml",
-];
 
 #[derive(Debug)]
 struct PackagedFile {
@@ -159,17 +150,11 @@ fn unique_suffix() -> u128 {
 }
 
 fn is_source_tree(path: &Path) -> bool {
-    REQUIRED_FILES
-        .iter()
-        .all(|required| path.join(required).is_file())
+    SourceLayout::new(path).is_complete()
 }
 
 fn validate_source_tree(path: &Path) -> Result<()> {
-    let missing = REQUIRED_FILES
-        .iter()
-        .filter(|required| !path.join(required).is_file())
-        .map(|required| required.to_string())
-        .collect::<Vec<_>>();
+    let missing = SourceLayout::new(path).missing_required_files();
 
     if missing.is_empty() {
         return Ok(());

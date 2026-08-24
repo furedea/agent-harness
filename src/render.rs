@@ -6,8 +6,9 @@ use crate::{
     fs_ops,
     generation::{
         claude_config, codex_config, command_policy, external_hooks::ExternalHookBundle, hooks,
-        skills,
+        protection, skills,
     },
+    layout::{InstalledLayout, SourceLayout},
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -41,17 +42,19 @@ pub(crate) fn install(
     integration: Option<&Path>,
     external_hooks: &[ExternalHookBundle],
 ) -> Result<()> {
+    let installed = InstalledLayout::new(out);
+    let source_layout = SourceLayout::new(source);
     command_policy::validate_regex_policies(source)?;
     fs_ops::copy_file(
-        &source.join("agents/AGENTS.md"),
-        &out.join(".codex/AGENTS.md"),
+        &source_layout.agent_instructions(),
+        &installed.codex_agent_instructions(),
     )?;
     fs_ops::copy_file(
-        &source.join("agents/AGENTS.md"),
-        &out.join(".claude/CLAUDE.md"),
+        &source_layout.agent_instructions(),
+        &installed.claude_agent_instructions(),
     )?;
-    fs_ops::copy_dir(&source.join("codex/hooks"), &out.join(".codex/hooks"))?;
-    fs_ops::copy_dir(&source.join("agents/hooks"), &out.join(".claude/hooks"))?;
+    fs_ops::copy_dir(&source_layout.codex_hooks(), &installed.codex_hooks())?;
+    fs_ops::copy_dir(&source_layout.agent_hooks(), &installed.claude_hooks())?;
     if let Some(integration) = integration {
         crate::generation::herdr::copy_scripts(integration, out)?;
     }
@@ -59,31 +62,29 @@ pub(crate) fn install(
         bundle.copy_assets(out)?;
     }
     fs_ops::copy_dir(
-        &source.join("claude/statusline"),
-        &out.join(".claude/statusline"),
+        &source_layout.claude_statusline(),
+        &installed.claude_statusline(),
     )?;
     hooks::write_codex_hooks_with_integrations(
         source,
-        &out.join(".codex/hooks.json"),
+        &installed.codex_hook_config(),
         integration,
         external_hooks,
     )?;
-    generate_skills(source, Provider::Codex, &[], &out.join(".codex/skills"))?;
-    generate_skills(source, Provider::Claude, &[], &out.join(".claude/skills"))?;
+    generate_skills(source, Provider::Codex, &[], &installed.codex_skills())?;
+    generate_skills(source, Provider::Claude, &[], &installed.claude_skills())?;
     claude_config::write_settings_with_integrations(
         source,
-        &out.join(".claude/settings.json"),
+        &installed.claude_settings(),
         integration,
         external_hooks,
     )?;
-    command_policy::write_codex_rules(source, &out.join(".codex/rules/default.rules"))?;
-    command_policy::write_runtime_policy(
-        source,
-        &out.join(".claude/hooks/rules/command_policy.json"),
-    )?;
+    command_policy::write_codex_rules(source, &installed.codex_rules())?;
+    command_policy::write_runtime_policy(source, &installed.claude_command_policy())?;
+    protection::write_runtime_policy(source, &installed.claude_protected_paths())?;
     codex_config::sync_generated_config_with_integrations(
         source,
-        &out.join(".codex/config.toml"),
+        &installed.codex_config(),
         integration,
         external_hooks,
     )?;
@@ -92,18 +93,20 @@ pub(crate) fn install(
 }
 
 pub(crate) fn verify(root: &Path) -> Result<()> {
+    let installed = InstalledLayout::new(root);
     for path in [
-        root.join(".codex/AGENTS.md"),
-        root.join(".codex/hooks.json"),
-        root.join(".codex/rules/default.rules"),
-        root.join(".codex/skills"),
-        root.join(".claude/CLAUDE.md"),
-        root.join(".claude/hooks/rules/allowed_commands.json"),
-        root.join(".claude/hooks/rules/command_policy.json"),
-        root.join(".claude/hooks/rules/forbidden_commands.json"),
-        root.join(".claude/hooks/rules/secret_path_policy.json"),
-        root.join(".claude/settings.json"),
-        root.join(".claude/skills"),
+        installed.codex_agent_instructions(),
+        installed.codex_hook_config(),
+        installed.codex_rules(),
+        installed.codex_skills(),
+        installed.claude_agent_instructions(),
+        installed.claude_allowed_command_rules(),
+        installed.claude_command_policy(),
+        installed.claude_forbidden_command_rules(),
+        installed.claude_protected_paths(),
+        installed.claude_secret_path_policy(),
+        installed.claude_settings(),
+        installed.claude_skills(),
     ] {
         if !path.exists() {
             anyhow::bail!("missing harness path: {}", path.display());

@@ -3,7 +3,10 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use toml_edit::{DocumentMut, Item};
 
-use crate::generation::{external_hooks::ExternalHookBundle, io, protection};
+use crate::{
+    generation::{external_hooks::ExternalHookBundle, io, protection},
+    layout::SourceLayout,
+};
 
 const MANAGED_KEYS: &[&str] = &[
     "model",
@@ -59,7 +62,7 @@ fn config_source_content(
     integration: Option<&Path>,
     external_hooks: &[ExternalHookBundle],
 ) -> Result<String> {
-    let base_path = source.join("codex/config.toml");
+    let base_path = SourceLayout::new(source).codex_config();
     let base = std::fs::read_to_string(&base_path)
         .with_context(|| format!("failed to read TOML file {}", base_path.display()))?;
     let mut document = format!(

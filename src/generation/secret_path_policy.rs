@@ -3,7 +3,7 @@ use std::path::Path;
 use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 
-const POLICY_PATH: &str = "agents/hooks/rules/secret_path_policy.json";
+use crate::layout::SourceLayout;
 
 #[derive(Debug, Deserialize)]
 struct SecretPathPolicy {
@@ -41,7 +41,7 @@ pub(crate) fn claude_deny_permissions(source: &Path) -> Result<Vec<String>> {
 }
 
 fn read_policy(source: &Path) -> Result<SecretPathPolicy> {
-    let path = source.join(POLICY_PATH);
+    let path = SourceLayout::new(source).secret_path_policy();
     let content = std::fs::read_to_string(&path)
         .with_context(|| format!("failed to read {}", path.display()))?;
     let policy: SecretPathPolicy = serde_json::from_str(&content)
@@ -125,7 +125,7 @@ mod tests {
     }
 
     fn write_policy(source: &Path, content: &str) -> Result<()> {
-        let path = source.join(POLICY_PATH);
+        let path = SourceLayout::new(source).secret_path_policy();
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }

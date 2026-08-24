@@ -63,6 +63,7 @@ fn claude_settings_render_from_real_source() {
     assert!(deny_write.contains("~/.claude/hooks/rules/allowed_commands.json"));
     assert!(deny_write.contains("~/.claude/hooks/rules/command_policy.json"));
     assert!(deny_write.contains("~/.claude/hooks/rules/forbidden_commands.json"));
+    assert!(deny_write.contains("~/.claude/hooks/rules/protected_paths.json"));
     assert!(!deny_write.contains("~/.claude/rules/forbidden_commands.json"));
     assert!(deny_write.contains("~/.codex/hooks/adapt_shell_command.sh"));
     assert!(!deny_write.iter().any(|path| path.starts_with('/')));
@@ -165,10 +166,49 @@ fn install_uses_packaged_source_without_source_argument() {
     );
     assert!(
         prefix
+            .join(".claude/hooks/rules/protected_paths.json")
+            .is_file()
+    );
+    assert!(
+        prefix
             .join(".claude/hooks/rules/secret_path_policy.json")
             .is_file()
     );
     assert!(prefix.join(".claude/settings.json").is_file());
+
+    remove_dir(root);
+}
+
+#[test]
+fn install_keeps_runtime_and_claude_protected_paths_aligned() {
+    let root = test_root("protected-paths");
+    let prefix = root.join("home");
+
+    run_harness_without_herdr([
+        "install",
+        "--source",
+        repo_root().to_str().unwrap(),
+        "--prefix",
+        prefix.to_str().unwrap(),
+    ]);
+
+    let policy = read_json(&prefix.join(".claude/hooks/rules/protected_paths.json"));
+    let policy_paths = policy["paths"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|value| value.as_str().unwrap().to_owned())
+        .collect::<BTreeSet<_>>();
+    let settings = read_json(&prefix.join(".claude/settings.json"));
+    let deny_write = settings["sandbox"]["filesystem"]["denyWrite"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|value| value.as_str().unwrap().to_owned())
+        .collect::<BTreeSet<_>>();
+
+    assert_eq!(policy["version"], 1);
+    assert_eq!(policy_paths, deny_write);
 
     remove_dir(root);
 }

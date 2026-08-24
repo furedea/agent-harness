@@ -153,6 +153,12 @@ run_hook() {
   [ "$status" -eq 0 ]
 }
 
+@test "allows tracked secret policy implementation" {
+  stage_file "src/generation/secret_path_policy.rs" "pub(crate) fn read_policy() {}"
+  run_hook
+  [ "$status" -eq 0 ]
+}
+
 @test "allows when no files are staged" {
   # No files staged beyond initial commit
   run_hook

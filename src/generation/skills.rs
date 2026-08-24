@@ -5,9 +5,8 @@ use std::str::FromStr;
 use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 
-use crate::{fs_ops, generation::io, render::Provider};
+use crate::{fs_ops, generation::io, layout::SourceLayout, render::Provider};
 
-const SKILL_RENDERING_PATH: &str = "agents/skill_rendering.json";
 const SUPPORTED_SKILL_RENDERING_VERSION: u64 = 1;
 const CODEX_OPENAI_PATH: &str = "agents/openai.yaml";
 
@@ -155,7 +154,7 @@ pub(crate) fn render_skills(
     external_skills: &[ExternalSkill],
     out: &Path,
 ) -> Result<()> {
-    let skills_dir = source.join("agents/skills");
+    let skills_dir = SourceLayout::new(source).skills();
     let skill_dirs = sorted_skill_dirs(&skills_dir)?;
     let skill_rendering = read_skill_rendering(source)?;
     validate_skill_rendering_targets(&skill_rendering, &skill_dirs)?;
@@ -185,7 +184,7 @@ pub(crate) fn render_skills(
 }
 
 pub(crate) fn built_in_skill_metadata(source: &Path) -> Result<Vec<SkillMetadata>> {
-    let skills_dir = source.join("agents/skills");
+    let skills_dir = SourceLayout::new(source).skills();
     let skill_dirs = sorted_skill_dirs(&skills_dir)?;
     let skill_rendering = read_skill_rendering(source)?;
     validate_skill_rendering_targets(&skill_rendering, &skill_dirs)?;
@@ -257,7 +256,7 @@ fn render_skill_dir(
 }
 
 fn read_skill_rendering(source: &Path) -> Result<SkillRendering> {
-    let path = source.join(SKILL_RENDERING_PATH);
+    let path = SourceLayout::new(source).skill_rendering();
     if !path.exists() {
         return Ok(SkillRendering::default());
     }
@@ -292,7 +291,7 @@ fn validate_skill_rendering_targets(
     }
 
     bail!(
-        "{SKILL_RENDERING_PATH} references unknown skills: {}",
+        "skill rendering policy references unknown skills: {}",
         unknown.join(", ")
     )
 }

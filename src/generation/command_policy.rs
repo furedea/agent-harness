@@ -3,7 +3,7 @@ use std::path::Path;
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 
-use crate::generation::io;
+use crate::{generation::io, layout::SourceLayout};
 
 #[derive(Debug, Deserialize, Serialize)]
 struct CommandPolicy {
@@ -48,12 +48,14 @@ pub(crate) fn write_runtime_policy(source: &Path, path: &Path) -> Result<()> {
 }
 
 pub(crate) fn write_forbidden_commands(source: &Path, path: &Path) -> Result<()> {
-    io::write_json(path, &read_regex_policy(source, "forbidden_commands.json")?)
+    let policy_path = SourceLayout::new(source).forbidden_command_rules();
+    io::write_json(path, &read_regex_policy(&policy_path)?)
 }
 
 pub(crate) fn validate_regex_policies(source: &Path) -> Result<()> {
-    read_regex_policy(source, "allowed_commands.json")?;
-    read_regex_policy(source, "forbidden_commands.json")?;
+    let layout = SourceLayout::new(source);
+    read_regex_policy(&layout.allowed_command_rules())?;
+    read_regex_policy(&layout.forbidden_command_rules())?;
     Ok(())
 }
 
@@ -76,7 +78,7 @@ pub(crate) fn claude_deny_permissions(source: &Path) -> Result<Vec<String>> {
 }
 
 fn read_policy(source: &Path) -> Result<CommandPolicy> {
-    let path = source.join("agents/command_policy.json");
+    let path = SourceLayout::new(source).command_policy();
     let content = std::fs::read_to_string(&path)
         .with_context(|| format!("failed to read command policy {}", path.display()))?;
     let policy: CommandPolicy = serde_json::from_str(&content)
@@ -85,9 +87,8 @@ fn read_policy(source: &Path) -> Result<CommandPolicy> {
     Ok(policy)
 }
 
-fn read_regex_policy(source: &Path, file_name: &str) -> Result<RegexPolicy> {
-    let path = source.join("agents/hooks/rules").join(file_name);
-    let content = std::fs::read_to_string(&path)
+fn read_regex_policy(path: &Path) -> Result<RegexPolicy> {
+    let content = std::fs::read_to_string(path)
         .with_context(|| format!("failed to read command regex policy {}", path.display()))?;
     let policy: RegexPolicy = serde_json::from_str(&content)
         .with_context(|| format!("failed to parse command regex policy {}", path.display()))?;
@@ -220,7 +221,7 @@ mod tests {
             r#"{"version":1,"rules":[{"patterns":["^git add \\.$"],"justification":"No bulk staging."}]}"#,
         )?;
 
-        let policy = read_regex_policy(&root, "forbidden_commands.json")?;
+        let policy = read_regex_policy(&SourceLayout::new(&root).forbidden_command_rules())?;
 
         assert_eq!(policy.rules[0].patterns, [r"^git add \.$"]);
         assert_eq!(policy.rules[0].justification, "No bulk staging.");

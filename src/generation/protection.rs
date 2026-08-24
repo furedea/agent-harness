@@ -1,13 +1,33 @@
 use std::path::Path;
 
 use anyhow::{Context, Result};
+use serde::Serialize;
 
-use crate::{fs_ops, generation::io};
+use crate::{
+    fs_ops,
+    generation::io,
+    layout::{InstalledLayout, SourceLayout},
+};
 
 const GLOB_SCAN_MAX_DEPTH: u64 = 5;
+const POLICY_VERSION: u64 = 1;
+
+#[derive(Debug, Serialize)]
+struct ProtectedPathPolicy {
+    version: u64,
+    paths: Vec<String>,
+}
 
 pub(crate) fn write_codex_config_fragment(source: &Path, path: &Path) -> Result<()> {
     io::write_file(path, &codex_config_fragment(source)?)
+}
+
+pub(crate) fn write_runtime_policy(source: &Path, path: &Path) -> Result<()> {
+    let policy = ProtectedPathPolicy {
+        version: POLICY_VERSION,
+        paths: protected_paths(source)?,
+    };
+    io::write_json(path, &policy)
 }
 
 pub(crate) fn codex_config_fragment(source: &Path) -> Result<String> {
@@ -34,20 +54,22 @@ pub(crate) fn protected_claude_deny_permissions(source: &Path) -> Result<Vec<Str
 }
 
 pub(crate) fn protected_paths(source: &Path) -> Result<Vec<String>> {
-    let agent_hooks = relative_files(&source.join("agents/hooks"))?;
-    let codex_hooks = relative_files(&source.join("codex/hooks"))?;
+    let layout = SourceLayout::new(source);
+    let agent_hooks = relative_files(&layout.agent_hooks())?;
+    let codex_hooks = relative_files(&layout.codex_hooks())?;
     let mut paths = Vec::new();
 
-    paths.extend(home_agent_hook_paths(&agent_hooks));
-    paths.extend(home_codex_hook_paths(&codex_hooks));
-    paths.extend([
-        "~/.claude/CLAUDE.md".to_string(),
-        "~/.claude/hooks/rules/command_policy.json".to_string(),
-        "~/.claude/settings.json".to_string(),
-        "~/.codex/AGENTS.md".to_string(),
-        "~/.codex/hooks.json".to_string(),
-        "~/.codex/rules/default.rules".to_string(),
-    ]);
+    paths.extend(
+        agent_hooks
+            .iter()
+            .map(|path| InstalledLayout::claude_hook_home_path(path)),
+    );
+    paths.extend(
+        codex_hooks
+            .iter()
+            .map(|path| InstalledLayout::codex_hook_home_path(path)),
+    );
+    paths.extend(InstalledLayout::static_protected_home_paths());
     Ok(paths)
 }
 
@@ -66,20 +88,6 @@ fn relative_files(root: &Path) -> Result<Vec<String>> {
 
 fn is_runtime_artifact(path: &str) -> bool {
     path.starts_with("docs/logs/")
-}
-
-fn home_agent_hook_paths(paths: &[String]) -> Vec<String> {
-    paths
-        .iter()
-        .map(|path| format!("~/.claude/hooks/{path}"))
-        .collect()
-}
-
-fn home_codex_hook_paths(paths: &[String]) -> Vec<String> {
-    paths
-        .iter()
-        .map(|path| format!("~/.codex/hooks/{path}"))
-        .collect()
 }
 
 fn toml_escape(value: &str) -> String {
@@ -104,6 +112,7 @@ mod tests {
         assert!(paths.contains(&"~/.claude/hooks/rules/allowed_commands.json".to_string()));
         assert!(paths.contains(&"~/.claude/hooks/rules/command_policy.json".to_string()));
         assert!(paths.contains(&"~/.claude/hooks/rules/forbidden_commands.json".to_string()));
+        assert!(paths.contains(&"~/.claude/hooks/rules/protected_paths.json".to_string()));
         assert!(paths.contains(&"~/.codex/hooks/adapt.sh".to_string()));
         assert!(paths.contains(&"~/.codex/hooks.json".to_string()));
         assert!(
