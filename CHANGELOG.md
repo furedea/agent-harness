@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.7.0](https://github.com/furedea/agent-harness/compare/agent-harness-v0.6.0...agent-harness-v0.7.0) (2026-08-24)
+
+
+### ⚠ BREAKING CHANGES
+
+* remove Herdr-specific integration ([#106](https://github.com/furedea/agent-harness/issues/106))
+
+### Features
+
+* support project command policies ([#101](https://github.com/furedea/agent-harness/issues/101)) ([d4f6e83](https://github.com/furedea/agent-harness/commit/d4f6e83f2d710c05a0494b4a34c57e1272ac477e))
+
+
+### Bug Fixes
+
+* keep breaking releases pre-major ([#107](https://github.com/furedea/agent-harness/issues/107)) ([428ea2f](https://github.com/furedea/agent-harness/commit/428ea2ff1ee19bc2299ae9e00e15805f3089e245))
+* protect external hook assets ([#105](https://github.com/furedea/agent-harness/issues/105)) ([7de54cf](https://github.com/furedea/agent-harness/commit/7de54cfc0b3cc931d53996f5709af46a02f228f4))
+
+
+### Code Refactoring
+
+* remove Herdr-specific integration ([#106](https://github.com/furedea/agent-harness/issues/106)) ([56f0f54](https://github.com/furedea/agent-harness/commit/56f0f54ff935fdd8986553381878c3a45d2d0692))
+
 ## [0.6.0](https://github.com/furedea/agent-harness/compare/agent-harness-v0.5.0...agent-harness-v0.6.0) (2026-08-20)
 
 
