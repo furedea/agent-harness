@@ -227,7 +227,8 @@ fn generate_codex_config_source(args: GenerateFileArgs) -> Result<()> {
 }
 
 fn write_codex_config_fragment(args: GenerateFileArgs) -> Result<()> {
-    generate_file(args, protection::write_codex_config_fragment)
+    let source = source::resolve_source(args.source)?;
+    protection::write_codex_config_fragment(source.as_path(), &args.extra_hook, &args.output)
 }
 
 fn write_codex_hooks(args: GenerateFileArgs) -> Result<()> {

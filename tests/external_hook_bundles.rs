@@ -164,17 +164,8 @@ fn external_hook_rejects_non_feature_codex_config() {
 #[test]
 fn install_copies_external_hook_assets_into_namespaces() {
     let root = test_root("external-hook-assets");
-    let bundle = root.join("herdr");
+    let bundle = write_external_hook_asset_bundle(&root);
     let prefix = root.join("home");
-    std::fs::create_dir_all(bundle.join(".claude/hooks")).unwrap();
-    std::fs::create_dir_all(bundle.join(".codex")).unwrap();
-    std::fs::write(bundle.join("hook_bundle.json"), r#"{"version":1}"#).unwrap();
-    std::fs::write(
-        bundle.join(".claude/hooks/herdr-agent-state.sh"),
-        "#!/bin/bash\n",
-    )
-    .unwrap();
-    std::fs::write(bundle.join(".codex/herdr-agent-state.sh"), "#!/bin/bash\n").unwrap();
 
     run_harness([
         "install",
@@ -196,6 +187,52 @@ fn install_copies_external_hook_assets_into_namespaces() {
             .join(".codex/hooks/external/herdr/herdr-agent-state.sh")
             .is_file()
     );
+
+    remove_dir(root);
+}
+
+#[test]
+fn install_protects_external_hook_assets_across_enforcement_layers() {
+    let root = test_root("protected-external-hook-assets");
+    let bundle = write_external_hook_asset_bundle(&root);
+    let prefix = root.join("home");
+
+    run_harness([
+        "install",
+        "--source",
+        repo_root().to_str().unwrap(),
+        "--extra-hook",
+        &format!("herdr={}", bundle.display()),
+        "--prefix",
+        prefix.to_str().unwrap(),
+    ]);
+
+    let protected_paths = [
+        "~/.claude/hooks/external/herdr/herdr-agent-state.sh",
+        "~/.codex/hooks/external/herdr/herdr-agent-state.sh",
+    ];
+    let policy = read_json(&prefix.join(".claude/hooks/rules/protected_paths.json"));
+    let settings = read_json(&prefix.join(".claude/settings.json"));
+    let codex_config = read_toml(&prefix.join(".codex/config.toml"));
+
+    for path in protected_paths {
+        assert!(json_array_contains(&policy["paths"], path));
+        for operation in ["Edit", "Write"] {
+            let permission = format!("{operation}({path})");
+            assert!(json_array_contains(
+                &settings["permissions"]["deny"],
+                &permission,
+            ));
+        }
+        assert!(json_array_contains(
+            &settings["sandbox"]["filesystem"]["denyWrite"],
+            path,
+        ));
+        assert_eq!(
+            codex_config["permissions"]["guarded"]["filesystem"][path].as_str(),
+            Some("read"),
+        );
+    }
 
     remove_dir(root);
 }
@@ -384,6 +421,20 @@ printf 'fixture-token\n' >| "$HOME/.config/moshi-hook/token"
     path
 }
 
+fn write_external_hook_asset_bundle(root: &Path) -> PathBuf {
+    let bundle = root.join("herdr");
+    std::fs::create_dir_all(bundle.join(".claude/hooks")).unwrap();
+    std::fs::create_dir_all(bundle.join(".codex")).unwrap();
+    std::fs::write(bundle.join("hook_bundle.json"), r#"{"version":1}"#).unwrap();
+    std::fs::write(
+        bundle.join(".claude/hooks/herdr-agent-state.sh"),
+        "#!/bin/bash\n",
+    )
+    .unwrap();
+    std::fs::write(bundle.join(".codex/herdr-agent-state.sh"), "#!/bin/bash\n").unwrap();
+    bundle
+}
+
 fn run_harness<const N: usize>(args: [&str; N]) {
     let output = run_harness_output(args);
     assert!(
@@ -429,6 +480,14 @@ fn read_toml(path: &Path) -> DocumentMut {
         .unwrap()
         .parse::<DocumentMut>()
         .unwrap()
+}
+
+fn json_array_contains(value: &Value, expected: &str) -> bool {
+    value
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|value| value.as_str() == Some(expected))
 }
 
 fn collect_commands(value: &Value, commands: &mut Vec<String>) {

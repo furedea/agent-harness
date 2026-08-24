@@ -24,6 +24,15 @@ impl ExternalHookBundle {
         Ok(())
     }
 
+    pub(crate) fn asset_install_paths(&self) -> Result<Vec<PathBuf>> {
+        self.validate()?;
+        Ok(self
+            .assets()?
+            .into_iter()
+            .map(|asset| asset.target)
+            .collect())
+    }
+
     pub(crate) fn codex_config_path(&self) -> Result<Option<PathBuf>> {
         self.validate()?;
         let path = self.source.join(".codex/config.toml");

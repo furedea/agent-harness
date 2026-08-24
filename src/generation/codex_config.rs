@@ -68,7 +68,7 @@ fn config_source_content(
     let mut document = format!(
         "{}\n{}",
         base.trim_end(),
-        protection::codex_config_fragment(source)?
+        protection::codex_config_fragment(source, external_hooks)?
     )
     .parse::<DocumentMut>()
     .context("failed to parse generated Codex config")?;

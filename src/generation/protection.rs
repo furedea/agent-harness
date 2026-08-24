@@ -5,7 +5,7 @@ use serde::Serialize;
 
 use crate::{
     fs_ops,
-    generation::io,
+    generation::{external_hooks::ExternalHookBundle, io},
     layout::{InstalledLayout, SourceLayout},
 };
 
@@ -18,22 +18,33 @@ struct ProtectedPathPolicy {
     paths: Vec<String>,
 }
 
-pub(crate) fn write_codex_config_fragment(source: &Path, path: &Path) -> Result<()> {
-    io::write_file(path, &codex_config_fragment(source)?)
+pub(crate) fn write_codex_config_fragment(
+    source: &Path,
+    external_hooks: &[ExternalHookBundle],
+    path: &Path,
+) -> Result<()> {
+    io::write_file(path, &codex_config_fragment(source, external_hooks)?)
 }
 
-pub(crate) fn write_runtime_policy(source: &Path, path: &Path) -> Result<()> {
+pub(crate) fn write_runtime_policy(
+    source: &Path,
+    external_hooks: &[ExternalHookBundle],
+    path: &Path,
+) -> Result<()> {
     let policy = ProtectedPathPolicy {
         version: POLICY_VERSION,
-        paths: protected_paths(source)?,
+        paths: protected_paths(source, external_hooks)?,
     };
     io::write_json(path, &policy)
 }
 
-pub(crate) fn codex_config_fragment(source: &Path) -> Result<String> {
+pub(crate) fn codex_config_fragment(
+    source: &Path,
+    external_hooks: &[ExternalHookBundle],
+) -> Result<String> {
     let mut content = String::from("[permissions.guarded.filesystem]\n");
 
-    for path in protected_paths(source)? {
+    for path in protected_paths(source, external_hooks)? {
         content.push_str(&format!("\"{}\" = \"read\"\n", toml_escape(&path)));
     }
     content.push_str(&format!("glob_scan_max_depth = {GLOB_SCAN_MAX_DEPTH}\n"));
@@ -41,8 +52,11 @@ pub(crate) fn codex_config_fragment(source: &Path) -> Result<String> {
     Ok(content)
 }
 
-pub(crate) fn protected_claude_deny_permissions(source: &Path) -> Result<Vec<String>> {
-    let paths = protected_paths(source)?;
+pub(crate) fn protected_claude_deny_permissions(
+    source: &Path,
+    external_hooks: &[ExternalHookBundle],
+) -> Result<Vec<String>> {
+    let paths = protected_paths(source, external_hooks)?;
     let mut permissions = Vec::with_capacity(paths.len() * 2);
 
     for path in paths {
@@ -53,7 +67,10 @@ pub(crate) fn protected_claude_deny_permissions(source: &Path) -> Result<Vec<Str
     Ok(permissions)
 }
 
-pub(crate) fn protected_paths(source: &Path) -> Result<Vec<String>> {
+pub(crate) fn protected_paths(
+    source: &Path,
+    external_hooks: &[ExternalHookBundle],
+) -> Result<Vec<String>> {
     let layout = SourceLayout::new(source);
     let agent_hooks = relative_files(&layout.agent_hooks())?;
     let codex_hooks = relative_files(&layout.codex_hooks())?;
@@ -69,6 +86,14 @@ pub(crate) fn protected_paths(source: &Path) -> Result<Vec<String>> {
             .iter()
             .map(|path| InstalledLayout::codex_hook_home_path(path)),
     );
+    for bundle in external_hooks {
+        paths.extend(
+            bundle
+                .asset_install_paths()?
+                .into_iter()
+                .map(|path| InstalledLayout::home_path(&path)),
+        );
+    }
     paths.extend(InstalledLayout::static_protected_home_paths());
     Ok(paths)
 }
@@ -106,7 +131,7 @@ mod tests {
         let root = test_root("protected_paths_include_installed_harness_files_only")?;
         write_minimal_source(&root)?;
 
-        let paths = protected_paths(&root)?;
+        let paths = protected_paths(&root, &[])?;
 
         assert!(paths.contains(&"~/.claude/hooks/guard.sh".to_string()));
         assert!(paths.contains(&"~/.claude/hooks/rules/allowed_commands.json".to_string()));
@@ -130,7 +155,7 @@ mod tests {
         let root = test_root("codex_config_fragment_writes_guarded_filesystem_toml")?;
         write_minimal_source(&root)?;
 
-        let content = codex_config_fragment(&root)?;
+        let content = codex_config_fragment(&root, &[])?;
 
         assert!(content.contains("[permissions.guarded.filesystem]"));
         assert!(content.contains("\"~/.claude/hooks/guard.sh\" = \"read\""));
@@ -149,7 +174,7 @@ mod tests {
             "{}\n",
         )?;
 
-        let paths = protected_paths(&root)?;
+        let paths = protected_paths(&root, &[])?;
 
         assert!(
             !paths
