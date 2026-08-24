@@ -446,8 +446,10 @@ fn run_harness<const N: usize>(args: [&str; N]) {
 }
 
 fn run_harness_output<const N: usize>(args: [&str; N]) -> std::process::Output {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_agent-harness"));
-    command.env_remove("HERDR_ENV").args(args).output().unwrap()
+    Command::new(env!("CARGO_BIN_EXE_agent-harness"))
+        .args(args)
+        .output()
+        .unwrap()
 }
 
 fn repo_root() -> PathBuf {

@@ -8,33 +8,26 @@ use crate::generation::{
 };
 use crate::layout::SourceLayout;
 
-#[cfg(test)]
-pub(crate) fn write_settings(source: &Path, out: &Path) -> Result<()> {
-    write_settings_with_integrations(source, out, None, &[])
-}
-
-pub(crate) fn write_settings_with_integrations(
+pub(crate) fn write_settings(
     source: &Path,
     out: &Path,
-    integration: Option<&Path>,
     external_hooks: &[ExternalHookBundle],
 ) -> Result<()> {
     let base = read_json(&SourceLayout::new(source).claude_settings())?;
-    let settings = build_settings(source, base, integration, external_hooks)?;
+    let settings = build_settings(source, base, external_hooks)?;
     io::write_json(out, &settings)
 }
 
 fn build_settings(
     source: &Path,
     mut settings: Value,
-    integration: Option<&Path>,
     external_hooks: &[ExternalHookBundle],
 ) -> Result<Value> {
     let root = object_mut(&mut settings, "Claude settings root")?;
 
     root.insert(
         "hooks".to_string(),
-        hooks::claude_hooks_with_integrations(source, integration, external_hooks)?,
+        hooks::claude_hooks(source, external_hooks)?,
     );
     merge_permissions(root, source, external_hooks)?;
     merge_sandbox(root, source, external_hooks)?;
@@ -163,7 +156,7 @@ mod tests {
             }
         });
 
-        let settings = build_settings(&root, base, None, &[])?;
+        let settings = build_settings(&root, base, &[])?;
 
         assert_eq!(
             settings["hooks"]["PreToolUse"][0]["hooks"][1]["command"].as_str(),

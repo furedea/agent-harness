@@ -19,12 +19,12 @@ pub(crate) enum Provider {
 
 #[cfg(test)]
 pub(crate) fn generate_claude_settings(source: &Path, out: &Path) -> Result<()> {
-    claude_config::write_settings(source, out)
+    claude_config::write_settings(source, out, &[])
 }
 
 #[cfg(test)]
 pub(crate) fn generate_codex_config_source(source: &Path, out: &Path) -> Result<()> {
-    codex_config::write_config_source(source, out)
+    codex_config::write_config_source(source, out, &[])
 }
 
 pub(crate) fn generate_skills(
@@ -39,7 +39,6 @@ pub(crate) fn generate_skills(
 pub(crate) fn install(
     source: &Path,
     out: &Path,
-    integration: Option<&Path>,
     external_hooks: &[ExternalHookBundle],
 ) -> Result<()> {
     let installed = InstalledLayout::new(out);
@@ -55,9 +54,6 @@ pub(crate) fn install(
     )?;
     fs_ops::copy_dir(&source_layout.codex_hooks(), &installed.codex_hooks())?;
     fs_ops::copy_dir(&source_layout.agent_hooks(), &installed.claude_hooks())?;
-    if let Some(integration) = integration {
-        crate::generation::herdr::copy_scripts(integration, out)?;
-    }
     for bundle in external_hooks {
         bundle.copy_assets(out)?;
     }
@@ -65,29 +61,14 @@ pub(crate) fn install(
         &source_layout.claude_statusline(),
         &installed.claude_statusline(),
     )?;
-    hooks::write_codex_hooks_with_integrations(
-        source,
-        &installed.codex_hook_config(),
-        integration,
-        external_hooks,
-    )?;
+    hooks::write_codex_hooks(source, &installed.codex_hook_config(), external_hooks)?;
     generate_skills(source, Provider::Codex, &[], &installed.codex_skills())?;
     generate_skills(source, Provider::Claude, &[], &installed.claude_skills())?;
-    claude_config::write_settings_with_integrations(
-        source,
-        &installed.claude_settings(),
-        integration,
-        external_hooks,
-    )?;
+    claude_config::write_settings(source, &installed.claude_settings(), external_hooks)?;
     command_policy::write_codex_rules(source, &installed.codex_rules())?;
     command_policy::write_runtime_policy(source, &installed.claude_command_policy())?;
     protection::write_runtime_policy(source, external_hooks, &installed.claude_protected_paths())?;
-    codex_config::sync_generated_config_with_integrations(
-        source,
-        &installed.codex_config(),
-        integration,
-        external_hooks,
-    )?;
+    codex_config::sync_generated_config(source, &installed.codex_config(), external_hooks)?;
 
     Ok(())
 }
@@ -130,7 +111,7 @@ mod tests {
         let out = root.join("out");
         write_minimal_source(&source)?;
 
-        install(&source, &out, None, &[])?;
+        install(&source, &out, &[])?;
 
         assert!(out.join(".codex/AGENTS.md").is_file());
         assert!(out.join(".codex/hooks.json").is_file());
@@ -192,7 +173,7 @@ mod tests {
             std::fs::set_permissions(path, permissions)?;
         }
 
-        install(&source, &out, None, &[])?;
+        install(&source, &out, &[])?;
 
         assert!(
             out.join(".claude/hooks/rules/allowed_commands.json")
