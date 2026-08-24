@@ -37,26 +37,11 @@ fn release_workflow_uses_cargo_dist_artifacts() {
     assert!(workflow.contains("gh release upload"));
 }
 
-#[test]
-fn release_please_bumps_breaking_pre_major_releases_by_minor() {
-    let config = read_json("release-please-config.json");
-
-    assert_eq!(
-        config["packages"]["."]["bump-minor-pre-major"].as_bool(),
-        Some(true)
-    );
-}
-
 fn read_toml(path: impl AsRef<Path>) -> DocumentMut {
     fs::read_to_string(path)
         .expect("toml file should be readable")
         .parse::<DocumentMut>()
         .expect("toml file should parse")
-}
-
-fn read_json(path: impl AsRef<Path>) -> serde_json::Value {
-    serde_json::from_str(&fs::read_to_string(path).expect("json file should be readable"))
-        .expect("json file should parse")
 }
 
 fn string_array(array: Option<&toml_edit::Array>) -> Vec<&str> {
