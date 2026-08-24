@@ -81,7 +81,7 @@ pub(crate) fn install(
     )?;
     command_policy::write_codex_rules(source, &installed.codex_rules())?;
     command_policy::write_runtime_policy(source, &installed.claude_command_policy())?;
-    protection::write_runtime_policy(source, &installed.claude_protected_paths())?;
+    protection::write_runtime_policy(source, external_hooks, &installed.claude_protected_paths())?;
     codex_config::sync_generated_config_with_integrations(
         source,
         &installed.codex_config(),

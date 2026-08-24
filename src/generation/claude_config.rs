@@ -36,13 +36,17 @@ fn build_settings(
         "hooks".to_string(),
         hooks::claude_hooks_with_integrations(source, integration, external_hooks)?,
     );
-    merge_permissions(root, source)?;
-    merge_sandbox(root, source)?;
+    merge_permissions(root, source, external_hooks)?;
+    merge_sandbox(root, source, external_hooks)?;
 
     Ok(settings)
 }
 
-fn merge_permissions(root: &mut Map<String, Value>, source: &Path) -> Result<()> {
+fn merge_permissions(
+    root: &mut Map<String, Value>,
+    source: &Path,
+    external_hooks: &[ExternalHookBundle],
+) -> Result<()> {
     let permissions = object_entry(root, "permissions")?;
     let mut allow = non_bash_permissions(permissions.get("allow"))?;
     let mut deny = non_bash_permissions(permissions.get("deny"))?;
@@ -63,7 +67,7 @@ fn merge_permissions(root: &mut Map<String, Value>, source: &Path) -> Result<()>
             .map(Value::String),
     );
     deny.extend(
-        protection::protected_claude_deny_permissions(source)?
+        protection::protected_claude_deny_permissions(source, external_hooks)?
             .into_iter()
             .map(Value::String),
     );
@@ -74,10 +78,14 @@ fn merge_permissions(root: &mut Map<String, Value>, source: &Path) -> Result<()>
     Ok(())
 }
 
-fn merge_sandbox(root: &mut Map<String, Value>, source: &Path) -> Result<()> {
+fn merge_sandbox(
+    root: &mut Map<String, Value>,
+    source: &Path,
+    external_hooks: &[ExternalHookBundle],
+) -> Result<()> {
     let sandbox = object_entry(root, "sandbox")?;
     let filesystem = object_entry(sandbox, "filesystem")?;
-    let deny_write = protection::protected_paths(source)?
+    let deny_write = protection::protected_paths(source, external_hooks)?
         .into_iter()
         .map(Value::String)
         .collect();

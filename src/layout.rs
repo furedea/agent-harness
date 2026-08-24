@@ -199,19 +199,20 @@ impl<'a> InstalledLayout<'a> {
             CODEX_RULES_PATH,
         ]
         .into_iter()
-        .map(home_path)
+        .map(Path::new)
+        .map(Self::home_path)
         .collect()
     }
 
     pub(crate) fn claude_hook_home_path(path: &str) -> String {
-        format!("~/.claude/hooks/{path}")
+        Self::home_path(&Path::new(".claude/hooks").join(path))
     }
 
     pub(crate) fn codex_hook_home_path(path: &str) -> String {
-        format!("~/.codex/hooks/{path}")
+        Self::home_path(&Path::new(".codex/hooks").join(path))
     }
-}
 
-fn home_path(relative: &str) -> String {
-    format!("~/{relative}")
+    pub(crate) fn home_path(relative: &Path) -> String {
+        format!("~/{}", relative.to_string_lossy().replace('\\', "/"))
+    }
 }
