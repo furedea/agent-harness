@@ -195,10 +195,10 @@ jobs:
           cache-python: true
 
       - name: Run ruff format
-        run: uv run --python 3.14.6 --frozen ruff format --check agents/skills tests/python
+        run: uv run --python 3.14.6 --frozen ruff format --check profiles/furedea/agents/skills tests/python
 
       - name: Run ruff check
-        run: uv run --python 3.14.6 --frozen ruff check agents/skills tests/python
+        run: uv run --python 3.14.6 --frozen ruff check profiles/furedea/agents/skills tests/python
 
       - name: Run ty
         run: uv run --python 3.14.6 --frozen ty check

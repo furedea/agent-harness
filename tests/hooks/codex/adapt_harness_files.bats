@@ -3,15 +3,15 @@
 
 setup() {
   REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/../../.." && pwd)"
-  HOOK="$REPO_ROOT/codex/hooks/adapt_harness_files.sh"
+  HOOK="$REPO_ROOT/profiles/furedea/codex/hooks/adapt_harness_files.sh"
 }
 
 install_shared_hook() {
   local _home="$1"
 
   mkdir -p "$_home/.claude/hooks/lib" "$_home/.claude/hooks/rules"
-  cp "$REPO_ROOT/agents/hooks/guard_harness_files.sh" "$_home/.claude/hooks/"
-  cp "$REPO_ROOT/agents/hooks/lib/audit_log.sh" "$_home/.claude/hooks/lib/"
+  cp "$REPO_ROOT/profiles/furedea/agents/hooks/guard_harness_files.sh" "$_home/.claude/hooks/"
+  cp "$REPO_ROOT/profiles/furedea/agents/hooks/lib/audit_log.sh" "$_home/.claude/hooks/lib/"
   jq -n '{version:1,paths:["~/.codex/hooks/adapt_shell_command.sh"]}' \
     >"$_home/.claude/hooks/rules/protected_paths.json"
   chmod +x "$_home/.claude/hooks/guard_harness_files.sh"

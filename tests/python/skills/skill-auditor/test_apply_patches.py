@@ -5,7 +5,7 @@ from tests.python.conftest import load_script_module
 
 
 apply_patches = load_script_module(
-    "agents/skills/skill-auditor/scripts/apply_patches.py",
+    "profiles/furedea/agents/skills/skill-auditor/scripts/apply_patches.py",
     "apply_patches",
 )
 

@@ -4,7 +4,7 @@ from tests.python.conftest import load_script_module
 
 
 build_partial_patch = load_script_module(
-    "agents/skills/git-commit-split/scripts/build_partial_patch.py",
+    "profiles/furedea/agents/skills/git-commit-split/scripts/build_partial_patch.py",
     "build_partial_patch",
 )
 

@@ -3,15 +3,18 @@
 
 setup() {
   load test-helper/setup
-  COMMAND_POLICY="$REPO_ROOT/agents/command_policy.json"
-  ALLOWED_RULES="$REPO_ROOT/agents/hooks/rules/allowed_commands.json"
+  COMMAND_PERMISSIONS="$REPO_ROOT/profiles/furedea/agents/command_permissions.json"
+  ALLOWED_RULES="$REPO_ROOT/profiles/furedea/agents/hooks/rules/allowed_commands.json"
 }
 
 read_settings() {
   local settings
 
   settings="$BATS_TEST_TMPDIR/generated_settings.json"
-  cargo run --quiet -- generate-claude-settings --source "$REPO_ROOT" --output "$settings"
+  cargo run --quiet -- generate-claude-settings \
+    --profile furedea \
+    --source "$REPO_ROOT" \
+    --output "$settings"
   jq "$@" "$settings"
 }
 
@@ -22,7 +25,7 @@ get_settings_allow_prefixes() {
 }
 
 get_policy_allow_prefixes() {
-  jq -r '.rules[] | select(.decision == "allow") | .pattern | join(" ")' "$COMMAND_POLICY"
+  jq -r '.rules[] | select(.decision == "allow") | .prefix | join(" ")' "$COMMAND_PERMISSIONS"
 }
 
 get_allowed_patterns() {
@@ -53,7 +56,7 @@ assert_lines_contain() {
   assert_lines_contain \
     "$(get_settings_allow_prefixes)" \
     "$(get_policy_allow_prefixes)" \
-    "Generated Bash allows missing from agents/command_policy.json:"
+    "Generated Bash allows missing from agents/command_permissions.json:"
 }
 
 @test "every shared allow prefix is generated as a Bash allow" {

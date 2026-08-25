@@ -5,16 +5,21 @@ use clap::{Parser, Subcommand, ValueEnum};
 
 use crate::{
     generation::{
-        codex_config, command_policy, external_hooks::ExternalHookBundle, hook_bundle, hooks,
+        codex_config, command_permissions, external_hooks::ExternalHookBundle, hook_bundle, hooks,
         protection, skills::ExternalSkill,
     },
     inventory::Inventory,
+    profile::Profile,
     render, source,
 };
 
 #[derive(Debug, Parser)]
 #[command(version, about = "Install, inspect, and verify AI agent harness files")]
 struct Cli {
+    /// Select the built-in harness profile.
+    #[arg(long, global = true, value_enum, default_value_t = Profile::Minimal)]
+    profile: Profile,
+
     #[command(subcommand)]
     command: Command,
 }
@@ -33,8 +38,8 @@ enum Command {
     GenerateCodexHooks(GenerateFileArgs),
     /// Generate Codex execpolicy rules.
     GenerateCodexRules(GenerateFileArgs),
-    /// Generate the shared runtime command prefix policy.
-    GenerateCommandPolicy(GenerateFileArgs),
+    /// Generate the shared runtime command permissions.
+    GenerateCommandPermissions(GenerateFileArgs),
     /// Generate Claude Code forbidden-command rules.
     GenerateForbiddenCommands(GenerateFileArgs),
     /// Generate an isolated external hook bundle from installer commands.
@@ -124,7 +129,7 @@ struct InstallArgs {
     extra_hook: Vec<ExternalHookBundle>,
 }
 
-#[derive(Debug, Clone, Copy, ValueEnum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 enum Provider {
     Claude,
     Codex,
@@ -152,19 +157,21 @@ struct VerifyArgs {
 /// Returns an error when the selected command fails to read, write, render, or
 /// verify harness files.
 pub fn run() -> Result<()> {
-    match Cli::parse().command {
-        Command::GenerateClaudeSettings(args) => generate_claude_settings(args),
-        Command::GenerateClaudeHooks(args) => write_claude_hooks(args),
-        Command::GenerateCodexConfigSource(args) => generate_codex_config_source(args),
-        Command::GenerateCodexConfigFragment(args) => write_codex_config_fragment(args),
-        Command::GenerateCodexHooks(args) => write_codex_hooks(args),
-        Command::GenerateCodexRules(args) => write_codex_rules(args),
-        Command::GenerateCommandPolicy(args) => write_command_policy(args),
-        Command::GenerateForbiddenCommands(args) => write_forbidden_commands(args),
+    let cli = Cli::parse();
+    let profile = cli.profile;
+    match cli.command {
+        Command::GenerateClaudeSettings(args) => generate_claude_settings(args, profile),
+        Command::GenerateClaudeHooks(args) => write_claude_hooks(args, profile),
+        Command::GenerateCodexConfigSource(args) => generate_codex_config_source(args, profile),
+        Command::GenerateCodexConfigFragment(args) => write_codex_config_fragment(args, profile),
+        Command::GenerateCodexHooks(args) => write_codex_hooks(args, profile),
+        Command::GenerateCodexRules(args) => write_codex_rules(args, profile),
+        Command::GenerateCommandPermissions(args) => write_command_permissions(args, profile),
+        Command::GenerateForbiddenCommands(args) => write_forbidden_commands(args, profile),
         Command::GenerateHookBundle(args) => hook_bundle::generate(&args.spec, &args.output),
-        Command::GenerateSkills(args) => generate_skills(args),
-        Command::Install(args) => install(args),
-        Command::List(args) => list(args),
+        Command::GenerateSkills(args) => generate_skills(args, profile),
+        Command::Install(args) => install(args, profile),
+        Command::List(args) => list(args, profile),
         Command::SyncCodexConfig(args) => {
             codex_config::sync_managed_config(&args.source, &args.target)
         }
@@ -175,8 +182,8 @@ pub fn run() -> Result<()> {
     }
 }
 
-fn generate_claude_settings(args: GenerateFileArgs) -> Result<()> {
-    let source = source::resolve_source(args.source)?;
+fn generate_claude_settings(args: GenerateFileArgs, profile: Profile) -> Result<()> {
+    let source = source::resolve_source(args.source, profile)?;
     crate::generation::claude_config::write_settings(
         source.as_path(),
         &args.output,
@@ -184,50 +191,51 @@ fn generate_claude_settings(args: GenerateFileArgs) -> Result<()> {
     )
 }
 
-fn write_claude_hooks(args: GenerateFileArgs) -> Result<()> {
-    let source = source::resolve_source(args.source)?;
+fn write_claude_hooks(args: GenerateFileArgs, profile: Profile) -> Result<()> {
+    let source = source::resolve_source(args.source, profile)?;
     hooks::write_claude_hooks(source.as_path(), &args.output, &args.extra_hook)
 }
 
-fn generate_codex_config_source(args: GenerateFileArgs) -> Result<()> {
-    let source = source::resolve_source(args.source)?;
+fn generate_codex_config_source(args: GenerateFileArgs, profile: Profile) -> Result<()> {
+    let source = source::resolve_source(args.source, profile)?;
     codex_config::write_config_source(source.as_path(), &args.output, &args.extra_hook)
 }
 
-fn write_codex_config_fragment(args: GenerateFileArgs) -> Result<()> {
-    let source = source::resolve_source(args.source)?;
+fn write_codex_config_fragment(args: GenerateFileArgs, profile: Profile) -> Result<()> {
+    let source = source::resolve_source(args.source, profile)?;
     protection::write_codex_config_fragment(source.as_path(), &args.extra_hook, &args.output)
 }
 
-fn write_codex_hooks(args: GenerateFileArgs) -> Result<()> {
-    let source = source::resolve_source(args.source)?;
+fn write_codex_hooks(args: GenerateFileArgs, profile: Profile) -> Result<()> {
+    let source = source::resolve_source(args.source, profile)?;
     hooks::write_codex_hooks(source.as_path(), &args.output, &args.extra_hook)
 }
 
-fn write_codex_rules(args: GenerateFileArgs) -> Result<()> {
-    generate_file(args, command_policy::write_codex_rules)
+fn write_codex_rules(args: GenerateFileArgs, profile: Profile) -> Result<()> {
+    generate_file(args, profile, command_permissions::write_codex_rules)
 }
 
-fn write_command_policy(args: GenerateFileArgs) -> Result<()> {
-    generate_file(args, command_policy::write_runtime_policy)
+fn write_command_permissions(args: GenerateFileArgs, profile: Profile) -> Result<()> {
+    generate_file(args, profile, command_permissions::write_runtime_policy)
 }
 
-fn write_forbidden_commands(args: GenerateFileArgs) -> Result<()> {
-    generate_file(args, command_policy::write_forbidden_commands)
+fn write_forbidden_commands(args: GenerateFileArgs, profile: Profile) -> Result<()> {
+    generate_file(args, profile, command_permissions::write_forbidden_commands)
 }
 
 fn generate_file(
     args: GenerateFileArgs,
+    profile: Profile,
     generate: impl FnOnce(&Path, &Path) -> Result<()>,
 ) -> Result<()> {
-    let source = source::resolve_source(args.source)?;
+    let source = source::resolve_source(args.source, profile)?;
     generate(source.as_path(), &args.output)
 }
 
 // Skills and install stay explicit because they add provider and prefix handling
 // beyond the shared source/output file generation path.
-fn generate_skills(args: GenerateSkillsArgs) -> Result<()> {
-    let source = source::resolve_source(args.source)?;
+fn generate_skills(args: GenerateSkillsArgs, profile: Profile) -> Result<()> {
+    let source = source::resolve_source(args.source, profile)?;
     render::generate_skills(
         source.as_path(),
         args.provider.into(),
@@ -236,14 +244,14 @@ fn generate_skills(args: GenerateSkillsArgs) -> Result<()> {
     )
 }
 
-fn install(args: InstallArgs) -> Result<()> {
-    let source = source::resolve_source(args.source)?;
+fn install(args: InstallArgs, profile: Profile) -> Result<()> {
+    let source = source::resolve_source(args.source, profile)?;
     let prefix = args.prefix.unwrap_or_else(default_home_dir);
     render::install(source.as_path(), &prefix, &args.extra_hook)
 }
 
-fn list(args: ListArgs) -> Result<()> {
-    let source = source::resolve_source(args.source)?;
+fn list(args: ListArgs, profile: Profile) -> Result<()> {
+    let source = source::resolve_source(args.source, profile)?;
     let inventory = Inventory::load(source.as_path())?;
     let output = match args.command {
         Some(ListCommand::Hooks(hook_args)) => {
@@ -287,9 +295,16 @@ impl Provider {
 
 #[cfg(test)]
 mod tests {
-    use clap::CommandFactory;
+    use clap::{CommandFactory, Parser};
 
-    use super::Cli;
+    use super::{Cli, Profile};
+
+    #[test]
+    fn commands_default_to_the_minimal_profile() {
+        let cli = Cli::try_parse_from(["agent-harness", "list"]).unwrap();
+
+        assert_eq!(cli.profile, Profile::Minimal);
+    }
 
     #[test]
     fn every_top_level_command_has_a_description() {

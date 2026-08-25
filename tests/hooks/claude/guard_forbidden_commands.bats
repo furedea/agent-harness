@@ -4,27 +4,27 @@
 setup() {
   load test-helper/setup
   HOOK="$HOOK_DIR/guard_forbidden_commands.sh"
-  POLICY="$BATS_TEST_TMPDIR/command_policy.json"
+  POLICY="$BATS_TEST_TMPDIR/command_permissions.json"
   RULES="$BATS_TEST_TMPDIR/forbidden_commands.json"
   cat >"$POLICY" <<'JSON'
 {
   "version": 1,
   "rules": [
     {
-      "decision": "forbidden",
-      "pattern": ["rm"],
+      "decision": "deny",
+      "prefix": ["rm"],
       "examples": ["rm example"],
       "justification": "Do not delete files from Codex. Ask the user to run destructive cleanup manually."
     },
     {
-      "decision": "forbidden",
-      "pattern": ["git", "rm"],
+      "decision": "deny",
+      "prefix": ["git", "rm"],
       "examples": ["git rm example"],
       "justification": "Do not remove tracked files through shell commands from Codex."
     },
     {
-      "decision": "forbidden",
-      "pattern": ["bash", "-c"],
+      "decision": "deny",
+      "prefix": ["bash", "-c"],
       "examples": ["bash -c echo"],
       "justification": "Do not hide shell commands inside bash -c from Codex policy checks."
     }
@@ -45,13 +45,13 @@ JSON
 }
 
 run_hook() {
-  AGENT_COMMAND_POLICY="$POLICY" AGENT_FORBIDDEN_COMMAND_RULES="$RULES" \
+  AGENT_COMMAND_PERMISSIONS="$POLICY" AGENT_FORBIDDEN_COMMAND_RULES="$RULES" \
     bash "$HOOK" <<<"$(make_input "$1")"
 }
 
 run_hook_with_global_rules() {
-  AGENT_COMMAND_POLICY="$REPO_ROOT/agents/command_policy.json" \
-    AGENT_FORBIDDEN_COMMAND_RULES="$REPO_ROOT/agents/hooks/rules/forbidden_commands.json" \
+  AGENT_COMMAND_PERMISSIONS="$REPO_ROOT/profiles/furedea/agents/command_permissions.json" \
+    AGENT_FORBIDDEN_COMMAND_RULES="$REPO_ROOT/profiles/furedea/agents/hooks/rules/forbidden_commands.json" \
     bash "$HOOK" <<<"$(make_input "$1")"
 }
 
@@ -166,7 +166,7 @@ JSON
 }
 
 @test "blocks when generated rules file is missing" {
-  AGENT_COMMAND_POLICY="$POLICY" AGENT_FORBIDDEN_COMMAND_RULES="$BATS_TEST_TMPDIR/missing.json" \
+  AGENT_COMMAND_PERMISSIONS="$POLICY" AGENT_FORBIDDEN_COMMAND_RULES="$BATS_TEST_TMPDIR/missing.json" \
     run bash "$HOOK" <<<"$(make_input "git status")"
   [ "$status" -eq 2 ]
   [[ "$output" == *"forbidden command regex rules were not found or are invalid"* ]]

@@ -25,10 +25,10 @@ pre-commit:
       run: cargo clippy -- -D warnings
     ruff-format:
       glob: "*.py"
-      run: uv run --frozen ruff format --check agents/skills tests/python
+      run: uv run --frozen ruff format --check profiles/furedea/agents/skills tests/python
     ruff-check:
       glob: "*.py"
-      run: uv run --frozen ruff check agents/skills tests/python
+      run: uv run --frozen ruff check profiles/furedea/agents/skills tests/python
     ty:
       glob: "*.py"
       run: uv run --frozen ty check

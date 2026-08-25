@@ -48,8 +48,8 @@ cargo test
 Run the Python skill-script gates:
 
 ```bash
-uv run --python 3.14.6 --frozen ruff format --check agents/skills tests/python
-uv run --python 3.14.6 --frozen ruff check agents/skills tests/python
+uv run --python 3.14.6 --frozen ruff format --check profiles/furedea/agents/skills tests/python
+uv run --python 3.14.6 --frozen ruff check profiles/furedea/agents/skills tests/python
 uv run --python 3.14.6 --frozen ty check
 uv run --python 3.14.6 --frozen pytest tests/python
 ```

@@ -5,7 +5,7 @@ from tests.python.conftest import load_script_module
 
 
 generate_report = load_script_module(
-    "agents/skills/skill-auditor/scripts/generate_report.py",
+    "profiles/furedea/agents/skills/skill-auditor/scripts/generate_report.py",
     "generate_report",
 )
 

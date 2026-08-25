@@ -20,7 +20,7 @@ known_first_party = [
 ]
 
 [tool.vulture]
-paths = ["agents/skills", "tests/python"]
+paths = ["profiles/furedea/agents/skills", "tests/python"]
 min_confidence = 100
 sort_by_size = true
 exclude = [".venv", "build", "dist"]
@@ -49,7 +49,7 @@ audit = [
 
 [tool.ruff]
 target-version = "py314"
-src = ["agents/skills", "tests/python"]
+src = ["profiles/furedea/agents/skills", "tests/python"]
 line-length = 119
 
 [tool.ruff.format]
@@ -131,7 +131,7 @@ ignore = [
 ]
 
 [tool.ty.src]
-include = ["agents/skills", "tests/python"]
+include = ["profiles/furedea/agents/skills", "tests/python"]
 
 [tool.ty.analysis]
 respect-type-ignore-comments = true

@@ -73,7 +73,7 @@ get_last_log() {
 
 @test "allows writes to harness hook source path" {
   CLAUDE_PROJECT_DIR="$LOG_TMPDIR" run bash "$HOOK" \
-    <<<"$(make_edit_input Write "$REPO_ROOT/agents/hooks/guard_allowed_commands.sh")"
+    <<<"$(make_edit_input Write "$REPO_ROOT/profiles/furedea/agents/hooks/guard_allowed_commands.sh")"
 
   [ "$status" -eq 0 ]
   [ -z "$output" ]
@@ -81,7 +81,7 @@ get_last_log() {
 
 @test "allows writes to harness agent instructions source path" {
   CLAUDE_PROJECT_DIR="$LOG_TMPDIR" run bash "$HOOK" \
-    <<<"$(make_edit_input Edit "$REPO_ROOT/agents/AGENTS.md")"
+    <<<"$(make_edit_input Edit "$REPO_ROOT/profiles/furedea/agents/AGENTS.md")"
 
   [ "$status" -eq 0 ]
   [ -z "$output" ]
@@ -89,7 +89,7 @@ get_last_log() {
 
 @test "allows MultiEdit to Codex hook source path" {
   CLAUDE_PROJECT_DIR="$LOG_TMPDIR" run bash "$HOOK" \
-    <<<"$(make_edit_input MultiEdit "$REPO_ROOT/codex/hooks/adapt_lint_format.sh")"
+    <<<"$(make_edit_input MultiEdit "$REPO_ROOT/profiles/furedea/codex/hooks/adapt_lint_format.sh")"
 
   [ "$status" -eq 0 ]
   [ -z "$output" ]

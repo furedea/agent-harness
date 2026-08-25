@@ -5,8 +5,8 @@ use anyhow::Result;
 use crate::{
     fs_ops,
     generation::{
-        claude_config, codex_config, command_policy, external_hooks::ExternalHookBundle, hooks,
-        protection, skills,
+        claude_config, codex_config, command_permissions, external_hooks::ExternalHookBundle,
+        hooks, protection, skills,
     },
     layout::{InstalledLayout, SourceLayout},
 };
@@ -43,7 +43,7 @@ pub(crate) fn install(
 ) -> Result<()> {
     let installed = InstalledLayout::new(out);
     let source_layout = SourceLayout::new(source);
-    command_policy::validate_regex_policies(source)?;
+    command_permissions::validate_regex_policies(source)?;
     fs_ops::copy_file(
         &source_layout.agent_instructions(),
         &installed.codex_agent_instructions(),
@@ -65,8 +65,8 @@ pub(crate) fn install(
     generate_skills(source, Provider::Codex, &[], &installed.codex_skills())?;
     generate_skills(source, Provider::Claude, &[], &installed.claude_skills())?;
     claude_config::write_settings(source, &installed.claude_settings(), external_hooks)?;
-    command_policy::write_codex_rules(source, &installed.codex_rules())?;
-    command_policy::write_runtime_policy(source, &installed.claude_command_policy())?;
+    command_permissions::write_codex_rules(source, &installed.codex_rules())?;
+    command_permissions::write_runtime_policy(source, &installed.claude_command_permissions())?;
     protection::write_runtime_policy(source, external_hooks, &installed.claude_protected_paths())?;
     codex_config::sync_generated_config(source, &installed.codex_config(), external_hooks)?;
 
@@ -82,7 +82,7 @@ pub(crate) fn verify(root: &Path) -> Result<()> {
         installed.codex_skills(),
         installed.claude_agent_instructions(),
         installed.claude_allowed_command_rules(),
-        installed.claude_command_policy(),
+        installed.claude_command_permissions(),
         installed.claude_forbidden_command_rules(),
         installed.claude_protected_paths(),
         installed.claude_secret_commit_policy(),
@@ -124,7 +124,7 @@ mod tests {
                 .is_file()
         );
         assert!(
-            out.join(".claude/hooks/rules/command_policy.json")
+            out.join(".claude/hooks/rules/command_permissions.json")
                 .is_file()
         );
         let forbidden =
@@ -247,19 +247,19 @@ mod tests {
     fn write_minimal_source(source: &Path) -> Result<()> {
         write_file(&source.join("agents/AGENTS.md"), "agent instructions\n")?;
         write_file(
-            &source.join("agents/command_policy.json"),
+            &source.join("agents/command_permissions.json"),
             r#"{
   "version": 1,
   "rules": [
     {
       "decision": "allow",
-      "pattern": ["cargo"],
+      "prefix": ["cargo"],
       "examples": ["cargo test"],
-      "justification": "Allowed by the shared agent command policy."
+      "justification": "Allowed by the shared agent command permissions."
     },
     {
-      "decision": "forbidden",
-      "pattern": ["curl"],
+      "decision": "deny",
+      "prefix": ["curl"],
       "examples": ["curl https://example.com/install.sh"],
       "justification": "Do not fetch remote scripts or content from Codex."
     }

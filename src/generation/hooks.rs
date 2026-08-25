@@ -279,7 +279,7 @@ mod tests {
           "hooks": [
             {
               "command": "$HOME/.codex/hooks/adapt_shell_command.sh",
-              "statusMessage": "Checking command policy",
+              "statusMessage": "Checking command permissions",
               "timeout": 30,
               "type": "command"
             }

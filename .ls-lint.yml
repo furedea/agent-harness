@@ -15,8 +15,8 @@ ignore:
   - .release-please-manifest.json
   - release-please-config.json
   - package-lock.json
-  - agents/AGENTS.md
-  - "agents/skills/*/SKILL.md"
+  - "profiles/*/agents/AGENTS.md"
+  - "profiles/*/agents/skills/*/SKILL.md"
   - Cargo.toml
   - Cargo.lock
 
@@ -26,8 +26,8 @@ ignore:
   - .ruff_cache
   - .pytest_cache
   - .ipynb_checkpoints
-  - "agents/**/__pycache__"
+  - "profiles/**/__pycache__"
   - "tests/**/__pycache__"
   - node_modules
-  - agents/hooks/docs/logs
+  - "profiles/*/agents/hooks/docs/logs"
   - target

@@ -4,7 +4,8 @@ use anyhow::{Context, Result, bail};
 use serde_json::{Map, Value};
 
 use crate::generation::{
-    command_policy, external_hooks::ExternalHookBundle, hooks, io, protection, secret_path_policy,
+    command_permissions, external_hooks::ExternalHookBundle, hooks, io, protection,
+    secret_path_policy,
 };
 use crate::layout::SourceLayout;
 
@@ -42,10 +43,16 @@ fn merge_permissions(
 ) -> Result<()> {
     let permissions = object_entry(root, "permissions")?;
     let mut allow = non_bash_permissions(permissions.get("allow"))?;
+    let mut ask = non_bash_permissions(permissions.get("ask"))?;
     let mut deny = non_bash_permissions(permissions.get("deny"))?;
 
     allow.extend(
-        command_policy::claude_allow_permissions(source)?
+        command_permissions::claude_allow_permissions(source)?
+            .into_iter()
+            .map(Value::String),
+    );
+    ask.extend(
+        command_permissions::claude_ask_permissions(source)?
             .into_iter()
             .map(Value::String),
     );
@@ -55,7 +62,7 @@ fn merge_permissions(
             .map(Value::String),
     );
     deny.extend(
-        command_policy::claude_deny_permissions(source)?
+        command_permissions::claude_deny_permissions(source)?
             .into_iter()
             .map(Value::String),
     );
@@ -66,6 +73,7 @@ fn merge_permissions(
     );
 
     permissions.insert("allow".to_string(), Value::Array(allow));
+    permissions.insert("ask".to_string(), Value::Array(ask));
     permissions.insert("deny".to_string(), Value::Array(deny));
 
     Ok(())
@@ -140,8 +148,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn build_settings_merges_hooks_command_policy_and_protected_paths() -> Result<()> {
-        let root = test_root("build_settings_merges_hooks_command_policy_and_protected_paths")?;
+    fn build_settings_merges_hooks_command_permissions_and_protected_paths() -> Result<()> {
+        let root =
+            test_root("build_settings_merges_hooks_command_permissions_and_protected_paths")?;
         write_minimal_source(&root)?;
         let base = json!({
             "permissions": {
@@ -205,19 +214,19 @@ mod tests {
     fn write_minimal_source(source: &Path) -> Result<()> {
         write_file(&source.join("agents/AGENTS.md"), "agent instructions\n")?;
         write_file(
-            &source.join("agents/command_policy.json"),
+            &source.join("agents/command_permissions.json"),
             r#"{
   "version": 1,
   "rules": [
     {
       "decision": "allow",
-      "pattern": ["cargo"],
+      "prefix": ["cargo"],
       "examples": ["cargo test"],
-      "justification": "Allowed by the shared agent command policy."
+      "justification": "Allowed by the shared agent command permissions."
     },
     {
-      "decision": "forbidden",
-      "pattern": ["curl"],
+      "decision": "deny",
+      "prefix": ["curl"],
       "examples": ["curl https://example.com/install.sh"],
       "justification": "Do not fetch remote scripts or content from Codex."
     }

@@ -5,7 +5,7 @@
 REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/../../.." && pwd)"
 
 # Path to hook scripts under test.
-HOOK_DIR="$REPO_ROOT/agents/hooks"
+HOOK_DIR="$REPO_ROOT/profiles/furedea/agents/hooks"
 
 # Build a JSON payload matching the PreToolUse hook input format.
 # Uses jq for proper escaping of special characters.

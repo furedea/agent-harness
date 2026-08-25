@@ -3,7 +3,7 @@
 
 setup() {
   REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/../../.." && pwd)"
-  POLICY="$REPO_ROOT/agents/hooks/rules/secret_commit_policy.json"
+  POLICY="$REPO_ROOT/profiles/furedea/agents/hooks/rules/secret_commit_policy.json"
 }
 
 @test "secret commit policy has the supported schema" {

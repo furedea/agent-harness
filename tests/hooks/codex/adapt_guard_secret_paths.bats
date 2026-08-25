@@ -3,15 +3,15 @@
 
 setup() {
   REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/../../.." && pwd)"
-  HOOK="$REPO_ROOT/codex/hooks/adapt_guard_secret_paths.sh"
+  HOOK="$REPO_ROOT/profiles/furedea/codex/hooks/adapt_guard_secret_paths.sh"
 }
 
 install_policy() {
   local _home="$1"
 
   mkdir -p "$_home/.claude/hooks/rules" "$_home/.claude/hooks/lib"
-  cp "$REPO_ROOT/agents/hooks/rules/secret_path_policy.json" "$_home/.claude/hooks/rules/"
-  cp "$REPO_ROOT/agents/hooks/lib/audit_log.sh" "$_home/.claude/hooks/lib/"
+  cp "$REPO_ROOT/profiles/furedea/agents/hooks/rules/secret_path_policy.json" "$_home/.claude/hooks/rules/"
+  cp "$REPO_ROOT/profiles/furedea/agents/hooks/lib/audit_log.sh" "$_home/.claude/hooks/lib/"
 }
 
 @test "prints usage with --help" {

@@ -3,7 +3,7 @@
 
 setup() {
   REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/../../.." && pwd)"
-  PATTERNS="$REPO_ROOT/agents/hooks/rules/secret_content_patterns.json"
+  PATTERNS="$REPO_ROOT/profiles/furedea/agents/hooks/rules/secret_content_patterns.json"
 }
 
 @test "patterns file exists and is valid JSON" {

@@ -6,12 +6,12 @@
 #
 # Test selection combines three sources:
 #   1. Project-specific extension rules at
-#      <repo>/agents/hooks/rules/related_test_extensions.json
+#      <repo>/.agents/hooks/rules/related_test_extensions.json
 #      (optional). A JSON object whose keys are bash-glob patterns matched
 #      against changed paths; values are lists of test files to run. Use
 #      this to express fan-out (library -> consumers) and cross-language
 #      mappings that the basename heuristic cannot infer.
-#   2. Global default rules at agents/hooks/rules/related_test_defaults.json.
+#   2. Global default rules installed beside this hook under rules/.
 #      These define default source extensions, test directories, and basename
 #      patterns such as .py -> test_<stem>.py.
 #   3. Per-language basename heuristic driven by the global default rules.
@@ -49,11 +49,8 @@ emit_block() {
 # --- 1. Project extension rules: dispatch JSON-mapped tests by runner. ---
 declare -a PROJECT_BATS=()
 declare -a PROJECT_PY=()
-RULES_FILE="$GIT_ROOT/agents/hooks/rules/related_test_extensions.json"
-LANGUAGE_RULES_FILE="$GIT_ROOT/agents/hooks/rules/related_test_defaults.json"
-if [ ! -f "$LANGUAGE_RULES_FILE" ]; then
-  LANGUAGE_RULES_FILE="$SCRIPT_DIR/rules/related_test_defaults.json"
-fi
+RULES_FILE="$GIT_ROOT/.agents/hooks/rules/related_test_extensions.json"
+LANGUAGE_RULES_FILE="$SCRIPT_DIR/rules/related_test_defaults.json"
 if [ -f "$RULES_FILE" ] && jq empty "$RULES_FILE" 2>/dev/null; then
   mapfile -t PATTERNS < <(jq -r 'keys[]' "$RULES_FILE")
   while IFS= read -r f; do
@@ -63,8 +60,8 @@ if [ -f "$RULES_FILE" ] && jq empty "$RULES_FILE" 2>/dev/null; then
       if [[ "$f" == $pattern ]]; then
         while IFS= read -r t; do
           case "$t" in
-            *.bats) PROJECT_BATS+=("$t") ;;
-            *.py) PROJECT_PY+=("$t") ;;
+          *.bats) PROJECT_BATS+=("$t") ;;
+          *.py) PROJECT_PY+=("$t") ;;
           esac
         done < <(jq -r --arg k "$pattern" '.[$k][]' "$RULES_FILE")
       fi
@@ -150,12 +147,12 @@ find_language_tests() {
     [ ${#_find_args[@]} -gt 0 ] || continue
 
     case "$_language" in
-      python)
-        find "$test_dir" -type f \( "${_find_args[@]}" \) -not -path './.venv/*' -not -path './node_modules/*' 2>/dev/null
-        ;;
-      *)
-        find "$test_dir" -type f \( "${_find_args[@]}" \) 2>/dev/null
-        ;;
+    python)
+      find "$test_dir" -type f \( "${_find_args[@]}" \) -not -path './.venv/*' -not -path './node_modules/*' 2>/dev/null
+      ;;
+    *)
+      find "$test_dir" -type f \( "${_find_args[@]}" \) 2>/dev/null
+      ;;
     esac
   done < <(language_rule "$_language" ".[\$language].test_dirs[]?")
 }
@@ -291,24 +288,24 @@ if has_changed_extension rust && has_project_marker rust && command -v cargo >/d
     stem="${f##*/}"
     stem="${stem%.rs}"
     case "$f" in
-      tests/*.rs)
-        CARGO_TEST_TARGETS+=("$stem")
-        ;;
-      src/*.rs)
-        skip_filter=false
-        while IFS= read -r skipped_stem; do
-          [ -z "$skipped_stem" ] && continue
-          if [ "$stem" = "$skipped_stem" ]; then
-            skip_filter=true
-            break
-          fi
-        done < <(language_rule rust ".[\$language].skip_unit_filter_stems[]?")
-        [ "$skip_filter" = false ] && CARGO_UNIT_FILTERS+=("$stem")
-
-        if [ -f "tests/${stem}.rs" ]; then
-          CARGO_TEST_TARGETS+=("$stem")
+    tests/*.rs)
+      CARGO_TEST_TARGETS+=("$stem")
+      ;;
+    src/*.rs)
+      skip_filter=false
+      while IFS= read -r skipped_stem; do
+        [ -z "$skipped_stem" ] && continue
+        if [ "$stem" = "$skipped_stem" ]; then
+          skip_filter=true
+          break
         fi
-        ;;
+      done < <(language_rule rust ".[\$language].skip_unit_filter_stems[]?")
+      [ "$skip_filter" = false ] && CARGO_UNIT_FILTERS+=("$stem")
+
+      if [ -f "tests/${stem}.rs" ]; then
+        CARGO_TEST_TARGETS+=("$stem")
+      fi
+      ;;
     esac
   done <<<"$CHANGED"
 

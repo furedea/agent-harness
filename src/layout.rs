@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 const AGENT_INSTRUCTIONS_PATH: &str = "agents/AGENTS.md";
-const COMMAND_POLICY_PATH: &str = "agents/command_policy.json";
+const COMMAND_PERMISSIONS_PATH: &str = "agents/command_permissions.json";
 const HOOK_CONFIG_PATH: &str = "agents/hooks.json";
 const ALLOWED_COMMAND_RULES_PATH: &str = "agents/hooks/rules/allowed_commands.json";
 const FORBIDDEN_COMMAND_RULES_PATH: &str = "agents/hooks/rules/forbidden_commands.json";
@@ -12,7 +12,7 @@ const CLAUDE_SETTINGS_SOURCE_PATH: &str = "claude/settings.base.json";
 const CODEX_CONFIG_SOURCE_PATH: &str = "codex/config.toml";
 const REQUIRED_SOURCE_FILES: &[&str] = &[
     AGENT_INSTRUCTIONS_PATH,
-    COMMAND_POLICY_PATH,
+    COMMAND_PERMISSIONS_PATH,
     HOOK_CONFIG_PATH,
     ALLOWED_COMMAND_RULES_PATH,
     FORBIDDEN_COMMAND_RULES_PATH,
@@ -25,7 +25,7 @@ const REQUIRED_SOURCE_FILES: &[&str] = &[
 
 const CLAUDE_AGENT_INSTRUCTIONS_PATH: &str = ".claude/CLAUDE.md";
 const CLAUDE_ALLOWED_COMMAND_RULES_PATH: &str = ".claude/hooks/rules/allowed_commands.json";
-const CLAUDE_COMMAND_POLICY_PATH: &str = ".claude/hooks/rules/command_policy.json";
+const CLAUDE_COMMAND_PERMISSIONS_PATH: &str = ".claude/hooks/rules/command_permissions.json";
 const CLAUDE_FORBIDDEN_COMMAND_RULES_PATH: &str = ".claude/hooks/rules/forbidden_commands.json";
 const CLAUDE_PROTECTED_PATHS_PATH: &str = ".claude/hooks/rules/protected_paths.json";
 const CLAUDE_SECRET_COMMIT_POLICY_PATH: &str = ".claude/hooks/rules/secret_commit_policy.json";
@@ -61,8 +61,8 @@ impl<'a> SourceLayout<'a> {
         self.root.join(AGENT_INSTRUCTIONS_PATH)
     }
 
-    pub(crate) fn command_policy(self) -> PathBuf {
-        self.root.join(COMMAND_POLICY_PATH)
+    pub(crate) fn command_permissions(self) -> PathBuf {
+        self.root.join(COMMAND_PERMISSIONS_PATH)
     }
 
     pub(crate) fn hook_config(self) -> PathBuf {
@@ -160,8 +160,8 @@ impl<'a> InstalledLayout<'a> {
         self.root.join(CODEX_RULES_PATH)
     }
 
-    pub(crate) fn claude_command_policy(self) -> PathBuf {
-        self.root.join(CLAUDE_COMMAND_POLICY_PATH)
+    pub(crate) fn claude_command_permissions(self) -> PathBuf {
+        self.root.join(CLAUDE_COMMAND_PERMISSIONS_PATH)
     }
 
     pub(crate) fn claude_allowed_command_rules(self) -> PathBuf {
@@ -191,7 +191,7 @@ impl<'a> InstalledLayout<'a> {
     pub(crate) fn static_protected_home_paths() -> Vec<String> {
         [
             CLAUDE_AGENT_INSTRUCTIONS_PATH,
-            CLAUDE_COMMAND_POLICY_PATH,
+            CLAUDE_COMMAND_PERMISSIONS_PATH,
             CLAUDE_PROTECTED_PATHS_PATH,
             CLAUDE_SETTINGS_PATH,
             CODEX_AGENT_INSTRUCTIONS_PATH,

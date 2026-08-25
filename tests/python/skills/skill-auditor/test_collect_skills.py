@@ -4,7 +4,7 @@ from tests.python.conftest import load_script_module
 
 
 collect_skills = load_script_module(
-    "agents/skills/skill-auditor/scripts/collect_skills.py",
+    "profiles/furedea/agents/skills/skill-auditor/scripts/collect_skills.py",
     "skill_auditor_collect_skills",
 )
 

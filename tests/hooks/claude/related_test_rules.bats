@@ -5,8 +5,8 @@
 
 setup() {
   REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/../../.." && pwd)"
-  RULES="$REPO_ROOT/agents/hooks/rules/related_test_extensions.json"
-  LANGUAGE_RULES="$REPO_ROOT/agents/hooks/rules/related_test_defaults.json"
+  RULES="$REPO_ROOT/.agents/hooks/rules/related_test_extensions.json"
+  LANGUAGE_RULES="$REPO_ROOT/profiles/furedea/agents/hooks/rules/related_test_defaults.json"
 }
 
 @test "project extension rules file is valid JSON" {
@@ -69,38 +69,38 @@ setup() {
 }
 
 @test "library files fan out to their consumers" {
-  audit=$(jq -r '."agents/hooks/lib/audit_log.sh"[]' "$RULES")
+  audit=$(jq -r '."profiles/furedea/agents/hooks/lib/audit_log.sh"[]' "$RULES")
   [[ "$audit" == *guard_allowed_commands.bats* ]]
   [[ "$audit" == *guard_dangerous_git.bats* ]]
 
-  parse=$(jq -r '."agents/hooks/lib/shell_parse.sh"[]' "$RULES")
+  parse=$(jq -r '."profiles/furedea/agents/hooks/lib/shell_parse.sh"[]' "$RULES")
   [[ "$parse" == *guard_allowed_commands.bats* ]]
   [[ "$parse" == *adapt_shell_command.bats* ]]
 
-  lint=$(jq -r '."agents/hooks/lib/lint_format.sh"[]' "$RULES")
+  lint=$(jq -r '."profiles/furedea/agents/hooks/lib/lint_format.sh"[]' "$RULES")
   [[ "$lint" == *lint_format_py.bats* ]]
   [[ "$lint" == *adapt_lint_format.bats* ]]
 }
 
 @test "glob pattern keys cover lint_format hooks" {
-  result=$(jq -r '."agents/hooks/lint_format_*.sh"[]' "$RULES")
+  result=$(jq -r '."profiles/furedea/agents/hooks/lint_format_*.sh"[]' "$RULES")
   [[ "$result" == *lint_format_hooks.bats* ]]
 }
 
 @test "secret-content patterns trigger both Claude and Codex tests" {
-  result=$(jq -r '."agents/hooks/guard_secret_content.sh"[]' "$RULES")
+  result=$(jq -r '."profiles/furedea/agents/hooks/guard_secret_content.sh"[]' "$RULES")
   [[ "$result" == *guard_secret_content.bats* ]]
   [[ "$result" == *adapt_guard_secret_content.bats* ]]
 }
 
 @test "secret commit policy triggers its runtime and policy tests" {
-  result=$(jq -r '."agents/hooks/rules/secret_commit_policy.json"[]' "$RULES")
+  result=$(jq -r '."profiles/furedea/agents/hooks/rules/secret_commit_policy.json"[]' "$RULES")
   [[ "$result" == *guard_secret_commit.bats* ]]
   [[ "$result" == *secret_commit_policy.bats* ]]
 }
 
 @test "secret path policy triggers generated settings and Codex hook tests" {
-  result=$(jq -r '."agents/hooks/rules/secret_path_policy.json"[]' "$RULES")
+  result=$(jq -r '."profiles/furedea/agents/hooks/rules/secret_path_policy.json"[]' "$RULES")
   [[ "$result" == *tests/generated_artifacts.rs* ]]
   [[ "$result" == *adapt_guard_secret_paths.bats* ]]
 
@@ -110,58 +110,58 @@ setup() {
 }
 
 @test "codex config source fans out to generated config tests" {
-  result=$(jq -r '."src/codex_config.rs"[]' "$RULES")
+  result=$(jq -r '."src/generation/codex_config.rs"[]' "$RULES")
   [[ "$result" == *tests/generated_artifacts.rs* ]]
 
-  data=$(jq -r '."codex/config.toml"[]' "$RULES")
+  data=$(jq -r '."profiles/furedea/codex/config.toml"[]' "$RULES")
   [[ "$data" == *tests/generated_artifacts.rs* ]]
 }
 
 @test "hook configuration fans out to generated provider tests" {
-  config=$(jq -r '."agents/hooks.json"[]' "$RULES")
+  config=$(jq -r '."profiles/furedea/agents/hooks.json"[]' "$RULES")
   [[ "$config" == *tests/generated_artifacts.rs* ]]
 
-  code=$(jq -r '."src/hooks.rs"[]' "$RULES")
+  code=$(jq -r '."src/generation/hooks.rs"[]' "$RULES")
   [[ "$code" == *tests/generated_artifacts.rs* ]]
 }
 
 @test "settings.base.json triggers lock tests and allowlist" {
-  result=$(jq -r '."claude/settings.base.json"[]' "$RULES")
+  result=$(jq -r '."profiles/furedea/claude/settings.base.json"[]' "$RULES")
   [[ "$result" == *tests/generated_artifacts.rs* ]]
   [[ "$result" == *guard_allowed_commands.bats* ]]
 }
 
-@test "command policy data triggers generated settings tests on both providers" {
-  result=$(jq -r '."agents/command_policy.json"[]' "$RULES")
+@test "command permissions data triggers generated settings tests on both providers" {
+  result=$(jq -r '."profiles/furedea/agents/command_permissions.json"[]' "$RULES")
   [[ "$result" == *tests/generated_artifacts.rs* ]]
   [[ "$result" == *tests/codex/execpolicy.bats* ]]
-  [[ "$result" == *command_policy_sync.bats* ]]
+  [[ "$result" == *command_permissions_sync.bats* ]]
   [[ "$result" == *guard_allowed_commands.bats* ]]
   [[ "$result" == *guard_forbidden_commands.bats* ]]
 
-  code=$(jq -r '."src/generation/command_policy.rs"[]' "$RULES")
+  code=$(jq -r '."src/generation/command_permissions.rs"[]' "$RULES")
   [[ "$code" == *tests/generated_artifacts.rs* ]]
   [[ "$code" == *tests/codex/execpolicy.bats* ]]
-  [[ "$code" == *command_policy_sync.bats* ]]
+  [[ "$code" == *command_permissions_sync.bats* ]]
   [[ "$code" == *guard_allowed_commands.bats* ]]
   [[ "$code" == *guard_forbidden_commands.bats* ]]
 }
 
 @test "precise command rules trigger their runtime guards" {
-  allowed=$(jq -r '."agents/hooks/rules/allowed_commands.json"[]' "$RULES")
+  allowed=$(jq -r '."profiles/furedea/agents/hooks/rules/allowed_commands.json"[]' "$RULES")
   [[ "$allowed" == *tests/generated_artifacts.rs* ]]
-  [[ "$allowed" == *command_policy_sync.bats* ]]
+  [[ "$allowed" == *command_permissions_sync.bats* ]]
   [[ "$allowed" == *guard_allowed_commands.bats* ]]
 
-  forbidden=$(jq -r '."agents/hooks/rules/forbidden_commands.json"[]' "$RULES")
+  forbidden=$(jq -r '."profiles/furedea/agents/hooks/rules/forbidden_commands.json"[]' "$RULES")
   [[ "$forbidden" == *tests/generated_artifacts.rs* ]]
   [[ "$forbidden" == *guard_forbidden_commands.bats* ]]
 }
 
-@test "agents/skills/* triggers skills render test" {
-  result=$(jq -r '."agents/skills/*"[]' "$RULES")
+@test "profiles/furedea/agents/skills/* triggers skills render test" {
+  result=$(jq -r '."profiles/furedea/agents/skills/*"[]' "$RULES")
   [ "$result" = "tests/generated_artifacts.rs" ]
 
-  code=$(jq -r '."src/skills.rs"[]' "$RULES")
+  code=$(jq -r '."src/generation/skills.rs"[]' "$RULES")
   [ "$code" = "tests/generated_artifacts.rs" ]
 }

@@ -3,7 +3,9 @@ import pytest
 from tests.python.conftest import load_script_module
 
 
-branch_name = load_script_module("agents/skills/git-commit-split/scripts/branch_name.py", "branch_name")
+branch_name = load_script_module(
+    "profiles/furedea/agents/skills/git-commit-split/scripts/branch_name.py", "branch_name"
+)
 
 
 def test_parse_subject_accepts_scope_and_breaking_marker() -> None:

@@ -8,7 +8,7 @@ setup_file() {
 
 setup() {
   REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/../../.." && pwd)"
-  HOOK="$REPO_ROOT/codex/hooks/adapt_lint_format.sh"
+  HOOK="$REPO_ROOT/profiles/furedea/codex/hooks/adapt_lint_format.sh"
 }
 
 run_adapter() {

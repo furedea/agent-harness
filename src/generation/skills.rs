@@ -208,6 +208,10 @@ pub(crate) fn built_in_skill_metadata(source: &Path) -> Result<Vec<SkillMetadata
 }
 
 fn sorted_skill_dirs(skills_dir: &Path) -> Result<Vec<PathBuf>> {
+    if !skills_dir.exists() {
+        return Ok(Vec::new());
+    }
+
     let mut dirs = Vec::new();
     for entry in std::fs::read_dir(skills_dir)
         .with_context(|| format!("failed to read directory {}", skills_dir.display()))?

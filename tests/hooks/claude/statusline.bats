@@ -3,7 +3,7 @@
 
 setup() {
   load test-helper/setup
-  STATUSLINE="$REPO_ROOT/claude/statusline/statusline.sh"
+  STATUSLINE="$REPO_ROOT/profiles/furedea/claude/statusline/statusline.sh"
 }
 
 # Build a minimal statusline JSON input.

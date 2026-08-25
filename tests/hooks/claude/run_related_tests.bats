@@ -139,7 +139,7 @@ EOF
   [ -z "$output" ]
 }
 
-# --- project extension rules file (agents/hooks/rules/related_test_extensions.json) ---
+# --- project extension rules file (.agents/hooks/rules/related_test_extensions.json) ---
 
 @test "run_related_tests runs tests mapped by JSON rules and blocks on failure" {
   cd "$TEST_TMPDIR"
@@ -147,8 +147,8 @@ EOF
   git config user.email t@t
   git config user.name t
   git config commit.gpgsign false
-  mkdir -p agents/hooks/rules tests lib
-  cat > agents/hooks/rules/related_test_extensions.json <<'EOF'
+  mkdir -p .agents/hooks/rules tests lib
+  cat > .agents/hooks/rules/related_test_extensions.json <<'EOF'
 {
   "lib/shared.sh": ["tests/fan_out.bats"]
 }
@@ -178,8 +178,8 @@ EOF
   git config user.email t@t
   git config user.name t
   git config commit.gpgsign false
-  mkdir -p agents/hooks/rules tests lib
-  cat > agents/hooks/rules/related_test_extensions.json <<'EOF'
+  mkdir -p .agents/hooks/rules tests lib
+  cat > .agents/hooks/rules/related_test_extensions.json <<'EOF'
 {
   "lib/shared.sh": ["tests/fan_out.bats"]
 }
@@ -203,10 +203,10 @@ EOF
   git config user.email t@t
   git config user.name t
   git config commit.gpgsign false
-  mkdir -p agents/hooks/rules tests
+  mkdir -p .agents/hooks/rules tests
   # JSON contributes a fan-out target; basename heuristic contributes
   # tests/script.bats. Both must run.
-  cat > agents/hooks/rules/related_test_extensions.json <<'EOF'
+  cat > .agents/hooks/rules/related_test_extensions.json <<'EOF'
 {
   "script.sh": ["tests/extra.bats"]
 }
@@ -234,8 +234,8 @@ EOF
   git config user.email t@t
   git config user.name t
   git config commit.gpgsign false
-  mkdir -p agents/hooks/rules tests
-  printf 'not valid json {{{\n' > agents/hooks/rules/related_test_extensions.json
+  mkdir -p .agents/hooks/rules tests
+  printf 'not valid json {{{\n' > .agents/hooks/rules/related_test_extensions.json
   cat > tests/script.bats <<'EOF'
 @test "basename heuristic still runs" { true; }
 EOF
@@ -255,8 +255,8 @@ EOF
   git config user.email t@t
   git config user.name t
   git config commit.gpgsign false
-  mkdir -p agents/hooks/rules tests config
-  cat > agents/hooks/rules/related_test_extensions.json <<'EOF'
+  mkdir -p .agents/hooks/rules tests config
+  cat > .agents/hooks/rules/related_test_extensions.json <<'EOF'
 {
   "config/*.toml": ["tests/config_check.bats"]
 }

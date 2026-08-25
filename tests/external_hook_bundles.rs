@@ -20,6 +20,8 @@ fn external_claude_hooks_are_composed_with_built_in_hooks() {
 
     run_harness([
         "generate-claude-settings",
+        "--profile",
+        "furedea",
         "--source",
         repo_root().to_str().unwrap(),
         "--extra-hook",
@@ -82,6 +84,8 @@ fn external_codex_hooks_are_composed_with_built_in_hooks() {
 
     run_harness([
         "generate-codex-hooks",
+        "--profile",
+        "furedea",
         "--source",
         repo_root().to_str().unwrap(),
         "--extra-hook",

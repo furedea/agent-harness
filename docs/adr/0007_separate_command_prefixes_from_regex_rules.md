@@ -1,6 +1,6 @@
 # ADR-0007: Separate command prefixes from precise regex rules
 
-- Status: Accepted
+- Status: Superseded by ADR-0012
 - Date: 2026-08-24
 
 In the context of sharing command policy across Claude Code and Codex while individual repositories

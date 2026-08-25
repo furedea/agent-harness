@@ -3,7 +3,7 @@
 
 setup() {
   REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/../../.." && pwd)"
-  HOOK="$REPO_ROOT/codex/hooks/adapt_guard_secret_content.sh"
+  HOOK="$REPO_ROOT/profiles/furedea/codex/hooks/adapt_guard_secret_content.sh"
 }
 
 @test "exits non-zero without mode argument" {
