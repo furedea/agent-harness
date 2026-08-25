@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.1](https://github.com/furedea/agent-harness/compare/agent-harness-v0.7.0...agent-harness-v0.7.1) (2026-08-25)
+
+
+### Bug Fixes
+
+* **release:** use pre-major compatibility bumps ([#108](https://github.com/furedea/agent-harness/issues/108)) ([c3ad0a8](https://github.com/furedea/agent-harness/commit/c3ad0a8227ef9d4bb0192d297f796f40316184f0))
+
 ## [0.7.0](https://github.com/furedea/agent-harness/compare/agent-harness-v0.6.0...agent-harness-v0.7.0) (2026-08-24)
 
 
