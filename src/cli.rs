@@ -10,7 +10,7 @@ use crate::{
     },
     inventory::Inventory,
     profile::Profile,
-    render, source,
+    render, runtime, source,
 };
 
 #[derive(Debug, Parser)]
@@ -52,7 +52,7 @@ enum Command {
     List(ListArgs),
     /// Merge managed keys into an existing Codex config.
     SyncCodexConfig(SyncCodexConfigArgs),
-    /// Verify that required managed files are installed.
+    /// Verify managed files and profile runtime commands.
     Verify(VerifyArgs),
 }
 
@@ -177,7 +177,8 @@ pub fn run() -> Result<()> {
         }
         Command::Verify(args) => {
             let prefix = args.prefix.unwrap_or_else(default_home_dir);
-            render::verify(&prefix)
+            render::verify(&prefix)?;
+            runtime::verify(profile)
         }
     }
 }

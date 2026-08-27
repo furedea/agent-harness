@@ -2,12 +2,14 @@
 # Tests for .claude/hooks/notify_macos_done.sh and notify_macos_await.sh
 #
 # These hooks depend on macOS-specific commands (osascript, afplay).
-# Tests verify script structure and syntax rather than actual notification behavior.
 
 setup() {
   load test-helper/setup
   DONE_HOOK="$HOOK_DIR/notify_macos_done.sh"
   AWAIT_HOOK="$HOOK_DIR/notify_macos_await.sh"
+  FAKE_BIN="$BATS_TEST_TMPDIR/bin"
+  COMMAND_LOG="$BATS_TEST_TMPDIR/commands.log"
+  mkdir -p "$FAKE_BIN"
 }
 
 # ============================================================
@@ -62,6 +64,33 @@ setup() {
   [ "$status" -eq 0 ]
 }
 
+@test "notification hooks skip macOS commands outside Darwin" {
+  make_fake_command uname 'echo Linux'
+  make_fake_command osascript 'echo osascript >>"${COMMAND_LOG:?}"'
+  make_fake_command afplay 'echo afplay >>"${COMMAND_LOG:?}"'
+
+  local _hook
+  for _hook in "$DONE_HOOK" "$AWAIT_HOOK"; do
+    PATH="$FAKE_BIN:$PATH" COMMAND_LOG="$COMMAND_LOG" run bash "$_hook"
+    [ "$status" -eq 0 ]
+  done
+
+  [ ! -e "$COMMAND_LOG" ]
+}
+
+@test "notification hooks skip when a macOS command is unavailable" {
+  make_fake_command uname 'echo Darwin'
+  make_fake_command afplay 'echo afplay >>"${COMMAND_LOG:?}"'
+
+  local _hook
+  for _hook in "$DONE_HOOK" "$AWAIT_HOOK"; do
+    PATH="$FAKE_BIN" COMMAND_LOG="$COMMAND_LOG" run /bin/bash "$_hook"
+    [ "$status" -eq 0 ]
+  done
+
+  [ ! -e "$COMMAND_LOG" ]
+}
+
 # ============================================================
 # Sound file references
 # ============================================================
@@ -86,4 +115,12 @@ setup() {
   done_msg=$(grep -o 'display notification "[^"]*"' "$DONE_HOOK")
   await_msg=$(grep -o 'display notification "[^"]*"' "$AWAIT_HOOK")
   [ "$done_msg" != "$await_msg" ]
+}
+
+function make_fake_command() {
+  local _name="$1"
+  local _body="$2"
+
+  printf '#!/bin/bash\n%s\n' "$_body" >"$FAKE_BIN/$_name"
+  chmod +x "$FAKE_BIN/$_name"
 }

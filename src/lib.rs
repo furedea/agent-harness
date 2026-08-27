@@ -5,6 +5,7 @@ mod inventory;
 mod layout;
 mod profile;
 mod render;
+mod runtime;
 mod source;
 
 pub use cli::run;

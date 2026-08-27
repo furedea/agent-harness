@@ -264,6 +264,69 @@ fn minimal_profile_installs_without_personal_assets() {
 }
 
 #[test]
+fn furedea_verify_reports_missing_runtime_commands() {
+    let root = test_root("missing-runtime-commands");
+
+    install_furedea(&root);
+    let output = verify_furedea(&root, Path::new(""));
+    let stderr = String::from_utf8(output.stderr).unwrap();
+
+    assert!(!output.status.success());
+    assert!(stderr.contains("missing required runtime commands"));
+    assert!(stderr.contains("bash"));
+    assert!(stderr.contains("jq"));
+
+    remove_dir(root);
+}
+
+#[test]
+fn furedea_verify_accepts_available_runtime_commands() {
+    let root = test_root("available-runtime-commands");
+    let bin = root.join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    write_executable(&bin.join("bash"));
+    write_executable(&bin.join("jq"));
+
+    install_furedea(&root);
+    let output = verify_furedea(&root, &bin);
+
+    assert!(
+        output.status.success(),
+        "furedea verify failed: {}",
+        String::from_utf8_lossy(&output.stderr),
+    );
+
+    remove_dir(root);
+}
+
+#[test]
+fn minimal_verify_does_not_require_personal_runtime_commands() {
+    let root = test_root("minimal-runtime-commands");
+
+    run_harness([
+        "install",
+        "--source",
+        repo_root().to_str().unwrap(),
+        "--prefix",
+        root.to_str().unwrap(),
+    ]);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_agent-harness"))
+        .env("PATH", "")
+        .args(["verify", "--prefix", root.to_str().unwrap()])
+        .output()
+        .unwrap();
+
+    assert!(
+        output.status.success(),
+        "minimal verify failed: {}",
+        String::from_utf8_lossy(&output.stderr),
+    );
+
+    remove_dir(root);
+}
+
+#[test]
 fn install_keeps_runtime_and_claude_protected_paths_aligned() {
     let root = test_root("protected-paths");
     let prefix = root.join("home");
@@ -805,6 +868,43 @@ fn test_root(name: &str) -> PathBuf {
 
 fn remove_dir(path: PathBuf) {
     std::fs::remove_dir_all(path).unwrap();
+}
+
+fn write_executable(path: &Path) {
+    std::fs::write(path, "executable fixture\n").unwrap();
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+}
+
+fn install_furedea(prefix: &Path) {
+    run_harness([
+        "install",
+        "--profile",
+        "furedea",
+        "--source",
+        repo_root().to_str().unwrap(),
+        "--prefix",
+        prefix.to_str().unwrap(),
+    ]);
+}
+
+fn verify_furedea(prefix: &Path, path: &Path) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_agent-harness"))
+        .env("PATH", path)
+        .args([
+            "verify",
+            "--profile",
+            "furedea",
+            "--prefix",
+            prefix.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap()
 }
 
 fn write_inventory_source(root: &Path) {

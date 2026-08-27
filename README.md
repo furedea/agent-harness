@@ -58,6 +58,11 @@ that agent-harness shipped before profiles were introduced:
 agent-harness --profile furedea install --prefix "$HOME"
 ```
 
+The `minimal` profile has no runtime command requirements. The `furedea` profile requires `bash`
+and `jq` on `PATH`; `verify` reports either command when it is missing. On Debian or Ubuntu, install
+them with `sudo apt-get install bash jq`. Language-specific formatters, linters, and test runners are
+optional and are used only when the corresponding hook and project need them.
+
 Profiles are composition bases, not a requirement to keep all customization in this repository.
 Home Manager can replace the shared files and add any number of skills and hook bundles directly.
 
@@ -180,7 +185,8 @@ nix profile install github:furedea/agent-harness
 ```
 
 After installing the binary, `agent-harness install` is still required to render the Codex and
-Claude Code configuration. `verify` only checks that the required installed paths exist.
+Claude Code configuration. `verify` checks the required installed paths and the selected profile's
+runtime commands.
 
 ## Other Installation Methods
 
@@ -334,7 +340,8 @@ approvals_reviewer, notice, tui, plugins, features, default_permissions,
 permissions
 ```
 
-`verify` checks for the required paths. It does not compare their contents with the selected source.
+`verify` checks the required paths and selected profile's runtime commands. It does not compare file
+contents with the selected source.
 
 ## Usage
 

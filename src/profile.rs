@@ -13,4 +13,11 @@ impl Profile {
             Self::Furedea => "furedea",
         }
     }
+
+    pub(crate) fn required_runtime_commands(self) -> &'static [&'static str] {
+        match self {
+            Self::Minimal => &[],
+            Self::Furedea => &["bash", "jq"],
+        }
+    }
 }
