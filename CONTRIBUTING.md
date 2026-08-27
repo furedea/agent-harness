@@ -58,7 +58,7 @@ Run the hook and Codex policy tests after installing their external test tools:
 
 ```bash
 npm ci --ignore-scripts
-bats --print-output-on-failure --recursive tests/hooks tests/install_script.bats
+bats --print-output-on-failure --recursive tests/hooks
 CODEX_BIN=codex bats --print-output-on-failure tests/codex/execpolicy.bats
 ```
 
