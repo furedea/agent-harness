@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # lint_format_gha.sh
 # Quality Loop: lint GitHub Actions workflows via actionlint; emit residual
@@ -11,10 +11,10 @@ source "$(dirname "$0")/lib/lint_format.sh"
 load_file_path # sets FILE_PATH, FILENAME
 
 case "$FILE_PATH" in
-  */.github/workflows/*.yml | */.github/workflows/*.yaml) ;;
-  *)
-    exit 0
-    ;;
+*/.github/workflows/*.yml | */.github/workflows/*.yaml) ;;
+*)
+  exit 0
+  ;;
 esac
 
 require_cmd actionlint

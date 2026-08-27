@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Claude Code PreToolUse hook: block denied shell prefixes from generated command permissions.
 # Exit code 0 = allow/pass-through, exit code 2 = block.
 

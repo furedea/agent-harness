@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # lint_format_sh.sh
 # Quality Loop: format (shfmt -w) -> emit residual shellcheck diagnostics as

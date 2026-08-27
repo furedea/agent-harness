@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -euCo pipefail
 
 if [[ "$(uname -s)" != "Darwin" ]]; then

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Shared helper: split a compound shell command on unquoted operators.
 # Sourced by .claude/hooks/guard_allowed_commands.sh and guard_dangerous_git.sh.
 #

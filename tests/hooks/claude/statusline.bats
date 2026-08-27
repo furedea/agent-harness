@@ -28,8 +28,8 @@ MINIMAL_INPUT='{"model":{"display_name":"Opus 4.6"},"cwd":"/tmp/test","context_w
   [ "$status" -eq 0 ]
 }
 
-@test "statusline.sh uses /bin/bash shebang" {
-  head -1 "$STATUSLINE" | grep -q '#!/bin/bash'
+@test "statusline.sh resolves bash from PATH" {
+  head -1 "$STATUSLINE" | grep -q '#!/usr/bin/env bash'
 }
 
 # ============================================================

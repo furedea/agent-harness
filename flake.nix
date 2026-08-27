@@ -90,7 +90,7 @@
                 readonly HOOK_DIR="$HOME/.claude/hooks"
 
                 mkdir -p "$HOOK_DIR"
-                printf '%s\n' '#!/bin/bash' 'exit 0' > "$HOOK_DIR/example.sh"
+                printf '%s\n' '#!/usr/bin/env bash' 'exit 0' > "$HOOK_DIR/example.sh"
                 chmod +x "$HOOK_DIR/example.sh"
                 printf '%s\n' \
                   "{\"hooks\":{\"PreToolUse\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"$HOME/.claude/hooks/example.sh\"}]}]}}" \

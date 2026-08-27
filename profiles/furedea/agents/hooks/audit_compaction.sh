@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Claude Code PreCompact + SessionStart hook: record how much conversation
 # context is lost across the compaction boundary.
 #
@@ -32,22 +32,22 @@ TRIGGER=""
 SOURCE=""
 
 case "$EVENT" in
-  PreCompact)
-    TRIGGER=$(echo "$INPUT" | jq -r '.trigger // empty' 2>/dev/null || true)
-    ;;
-  SessionStart)
-    SOURCE=$(echo "$INPUT" | jq -r '.source // empty' 2>/dev/null || true)
-    # Only `compact` and `resume` carry pre-existing context worth pairing.
-    # `startup` (and any future kinds) are skipped so the audit feed stays
-    # focused on the compaction boundary.
-    case "$SOURCE" in
-      compact | resume) ;;
-      *) exit 0 ;;
-    esac
-    ;;
-  *)
-    exit 0
-    ;;
+PreCompact)
+  TRIGGER=$(echo "$INPUT" | jq -r '.trigger // empty' 2>/dev/null || true)
+  ;;
+SessionStart)
+  SOURCE=$(echo "$INPUT" | jq -r '.source // empty' 2>/dev/null || true)
+  # Only `compact` and `resume` carry pre-existing context worth pairing.
+  # `startup` (and any future kinds) are skipped so the audit feed stays
+  # focused on the compaction boundary.
+  case "$SOURCE" in
+  compact | resume) ;;
+  *) exit 0 ;;
+  esac
+  ;;
+*)
+  exit 0
+  ;;
 esac
 
 MESSAGES=0

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # lint_format_json_toml.sh
 # Quality Loop: format JSON/TOML via dprint, then emit residual diagnostics

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # lint_format_py.sh
 # Quality Loop: format -> auto-fix -> emit residual violations as PostToolUse

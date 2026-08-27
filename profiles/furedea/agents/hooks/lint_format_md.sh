@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # lint_format_md.sh
 # Quality Loop: autocorrect --fix -> prettierd (atomic swap via stdin/stdout).

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # lint_format.sh
 # Shared utilities for per-language lint_format hooks.

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # lint_format_nix.sh
 # Quality Loop: nixfmt -> statix --fix -> capture residual statix + deadnix

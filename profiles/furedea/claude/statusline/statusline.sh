@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Claude Code statusline - 2 lines with powerline-style ANSI segments.
 # Reads JSON from stdin, outputs ANSI-colored text to stdout.
 
@@ -58,9 +58,9 @@ function make_bar() {
     _i=$((_i + 1))
   done
   case "$_partial" in
-    1) _bar="${_bar}▏" ;; 2) _bar="${_bar}▎" ;; 3) _bar="${_bar}▍" ;;
-    4) _bar="${_bar}▌" ;; 5) _bar="${_bar}▋" ;; 6) _bar="${_bar}▊" ;;
-    7) _bar="${_bar}▉" ;;
+  1) _bar="${_bar}▏" ;; 2) _bar="${_bar}▎" ;; 3) _bar="${_bar}▍" ;;
+  4) _bar="${_bar}▌" ;; 5) _bar="${_bar}▋" ;; 6) _bar="${_bar}▊" ;;
+  7) _bar="${_bar}▉" ;;
   esac
   [ "$_partial" -gt 0 ] && _i=$((_i + 1))
   while [ "$_i" -lt "$_width" ]; do

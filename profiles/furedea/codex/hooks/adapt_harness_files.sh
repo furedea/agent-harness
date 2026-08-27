@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -euCo pipefail
 cd "$(dirname "$0")"
 
@@ -39,8 +39,8 @@ function absolute_path() {
   local _file_path="$1"
 
   case "$_file_path" in
-    /* | ~/*) printf '%s\n' "$_file_path" ;;
-    *) printf '%s/%s\n' "$PWD" "$_file_path" ;;
+  /* | ~/*) printf '%s\n' "$_file_path" ;;
+  *) printf '%s/%s\n' "$PWD" "$_file_path" ;;
   esac
 }
 

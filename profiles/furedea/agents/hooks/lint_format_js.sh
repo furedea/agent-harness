@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # lint_format_js.sh
 # Quality Loop: format (oxfmt) -> auto-fix (oxlint --fix) -> emit residual

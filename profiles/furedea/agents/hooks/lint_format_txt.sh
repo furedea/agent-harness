@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # lint_format_txt.sh
 # Quality Loop: autocorrect --fix (CJK spacing etc.). Format-only; emits no

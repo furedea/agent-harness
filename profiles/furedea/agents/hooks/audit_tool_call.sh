@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Claude Code PreToolUse + PostToolUse hook: append every tool call to the audit log.
 #
 # Writes one JSONL line per call to docs/logs/audit/YYYY-MM-DD.jsonl.
@@ -26,21 +26,21 @@ SESSION=$(echo "$INPUT" | jq -r '.session_id // empty' 2>/dev/null || true)
 [ -z "$TOOL" ] && exit 0
 
 case "$TOOL" in
-  Bash)
-    SUMMARY=$(echo "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null || true)
-    ;;
-  Edit | Write | MultiEdit | NotebookEdit)
-    SUMMARY=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty' 2>/dev/null || true)
-    ;;
-  WebFetch)
-    SUMMARY=$(echo "$INPUT" | jq -r '.tool_input.url // empty' 2>/dev/null || true)
-    ;;
-  Agent)
-    SUMMARY=$(echo "$INPUT" | jq -r '(.tool_input.subagent_type // "general-purpose") + ": " + (.tool_input.description // "")' 2>/dev/null || true)
-    ;;
-  *)
-    SUMMARY=$(echo "$INPUT" | jq -rc '.tool_input // {}' 2>/dev/null | head -c 200 || true)
-    ;;
+Bash)
+  SUMMARY=$(echo "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null || true)
+  ;;
+Edit | Write | MultiEdit | NotebookEdit)
+  SUMMARY=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty' 2>/dev/null || true)
+  ;;
+WebFetch)
+  SUMMARY=$(echo "$INPUT" | jq -r '.tool_input.url // empty' 2>/dev/null || true)
+  ;;
+Agent)
+  SUMMARY=$(echo "$INPUT" | jq -r '(.tool_input.subagent_type // "general-purpose") + ": " + (.tool_input.description // "")' 2>/dev/null || true)
+  ;;
+*)
+  SUMMARY=$(echo "$INPUT" | jq -rc '.tool_input // {}' 2>/dev/null | head -c 200 || true)
+  ;;
 esac
 
 [ -z "$SUMMARY" ] && exit 0

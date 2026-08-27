@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # lint_format_rs.sh
 # Quality Loop: rustfmt only. Cargo clippy is cross-file (whole crate) and

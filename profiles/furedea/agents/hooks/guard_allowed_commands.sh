@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Claude Code PreToolUse hook: regex-based allowlist for Bash commands needing precise control.
 # Splits compound commands (|, ||, &&, ;, &) and validates each segment independently.
 # Governed segments must match an allowed pattern; non-governed segments pass through.

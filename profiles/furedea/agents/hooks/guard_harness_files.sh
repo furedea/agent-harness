@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Claude Code PreToolUse hook: block edits to installed harness files.
 # The permissions/sandbox layer is the hard boundary; this hook adds an
 # explanatory block reason plus audit logging before that boundary is reached.

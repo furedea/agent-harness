@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Shared command permission and regex-rule helpers.
 
 function command_rules_project_file() {

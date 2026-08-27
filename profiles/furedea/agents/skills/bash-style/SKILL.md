@@ -1,7 +1,7 @@
 ---
 name: bash-style
 description: >
-    Bash script coding conventions and bats testing: shebang (#!/bin/bash), set -euxCo pipefail, cd "$(dirname "$0")", usage function with heredoc, readonly constants, SCREAMING_SNAKE_CASE constants, snake_case variables/functions, _snake_case local variables, bats test structure (test-helper/, setup/teardown lifecycle, run/status/output assertions). Load whenever writing, reviewing, or refactoring any Bash script (.sh files, shell scripts) or bats test (.bats files) — new files, bug fixes, function design, project setup, writing tests. Also load when PLANNING or DISCUSSING Bash/shell script implementation or test design, even before any code is written. Without this skill, you will use wrong conventions (missing set flags, wrong naming, no usage function, no readonly, wrong test directory structure) that this user explicitly does not want.
+    Bash script coding conventions and bats testing: shebang (#!/usr/bin/env bash), set -euxCo pipefail, cd "$(dirname "$0")", usage function with heredoc, readonly constants, SCREAMING_SNAKE_CASE constants, snake_case variables/functions, _snake_case local variables, bats test structure (test-helper/, setup/teardown lifecycle, run/status/output assertions). Load whenever writing, reviewing, or refactoring any Bash script (.sh files, shell scripts) or bats test (.bats files) — new files, bug fixes, function design, project setup, writing tests. Also load when PLANNING or DISCUSSING Bash/shell script implementation or test design, even before any code is written. Without this skill, you will use wrong conventions (missing set flags, wrong naming, no usage function, no readonly, wrong test directory structure) that this user explicitly does not want.
 ---
 
 # Shell Script Coding Style Guidelines
@@ -11,12 +11,12 @@ description: >
 Every shell script must start with these three lines in order:
 
 ```sh
-#!/bin/bash
+#!/usr/bin/env bash
 set -euxCo pipefail
 cd "$(dirname "$0")"
 ```
 
-- `#!/bin/bash` — run with bash explicitly, not sh
+- `#!/usr/bin/env bash` — resolve Bash from `PATH` and run with it explicitly, not with `sh`
 - `set -euxCo pipefail`:
     - `-e`: exit on error
     - `-u`: exit on undefined variable reference
@@ -79,14 +79,14 @@ Always quote the right-hand side — values may contain spaces or special charac
 
 ## Naming
 
-| Kind | Convention | Example |
-| --- | --- | --- |
-| Constants | `SCREAMING_SNAKE_CASE` + `readonly` | `readonly MAX_RETRY=3` |
-| Variables | `snake_case` | `input_file="..."` |
-| Functions | `snake_case` | `function parse_args()` |
-| Local variables | `_snake_case` (leading underscore) | `local _tmp_dir` |
-| Files | `snake_case` | `lint_format.sh` |
-| Directories | `kebab-case` | `claude-scripts/` |
+| Kind            | Convention                          | Example                 |
+| --------------- | ----------------------------------- | ----------------------- |
+| Constants       | `SCREAMING_SNAKE_CASE` + `readonly` | `readonly MAX_RETRY=3`  |
+| Variables       | `snake_case`                        | `input_file="..."`      |
+| Functions       | `snake_case`                        | `function parse_args()` |
+| Local variables | `_snake_case` (leading underscore)  | `local _tmp_dir`        |
+| Files           | `snake_case`                        | `lint_format.sh`        |
+| Directories     | `kebab-case`                        | `claude-scripts/`       |
 
 Do not start names with a digit.
 
@@ -109,7 +109,7 @@ Indent with **2 spaces** (Google Shell Style Guide convention). Configure via `.
 ## Full Template
 
 ```sh
-#!/bin/bash
+#!/usr/bin/env bash
 set -euxCo pipefail
 cd "$(dirname "$0")"
 
@@ -189,7 +189,7 @@ setup() {
 }
 ```
 
-- Shebang: `#!/usr/bin/env bats` (not `#!/bin/bash`)
+- Shebang: `#!/usr/bin/env bats` (not a Bash shebang)
 - One comment line describing the file's scope
 - `setup()` runs before each `@test` — wire fixtures and paths here, not assertions
 - When a category has no shared helpers, derive `REPO_ROOT` inline:
@@ -203,11 +203,11 @@ setup() {
 
 bats provides four lifecycle hooks, from broadest to narrowest scope:
 
-| Hook | Scope | Defined in |
-| --- | --- | --- |
-| `setup_suite` / `teardown_suite` | Entire test run | `setup_suite.bash` (auto-discovered at test root) |
-| `setup_file` / `teardown_file` | Per `.bats` file | The `.bats` file itself |
-| `setup` / `teardown` | Per `@test` | The `.bats` file itself |
+| Hook                             | Scope            | Defined in                                        |
+| -------------------------------- | ---------------- | ------------------------------------------------- |
+| `setup_suite` / `teardown_suite` | Entire test run  | `setup_suite.bash` (auto-discovered at test root) |
+| `setup_file` / `teardown_file`   | Per `.bats` file | The `.bats` file itself                           |
+| `setup` / `teardown`             | Per `@test`      | The `.bats` file itself                           |
 
 Use the narrowest scope that fits:
 

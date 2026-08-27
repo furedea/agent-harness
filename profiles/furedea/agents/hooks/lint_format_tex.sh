@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # lint_format_tex.sh
 # Quality Loop: tex-fmt -> capture residual chktex diagnostics as PostToolUse

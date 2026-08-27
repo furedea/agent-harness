@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Claude Code PreToolUse hook: block git commit if staged files match sensitive patterns.
 # This hook is triggered before Bash tool calls containing "git commit".
 # Exit code 0 = allow, exit code 2 = block.

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # run_related_tests.sh
 # Stop hook: differential test gate. Blocks completion if relevant tests fail.

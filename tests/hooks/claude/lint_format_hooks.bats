@@ -99,9 +99,9 @@ setup() {
 # Shebang
 # ============================================================
 
-@test "all lint_format hooks have bash shebang" {
+@test "all lint_format hooks resolve bash from PATH" {
   for hook in "${LINT_HOOKS[@]}"; do
-    head -1 "$hook" | grep -q '#!/bin/bash' || {
+    head -1 "$hook" | grep -q '#!/usr/bin/env bash' || {
       echo "Missing bash shebang: $hook"
       return 1
     }

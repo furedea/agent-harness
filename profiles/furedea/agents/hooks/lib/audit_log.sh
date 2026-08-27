@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Shared audit-log writer for block-style PreToolUse hooks.
 #
 # Each block hook (guard_allowed_commands, guard_dangerous_git, ...) sources this

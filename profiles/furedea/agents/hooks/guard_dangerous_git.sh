@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Claude Code PreToolUse hook: block destructive / review-bypassing git operations.
 #
 # Covered:
@@ -95,29 +95,29 @@ ERRMSG
       continue
     fi
     case "$_token" in
-      --)
+    --)
+      _i=$((_i + 1))
+      while [ "$_i" -lt "${#_raw_tokens[@]}" ]; do
+        [ -n "${_raw_tokens[$_i]}" ] && _positional+=("${_raw_tokens[$_i]}")
         _i=$((_i + 1))
-        while [ "$_i" -lt "${#_raw_tokens[@]}" ]; do
-          [ -n "${_raw_tokens[$_i]}" ] && _positional+=("${_raw_tokens[$_i]}")
-          _i=$((_i + 1))
-        done
-        break
-        ;;
-      --repo | --receive-pack | --exec)
-        # These flags consume the next token as their argument.
-        _i=$((_i + 2))
-        ;;
-      -u | --set-upstream)
-        # Boolean flags; do not consume the next token.
-        _i=$((_i + 1))
-        ;;
-      --*=* | -*)
-        _i=$((_i + 1))
-        ;;
-      *)
-        _positional+=("$_token")
-        _i=$((_i + 1))
-        ;;
+      done
+      break
+      ;;
+    --repo | --receive-pack | --exec)
+      # These flags consume the next token as their argument.
+      _i=$((_i + 2))
+      ;;
+    -u | --set-upstream)
+      # Boolean flags; do not consume the next token.
+      _i=$((_i + 1))
+      ;;
+    --*=* | -*)
+      _i=$((_i + 1))
+      ;;
+    *)
+      _positional+=("$_token")
+      _i=$((_i + 1))
+      ;;
     esac
   done
 

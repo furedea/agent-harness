@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # lint_format_lua.sh
 # Quality Loop: stylua -> capture residual selene diagnostics as PostToolUse
