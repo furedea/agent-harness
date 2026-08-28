@@ -21,7 +21,7 @@ fn external_claude_hooks_are_composed_with_built_in_hooks() {
     run_harness([
         "generate-claude-settings",
         "--source",
-        repo_root().to_str().unwrap(),
+        complete_source_root().to_str().unwrap(),
         "--extra-hook",
         &format!("moshi={}", bundle.display()),
         "--output",
@@ -32,7 +32,7 @@ fn external_claude_hooks_are_composed_with_built_in_hooks() {
     assert!(hook_command_exists(&settings, "moshi-hook claude-hook"));
     assert!(hook_command_exists(
         &settings,
-        "$HOME/.claude/hooks/guard_secret_content.sh prompt",
+        "$HOME/.claude/hooks/guard.sh",
     ));
 
     remove_dir(root);
@@ -83,7 +83,7 @@ fn external_codex_hooks_are_composed_with_built_in_hooks() {
     run_harness([
         "generate-codex-hooks",
         "--source",
-        repo_root().to_str().unwrap(),
+        complete_source_root().to_str().unwrap(),
         "--extra-hook",
         &format!("moshi={}", bundle.display()),
         "--output",
@@ -94,7 +94,7 @@ fn external_codex_hooks_are_composed_with_built_in_hooks() {
     assert!(hook_command_exists(&hooks, "moshi-hook codex-hook"));
     assert!(hook_command_exists(
         &hooks,
-        "$HOME/.codex/hooks/adapt_guard_secret_content.sh prompt",
+        "$HOME/.codex/hooks/adapt.sh $HOME/.codex/hooks/guard.sh",
     ));
 
     remove_dir(root);
@@ -454,6 +454,10 @@ fn run_harness_output<const N: usize>(args: [&str; N]) -> std::process::Output {
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+}
+
+fn complete_source_root() -> PathBuf {
+    repo_root().join("tests/fixtures/complete-source")
 }
 
 fn test_root(name: &str) -> PathBuf {

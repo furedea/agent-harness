@@ -207,9 +207,13 @@ trust_level = "trusted"
     }
 
     fn write_minimal_source(source: &Path) -> Result<()> {
+        write_file(
+            &source.join("manifest.json"),
+            r#"{"version":1,"runtime_commands":[]}"#,
+        )?;
         write_file(&source.join("codex/config.toml"), "model = \"gpt-5.5\"\n")?;
-        write_file(&source.join("agents/AGENTS.md"), "agent instructions\n")?;
-        write_file(&source.join("agents/hooks/guard.sh"), "#!/bin/bash\n")?;
+        write_file(&source.join("AGENTS.md"), "agent instructions\n")?;
+        write_file(&source.join("hooks/guard.sh"), "#!/bin/bash\n")?;
         write_file(&source.join("codex/hooks/adapt.sh"), "#!/bin/bash\n")?;
         Ok(())
     }

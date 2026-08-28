@@ -1,0 +1,4 @@
+model = "fixture-codex"
+
+[features]
+hooks = true

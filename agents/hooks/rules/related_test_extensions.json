@@ -40,17 +40,17 @@
     "tests/hooks/codex/adapt_harness_files.bats"
   ],
   "agents/hooks/rules/secret_path_policy.json": [
-    "tests/generated_artifacts.rs",
+    "tests/neutral_generated_artifacts.rs",
     "tests/hooks/codex/adapt_guard_secret_paths.bats",
     "tests/hooks/claude/related_test_rules.bats"
   ],
   "agents/hooks/rules/allowed_commands.json": [
-    "tests/generated_artifacts.rs",
+    "tests/neutral_generated_artifacts.rs",
     "tests/hooks/claude/command_permissions_sync.bats",
     "tests/hooks/claude/guard_allowed_commands.bats"
   ],
   "agents/hooks/rules/forbidden_commands.json": [
-    "tests/generated_artifacts.rs",
+    "tests/neutral_generated_artifacts.rs",
     "tests/hooks/claude/guard_forbidden_commands.bats"
   ],
   "agents/hooks/lint_format_*.sh": [
@@ -69,43 +69,43 @@
     "tests/hooks/claude/related_test_rules.bats"
   ],
   "agents/hooks.json": [
-    "tests/generated_artifacts.rs"
+    "tests/neutral_generated_artifacts.rs"
   ],
   "codex/config.toml": [
-    "tests/generated_artifacts.rs"
+    "tests/neutral_generated_artifacts.rs"
   ],
   "src/codex_config.rs": [
-    "tests/generated_artifacts.rs"
+    "tests/neutral_generated_artifacts.rs"
   ],
   "src/claude_config.rs": [
-    "tests/generated_artifacts.rs"
+    "tests/neutral_generated_artifacts.rs"
   ],
   "src/hooks.rs": [
-    "tests/generated_artifacts.rs"
+    "tests/neutral_generated_artifacts.rs"
   ],
   "src/generation/secret_path_policy.rs": [
-    "tests/generated_artifacts.rs",
+    "tests/neutral_generated_artifacts.rs",
     "tests/hooks/codex/adapt_guard_secret_paths.bats"
   ],
   "src/generation/command_permissions.rs": [
-    "tests/generated_artifacts.rs",
+    "tests/neutral_generated_artifacts.rs",
     "tests/codex/execpolicy.bats",
     "tests/hooks/claude/command_permissions_sync.bats",
     "tests/hooks/claude/guard_allowed_commands.bats",
     "tests/hooks/claude/guard_forbidden_commands.bats"
   ],
   "src/generation/protection.rs": [
-    "tests/generated_artifacts.rs",
+    "tests/neutral_generated_artifacts.rs",
     "tests/hooks/claude/guard_harness_files.bats",
     "tests/hooks/codex/adapt_harness_files.bats"
   ],
   "src/layout.rs": [
-    "tests/generated_artifacts.rs",
+    "tests/neutral_generated_artifacts.rs",
     "tests/hooks/claude/guard_harness_files.bats",
     "tests/hooks/codex/adapt_harness_files.bats"
   ],
   "claude/settings.base.json": [
-    "tests/generated_artifacts.rs",
+    "tests/neutral_generated_artifacts.rs",
     "tests/hooks/claude/guard_allowed_commands.bats"
   ],
   "claude/statusline/*.sh": [
@@ -115,16 +115,16 @@
     "tests/hooks/claude/statusline.bats"
   ],
   "agents/command_permissions.json": [
-    "tests/generated_artifacts.rs",
+    "tests/neutral_generated_artifacts.rs",
     "tests/codex/execpolicy.bats",
     "tests/hooks/claude/command_permissions_sync.bats",
     "tests/hooks/claude/guard_allowed_commands.bats",
     "tests/hooks/claude/guard_forbidden_commands.bats"
   ],
   "src/skills.rs": [
-    "tests/generated_artifacts.rs"
+    "tests/neutral_generated_artifacts.rs"
   ],
   "agents/skills/*": [
-    "tests/generated_artifacts.rs"
+    "tests/neutral_generated_artifacts.rs"
   ]
 }

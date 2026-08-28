@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "rules": [
+    {
+      "patterns": ["^fixture check$"],
+      "justification": "Allow the fixture check command."
+    }
+  ]
+}

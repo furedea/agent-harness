@@ -4,6 +4,8 @@
 setup() {
   REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
   CODEX_BIN="${CODEX_BIN:-codex}"
+  load ../test-helper/flat_personal_source
+  make_flat_personal_source
 }
 
 require_codex_execpolicy() {
@@ -29,7 +31,7 @@ require_codex_execpolicy() {
 codex_rules() {
   local _rules
   _rules="$BATS_TEST_TMPDIR/default.rules"
-  cargo run --quiet -- generate-codex-rules --source "$REPO_ROOT" --output "$_rules"
+  cargo run --quiet -- generate-codex-rules --source "$PERSONAL_SOURCE" --output "$_rules"
   cat "$_rules"
 }
 

@@ -17,6 +17,10 @@ ignore:
   - package-lock.json
   - agents/AGENTS.md
   - "agents/skills/*/SKILL.md"
+  - "profiles/*/AGENTS.md"
+  - "profiles/*/skills/*/SKILL.md"
+  - "tests/fixtures/*/AGENTS.md"
+  - "tests/fixtures/*/skills/*/SKILL.md"
   - Cargo.toml
   - Cargo.lock
 
@@ -27,6 +31,7 @@ ignore:
   - .pytest_cache
   - .ipynb_checkpoints
   - "agents/**/__pycache__"
+  - "profiles/**/__pycache__"
   - "tests/**/__pycache__"
   - node_modules
   - agents/hooks/docs/logs

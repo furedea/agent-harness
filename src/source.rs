@@ -3,7 +3,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result, bail};
 
-use crate::layout::SourceLayout;
+use crate::{layout::SourceLayout, manifest::Manifest, profile::Profile};
 
 const ENV_SOURCE: &str = "AGENT_HARNESS_SOURCE";
 
@@ -30,13 +30,6 @@ impl SourceRoot {
         }
     }
 
-    fn temporary(path: PathBuf) -> Self {
-        Self {
-            path: path.clone(),
-            cleanup: Some(path),
-        }
-    }
-
     pub(crate) fn as_path(&self) -> &Path {
         &self.path
     }
@@ -50,37 +43,47 @@ impl Drop for SourceRoot {
     }
 }
 
-pub(crate) fn resolve_source(explicit_source: Option<PathBuf>) -> Result<SourceRoot> {
+pub(crate) fn resolve_source(
+    explicit_source: Option<PathBuf>,
+    profile: Profile,
+) -> Result<SourceRoot> {
     if let Some(source) = explicit_source {
-        return required_source(source, "--source");
+        return required_source(source, "--source", profile);
     }
 
     if let Some(source) = std::env::var_os(ENV_SOURCE).map(PathBuf::from) {
-        return required_source(source, ENV_SOURCE);
+        return required_source(source, ENV_SOURCE, profile);
     }
 
     for source in installed_source_dirs()? {
-        if is_source_tree(&source) {
-            return Ok(SourceRoot::external(source));
+        if let Some(profile_source) = profile_source(&source, profile) {
+            return Ok(SourceRoot::external(profile_source));
         }
     }
 
     let cwd = std::env::current_dir().context("failed to read current directory")?;
-    if is_source_tree(&cwd) {
-        return Ok(SourceRoot::external(cwd));
+    if let Some(profile_source) = profile_source(&cwd, profile) {
+        return Ok(SourceRoot::external(profile_source));
     }
 
-    materialize_packaged_source()
+    materialize_packaged_source(profile)
 }
 
-fn required_source(path: PathBuf, label: &str) -> Result<SourceRoot> {
-    validate_source_tree(&path).with_context(|| {
+fn required_source(path: PathBuf, label: &str, profile: Profile) -> Result<SourceRoot> {
+    let profile_source = profile_source(&path, profile).ok_or_else(|| {
+        anyhow::anyhow!(
+            "{label} does not contain the {} agent-harness profile: {}",
+            profile.directory_name(),
+            path.display(),
+        )
+    })?;
+    validate_source_tree(&profile_source).with_context(|| {
         format!(
             "{label} does not point to an agent-harness source tree: {}",
             path.display()
         )
     })?;
-    Ok(SourceRoot::external(path))
+    Ok(SourceRoot::external(profile_source))
 }
 
 fn installed_source_dirs() -> Result<Vec<PathBuf>> {
@@ -101,7 +104,7 @@ fn installed_source_dirs_for_executable(executable: &Path) -> Vec<PathBuf> {
     candidates
 }
 
-fn materialize_packaged_source() -> Result<SourceRoot> {
+fn materialize_packaged_source(profile: Profile) -> Result<SourceRoot> {
     let root = std::env::temp_dir().join(format!(
         "agent-harness-source-{}-{}",
         std::process::id(),
@@ -114,8 +117,17 @@ fn materialize_packaged_source() -> Result<SourceRoot> {
         write_packaged_file(&root, file)?;
     }
 
-    validate_source_tree(&root)?;
-    Ok(SourceRoot::temporary(root))
+    let profile_source = profile_source(&root, profile).ok_or_else(|| {
+        anyhow::anyhow!(
+            "packaged assets do not contain the {} profile",
+            profile.directory_name(),
+        )
+    })?;
+    validate_source_tree(&profile_source)?;
+    Ok(SourceRoot {
+        path: profile_source,
+        cleanup: Some(root),
+    })
 }
 
 fn write_packaged_file(root: &Path, file: &PackagedFile) -> Result<()> {
@@ -149,14 +161,22 @@ fn unique_suffix() -> u128 {
         .map_or(0, |duration| duration.as_nanos())
 }
 
-fn is_source_tree(path: &Path) -> bool {
-    SourceLayout::new(path).is_complete()
+fn profile_source(root: &Path, profile: Profile) -> Option<PathBuf> {
+    let profile_root = root.join("profiles").join(profile.directory_name());
+    if SourceLayout::new(&profile_root).is_complete() {
+        return Some(profile_root);
+    }
+
+    SourceLayout::new(root)
+        .is_complete()
+        .then(|| root.to_path_buf())
 }
 
 fn validate_source_tree(path: &Path) -> Result<()> {
     let missing = SourceLayout::new(path).missing_required_files();
 
     if missing.is_empty() {
+        Manifest::read(path)?;
         return Ok(());
     }
 
@@ -172,6 +192,29 @@ mod tests {
     use std::path::Path;
 
     use super::*;
+
+    #[test]
+    fn profile_source_accepts_a_complete_flat_source() {
+        let root = flat_source_root("complete");
+        write_flat_source(&root, r#"{"version":1,"runtime_commands":[]}"#);
+
+        assert_eq!(profile_source(&root, Profile::Minimal), Some(root.clone()));
+
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn required_source_rejects_an_unsupported_manifest_version() {
+        let root = flat_source_root("unsupported-manifest");
+        write_flat_source(&root, r#"{"version":2,"runtime_commands":[]}"#);
+
+        let error = required_source(root.clone(), "--source", Profile::Minimal)
+            .err()
+            .unwrap();
+
+        assert!(format!("{error:#}").contains("unsupported source manifest version 2"));
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn installed_source_dirs_include_release_tarball_layout_next_to_binary() {
@@ -197,5 +240,33 @@ mod tests {
         assert!(candidates.contains(&PathBuf::from(
             "/nix/store/hash-agent-harness/share/agent-harness"
         )));
+    }
+
+    fn flat_source_root(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "agent-harness-flat-source-{name}-{}-{}",
+            std::process::id(),
+            unique_suffix(),
+        ))
+    }
+
+    fn write_flat_source(root: &Path, manifest: &str) {
+        for relative in [
+            "AGENTS.md",
+            "command_permissions.json",
+            "hooks.json",
+            "hooks/rules/allowed_commands.json",
+            "hooks/rules/forbidden_commands.json",
+            "hooks/rules/secret_commit_policy.json",
+            "hooks/rules/secret_path_policy.json",
+            "skill_rendering.json",
+            "claude/settings.base.json",
+            "codex/config.toml",
+        ] {
+            let path = root.join(relative);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, "fixture\n").unwrap();
+        }
+        std::fs::write(root.join("manifest.json"), manifest).unwrap();
     }
 }

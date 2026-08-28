@@ -3,15 +3,17 @@
 
 setup() {
   load test-helper/setup
-  COMMAND_PERMISSIONS="$REPO_ROOT/agents/command_permissions.json"
-  ALLOWED_RULES="$REPO_ROOT/agents/hooks/rules/allowed_commands.json"
+  load ../../test-helper/flat_personal_source
+  make_flat_personal_source
+  COMMAND_PERMISSIONS="$PERSONAL_SOURCE/command_permissions.json"
+  ALLOWED_RULES="$PERSONAL_SOURCE/hooks/rules/allowed_commands.json"
 }
 
 read_settings() {
   local settings
 
   settings="$BATS_TEST_TMPDIR/generated_settings.json"
-  cargo run --quiet -- generate-claude-settings --source "$REPO_ROOT" --output "$settings"
+  cargo run --quiet -- generate-claude-settings --source "$PERSONAL_SOURCE" --output "$settings"
   jq "$@" "$settings"
 }
 

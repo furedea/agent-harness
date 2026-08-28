@@ -101,46 +101,46 @@ setup() {
 
 @test "secret path policy triggers generated settings and Codex hook tests" {
   result=$(jq -r '."agents/hooks/rules/secret_path_policy.json"[]' "$RULES")
-  [[ "$result" == *tests/generated_artifacts.rs* ]]
+  [[ "$result" == *tests/neutral_generated_artifacts.rs* ]]
   [[ "$result" == *adapt_guard_secret_paths.bats* ]]
 
   code=$(jq -r '."src/generation/secret_path_policy.rs"[]' "$RULES")
-  [[ "$code" == *tests/generated_artifacts.rs* ]]
+  [[ "$code" == *tests/neutral_generated_artifacts.rs* ]]
   [[ "$code" == *adapt_guard_secret_paths.bats* ]]
 }
 
 @test "codex config source fans out to generated config tests" {
   result=$(jq -r '."src/codex_config.rs"[]' "$RULES")
-  [[ "$result" == *tests/generated_artifacts.rs* ]]
+  [[ "$result" == *tests/neutral_generated_artifacts.rs* ]]
 
   data=$(jq -r '."codex/config.toml"[]' "$RULES")
-  [[ "$data" == *tests/generated_artifacts.rs* ]]
+  [[ "$data" == *tests/neutral_generated_artifacts.rs* ]]
 }
 
 @test "hook configuration fans out to generated provider tests" {
   config=$(jq -r '."agents/hooks.json"[]' "$RULES")
-  [[ "$config" == *tests/generated_artifacts.rs* ]]
+  [[ "$config" == *tests/neutral_generated_artifacts.rs* ]]
 
   code=$(jq -r '."src/hooks.rs"[]' "$RULES")
-  [[ "$code" == *tests/generated_artifacts.rs* ]]
+  [[ "$code" == *tests/neutral_generated_artifacts.rs* ]]
 }
 
 @test "settings.base.json triggers lock tests and allowlist" {
   result=$(jq -r '."claude/settings.base.json"[]' "$RULES")
-  [[ "$result" == *tests/generated_artifacts.rs* ]]
+  [[ "$result" == *tests/neutral_generated_artifacts.rs* ]]
   [[ "$result" == *guard_allowed_commands.bats* ]]
 }
 
 @test "command permissions data triggers generated settings tests on both providers" {
   result=$(jq -r '."agents/command_permissions.json"[]' "$RULES")
-  [[ "$result" == *tests/generated_artifacts.rs* ]]
+  [[ "$result" == *tests/neutral_generated_artifacts.rs* ]]
   [[ "$result" == *tests/codex/execpolicy.bats* ]]
   [[ "$result" == *command_permissions_sync.bats* ]]
   [[ "$result" == *guard_allowed_commands.bats* ]]
   [[ "$result" == *guard_forbidden_commands.bats* ]]
 
   code=$(jq -r '."src/generation/command_permissions.rs"[]' "$RULES")
-  [[ "$code" == *tests/generated_artifacts.rs* ]]
+  [[ "$code" == *tests/neutral_generated_artifacts.rs* ]]
   [[ "$code" == *tests/codex/execpolicy.bats* ]]
   [[ "$code" == *command_permissions_sync.bats* ]]
   [[ "$code" == *guard_allowed_commands.bats* ]]
@@ -149,19 +149,19 @@ setup() {
 
 @test "precise command rules trigger their runtime guards" {
   allowed=$(jq -r '."agents/hooks/rules/allowed_commands.json"[]' "$RULES")
-  [[ "$allowed" == *tests/generated_artifacts.rs* ]]
+  [[ "$allowed" == *tests/neutral_generated_artifacts.rs* ]]
   [[ "$allowed" == *command_permissions_sync.bats* ]]
   [[ "$allowed" == *guard_allowed_commands.bats* ]]
 
   forbidden=$(jq -r '."agents/hooks/rules/forbidden_commands.json"[]' "$RULES")
-  [[ "$forbidden" == *tests/generated_artifacts.rs* ]]
+  [[ "$forbidden" == *tests/neutral_generated_artifacts.rs* ]]
   [[ "$forbidden" == *guard_forbidden_commands.bats* ]]
 }
 
 @test "agents/skills/* triggers skills render test" {
   result=$(jq -r '."agents/skills/*"[]' "$RULES")
-  [ "$result" = "tests/generated_artifacts.rs" ]
+  [ "$result" = "tests/neutral_generated_artifacts.rs" ]
 
   code=$(jq -r '."src/skills.rs"[]' "$RULES")
-  [ "$code" = "tests/generated_artifacts.rs" ]
+  [ "$code" = "tests/neutral_generated_artifacts.rs" ]
 }

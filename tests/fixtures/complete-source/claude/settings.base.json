@@ -1,0 +1,15 @@
+{
+  "model": "fixture-claude",
+  "language": "English",
+  "permissions": {
+    "allow": ["Read"],
+    "ask": [],
+    "deny": []
+  },
+  "sandbox": {
+    "filesystem": {
+      "allowWrite": ["."],
+      "denyWrite": []
+    }
+  }
+}

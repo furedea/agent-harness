@@ -143,11 +143,7 @@ mod tests {
                 .is_file()
         );
         assert!(!out.join(".claude/rules/forbidden_commands.json").exists());
-        assert!(
-            source
-                .join("agents/hooks/rules/forbidden_commands.json")
-                .is_file()
-        );
+        assert!(source.join("hooks/rules/forbidden_commands.json").is_file());
         assert!(out.join(".codex/config.toml").is_file());
         assert!(out.join(".claude/settings.json").is_file());
 
@@ -167,7 +163,7 @@ mod tests {
         let out = root.join("out");
         write_minimal_source(&source)?;
         for file_name in ["allowed_commands.json", "forbidden_commands.json"] {
-            let path = source.join("agents/hooks/rules").join(file_name);
+            let path = source.join("hooks/rules").join(file_name);
             let mut permissions = std::fs::metadata(&path)?.permissions();
             permissions.set_readonly(true);
             std::fs::set_permissions(path, permissions)?;
@@ -245,9 +241,13 @@ mod tests {
     }
 
     fn write_minimal_source(source: &Path) -> Result<()> {
-        write_file(&source.join("agents/AGENTS.md"), "agent instructions\n")?;
         write_file(
-            &source.join("agents/command_permissions.json"),
+            &source.join("manifest.json"),
+            r#"{"version":1,"runtime_commands":[]}"#,
+        )?;
+        write_file(&source.join("AGENTS.md"), "agent instructions\n")?;
+        write_file(
+            &source.join("command_permissions.json"),
             r#"{
   "version": 1,
   "rules": [
@@ -267,13 +267,13 @@ mod tests {
 }
 "#,
         )?;
-        write_file(&source.join("agents/hooks/hook.sh"), "#!/bin/bash\n")?;
+        write_file(&source.join("hooks/hook.sh"), "#!/bin/bash\n")?;
         write_file(
-            &source.join("agents/hooks/rules/secret_commit_policy.json"),
+            &source.join("hooks/rules/secret_commit_policy.json"),
             r#"{"version":1,"rules":[{"pattern":"never-match","reason":"test"}]}"#,
         )?;
         write_file(
-            &source.join("agents/hooks/rules/secret_path_policy.json"),
+            &source.join("hooks/rules/secret_path_policy.json"),
             r#"{
   "version": 1,
   "rules": [
@@ -287,15 +287,15 @@ mod tests {
 "#,
         )?;
         write_file(
-            &source.join("agents/hooks/rules/allowed_commands.json"),
+            &source.join("hooks/rules/allowed_commands.json"),
             r#"{"version":1,"rules":[{"patterns":["^cargo test$"],"justification":"test"}]}"#,
         )?;
         write_file(
-            &source.join("agents/hooks/rules/forbidden_commands.json"),
+            &source.join("hooks/rules/forbidden_commands.json"),
             r#"{"version":1,"rules":[{"patterns":["^never-match-forbidden$"],"justification":"test"}]}"#,
         )?;
         write_file(
-            &source.join("agents/hooks.json"),
+            &source.join("hooks.json"),
             r#"{
   "version": 1,
   "claude": {},
@@ -307,11 +307,11 @@ mod tests {
         )?;
         write_file(&source.join("codex/hooks/hook.sh"), "#!/bin/bash\n")?;
         write_file(
-            &source.join("agents/skills/example/SKILL.md"),
+            &source.join("skills/example/SKILL.md"),
             "---\nname: example\n---\n",
         )?;
         write_file(
-            &source.join("agents/skills/git-commit-split/SKILL.md"),
+            &source.join("skills/git-commit-split/SKILL.md"),
             "---\nname: git-commit-split\ndescription: commit split\n---\n",
         )?;
         write_file(

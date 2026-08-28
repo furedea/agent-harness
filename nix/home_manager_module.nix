@@ -7,50 +7,74 @@
 }:
 let
   cfg = config.programs.agent-harness;
-  extraSkillArgs = lib.escapeShellArgs (
-    lib.concatLists (
-      lib.mapAttrsToList (name: source: [
-        "--extra-skill"
-        "${name}=${source}"
-      ]) cfg.skills.extra
-    )
+  sourceHasProfiles = builtins.pathExists "${cfg.source}/profiles/${cfg.profile}";
+  profileSource = if sourceHasProfiles then "${cfg.source}/profiles/${cfg.profile}" else cfg.source;
+
+  agentsMd = if cfg.agentsMd == null then "${profileSource}/AGENTS.md" else cfg.agentsMd;
+  commandPermissions =
+    if cfg.commandPermissions == null then
+      "${profileSource}/command_permissions.json"
+    else
+      cfg.commandPermissions;
+
+  claudeBaseSettings = builtins.fromJSON (
+    builtins.readFile "${profileSource}/claude/settings.base.json"
   );
-  extraHookArgs = lib.escapeShellArgs (
-    lib.concatLists (
-      lib.mapAttrsToList (name: source: [
-        "--extra-hook"
-        "${name}=${source}"
-      ]) cfg.hooks.extra
-    )
+  claudeSettings = pkgs.writeText "agent-harness-claude-settings.json" (
+    builtins.toJSON (lib.recursiveUpdate claudeBaseSettings cfg.claude.settings)
   );
+
+  codexFormat = pkgs.formats.toml { };
+  codexBaseSettings = builtins.fromTOML (builtins.readFile "${profileSource}/codex/config.toml");
+  codexSettings = codexFormat.generate "agent-harness-codex-settings.toml" (
+    lib.recursiveUpdate codexBaseSettings cfg.codex.settings
+  );
+
+  composedSource = pkgs.runCommand "agent-harness-${cfg.profile}-source" { } ''
+    cp -R ${lib.escapeShellArg "${profileSource}/."} "$out"
+    chmod -R u+w "$out"
+    install -m 0644 ${lib.escapeShellArg (toString agentsMd)} "$out/AGENTS.md"
+    install -m 0644 ${lib.escapeShellArg (toString commandPermissions)} \
+      "$out/command_permissions.json"
+    install -m 0644 ${claudeSettings} "$out/claude/settings.base.json"
+    install -m 0644 ${codexSettings} "$out/codex/config.toml"
+  '';
+
+  namedSourceArgs =
+    option: flag:
+    lib.escapeShellArgs (
+      lib.concatLists (
+        lib.mapAttrsToList (name: source: [
+          flag
+          "${name}=${source}"
+        ]) option
+      )
+    );
+  skillArgs = namedSourceArgs cfg.skills "--extra-skill";
+  hookArgs = namedSourceArgs cfg.hooks "--extra-hook";
+
   renderedHarness = pkgs.runCommand "agent-harness-rendered" { } ''
-    ${lib.getExe cfg.package} install \
-      --source ${lib.escapeShellArg (toString cfg.source)} \
+    ${lib.getExe cfg.package} --profile ${cfg.profile} install \
+      --source ${composedSource} \
       --prefix "$out" \
-      ${extraHookArgs}
+      ${hookArgs}
   '';
 
   codexRules = pkgs.runCommand "codex-default.rules" { } ''
-    ${lib.getExe cfg.package} generate-codex-rules \
-      --source ${cfg.source} \
-      --output $out
+    ${lib.getExe cfg.package} --profile ${cfg.profile} generate-codex-rules \
+      --source ${composedSource} \
+      --output "$out"
   '';
 
-  codexSkills = pkgs.runCommand "codex-skills" { } ''
-    ${lib.getExe cfg.package} generate-skills \
-      --source ${cfg.source} \
-      --provider codex \
-      ${extraSkillArgs} \
-      --output $out
-  '';
-
-  claudeSkills = pkgs.runCommand "claude-skills" { } ''
-    ${lib.getExe cfg.package} generate-skills \
-      --source ${cfg.source} \
-      --provider claude \
-      ${extraSkillArgs} \
-      --output $out
-  '';
+  providerSkills =
+    provider:
+    pkgs.runCommand "${provider}-skills" { } ''
+      ${lib.getExe cfg.package} --profile ${cfg.profile} generate-skills \
+        --source ${composedSource} \
+        --provider ${provider} \
+        ${skillArgs} \
+        --output "$out"
+    '';
 in
 {
   options.programs.agent-harness = {
@@ -65,33 +89,66 @@ in
     source = lib.mkOption {
       type = lib.types.path;
       default = self;
-      description = "agent-harness source tree used for rendering harness assets.";
+      description = "Profile collection or complete flat agent-harness source tree.";
     };
 
-    codex.enable = lib.mkOption {
-      type = lib.types.bool;
-      default = true;
-      description = "Whether to install Codex harness files.";
+    profile = lib.mkOption {
+      type = lib.types.enum [ "minimal" ];
+      default = "minimal";
+      description = "Built-in harness profile used as the composition base.";
     };
 
-    claude.enable = lib.mkOption {
-      type = lib.types.bool;
-      default = true;
-      description = "Whether to install Claude harness files.";
+    agentsMd = lib.mkOption {
+      type = lib.types.nullOr lib.types.path;
+      default = null;
+      description = "Optional AGENTS.md source shared by Codex and Claude Code.";
     };
 
-    skills.extra = lib.mkOption {
+    commandPermissions = lib.mkOption {
+      type = lib.types.nullOr lib.types.path;
+      default = null;
+      description = "Optional provider-neutral command permissions JSON source.";
+    };
+
+    skills = lib.mkOption {
       type = lib.types.attrsOf (lib.types.either lib.types.path lib.types.package);
       default = { };
-      description = "Additional skill directories keyed by installed skill name.";
+      description = "Skill directories keyed by installed skill name.";
     };
 
-    hooks.extra = lib.mkOption {
+    hooks = lib.mkOption {
       type = lib.types.attrsOf (lib.types.either lib.types.path lib.types.package);
       default = { };
       description = "External hook bundle directories keyed by installed bundle name.";
     };
 
+    codex = {
+      enable = lib.mkOption {
+        type = lib.types.bool;
+        default = true;
+        description = "Whether to install Codex harness files.";
+      };
+
+      settings = lib.mkOption {
+        type = lib.types.attrsOf lib.types.anything;
+        default = { };
+        description = "Codex settings recursively merged over the selected profile.";
+      };
+    };
+
+    claude = {
+      enable = lib.mkOption {
+        type = lib.types.bool;
+        default = true;
+        description = "Whether to install Claude Code harness files.";
+      };
+
+      settings = lib.mkOption {
+        type = lib.types.attrsOf lib.types.anything;
+        default = { };
+        description = "Claude Code settings recursively merged over the selected profile.";
+      };
+    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -100,18 +157,18 @@ in
 
       file = lib.mkMerge [
         (lib.mkIf cfg.codex.enable {
-          ".codex/AGENTS.md".source = "${cfg.source}/agents/AGENTS.md";
+          ".codex/AGENTS.md".source = "${renderedHarness}/.codex/AGENTS.md";
           ".codex/hooks".source = "${renderedHarness}/.codex/hooks";
           ".codex/hooks.json".source = "${renderedHarness}/.codex/hooks.json";
           ".codex/rules/default.rules".source = codexRules;
-          ".codex/skills".source = codexSkills;
+          ".codex/skills".source = providerSkills "codex";
         })
         (lib.mkIf cfg.claude.enable {
-          ".claude/CLAUDE.md".source = "${cfg.source}/agents/AGENTS.md";
+          ".claude/CLAUDE.md".source = "${renderedHarness}/.claude/CLAUDE.md";
           ".claude/hooks".source = "${renderedHarness}/.claude/hooks";
           ".claude/settings.json".source = "${renderedHarness}/.claude/settings.json";
-          ".claude/skills".source = claudeSkills;
-          ".claude/statusline".source = "${cfg.source}/claude/statusline";
+          ".claude/skills".source = providerSkills "claude";
+          ".claude/statusline".source = "${renderedHarness}/.claude/statusline";
         })
       ];
 
