@@ -14,7 +14,7 @@
 
 setup() {
   load test-helper/setup
-  export AGENT_COMMAND_POLICY="$REPO_ROOT/agents/command_policy.json"
+  export AGENT_COMMAND_PERMISSIONS="$REPO_ROOT/agents/command_permissions.json"
 }
 
 run_hook() {

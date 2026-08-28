@@ -5,7 +5,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 
 use crate::{
     generation::{
-        codex_config, command_policy, external_hooks::ExternalHookBundle, hook_bundle, hooks,
+        codex_config, command_permissions, external_hooks::ExternalHookBundle, hook_bundle, hooks,
         protection, skills::ExternalSkill,
     },
     inventory::Inventory,
@@ -33,8 +33,8 @@ enum Command {
     GenerateCodexHooks(GenerateFileArgs),
     /// Generate Codex execpolicy rules.
     GenerateCodexRules(GenerateFileArgs),
-    /// Generate the shared runtime command prefix policy.
-    GenerateCommandPolicy(GenerateFileArgs),
+    /// Generate the shared runtime command permissions.
+    GenerateCommandPermissions(GenerateFileArgs),
     /// Generate Claude Code forbidden-command rules.
     GenerateForbiddenCommands(GenerateFileArgs),
     /// Generate an isolated external hook bundle from installer commands.
@@ -159,7 +159,7 @@ pub fn run() -> Result<()> {
         Command::GenerateCodexConfigFragment(args) => write_codex_config_fragment(args),
         Command::GenerateCodexHooks(args) => write_codex_hooks(args),
         Command::GenerateCodexRules(args) => write_codex_rules(args),
-        Command::GenerateCommandPolicy(args) => write_command_policy(args),
+        Command::GenerateCommandPermissions(args) => write_command_permissions(args),
         Command::GenerateForbiddenCommands(args) => write_forbidden_commands(args),
         Command::GenerateHookBundle(args) => hook_bundle::generate(&args.spec, &args.output),
         Command::GenerateSkills(args) => generate_skills(args),
@@ -205,15 +205,15 @@ fn write_codex_hooks(args: GenerateFileArgs) -> Result<()> {
 }
 
 fn write_codex_rules(args: GenerateFileArgs) -> Result<()> {
-    generate_file(args, command_policy::write_codex_rules)
+    generate_file(args, command_permissions::write_codex_rules)
 }
 
-fn write_command_policy(args: GenerateFileArgs) -> Result<()> {
-    generate_file(args, command_policy::write_runtime_policy)
+fn write_command_permissions(args: GenerateFileArgs) -> Result<()> {
+    generate_file(args, command_permissions::write_runtime_policy)
 }
 
 fn write_forbidden_commands(args: GenerateFileArgs) -> Result<()> {
-    generate_file(args, command_policy::write_forbidden_commands)
+    generate_file(args, command_permissions::write_forbidden_commands)
 }
 
 fn generate_file(
@@ -302,6 +302,18 @@ mod tests {
                 subcommand.get_name(),
             );
         }
+    }
+
+    #[test]
+    fn exposes_command_permissions_generator() {
+        let command = Cli::command();
+
+        assert!(
+            command
+                .find_subcommand("generate-command-permissions")
+                .is_some()
+        );
+        assert!(command.find_subcommand("generate-command-policy").is_none());
     }
 
     #[test]

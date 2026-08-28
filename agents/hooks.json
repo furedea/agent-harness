@@ -254,7 +254,7 @@
             },
             {
               "command": "$HOME/.codex/hooks/adapt_shell_command.sh $HOME/.claude/hooks/guard_allowed_commands.sh",
-              "statusMessage": "Checking command policy",
+              "statusMessage": "Checking command permissions",
               "timeout": 30,
               "type": "command"
             }

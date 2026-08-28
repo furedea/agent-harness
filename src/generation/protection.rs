@@ -135,7 +135,7 @@ mod tests {
 
         assert!(paths.contains(&"~/.claude/hooks/guard.sh".to_string()));
         assert!(paths.contains(&"~/.claude/hooks/rules/allowed_commands.json".to_string()));
-        assert!(paths.contains(&"~/.claude/hooks/rules/command_policy.json".to_string()));
+        assert!(paths.contains(&"~/.claude/hooks/rules/command_permissions.json".to_string()));
         assert!(paths.contains(&"~/.claude/hooks/rules/forbidden_commands.json".to_string()));
         assert!(paths.contains(&"~/.claude/hooks/rules/protected_paths.json".to_string()));
         assert!(paths.contains(&"~/.codex/hooks/adapt.sh".to_string()));

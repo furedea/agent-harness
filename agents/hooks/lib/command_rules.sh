@@ -18,8 +18,8 @@ function command_rules_validate_prefix_file() {
     type == "object" and
     .version == 1 and
     (.rules | type == "array" and length > 0 and all(.[];
-      (.decision == "allow" or .decision == "forbidden") and
-      (.pattern | type == "array" and length > 0 and all(.[]; type == "string" and length > 0)) and
+      (.decision == "allow" or .decision == "ask" or .decision == "deny") and
+      (.prefix | type == "array" and length > 0 and all(.[]; type == "string" and length > 0)) and
       (.examples | type == "array" and length > 0 and all(.[]; type == "string" and length > 0)) and
       (.justification | type == "string" and length > 0)
     ))
@@ -55,7 +55,7 @@ function command_rules_prefix_reason() {
   local _prefix
 
   while IFS= read -r _rule; do
-    _prefix=$(echo "$_rule" | jq -r '.pattern | join(" ")')
+    _prefix=$(echo "$_rule" | jq -r '.prefix | join(" ")')
     if [[ "$_segment" == "$_prefix" || "$_segment" == "$_prefix "* ]]; then
       echo "$_rule" | jq -r '.justification'
       return 0

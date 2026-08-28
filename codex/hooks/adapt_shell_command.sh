@@ -5,7 +5,7 @@ cd "$(dirname "$0")"
 function usage() {
   cat <<EOF >&2
 Description:
-    Adapt Codex shell command tool input to shared Claude command-policy hooks.
+    Adapt Codex shell command tool input to shared Claude command-permissions hooks.
 
 Usage:
     $0 <HOOK_PATH>
@@ -31,7 +31,7 @@ function main() {
 
   if [[ ! -x "$HOOK_PATH" ]]; then
     cat >&2 <<EOF
-BLOCKED: command policy hook is not executable.
+BLOCKED: command permissions hook is not executable.
 
 Hook: $HOOK_PATH
 EOF

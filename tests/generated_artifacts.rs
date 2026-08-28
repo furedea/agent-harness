@@ -61,7 +61,7 @@ fn claude_settings_render_from_real_source() {
         .collect::<BTreeSet<_>>();
     assert!(deny_write.contains("~/.claude/hooks/guard_allowed_commands.sh"));
     assert!(deny_write.contains("~/.claude/hooks/rules/allowed_commands.json"));
-    assert!(deny_write.contains("~/.claude/hooks/rules/command_policy.json"));
+    assert!(deny_write.contains("~/.claude/hooks/rules/command_permissions.json"));
     assert!(deny_write.contains("~/.claude/hooks/rules/forbidden_commands.json"));
     assert!(deny_write.contains("~/.claude/hooks/rules/protected_paths.json"));
     assert!(deny_write.contains("~/.claude/hooks/rules/secret_commit_policy.json"));
@@ -157,7 +157,7 @@ fn install_uses_packaged_source_without_source_argument() {
     );
     assert!(
         prefix
-            .join(".claude/hooks/rules/command_policy.json")
+            .join(".claude/hooks/rules/command_permissions.json")
             .is_file()
     );
     assert!(
@@ -247,7 +247,7 @@ fn codex_config_outputs_render_from_real_source() {
         Some("read"),
     );
     assert_eq!(
-        filesystem["~/.claude/hooks/rules/command_policy.json"].as_str(),
+        filesystem["~/.claude/hooks/rules/command_permissions.json"].as_str(),
         Some("read"),
     );
     assert_eq!(
@@ -417,10 +417,10 @@ fn codex_hooks_render_from_real_source() {
 }
 
 #[test]
-fn command_policy_outputs_render_from_real_source() {
-    let root = test_root("command-policy");
+fn command_permissions_outputs_render_from_real_source() {
+    let root = test_root("command-permissions");
     let rules_path = root.join("default.rules");
-    let runtime_path = root.join("command-policy.json");
+    let runtime_path = root.join("command-permissions.json");
     let forbidden_path = root.join("forbidden.json");
     let settings_path = root.join("settings.json");
 
@@ -433,13 +433,14 @@ fn command_policy_outputs_render_from_real_source() {
     ]);
     let rules = std::fs::read_to_string(&rules_path).unwrap();
     assert!(rules.contains(r#"decision = "allow""#));
+    assert!(rules.contains(r#"decision = "prompt""#));
     assert!(rules.contains(r#"decision = "forbidden""#));
     assert!(rules.contains(r#"pattern = ["uv","run"]"#));
     assert!(rules.contains(r#"pattern = ["rm"]"#));
     assert!(rules.contains(r#"pattern = ["brew","install"]"#));
 
     run_harness([
-        "generate-command-policy",
+        "generate-command-permissions",
         "--source",
         repo_root().to_str().unwrap(),
         "--output",
@@ -447,11 +448,16 @@ fn command_policy_outputs_render_from_real_source() {
     ]);
     let runtime = read_json(&runtime_path);
     assert!(runtime["rules"].as_array().unwrap().iter().any(|rule| {
-        rule["decision"] == "allow" && rule["pattern"] == serde_json::json!(["uv", "run"])
+        rule["decision"] == "allow" && rule["prefix"] == serde_json::json!(["uv", "run"])
     }));
     assert!(runtime["rules"].as_array().unwrap().iter().any(|rule| {
-        rule["decision"] == "forbidden" && rule["pattern"] == serde_json::json!(["rm"])
+        rule["decision"] == "ask" && rule["prefix"] == serde_json::json!(["git", "push"])
     }));
+    assert!(
+        runtime["rules"].as_array().unwrap().iter().any(|rule| {
+            rule["decision"] == "deny" && rule["prefix"] == serde_json::json!(["rm"])
+        })
+    );
 
     run_harness([
         "generate-forbidden-commands",
@@ -475,8 +481,9 @@ fn command_policy_outputs_render_from_real_source() {
         settings_path.to_str().unwrap(),
     ]);
     let settings = read_json(&settings_path);
-    let policy = read_json(&repo_root().join("agents/command_policy.json"));
+    let policy = read_json(&repo_root().join("agents/command_permissions.json"));
     assert_policy_covers_permissions(&policy, &settings, "allow");
+    assert_policy_covers_permissions(&policy, &settings, "ask");
     assert_policy_covers_permissions(&policy, &settings, "deny");
 
     remove_dir(root);
@@ -695,7 +702,7 @@ fn remove_dir(path: PathBuf) {
 fn write_inventory_source(root: &Path) {
     for required in [
         "agents/AGENTS.md",
-        "agents/command_policy.json",
+        "agents/command_permissions.json",
         "agents/hooks/rules/allowed_commands.json",
         "agents/hooks/rules/forbidden_commands.json",
         "agents/hooks/rules/secret_commit_policy.json",
@@ -827,13 +834,6 @@ fn array_items(value: &Value) -> impl Iterator<Item = &Value> {
     value.as_array().into_iter().flatten()
 }
 
-fn policy_decision_name(settings_decision: &str) -> &str {
-    match settings_decision {
-        "deny" => "forbidden",
-        other => other,
-    }
-}
-
 fn bash_permission_prefix(permission: &str) -> Option<String> {
     permission
         .strip_prefix("Bash(")
@@ -946,14 +946,13 @@ fn assert_policy_covers_permissions(policy: &Value, settings: &Value, decision: 
 }
 
 fn policy_patterns(policy: &Value, decision: &str) -> BTreeSet<String> {
-    let policy_decision = policy_decision_name(decision);
     policy["rules"]
         .as_array()
         .unwrap()
         .iter()
-        .filter(|rule| rule["decision"].as_str() == Some(policy_decision))
+        .filter(|rule| rule["decision"].as_str() == Some(decision))
         .map(|rule| {
-            rule["pattern"]
+            rule["prefix"]
                 .as_array()
                 .unwrap()
                 .iter()

@@ -11,7 +11,7 @@
     "tests/hooks/codex/adapt_shell_command.bats"
   ],
   "agents/hooks/lib/command_rules.sh": [
-    "tests/hooks/claude/command_policy_sync.bats",
+    "tests/hooks/claude/command_permissions_sync.bats",
     "tests/hooks/claude/guard_allowed_commands.bats",
     "tests/hooks/claude/guard_forbidden_commands.bats"
   ],
@@ -46,7 +46,7 @@
   ],
   "agents/hooks/rules/allowed_commands.json": [
     "tests/generated_artifacts.rs",
-    "tests/hooks/claude/command_policy_sync.bats",
+    "tests/hooks/claude/command_permissions_sync.bats",
     "tests/hooks/claude/guard_allowed_commands.bats"
   ],
   "agents/hooks/rules/forbidden_commands.json": [
@@ -87,10 +87,10 @@
     "tests/generated_artifacts.rs",
     "tests/hooks/codex/adapt_guard_secret_paths.bats"
   ],
-  "src/generation/command_policy.rs": [
+  "src/generation/command_permissions.rs": [
     "tests/generated_artifacts.rs",
     "tests/codex/execpolicy.bats",
-    "tests/hooks/claude/command_policy_sync.bats",
+    "tests/hooks/claude/command_permissions_sync.bats",
     "tests/hooks/claude/guard_allowed_commands.bats",
     "tests/hooks/claude/guard_forbidden_commands.bats"
   ],
@@ -114,10 +114,10 @@
   "claude/statusline/*.json": [
     "tests/hooks/claude/statusline.bats"
   ],
-  "agents/command_policy.json": [
+  "agents/command_permissions.json": [
     "tests/generated_artifacts.rs",
     "tests/codex/execpolicy.bats",
-    "tests/hooks/claude/command_policy_sync.bats",
+    "tests/hooks/claude/command_permissions_sync.bats",
     "tests/hooks/claude/guard_allowed_commands.bats",
     "tests/hooks/claude/guard_forbidden_commands.bats"
   ],

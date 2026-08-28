@@ -1,5 +1,5 @@
 #!/bin/bash
-# Claude Code PreToolUse hook: block forbidden shell command prefixes from generated policy rules.
+# Claude Code PreToolUse hook: block denied shell command prefixes from generated permissions.
 # Exit code 0 = allow/pass-through, exit code 2 = block.
 
 set -euCo pipefail
@@ -13,16 +13,16 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib/command_rules.sh"
 
 HOOK_DIR="$(dirname "${BASH_SOURCE[0]}")"
 readonly HOOK_DIR
-readonly DEFAULT_COMMAND_POLICY_FILE="$HOOK_DIR/rules/command_policy.json"
+readonly DEFAULT_COMMAND_PERMISSIONS_FILE="$HOOK_DIR/rules/command_permissions.json"
 readonly DEFAULT_RULES_FILE="$HOOK_DIR/rules/forbidden_commands.json"
-readonly COMMAND_POLICY_FILE="${AGENT_COMMAND_POLICY:-$DEFAULT_COMMAND_POLICY_FILE}"
+readonly COMMAND_PERMISSIONS_FILE="${AGENT_COMMAND_PERMISSIONS:-$DEFAULT_COMMAND_PERMISSIONS_FILE}"
 readonly RULES_FILE="${AGENT_FORBIDDEN_COMMAND_RULES:-$DEFAULT_RULES_FILE}"
 
 if ! command -v jq >/dev/null 2>&1; then
   cat >&2 <<ERRMSG
 BLOCKED: jq is not installed.
 
-Why: This hook requires jq to parse tool input JSON and generated command policy rules.
+Why: This hook requires jq to parse tool input JSON and generated command permissions rules.
 
 What to do:
   Claude Code: Ask the user to install jq.
@@ -31,11 +31,11 @@ ERRMSG
   exit 2
 fi
 
-if [ ! -f "$COMMAND_POLICY_FILE" ] || ! command_rules_validate_prefix_file "$COMMAND_POLICY_FILE"; then
+if [ ! -f "$COMMAND_PERMISSIONS_FILE" ] || ! command_rules_validate_prefix_file "$COMMAND_PERMISSIONS_FILE"; then
   cat >&2 <<ERRMSG
-BLOCKED: command prefix policy was not found or is invalid.
+BLOCKED: command permissions were not found or are invalid.
 
-Rules: $COMMAND_POLICY_FILE
+Rules: $COMMAND_PERMISSIONS_FILE
 
 Why:
   This hook blocks destructive shell commands using Nix-generated rules.
@@ -90,7 +90,7 @@ while IFS= read -r segment; do
   segment=$(normalize_segment "$segment")
   [ -z "$segment" ] && continue
 
-  if reason=$(command_rules_prefix_reason "$segment" "$COMMAND_POLICY_FILE" forbidden); then
+  if reason=$(command_rules_prefix_reason "$segment" "$COMMAND_PERMISSIONS_FILE" deny); then
     BLOCKED_SEGMENT="$segment"
     BLOCKED_REASON="$reason"
   elif reason=$(command_rules_regex_reason "$segment" "$RULES_FILE"); then
