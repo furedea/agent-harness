@@ -1,0 +1,11 @@
+{
+  "nix/*.nix": ["tests/neutral_generated_artifacts.rs"],
+  "profiles/minimal/**": [
+    "tests/profile_sources.rs",
+    "tests/neutral_generated_artifacts.rs"
+  ],
+  "src/*.rs": ["tests/neutral_generated_artifacts.rs"],
+  "src/generation/*.rs": ["tests/neutral_generated_artifacts.rs"],
+  "src/generation/command_permissions.rs": ["tests/codex/execpolicy.bats"],
+  "tests/fixtures/complete-source/**": ["tests/neutral_generated_artifacts.rs"]
+}

@@ -4,8 +4,6 @@
   "private": true,
   "description": "Locked JavaScript tools used by agent-harness CI.",
   "devDependencies": {
-    "@openai/codex": "0.143.0",
-    "oxfmt": "0.52.0",
-    "oxlint": "1.67.0"
+    "@openai/codex": "0.143.0"
   }
 }
