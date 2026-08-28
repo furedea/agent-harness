@@ -217,13 +217,14 @@ fn install_protects_external_hook_assets_across_enforcement_layers() {
 
     for path in protected_paths {
         assert!(json_array_contains(&policy["paths"], path));
-        for operation in ["Edit", "Write"] {
-            let permission = format!("{operation}({path})");
-            assert!(json_array_contains(
-                &settings["permissions"]["deny"],
-                &permission,
-            ));
-        }
+        assert!(json_array_contains(
+            &settings["permissions"]["deny"],
+            &format!("Edit({path})"),
+        ));
+        assert!(!json_array_contains(
+            &settings["permissions"]["deny"],
+            &format!("Write({path})"),
+        ));
         assert!(json_array_contains(
             &settings["sandbox"]["filesystem"]["denyWrite"],
             path,

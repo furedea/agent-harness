@@ -156,7 +156,7 @@ mod tests {
             "permissions": {
                 "allow": ["Read(src/**)", "Bash(old:*)"],
                 "ask": ["Read(docs/**)", "Bash(old-ask:*)"],
-                "deny": ["Write(.env*)", "Bash(old-deny:*)"],
+                "deny": ["Edit(.env*)", "Bash(old-deny:*)"],
                 "defaultMode": "auto"
             },
             "sandbox": {

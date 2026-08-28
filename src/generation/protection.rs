@@ -56,15 +56,10 @@ pub(crate) fn protected_claude_deny_permissions(
     source: &Path,
     external_hooks: &[ExternalHookBundle],
 ) -> Result<Vec<String>> {
-    let paths = protected_paths(source, external_hooks)?;
-    let mut permissions = Vec::with_capacity(paths.len() * 2);
-
-    for path in paths {
-        permissions.push(format!("Edit({path})"));
-        permissions.push(format!("Write({path})"));
-    }
-
-    Ok(permissions)
+    Ok(protected_paths(source, external_hooks)?
+        .into_iter()
+        .map(|path| format!("Edit({path})"))
+        .collect())
 }
 
 pub(crate) fn protected_paths(
@@ -144,6 +139,28 @@ mod tests {
             !paths
                 .iter()
                 .any(|path| path.starts_with(&root.display().to_string()))
+        );
+
+        std::fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn protected_claude_permissions_use_edit_for_file_modifications() -> Result<()> {
+        let root = test_root("protected_claude_permissions_use_edit_for_file_modifications")?;
+        write_minimal_source(&root)?;
+
+        let permissions = protected_claude_deny_permissions(&root, &[])?;
+
+        assert!(
+            permissions
+                .iter()
+                .any(|permission| permission == "Edit(~/.claude/hooks/guard.sh)")
+        );
+        assert!(
+            permissions
+                .iter()
+                .all(|permission| !permission.starts_with("Write("))
         );
 
         std::fs::remove_dir_all(root)?;
