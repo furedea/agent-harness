@@ -46,6 +46,31 @@ pub(crate) fn copy_file(source: &Path, target: &Path) -> Result<()> {
     Ok(())
 }
 
+pub(crate) fn materialize_dir(source: &Path, target: &Path) -> Result<()> {
+    remove_path(target)?;
+    copy_dir(source, target)?;
+    for file in regular_files(target)? {
+        make_owner_writable(&file)?;
+    }
+    Ok(())
+}
+
+pub(crate) fn materialize_file(source: &Path, target: &Path) -> Result<()> {
+    let temporary = temporary_file(target)?;
+    remove_path(&temporary)?;
+    copy_file(source, &temporary)?;
+    make_owner_writable(&temporary)?;
+    replace_file(&temporary, target)
+}
+
+pub(crate) fn write_regular_file(target: &Path, content: &[u8]) -> Result<()> {
+    let temporary = temporary_file(target)?;
+    remove_path(&temporary)?;
+    std::fs::write(&temporary, content)
+        .with_context(|| format!("failed to write {}", temporary.display()))?;
+    replace_file(&temporary, target)
+}
+
 pub(crate) fn regular_files(dir: &Path) -> Result<Vec<PathBuf>> {
     if !dir.exists() {
         return Ok(Vec::new());
@@ -78,4 +103,71 @@ fn collect_regular_files(dir: &Path, files: &mut Vec<PathBuf>) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn remove_path(path: &Path) -> Result<()> {
+    let metadata = match std::fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => {
+            return Err(error).with_context(|| format!("failed to inspect {}", path.display()));
+        }
+    };
+
+    if metadata.file_type().is_dir() {
+        std::fs::remove_dir_all(path)
+            .with_context(|| format!("failed to remove directory {}", path.display()))
+    } else {
+        std::fs::remove_file(path)
+            .with_context(|| format!("failed to remove file {}", path.display()))
+    }
+}
+
+fn temporary_file(target: &Path) -> Result<PathBuf> {
+    let parent = target
+        .parent()
+        .with_context(|| format!("file target has no parent: {}", target.display()))?;
+    std::fs::create_dir_all(parent)
+        .with_context(|| format!("failed to create directory {}", parent.display()))?;
+    let name = target
+        .file_name()
+        .with_context(|| format!("file target has no name: {}", target.display()))?;
+    Ok(parent.join(format!(".{}.agent-harness.tmp", name.to_string_lossy(),)))
+}
+
+#[cfg(unix)]
+fn replace_file(source: &Path, target: &Path) -> Result<()> {
+    std::fs::rename(source, target)
+        .with_context(|| format!("failed to replace file {}", target.display()))
+}
+
+#[cfg(not(unix))]
+fn replace_file(source: &Path, target: &Path) -> Result<()> {
+    remove_path(target)?;
+    std::fs::rename(source, target)
+        .with_context(|| format!("failed to replace file {}", target.display()))
+}
+
+#[cfg(unix)]
+fn make_owner_writable(path: &Path) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let metadata = path
+        .metadata()
+        .with_context(|| format!("failed to inspect {}", path.display()))?;
+    let mut permissions = metadata.permissions();
+    permissions.set_mode(permissions.mode() | 0o200);
+    std::fs::set_permissions(path, permissions)
+        .with_context(|| format!("failed to make {} writable", path.display()))
+}
+
+#[cfg(not(unix))]
+fn make_owner_writable(path: &Path) -> Result<()> {
+    let metadata = path
+        .metadata()
+        .with_context(|| format!("failed to inspect {}", path.display()))?;
+    let mut permissions = metadata.permissions();
+    permissions.set_readonly(false);
+    std::fs::set_permissions(path, permissions)
+        .with_context(|| format!("failed to make {} writable", path.display()))
 }

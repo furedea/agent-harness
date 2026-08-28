@@ -7,7 +7,7 @@ use crate::generation::{
     command_permissions, external_hooks::ExternalHookBundle, hooks, io, protection,
     secret_path_policy,
 };
-use crate::layout::SourceLayout;
+use crate::{fs_ops, layout::SourceLayout};
 
 pub(crate) fn write_settings(
     source: &Path,
@@ -17,6 +17,21 @@ pub(crate) fn write_settings(
     let base = read_json(&SourceLayout::new(source).claude_settings())?;
     let settings = build_settings(source, base, external_hooks)?;
     io::write_json(out, &settings)
+}
+
+pub(crate) fn sync_settings(source_path: &Path, target_path: &Path) -> Result<()> {
+    let managed = read_json(source_path)?;
+    sync_settings_value(managed, target_path)
+}
+
+pub(crate) fn sync_generated_settings(
+    source: &Path,
+    target_path: &Path,
+    external_hooks: &[ExternalHookBundle],
+) -> Result<()> {
+    let base = read_json(&SourceLayout::new(source).claude_settings())?;
+    let managed = build_settings(source, base, external_hooks)?;
+    sync_settings_value(managed, target_path)
 }
 
 fn build_settings(
@@ -136,6 +151,45 @@ fn read_json(path: &Path) -> Result<Value> {
         .with_context(|| format!("failed to read JSON file {}", path.display()))?;
     serde_json::from_str(&content)
         .with_context(|| format!("failed to parse JSON file {}", path.display()))
+}
+
+fn sync_settings_value(managed: Value, target_path: &Path) -> Result<()> {
+    if !managed.is_object() {
+        bail!("managed Claude settings root must be a JSON object");
+    }
+
+    let mut merged = match std::fs::read_to_string(target_path) {
+        Ok(content) => serde_json::from_str(&content)
+            .with_context(|| format!("failed to parse JSON file {}", target_path.display()))?,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Value::Object(Map::new()),
+        Err(error) => {
+            return Err(error)
+                .with_context(|| format!("failed to read JSON file {}", target_path.display()));
+        }
+    };
+    if !merged.is_object() {
+        bail!("existing Claude settings root must be a JSON object");
+    }
+
+    merge_managed_value(&mut merged, &managed);
+    let content = serde_json::to_string_pretty(&merged)? + "\n";
+    fs_ops::write_regular_file(target_path, content.as_bytes())
+}
+
+fn merge_managed_value(target: &mut Value, managed: &Value) {
+    match (target, managed) {
+        (Value::Object(target), Value::Object(managed)) => {
+            for (key, value) in managed {
+                match target.get_mut(key) {
+                    Some(target_value) => merge_managed_value(target_value, value),
+                    None => {
+                        target.insert(key.clone(), value.clone());
+                    }
+                }
+            }
+        }
+        (target, managed) => *target = managed.clone(),
+    }
 }
 
 #[cfg(test)]

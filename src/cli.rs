@@ -4,6 +4,7 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
 
 use crate::{
+    claude_sync,
     generation::{
         codex_config, command_permissions, external_hooks::ExternalHookBundle, hook_bundle, hooks,
         protection, skills::ExternalSkill,
@@ -52,6 +53,8 @@ enum Command {
     List(ListArgs),
     /// Merge managed keys into an existing Codex config.
     SyncCodexConfig(SyncCodexConfigArgs),
+    /// Materialize managed Claude Code files and merge existing settings.
+    SyncClaudeFiles(SyncClaudeFilesArgs),
     /// Verify managed files and source-declared runtime commands.
     Verify(VerifyArgs),
 }
@@ -145,6 +148,21 @@ struct SyncCodexConfigArgs {
 }
 
 #[derive(Debug, clap::Args)]
+struct SyncClaudeFilesArgs {
+    /// Read rendered Claude Code files from this directory.
+    #[arg(long)]
+    source: PathBuf,
+
+    /// Read the composed Claude Code skills from this directory.
+    #[arg(long)]
+    skills_source: PathBuf,
+
+    /// Materialize files below this Claude Code configuration directory.
+    #[arg(long)]
+    target: PathBuf,
+}
+
+#[derive(Debug, clap::Args)]
 struct VerifyArgs {
     /// Read runtime requirements from the specified source tree.
     #[arg(long)]
@@ -178,6 +196,9 @@ pub fn run() -> Result<()> {
         Command::List(args) => list(args, profile),
         Command::SyncCodexConfig(args) => {
             codex_config::sync_managed_config(&args.source, &args.target)
+        }
+        Command::SyncClaudeFiles(args) => {
+            claude_sync::sync(&args.source, &args.skills_source, &args.target)
         }
         Command::Verify(args) => {
             let source = source::resolve_source(args.source, profile)?;

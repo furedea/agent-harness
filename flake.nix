@@ -43,9 +43,9 @@
         inherit pkgs;
       };
 
-      checks.${system} = {
-        home-manager-minimal =
-          (home-manager.lib.homeManagerConfiguration {
+      checks.${system} =
+        let
+          homeManagerMinimal = home-manager.lib.homeManagerConfiguration {
             inherit pkgs;
             modules = [
               self.homeManagerModules.default
@@ -63,41 +63,70 @@
                 };
               }
             ];
-          }).activationPackage;
-
-        skill-from-command = self.lib.${system}.buildSkillFromCommand {
-          name = "example";
-          command = [
-            "${pkgs.coreutils}/bin/printf"
-            "%s\\n"
-            "---"
-            "name: example"
-            "description: Generated skill."
-            "---"
-          ];
-        };
-
-        hook-bundle-from-command =
-          let
-            installer = pkgs.writeShellApplication {
-              name = "example-hook-installer";
-              text = ''
-                readonly HOOK_DIR="$HOME/.claude/hooks"
-
-                mkdir -p "$HOOK_DIR"
-                printf '%s\n' '#!/usr/bin/env bash' 'exit 0' > "$HOOK_DIR/example.sh"
-                chmod +x "$HOOK_DIR/example.sh"
-                printf '%s\n' \
-                  "{\"hooks\":{\"PreToolUse\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"$HOME/.claude/hooks/example.sh\"}]}]}}" \
-                  > "$HOME/.claude/settings.json"
-              '';
-            };
-          in
-          self.lib.${system}.buildHookBundleFromCommands {
-            name = "example";
-            commands = [ [ (pkgs.lib.getExe installer) ] ];
           };
-      };
+          mutableClaudeTargets = [
+            ".claude/CLAUDE.md"
+            ".claude/hooks"
+            ".claude/settings.json"
+            ".claude/skills"
+          ];
+          claudeFiles = homeManagerMinimal.config.home.file;
+          mutableClaudeTargetsAreNotLinks = builtins.all (
+            target: !(builtins.hasAttr target claudeFiles)
+          ) mutableClaudeTargets;
+        in
+        {
+          home-manager-minimal =
+            assert pkgs.lib.assertMsg mutableClaudeTargetsAreNotLinks
+              "mutable Claude files must not be Home Manager links";
+            homeManagerMinimal.activationPackage;
+
+          claude-materialization =
+            assert pkgs.lib.assertMsg (builtins.hasAttr ".claude/statusline" claudeFiles)
+              "Claude statusline should remain a Home Manager link";
+            pkgs.runCommand "agent-harness-claude-materialization" { } ''
+              for target in CLAUDE.md hooks settings.json skills; do
+                test ! -e ${homeManagerMinimal.activationPackage}/home-files/.claude/"$target"
+              done
+              test -L ${homeManagerMinimal.activationPackage}/home-files/.claude/statusline
+              grep -F 'sync-claude-files' ${homeManagerMinimal.activationPackage}/activate \
+                > /dev/null
+              touch "$out"
+            '';
+
+          skill-from-command = self.lib.${system}.buildSkillFromCommand {
+            name = "example";
+            command = [
+              "${pkgs.coreutils}/bin/printf"
+              "%s\\n"
+              "---"
+              "name: example"
+              "description: Generated skill."
+              "---"
+            ];
+          };
+
+          hook-bundle-from-command =
+            let
+              installer = pkgs.writeShellApplication {
+                name = "example-hook-installer";
+                text = ''
+                  readonly HOOK_DIR="$HOME/.claude/hooks"
+
+                  mkdir -p "$HOOK_DIR"
+                  printf '%s\n' '#!/usr/bin/env bash' 'exit 0' > "$HOOK_DIR/example.sh"
+                  chmod +x "$HOOK_DIR/example.sh"
+                  printf '%s\n' \
+                    "{\"hooks\":{\"PreToolUse\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"$HOME/.claude/hooks/example.sh\"}]}]}}" \
+                    > "$HOME/.claude/settings.json"
+                '';
+              };
+            in
+            self.lib.${system}.buildHookBundleFromCommands {
+              name = "example";
+              commands = [ [ (pkgs.lib.getExe installer) ] ];
+            };
+        };
 
       devShells.${system}.default = pkgs.mkShell {
         packages = with pkgs; [

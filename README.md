@@ -33,8 +33,8 @@ Provider settings
   hook installers inside an isolated build home.
 - **Provider-native output**: render the adapters, hook wiring, permissions, rules, and
   configuration expected by each agent.
-- **State-aware Codex updates**: replace harness-owned keys while preserving tool-owned and
-  user-owned Codex configuration.
+- **State-aware provider updates**: preserve provider-owned Claude settings and Codex state while
+  replacing declaratively managed values.
 
 ## Sources
 
@@ -289,6 +289,11 @@ Generated hook wiring, Bash command permissions, and protected paths remain harn
 the provider settings merge. This prevents a settings overlay from silently removing enforcement.
 Set either provider's `enable` option to `false` to install only the other provider.
 
+Home Manager materializes `CLAUDE.md`, `settings.json`, `hooks/`, and `skills/` as regular writable
+files rather than Nix store symlinks. Existing Claude settings are recursively merged with generated
+settings; generated values replace the same keys, including arrays, while provider-only keys remain.
+The immutable Claude statusline remains a Home Manager symlink.
+
 ## Optional Integrity Check
 
 Cargo-dist publishes a `.sha256` file for each release archive.
@@ -320,8 +325,9 @@ config directories.
 | `~/.claude/skills/`            | Rendered Claude Code skills         |
 | `~/.claude/statusline/`        | Claude Code status line command     |
 
-Installation replaces the managed hook and skill directories and rewrites Claude Code's managed
-settings. Codex config synchronization replaces only these managed top-level keys and preserves
+Installation replaces the managed hook and skill directories. Claude settings are recursively
+merged with the existing file so provider-owned keys survive while generated guardrails win on
+conflicts. Codex config synchronization replaces only these managed top-level keys and preserves
 other Codex-owned or user-owned state such as project trust and marketplace data:
 
 ```text
@@ -366,6 +372,7 @@ The CLI also exposes lower-level generation commands for inspecting or composing
 | `generate-forbidden-commands`    | Global precise forbidden-command regex rules       |
 | `generate-hook-bundle`           | Isolated, versioned external hook bundle           |
 | `generate-skills`                | Provider-specific built-in and external skill tree |
+| `sync-claude-files`              | Regular Claude files with recursive settings merge |
 | `sync-codex-config`              | Managed-key merge into an existing Codex config    |
 
 ```bash

@@ -64,7 +64,7 @@ pub(crate) fn install(
     hooks::write_codex_hooks(source, &installed.codex_hook_config(), external_hooks)?;
     generate_skills(source, Provider::Codex, &[], &installed.codex_skills())?;
     generate_skills(source, Provider::Claude, &[], &installed.claude_skills())?;
-    claude_config::write_settings(source, &installed.claude_settings(), external_hooks)?;
+    claude_config::sync_generated_settings(source, &installed.claude_settings(), external_hooks)?;
     command_permissions::write_codex_rules(source, &installed.codex_rules())?;
     command_permissions::write_runtime_policy(source, &installed.claude_command_permissions())?;
     protection::write_runtime_policy(source, external_hooks, &installed.claude_protected_paths())?;

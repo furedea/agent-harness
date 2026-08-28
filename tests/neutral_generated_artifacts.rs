@@ -74,6 +74,43 @@ fn complete_source_installs_provider_outputs() {
 }
 
 #[test]
+fn complete_source_install_preserves_claude_owned_settings() {
+    let root = test_root("claude-settings-sync");
+    let prefix = root.join("home");
+    let settings_path = prefix.join(".claude/settings.json");
+    std::fs::create_dir_all(settings_path.parent().unwrap()).unwrap();
+    std::fs::write(
+        &settings_path,
+        r#"{
+  "model": "provider-model",
+  "permissions": {"allow": ["provider-command"], "providerOnly": true},
+  "providerState": {"account": "preserved"}
+}
+"#,
+    )
+    .unwrap();
+
+    run_harness([
+        "install",
+        "--source",
+        complete_source_root().to_str().unwrap(),
+        "--prefix",
+        prefix.to_str().unwrap(),
+    ]);
+
+    let settings = read_json(&settings_path);
+    assert_eq!(settings["model"], "fixture-claude");
+    assert_eq!(settings["permissions"]["providerOnly"], true);
+    assert_eq!(settings["providerState"]["account"], "preserved");
+    assert!(json_array_contains(
+        &settings["permissions"]["allow"],
+        "Bash(fixture check:*)",
+    ));
+
+    remove_dir(root);
+}
+
+#[test]
 fn complete_source_generates_shared_command_permissions() {
     let root = test_root("command-permissions");
     let settings_path = root.join("settings.json");
