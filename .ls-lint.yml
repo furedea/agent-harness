@@ -1,5 +1,9 @@
 ls:
   .dir: regex:\.?[a-z0-9]+(-[a-z0-9]+)*
+  .md: regex:[a-z0-9]*([._][a-z0-9]+)* | regex:(README|CONTRIBUTING|CHANGELOG|AGENTS|CLAUDE|SKILL)
+  .toml: regex:[a-z0-9]*([._][a-z0-9]+)* | regex:Cargo
+  .lock: regex:[a-z0-9]*([._][a-z0-9]+)* | regex:Cargo
+  .json: regex:[a-z0-9]*([._][a-z0-9]+)* | regex:package-lock
   .*: regex:[a-z0-9]*([._][a-z0-9]+)*
 
 ignore:
@@ -7,32 +11,9 @@ ignore:
   - .direnv
   - result
   - result-*
-  - docs/logs
-
-  - README.md
-  - CONTRIBUTING.md
-  - CHANGELOG.md
   - .release-please-manifest.json
   - release-please-config.json
-  - package-lock.json
-  - agents/AGENTS.md
-  - "agents/skills/*/SKILL.md"
-  - "profiles/*/AGENTS.md"
-  - "profiles/*/skills/*/SKILL.md"
-  - "tests/fixtures/*/AGENTS.md"
-  - "tests/fixtures/*/skills/*/SKILL.md"
-  - Cargo.toml
-  - Cargo.lock
-
-  - .coverage
-  - .venv
-  - .uv-cache
-  - .ruff_cache
-  - .pytest_cache
-  - .ipynb_checkpoints
-  - "agents/**/__pycache__"
-  - "profiles/**/__pycache__"
-  - "tests/**/__pycache__"
-  - node_modules
-  - agents/hooks/docs/logs
-  - target
+  - "{.venv,.uv-cache,.ruff_cache,.pytest_cache,.ipynb_checkpoints,__pycache__,node_modules,target}"
+  - "**/{.venv,.uv-cache,.ruff_cache,.pytest_cache,.ipynb_checkpoints,__pycache__,node_modules,target}"
+  - docs/logs
+  - "**/docs/logs"
