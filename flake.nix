@@ -44,52 +44,11 @@
       };
 
       checks.${system} = {
-        home-manager-minimal =
-          (home-manager.lib.homeManagerConfiguration {
-            inherit pkgs;
-            modules = [
-              self.homeManagerModules.default
-              {
-                home = {
-                  homeDirectory = "/Users/test";
-                  stateVersion = "25.11";
-                  username = "test";
-                };
-                programs.agent-harness = {
-                  enable = true;
-                  source = ./tests/fixtures/complete-source;
-                  agentsMd = ./tests/fixtures/complete-source/AGENTS.md;
-                  commandPermissions = ./tests/fixtures/complete-source/command_permissions.json;
-                };
-              }
-              (
-                { config, ... }:
-                let
-                  claudeLinks = builtins.filter (path: pkgs.lib.hasPrefix ".claude/" path) (
-                    builtins.attrNames config.home.file
-                  );
-                in
-                {
-                  assertions = [
-                    {
-                      assertion =
-                        claudeLinks == [
-                          ".claude/CLAUDE.md"
-                          ".claude/hooks"
-                          ".claude/skills"
-                          ".claude/statusline"
-                        ];
-                      message = "only immutable Claude files should be Home Manager links";
-                    }
-                    {
-                      assertion = builtins.hasAttr "agentHarnessClaudeSettings" config.home.activation;
-                      message = "Claude settings should be materialized during activation";
-                    }
-                  ];
-                }
-              )
-            ];
-          }).activationPackage;
+        home-manager-minimal = import ./tests/home_manager_module.nix {
+          agentHarnessModule = self.homeManagerModules.default;
+          inherit home-manager pkgs;
+          source = ./tests/fixtures/complete-source;
+        };
 
         skill-from-command = self.lib.${system}.buildSkillFromCommand {
           name = "example";
