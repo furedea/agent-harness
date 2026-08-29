@@ -7,7 +7,6 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-25.11-darwin";
-    nixpkgs-unstable.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
   };
 
   outputs =
@@ -15,13 +14,11 @@
       self,
       home-manager,
       nixpkgs,
-      nixpkgs-unstable,
       ...
     }:
     let
       system = "aarch64-darwin";
       pkgs = import nixpkgs { inherit system; };
-      unstable = import nixpkgs-unstable { inherit system; };
     in
     {
       packages.${system}.default = pkgs.rustPlatform.buildRustPackage {
@@ -117,18 +114,7 @@
           rustc
           rustfmt
           statix
-          unstable.uv
         ];
-
-        env = {
-          UV_MANAGED_PYTHON = "1";
-        };
-
-        shellHook = ''
-          if [ -d .venv/bin ]; then
-            export PATH="$PWD/.venv/bin:$PATH"
-          fi
-        '';
       };
     };
 }

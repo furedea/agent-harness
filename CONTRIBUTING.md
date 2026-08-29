@@ -37,29 +37,22 @@ cargo run -- verify --prefix "$HOME"
 
 ## Quality gates
 
-Run the Rust gates:
+Run the Rust and Nix gates:
 
 ```bash
 cargo fmt --check
 cargo clippy -- -D warnings
 cargo test
+nix flake check
 ```
 
-Run the Python skill-script gates:
-
-```bash
-uv run --python 3.14.6 --frozen ruff format --check agents/skills tests/python
-uv run --python 3.14.6 --frozen ruff check agents/skills tests/python
-uv run --python 3.14.6 --frozen ty check
-uv run --python 3.14.6 --frozen pytest tests/python
-```
-
-Run the hook and Codex policy tests after installing their external test tools:
+Run the Codex policy conformance test after installing Bats and `jq`. It also requires Node.js and
+the Codex CLI from the locked package:
 
 ```bash
 npm ci --ignore-scripts
-bats --print-output-on-failure --recursive tests/hooks
-CODEX_BIN=codex bats --print-output-on-failure tests/codex/execpolicy.bats
+CODEX_BIN="$PWD/node_modules/.bin/codex" \
+  bats --print-output-on-failure tests/codex/execpolicy.bats
 ```
 
 CI additionally runs Nix linting, dependency audits, GitHub Actions linting, dependency review, and
