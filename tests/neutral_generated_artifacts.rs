@@ -108,6 +108,18 @@ fn complete_source_generates_shared_command_permissions() {
         &settings["permissions"]["deny"],
         "Bash(fixture destroy:*)",
     ));
+    assert!(json_array_contains(
+        &settings["permissions"]["deny"],
+        "Read(**/secrets/**)",
+    ));
+    assert!(json_array_contains(
+        &settings["permissions"]["deny"],
+        "Edit(**/secrets/**)",
+    ));
+    assert!(!json_array_contains(
+        &settings["permissions"]["deny"],
+        "Write(**/secrets/**)",
+    ));
     assert!(rules.contains(r#"pattern = ["fixture","check"]"#));
     assert!(rules.contains(r#"decision = "allow""#));
     assert!(rules.contains(r#"decision = "prompt""#));

@@ -32,7 +32,7 @@ pub(crate) fn claude_deny_permissions(source: &Path) -> Result<Vec<String>> {
         for access in rule.access {
             permissions.push(match access {
                 SecretPathAccess::Read => format!("Read({})", rule.pattern),
-                SecretPathAccess::Write => format!("Write({})", rule.pattern),
+                SecretPathAccess::Write => format!("Edit({})", rule.pattern),
             });
         }
     }
@@ -95,7 +95,7 @@ mod tests {
             permissions,
             vec![
                 "Read(.env*)".to_string(),
-                "Write(.env*)".to_string(),
+                "Edit(.env*)".to_string(),
                 "Read(~/.ssh/**)".to_string(),
             ],
         );
