@@ -166,7 +166,6 @@ in
         (lib.mkIf cfg.claude.enable {
           ".claude/CLAUDE.md".source = "${renderedHarness}/.claude/CLAUDE.md";
           ".claude/hooks".source = "${renderedHarness}/.claude/hooks";
-          ".claude/settings.json".source = "${renderedHarness}/.claude/settings.json";
           ".claude/skills".source = providerSkills "claude";
           ".claude/statusline".source = "${renderedHarness}/.claude/statusline";
         })
@@ -177,6 +176,14 @@ in
           ${lib.getExe cfg.package} sync-codex-config \
             --source ${renderedHarness}/.codex/config.toml \
             --target "$HOME/.codex/config.toml"
+        ''
+      );
+
+      activation.agentHarnessClaudeSettings = lib.mkIf cfg.claude.enable (
+        lib.hm.dag.entryAfter [ "linkGeneration" ] ''
+          ${lib.getExe cfg.package} sync-claude-settings \
+            --source ${renderedHarness}/.claude/settings.json \
+            --target "$HOME/.claude/settings.json"
         ''
       );
     };

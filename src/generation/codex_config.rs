@@ -4,6 +4,7 @@ use anyhow::{Context, Result};
 use toml_edit::{DocumentMut, Item};
 
 use crate::{
+    fs_ops,
     generation::{external_hooks::ExternalHookBundle, io, protection},
     layout::SourceLayout,
 };
@@ -124,20 +125,7 @@ fn read_toml_document(path: &Path) -> Result<DocumentMut> {
 }
 
 fn write_toml_document(path: &Path, document: &DocumentMut) -> Result<()> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("failed to create directory {}", parent.display()))?;
-    }
-
-    let temp_path = path.with_extension("tmp");
-    std::fs::write(&temp_path, document.to_string()).with_context(|| {
-        format!(
-            "failed to write temporary TOML file {}",
-            temp_path.display()
-        )
-    })?;
-    std::fs::rename(&temp_path, path)
-        .with_context(|| format!("failed to replace TOML file {}", path.display()))
+    fs_ops::write_file_atomically(path, document.to_string().as_bytes())
 }
 
 #[cfg(test)]

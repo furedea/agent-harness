@@ -7,7 +7,7 @@ use crate::generation::{
     command_permissions, external_hooks::ExternalHookBundle, hooks, io, protection,
     secret_path_policy,
 };
-use crate::layout::SourceLayout;
+use crate::{fs_ops, layout::SourceLayout};
 
 pub(crate) fn write_settings(
     source: &Path,
@@ -17,6 +17,14 @@ pub(crate) fn write_settings(
     let base = read_json(&SourceLayout::new(source).claude_settings())?;
     let settings = build_settings(source, base, external_hooks)?;
     io::write_json(out, &settings)
+}
+
+pub(crate) fn sync_settings(source_path: &Path, target_path: &Path) -> Result<()> {
+    let generated = read_json(source_path)?;
+    let mut existing = read_json_or_empty(target_path)?;
+    merge_managed_settings(&mut existing, generated)?;
+    let content = serde_json::to_string_pretty(&existing)? + "\n";
+    fs_ops::write_file_atomically(target_path, content.as_bytes())
 }
 
 fn build_settings(
@@ -131,11 +139,31 @@ fn non_bash_permissions(value: Option<&Value>) -> Result<Vec<Value>> {
         .collect())
 }
 
+fn merge_managed_settings(existing: &mut Value, generated: Value) -> Result<()> {
+    let existing = object_mut(existing, "existing Claude settings root")?;
+    let Value::Object(generated) = generated else {
+        bail!("generated Claude settings root must be a JSON object");
+    };
+    existing.extend(generated);
+    Ok(())
+}
+
 fn read_json(path: &Path) -> Result<Value> {
     let content = std::fs::read_to_string(path)
         .with_context(|| format!("failed to read JSON file {}", path.display()))?;
     serde_json::from_str(&content)
         .with_context(|| format!("failed to parse JSON file {}", path.display()))
+}
+
+fn read_json_or_empty(path: &Path) -> Result<Value> {
+    match std::fs::read_to_string(path) {
+        Ok(content) => serde_json::from_str(&content)
+            .with_context(|| format!("failed to parse JSON file {}", path.display())),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Value::Object(Map::new())),
+        Err(error) => {
+            Err(error).with_context(|| format!("failed to read JSON file {}", path.display()))
+        }
+    }
 }
 
 #[cfg(test)]
@@ -199,6 +227,54 @@ mod tests {
                 .contains(&"~/.claude/hooks/guard.sh".to_string())
         );
 
+        std::fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn sync_settings_applies_generated_top_level_ownership() -> Result<()> {
+        let root = test_root("sync-settings")?;
+        let source = root.join("generated.json");
+        let target = root.join("settings.json");
+        let existing = json!({
+            "model": "provider-model",
+            "permissions": {
+                "allow": ["provider-command"],
+                "providerOnly": true
+            }
+        });
+        let generated = json!({
+            "hooks": {"PreToolUse": ["generated-hook"]},
+            "permissions": {"allow": ["generated-command"]}
+        });
+        write_file(&source, &serde_json::to_string(&generated)?)?;
+        write_file(&target, &serde_json::to_string(&existing)?)?;
+
+        sync_settings(&source, &target)?;
+
+        assert_eq!(
+            read_json(&target)?,
+            json!({
+                "model": "provider-model",
+                "hooks": {"PreToolUse": ["generated-hook"]},
+                "permissions": {"allow": ["generated-command"]}
+            }),
+        );
+        std::fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn sync_settings_creates_a_missing_target() -> Result<()> {
+        let root = test_root("sync-settings-missing-target")?;
+        let source = root.join("generated.json");
+        let target = root.join("home/settings.json");
+        let generated = json!({"hooks": {}, "permissions": {"allow": []}});
+        write_file(&source, &serde_json::to_string(&generated)?)?;
+
+        sync_settings(&source, &target)?;
+
+        assert_eq!(read_json(&target)?, generated);
         std::fs::remove_dir_all(root)?;
         Ok(())
     }

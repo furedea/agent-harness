@@ -289,6 +289,11 @@ Generated hook wiring, Bash command permissions, and protected paths remain harn
 the provider settings merge. This prevents a settings overlay from silently removing enforcement.
 Set either provider's `enable` option to `false` to install only the other provider.
 
+The Home Manager module materializes `~/.claude/settings.json` as a writable regular file because
+Claude Code may update it. On activation, generated top-level keys replace the corresponding
+existing values, while top-level keys absent from the generated settings are preserved. Other
+Claude Code files remain Home Manager-managed symlinks.
+
 ## Optional Integrity Check
 
 Cargo-dist publishes a `.sha256` file for each release archive.
@@ -366,6 +371,7 @@ The CLI also exposes lower-level generation commands for inspecting or composing
 | `generate-forbidden-commands`    | Global precise forbidden-command regex rules       |
 | `generate-hook-bundle`           | Isolated, versioned external hook bundle           |
 | `generate-skills`                | Provider-specific built-in and external skill tree |
+| `sync-claude-settings`           | Top-level merge into existing Claude settings      |
 | `sync-codex-config`              | Managed-key merge into an existing Codex config    |
 
 ```bash
