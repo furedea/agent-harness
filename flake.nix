@@ -62,6 +62,32 @@
                   commandPermissions = ./tests/fixtures/complete-source/command_permissions.json;
                 };
               }
+              (
+                { config, ... }:
+                let
+                  claudeLinks = builtins.filter (path: pkgs.lib.hasPrefix ".claude/" path) (
+                    builtins.attrNames config.home.file
+                  );
+                in
+                {
+                  assertions = [
+                    {
+                      assertion =
+                        claudeLinks == [
+                          ".claude/CLAUDE.md"
+                          ".claude/hooks"
+                          ".claude/skills"
+                          ".claude/statusline"
+                        ];
+                      message = "only immutable Claude files should be Home Manager links";
+                    }
+                    {
+                      assertion = builtins.hasAttr "agentHarnessClaudeSettings" config.home.activation;
+                      message = "Claude settings should be materialized during activation";
+                    }
+                  ];
+                }
+              )
             ];
           }).activationPackage;
 

@@ -5,8 +5,8 @@ use clap::{Parser, Subcommand, ValueEnum};
 
 use crate::{
     generation::{
-        codex_config, command_permissions, external_hooks::ExternalHookBundle, hook_bundle, hooks,
-        protection, skills::ExternalSkill,
+        claude_config, codex_config, command_permissions, external_hooks::ExternalHookBundle,
+        hook_bundle, hooks, protection, skills::ExternalSkill,
     },
     inventory::Inventory,
     profile::Profile,
@@ -51,7 +51,9 @@ enum Command {
     /// Inspect the Agent Harness inventory.
     List(ListArgs),
     /// Merge managed keys into an existing Codex config.
-    SyncCodexConfig(SyncCodexConfigArgs),
+    SyncCodexConfig(SyncConfigArgs),
+    /// Merge generated top-level keys into existing Claude Code settings.
+    SyncClaudeSettings(SyncConfigArgs),
     /// Verify managed files and source-declared runtime commands.
     Verify(VerifyArgs),
 }
@@ -136,7 +138,7 @@ enum Provider {
 }
 
 #[derive(Debug, clap::Args)]
-struct SyncCodexConfigArgs {
+struct SyncConfigArgs {
     #[arg(long)]
     source: PathBuf,
 
@@ -178,6 +180,9 @@ pub fn run() -> Result<()> {
         Command::List(args) => list(args, profile),
         Command::SyncCodexConfig(args) => {
             codex_config::sync_managed_config(&args.source, &args.target)
+        }
+        Command::SyncClaudeSettings(args) => {
+            claude_config::sync_settings(&args.source, &args.target)
         }
         Command::Verify(args) => {
             let source = source::resolve_source(args.source, profile)?;
@@ -335,6 +340,13 @@ mod tests {
                 .is_some()
         );
         assert!(command.find_subcommand("generate-command-policy").is_none());
+    }
+
+    #[test]
+    fn exposes_claude_settings_sync() {
+        let command = Cli::command();
+
+        assert!(command.find_subcommand("sync-claude-settings").is_some());
     }
 
     #[test]
