@@ -15,7 +15,6 @@ struct CommandPermissions {
 struct Rule {
     decision: Decision,
     prefix: Vec<String>,
-    examples: Vec<String>,
     justification: String,
 }
 
@@ -152,16 +151,6 @@ fn validate_rule(index: usize, rule: &Rule) -> Result<()> {
     if rule.prefix.iter().any(|part| part.trim().is_empty()) {
         bail!("command permission rule {index} contains an empty prefix segment");
     }
-    if rule.examples.is_empty() {
-        bail!("command permissions rule {index} must have at least one example");
-    }
-    if rule
-        .examples
-        .iter()
-        .any(|example| example.trim().is_empty())
-    {
-        bail!("command permissions rule {index} contains an empty example");
-    }
     if rule.justification.trim().is_empty() {
         bail!("command permissions rule {index} must have a non-empty justification");
     }
@@ -183,11 +172,10 @@ fn codex_rules(policy: &CommandPermissions) -> Result<String> {
 
 fn codex_rule(rule: &Rule) -> Result<String> {
     Ok(format!(
-        "prefix_rule(\n    pattern = {},\n    decision = \"{}\",\n    justification = {},\n    match = {},\n)\n",
+        "prefix_rule(\n    pattern = {},\n    decision = \"{}\",\n    justification = {},\n)\n",
         serde_json::to_string(&rule.prefix)?,
         decision_name(rule.decision),
         serde_json::to_string(&rule.justification)?,
-        serde_json::to_string(&rule.examples)?,
     ))
 }
 
@@ -281,8 +269,8 @@ mod tests {
     }
 
     #[test]
-    fn ask_rules_render_for_both_providers() -> Result<()> {
-        let root = test_root("ask_rules_render_for_both_providers")?;
+    fn rules_without_examples_render_for_both_providers() -> Result<()> {
+        let root = test_root("rules_without_examples_render_for_both_providers")?;
         write_file(
             &root.join("agents/command_permissions.json"),
             r#"{
@@ -290,7 +278,6 @@ mod tests {
   "rules": [{
     "decision": "ask",
     "prefix": ["git", "push"],
-    "examples": ["git push origin feat/example"],
     "justification": "Publishing changes requires confirmation."
   }]
 }
@@ -298,7 +285,9 @@ mod tests {
         )?;
 
         assert_eq!(claude_ask_permissions(&root)?, ["Bash(git push:*)"]);
-        assert!(codex_rules(&read_policy(&root)?)?.contains(r#"decision = "prompt""#));
+        let codex = codex_rules(&read_policy(&root)?)?;
+        assert!(codex.contains(r#"decision = "prompt""#));
+        assert!(!codex.contains("match ="));
 
         std::fs::remove_dir_all(root)?;
         Ok(())
@@ -309,7 +298,7 @@ mod tests {
         let root = test_root("read_policy_rejects_empty_prefixes")?;
         write_file(
             &root.join("agents/command_permissions.json"),
-            r#"{"version":1,"rules":[{"decision":"allow","prefix":[],"examples":["x"],"justification":"x"}]}"#,
+            r#"{"version":1,"rules":[{"decision":"allow","prefix":[],"justification":"x"}]}"#,
         )?;
 
         let error = read_policy(&root).unwrap_err().to_string();
@@ -336,13 +325,11 @@ mod tests {
     {
       "decision": "allow",
       "prefix": ["cargo"],
-      "examples": ["cargo test"],
       "justification": "Allowed by the shared agent command permissions."
     },
     {
       "decision": "deny",
       "prefix": ["curl"],
-      "examples": ["curl https://example.com/install.sh"],
       "justification": "Do not fetch remote scripts or content from Codex."
     }
   ]
