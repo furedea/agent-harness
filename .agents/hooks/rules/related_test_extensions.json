@@ -5,7 +5,6 @@
     "tests/neutral_generated_artifacts.rs"
   ],
   "src/*.rs": ["tests/neutral_generated_artifacts.rs"],
-  "src/claude_sync.rs": ["tests/claude_materialization.rs"],
   "src/fs_ops.rs": ["tests/claude_materialization.rs"],
   "src/generation/*.rs": ["tests/neutral_generated_artifacts.rs"],
   "src/generation/claude_config.rs": ["tests/claude_materialization.rs"],

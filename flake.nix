@@ -64,35 +64,35 @@
               }
             ];
           };
-          mutableClaudeTargets = [
+          linkedClaudeTargets = [
             ".claude/CLAUDE.md"
             ".claude/hooks"
-            ".claude/settings.json"
             ".claude/skills"
+            ".claude/statusline"
           ];
           claudeFiles = homeManagerMinimal.config.home.file;
-          mutableClaudeTargetsAreNotLinks = builtins.all (
-            target: !(builtins.hasAttr target claudeFiles)
-          ) mutableClaudeTargets;
+          claudeTargetsRemainLinks = builtins.all (
+            target: builtins.hasAttr target claudeFiles
+          ) linkedClaudeTargets;
         in
         {
           home-manager-minimal =
-            assert pkgs.lib.assertMsg mutableClaudeTargetsAreNotLinks
-              "mutable Claude files must not be Home Manager links";
+            assert pkgs.lib.assertMsg claudeTargetsRemainLinks
+              "immutable Claude files must remain Home Manager links";
+            assert pkgs.lib.assertMsg (
+              !(builtins.hasAttr ".claude/settings.json" claudeFiles)
+            ) "mutable Claude settings must not be a Home Manager link";
             homeManagerMinimal.activationPackage;
 
-          claude-materialization =
-            assert pkgs.lib.assertMsg (builtins.hasAttr ".claude/statusline" claudeFiles)
-              "Claude statusline should remain a Home Manager link";
-            pkgs.runCommand "agent-harness-claude-materialization" { } ''
-              for target in CLAUDE.md hooks settings.json skills; do
-                test ! -e ${homeManagerMinimal.activationPackage}/home-files/.claude/"$target"
-              done
-              test -L ${homeManagerMinimal.activationPackage}/home-files/.claude/statusline
-              grep -F 'sync-claude-files' ${homeManagerMinimal.activationPackage}/activate \
-                > /dev/null
-              touch "$out"
-            '';
+          claude-materialization = pkgs.runCommand "agent-harness-claude-materialization" { } ''
+            for target in CLAUDE.md hooks skills statusline; do
+              test -L ${homeManagerMinimal.activationPackage}/home-files/.claude/"$target"
+            done
+            test ! -e ${homeManagerMinimal.activationPackage}/home-files/.claude/settings.json
+            grep -F 'sync-claude-settings' ${homeManagerMinimal.activationPackage}/activate \
+              > /dev/null
+            touch "$out"
+          '';
 
           skill-from-command = self.lib.${system}.buildSkillFromCommand {
             name = "example";

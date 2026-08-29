@@ -1,4 +1,3 @@
-mod claude_sync;
 mod cli;
 mod fs_ops;
 mod generation;

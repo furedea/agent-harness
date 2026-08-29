@@ -289,10 +289,10 @@ Generated hook wiring, Bash command permissions, and protected paths remain harn
 the provider settings merge. This prevents a settings overlay from silently removing enforcement.
 Set either provider's `enable` option to `false` to install only the other provider.
 
-Home Manager materializes `CLAUDE.md`, `settings.json`, `hooks/`, and `skills/` as regular writable
-files rather than Nix store symlinks. Existing Claude settings are recursively merged with generated
-settings; generated values replace the same keys, including arrays, while provider-only keys remain.
-The immutable Claude statusline remains a Home Manager symlink.
+Home Manager materializes `settings.json` as a regular writable file rather than a Nix store
+symlink. Existing Claude settings are recursively merged with generated settings; generated values
+replace the same keys, including arrays, while provider-only keys remain. `CLAUDE.md`, hooks,
+skills, and the statusline remain Home Manager symlinks.
 
 ## Optional Integrity Check
 
@@ -372,7 +372,7 @@ The CLI also exposes lower-level generation commands for inspecting or composing
 | `generate-forbidden-commands`    | Global precise forbidden-command regex rules       |
 | `generate-hook-bundle`           | Isolated, versioned external hook bundle           |
 | `generate-skills`                | Provider-specific built-in and external skill tree |
-| `sync-claude-files`              | Regular Claude files with recursive settings merge |
+| `sync-claude-settings`           | Writable settings with recursive managed-key merge |
 | `sync-codex-config`              | Managed-key merge into an existing Codex config    |
 
 ```bash

@@ -6,51 +6,27 @@ use serde_json::{Value, json};
 
 #[cfg(unix)]
 #[test]
-fn sync_claude_files_materializes_regular_files() {
-    use std::os::unix::fs::PermissionsExt;
-
-    let fixture = ClaudeSyncFixture::new();
+fn sync_claude_settings_materializes_a_regular_settings_file() {
+    let fixture = ClaudeSettingsSyncFixture::new();
     fixture.sync();
 
-    assert_regular_file(&fixture.target.join("CLAUDE.md"));
-    assert_regular_file(&fixture.target.join("settings.json"));
-    assert_regular_directory(&fixture.target.join("hooks"));
-    assert_regular_directory(&fixture.target.join("skills"));
-    assert_regular_file(&fixture.target.join("hooks/guard.sh"));
-    assert_regular_file(&fixture.target.join("skills/example/SKILL.md"));
-    for path in [
-        fixture.target.join("CLAUDE.md"),
-        fixture.target.join("settings.json"),
-        fixture.target.join("hooks/guard.sh"),
-        fixture.target.join("skills/example/SKILL.md"),
-    ] {
-        assert_owner_writable(&path);
-    }
-    assert!(!fixture.target.join("hooks/stale.sh").exists());
-    assert!(!fixture.target.join("skills/stale/SKILL.md").exists());
-    assert_ne!(
-        std::fs::metadata(fixture.target.join("hooks/guard.sh"))
-            .unwrap()
-            .permissions()
-            .mode()
-            & 0o111,
-        0,
-    );
+    assert_regular_file(&fixture.target);
+    assert_owner_writable(&fixture.target);
 
     fixture.remove();
 }
 
 #[cfg(unix)]
 #[test]
-fn sync_claude_files_preserves_provider_owned_settings() {
-    let fixture = ClaudeSyncFixture::new();
+fn sync_claude_settings_preserves_provider_owned_settings() {
+    let fixture = ClaudeSettingsSyncFixture::new();
     fixture.sync();
 
-    let settings = read_json(&fixture.target.join("settings.json"));
+    let settings = read_json(&fixture.target);
     assert_eq!(settings["model"], "managed-model");
     assert_eq!(settings["hooks"]["PreToolUse"], json!(["managed-hook"]));
     assert_eq!(settings["hooks"]["ProviderOnly"], json!(["preserved-hook"]),);
-    assert_eq!(settings["permissions"]["allow"], json!(["managed-command"]),);
+    assert_eq!(settings["permissions"]["allow"], json!(["managed-command"]));
     assert_eq!(settings["permissions"]["providerOnly"], true);
     assert_eq!(settings["nested"]["managed"], true);
     assert_eq!(settings["nested"]["provider"], true);
@@ -60,27 +36,24 @@ fn sync_claude_files_preserves_provider_owned_settings() {
 }
 
 #[cfg(unix)]
-struct ClaudeSyncFixture {
+struct ClaudeSettingsSyncFixture {
     root: PathBuf,
     source: PathBuf,
-    skills_source: PathBuf,
     target: PathBuf,
 }
 
 #[cfg(unix)]
-impl ClaudeSyncFixture {
+impl ClaudeSettingsSyncFixture {
     fn new() -> Self {
         use std::os::unix::fs::{PermissionsExt, symlink};
 
         let root = test_root();
-        let source = root.join("source");
-        let skills_source = root.join("skills-source");
-        let old = root.join("old-generation");
-        let target = root.join("home/.claude");
+        let source = root.join("source/settings.json");
+        let existing = root.join("old-generation/settings.json");
+        let target = root.join("home/.claude/settings.json");
 
-        write_file(&source.join("CLAUDE.md"), "managed instructions\n");
         write_file(
-            &source.join("settings.json"),
+            &source,
             r#"{
   "model": "managed-model",
   "hooks": {"PreToolUse": ["managed-hook"]},
@@ -89,34 +62,9 @@ impl ClaudeSyncFixture {
 }
 "#,
         );
+        std::fs::set_permissions(&source, std::fs::Permissions::from_mode(0o444)).unwrap();
         write_file(
-            &source.join("hooks/guard.sh"),
-            "#!/usr/bin/env bash\nexit 0\n",
-        );
-        std::fs::set_permissions(
-            source.join("hooks/guard.sh"),
-            std::fs::Permissions::from_mode(0o755),
-        )
-        .unwrap();
-        write_file(
-            &skills_source.join("example/SKILL.md"),
-            "---\nname: example\n---\n",
-        );
-        for path in [
-            source.join("CLAUDE.md"),
-            source.join("settings.json"),
-            skills_source.join("example/SKILL.md"),
-        ] {
-            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o444)).unwrap();
-        }
-        std::fs::set_permissions(
-            source.join("hooks/guard.sh"),
-            std::fs::Permissions::from_mode(0o555),
-        )
-        .unwrap();
-        write_file(&old.join("CLAUDE.md"), "old instructions\n");
-        write_file(
-            &old.join("settings.json"),
+            &existing,
             r#"{
   "model": "provider-model",
   "hooks": {
@@ -132,29 +80,21 @@ impl ClaudeSyncFixture {
 }
 "#,
         );
-        write_file(&old.join("hooks/stale.sh"), "stale\n");
-        write_file(&old.join("skills/stale/SKILL.md"), "stale\n");
-        std::fs::create_dir_all(&target).unwrap();
-        symlink(old.join("CLAUDE.md"), target.join("CLAUDE.md")).unwrap();
-        symlink(old.join("settings.json"), target.join("settings.json")).unwrap();
-        symlink(old.join("hooks"), target.join("hooks")).unwrap();
-        symlink(old.join("skills"), target.join("skills")).unwrap();
+        std::fs::create_dir_all(target.parent().unwrap()).unwrap();
+        symlink(existing, &target).unwrap();
 
         Self {
             root,
             source,
-            skills_source,
             target,
         }
     }
 
     fn sync(&self) {
         run_harness([
-            "sync-claude-files",
+            "sync-claude-settings",
             "--source",
             self.source.to_str().unwrap(),
-            "--skills-source",
-            self.skills_source.to_str().unwrap(),
             "--target",
             self.target.to_str().unwrap(),
         ]);
@@ -207,12 +147,6 @@ fn assert_regular_file(path: &Path) {
         "{} is not a regular file",
         path.display()
     );
-    assert!(!file_type.is_symlink(), "{} is a symlink", path.display());
-}
-
-fn assert_regular_directory(path: &Path) {
-    let file_type = std::fs::symlink_metadata(path).unwrap().file_type();
-    assert!(file_type.is_dir(), "{} is not a directory", path.display());
     assert!(!file_type.is_symlink(), "{} is a symlink", path.display());
 }
 
