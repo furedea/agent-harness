@@ -208,6 +208,10 @@ pub(crate) fn built_in_skill_metadata(source: &Path) -> Result<Vec<SkillMetadata
 }
 
 fn sorted_skill_dirs(skills_dir: &Path) -> Result<Vec<PathBuf>> {
+    if !skills_dir.exists() {
+        return Ok(Vec::new());
+    }
+
     let mut dirs = Vec::new();
     for entry in std::fs::read_dir(skills_dir)
         .with_context(|| format!("failed to read directory {}", skills_dir.display()))?
@@ -732,7 +736,7 @@ mod tests {
     }
 
     fn write_skill_source(source: &Path, skill_name: &str) -> Result<()> {
-        let skill_dir = source.join("agents/skills").join(skill_name);
+        let skill_dir = source.join("skills").join(skill_name);
         std::fs::create_dir_all(&skill_dir)?;
         std::fs::write(
             skill_dir.join("SKILL.md"),
@@ -742,8 +746,8 @@ mod tests {
     }
 
     fn write_skill_rendering(source: &Path, content: &str) -> Result<()> {
-        std::fs::create_dir_all(source.join("agents"))?;
-        std::fs::write(source.join("agents/skill_rendering.json"), content)?;
+        std::fs::create_dir_all(source)?;
+        std::fs::write(source.join("skill_rendering.json"), content)?;
         Ok(())
     }
 

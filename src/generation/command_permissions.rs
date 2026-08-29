@@ -112,9 +112,6 @@ fn validate_regex_policy(policy: &RegexPolicy) -> Result<()> {
             policy.version
         );
     }
-    if policy.rules.is_empty() {
-        bail!("command regex policy must contain at least one rule");
-    }
     for (index, rule) in policy.rules.iter().enumerate() {
         if rule.patterns.is_empty() || rule.patterns.iter().any(|pattern| pattern.is_empty()) {
             bail!("command regex policy rule {index} must contain non-empty patterns");
@@ -133,10 +130,6 @@ fn validate_policy(policy: &CommandPermissions) -> Result<()> {
             policy.version
         );
     }
-    if policy.rules.is_empty() {
-        bail!("command permissions must contain at least one rule");
-    }
-
     for (index, rule) in policy.rules.iter().enumerate() {
         validate_rule(index, rule)?;
     }
@@ -219,7 +212,7 @@ mod tests {
     fn forbidden_commands_json_contains_fine_regex_rules() -> Result<()> {
         let root = test_root("forbidden_commands_json_contains_fine_regex_rules")?;
         write_file(
-            &root.join("agents/hooks/rules/forbidden_commands.json"),
+            &root.join("hooks/rules/forbidden_commands.json"),
             r#"{"version":1,"rules":[{"patterns":["^git add \\.$"],"justification":"No bulk staging."}]}"#,
         )?;
 
@@ -269,10 +262,10 @@ mod tests {
     }
 
     #[test]
-    fn rules_without_examples_render_for_both_providers() -> Result<()> {
-        let root = test_root("rules_without_examples_render_for_both_providers")?;
+    fn ask_rules_render_as_claude_ask_permissions() -> Result<()> {
+        let root = test_root("ask_rules_render_as_claude_ask_permissions")?;
         write_file(
-            &root.join("agents/command_permissions.json"),
+            &root.join("command_permissions.json"),
             r#"{
   "version": 1,
   "rules": [{
@@ -284,10 +277,34 @@ mod tests {
 "#,
         )?;
 
-        assert_eq!(claude_ask_permissions(&root)?, ["Bash(git push:*)"]);
-        let codex = codex_rules(&read_policy(&root)?)?;
-        assert!(codex.contains(r#"decision = "prompt""#));
-        assert!(!codex.contains("match ="));
+        let permissions = claude_ask_permissions(&root)?;
+
+        assert_eq!(permissions, ["Bash(git push:*)"]);
+
+        std::fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn ask_rules_render_as_codex_prompt_decisions() -> Result<()> {
+        let root = test_root("ask_rules_render_as_codex_prompt_decisions")?;
+        write_file(
+            &root.join("command_permissions.json"),
+            r#"{
+  "version": 1,
+  "rules": [{
+    "decision": "ask",
+    "prefix": ["git", "push"],
+    "justification": "Publishing changes requires confirmation."
+  }]
+}
+"#,
+        )?;
+
+        let rules = codex_rules(&read_policy(&root)?)?;
+
+        assert!(rules.contains(r#"decision = "prompt""#));
+        assert!(!rules.contains("match ="));
 
         std::fs::remove_dir_all(root)?;
         Ok(())
@@ -297,7 +314,7 @@ mod tests {
     fn read_policy_rejects_empty_prefixes() -> Result<()> {
         let root = test_root("read_policy_rejects_empty_prefixes")?;
         write_file(
-            &root.join("agents/command_permissions.json"),
+            &root.join("command_permissions.json"),
             r#"{"version":1,"rules":[{"decision":"allow","prefix":[],"justification":"x"}]}"#,
         )?;
 
@@ -318,7 +335,7 @@ mod tests {
 
     fn write_policy(root: &Path) -> Result<()> {
         write_file(
-            &root.join("agents/command_permissions.json"),
+            &root.join("command_permissions.json"),
             r#"{
   "version": 1,
   "rules": [

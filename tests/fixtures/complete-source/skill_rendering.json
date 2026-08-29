@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "skills": {
+    "example-skill": {
+      "claude": {
+        "frontmatter": {
+          "disable-model-invocation": true
+        }
+      },
+      "codex": {
+        "openai": {
+          "allow_implicit_invocation": false
+        }
+      }
+    }
+  }
+}

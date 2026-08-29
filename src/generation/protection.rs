@@ -169,10 +169,7 @@ mod tests {
     fn protected_paths_ignore_hook_runtime_logs() -> Result<()> {
         let root = test_root("protected_paths_ignore_hook_runtime_logs")?;
         write_minimal_source(&root)?;
-        write_file(
-            &root.join("agents/hooks/docs/logs/audit/2026-05-19.jsonl"),
-            "{}\n",
-        )?;
+        write_file(&root.join("hooks/docs/logs/audit/2026-05-19.jsonl"), "{}\n")?;
 
         let paths = protected_paths(&root, &[])?;
 
@@ -194,16 +191,14 @@ mod tests {
     }
 
     fn write_minimal_source(source: &Path) -> Result<()> {
-        write_file(&source.join("agents/AGENTS.md"), "agent instructions\n")?;
-        write_file(&source.join("agents/hooks/guard.sh"), "#!/bin/bash\n")?;
         write_file(
-            &source.join("agents/hooks/rules/allowed_commands.json"),
-            "{}\n",
+            &source.join("manifest.json"),
+            r#"{"version":1,"runtime_commands":[]}"#,
         )?;
-        write_file(
-            &source.join("agents/hooks/rules/forbidden_commands.json"),
-            "{}\n",
-        )?;
+        write_file(&source.join("AGENTS.md"), "agent instructions\n")?;
+        write_file(&source.join("hooks/guard.sh"), "#!/bin/bash\n")?;
+        write_file(&source.join("hooks/rules/allowed_commands.json"), "{}\n")?;
+        write_file(&source.join("hooks/rules/forbidden_commands.json"), "{}\n")?;
         write_file(&source.join("codex/hooks/adapt.sh"), "#!/bin/bash\n")?;
         Ok(())
     }

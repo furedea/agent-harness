@@ -1,16 +1,18 @@
 use std::path::{Path, PathBuf};
 
-const AGENT_INSTRUCTIONS_PATH: &str = "agents/AGENTS.md";
-const COMMAND_PERMISSIONS_PATH: &str = "agents/command_permissions.json";
-const HOOK_CONFIG_PATH: &str = "agents/hooks.json";
-const ALLOWED_COMMAND_RULES_PATH: &str = "agents/hooks/rules/allowed_commands.json";
-const FORBIDDEN_COMMAND_RULES_PATH: &str = "agents/hooks/rules/forbidden_commands.json";
-const SECRET_COMMIT_POLICY_PATH: &str = "agents/hooks/rules/secret_commit_policy.json";
-const SECRET_PATH_POLICY_PATH: &str = "agents/hooks/rules/secret_path_policy.json";
-const SKILL_RENDERING_PATH: &str = "agents/skill_rendering.json";
+const MANIFEST_PATH: &str = "manifest.json";
+const AGENT_INSTRUCTIONS_PATH: &str = "AGENTS.md";
+const COMMAND_PERMISSIONS_PATH: &str = "command_permissions.json";
+const HOOK_CONFIG_PATH: &str = "hooks.json";
+const ALLOWED_COMMAND_RULES_PATH: &str = "hooks/rules/allowed_commands.json";
+const FORBIDDEN_COMMAND_RULES_PATH: &str = "hooks/rules/forbidden_commands.json";
+const SECRET_COMMIT_POLICY_PATH: &str = "hooks/rules/secret_commit_policy.json";
+const SECRET_PATH_POLICY_PATH: &str = "hooks/rules/secret_path_policy.json";
+const SKILL_RENDERING_PATH: &str = "skill_rendering.json";
 const CLAUDE_SETTINGS_SOURCE_PATH: &str = "claude/settings.base.json";
 const CODEX_CONFIG_SOURCE_PATH: &str = "codex/config.toml";
 const REQUIRED_SOURCE_FILES: &[&str] = &[
+    MANIFEST_PATH,
     AGENT_INSTRUCTIONS_PATH,
     COMMAND_PERMISSIONS_PATH,
     HOOK_CONFIG_PATH,
@@ -94,7 +96,7 @@ impl<'a> SourceLayout<'a> {
     }
 
     pub(crate) fn agent_hooks(self) -> PathBuf {
-        self.root.join("agents/hooks")
+        self.root.join("hooks")
     }
 
     pub(crate) fn codex_hooks(self) -> PathBuf {
@@ -106,7 +108,7 @@ impl<'a> SourceLayout<'a> {
     }
 
     pub(crate) fn skills(self) -> PathBuf {
-        self.root.join("agents/skills")
+        self.root.join("skills")
     }
 }
 

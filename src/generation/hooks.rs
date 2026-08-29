@@ -234,7 +234,7 @@ mod tests {
     fn read_hooks_rejects_unsupported_version() -> Result<()> {
         let root = test_root("read_hooks_rejects_unsupported_version")?;
         write_file(
-            &root.join("agents/hooks.json"),
+            &root.join("hooks.json"),
             r#"{"version":2,"claude":{},"codex":{}}"#,
         )?;
 
@@ -255,7 +255,7 @@ mod tests {
 
     fn write_hook_config(root: &Path) -> Result<()> {
         write_file(
-            &root.join("agents/hooks.json"),
+            &root.join("hooks.json"),
             r#"{
   "version": 1,
   "claude": {

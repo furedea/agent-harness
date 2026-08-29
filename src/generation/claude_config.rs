@@ -220,9 +220,13 @@ mod tests {
     }
 
     fn write_minimal_source(source: &Path) -> Result<()> {
-        write_file(&source.join("agents/AGENTS.md"), "agent instructions\n")?;
         write_file(
-            &source.join("agents/command_permissions.json"),
+            &source.join("manifest.json"),
+            r#"{"version":1,"runtime_commands":[]}"#,
+        )?;
+        write_file(&source.join("AGENTS.md"), "agent instructions\n")?;
+        write_file(
+            &source.join("command_permissions.json"),
             r#"{
   "version": 1,
   "rules": [
@@ -240,9 +244,9 @@ mod tests {
 }
 "#,
         )?;
-        write_file(&source.join("agents/hooks/guard.sh"), "#!/bin/bash\n")?;
+        write_file(&source.join("hooks/guard.sh"), "#!/bin/bash\n")?;
         write_file(
-            &source.join("agents/hooks.json"),
+            &source.join("hooks.json"),
             r#"{
   "version": 1,
   "claude": {
@@ -270,7 +274,7 @@ mod tests {
         )?;
         write_file(&source.join("codex/hooks/adapt.sh"), "#!/bin/bash\n")?;
         write_file(
-            &source.join("agents/hooks/rules/secret_path_policy.json"),
+            &source.join("hooks/rules/secret_path_policy.json"),
             r#"{
   "version": 1,
   "rules": [

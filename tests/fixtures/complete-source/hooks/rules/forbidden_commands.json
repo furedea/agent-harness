@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "rules": [
+    {
+      "patterns": ["^fixture destroy$"],
+      "justification": "Forbid the fixture destroy command."
+    }
+  ]
+}

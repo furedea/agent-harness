@@ -47,6 +47,10 @@ pub(crate) fn copy_file(source: &Path, target: &Path) -> Result<()> {
 }
 
 pub(crate) fn regular_files(dir: &Path) -> Result<Vec<PathBuf>> {
+    if !dir.exists() {
+        return Ok(Vec::new());
+    }
+
     let mut files = Vec::new();
     collect_regular_files(dir, &mut files)?;
     files.sort();
