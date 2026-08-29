@@ -13,19 +13,16 @@ setup() {
     {
       "decision": "deny",
       "prefix": ["rm"],
-      "examples": ["rm example"],
       "justification": "Do not delete files from Codex. Ask the user to run destructive cleanup manually."
     },
     {
       "decision": "deny",
       "prefix": ["git", "rm"],
-      "examples": ["git rm example"],
       "justification": "Do not remove tracked files through shell commands from Codex."
     },
     {
       "decision": "deny",
       "prefix": ["bash", "-c"],
-      "examples": ["bash -c echo"],
       "justification": "Do not hide shell commands inside bash -c from Codex policy checks."
     }
   ]

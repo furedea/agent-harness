@@ -20,7 +20,6 @@ function command_rules_validate_prefix_file() {
     (.rules | type == "array" and length > 0 and all(.[];
       (.decision == "allow" or .decision == "ask" or .decision == "deny") and
       (.prefix | type == "array" and length > 0 and all(.[]; type == "string" and length > 0)) and
-      (.examples | type == "array" and length > 0 and all(.[]; type == "string" and length > 0)) and
       (.justification | type == "string" and length > 0)
     ))
   ' "$_file" >/dev/null 2>&1

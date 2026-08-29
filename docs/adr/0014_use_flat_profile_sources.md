@@ -1,4 +1,4 @@
-# ADR-0013: Use flat profile sources
+# ADR-0014: Use flat profile sources
 
 - Status: Accepted
 - Date: 2026-08-28

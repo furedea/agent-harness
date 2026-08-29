@@ -4,19 +4,16 @@
     {
       "decision": "allow",
       "prefix": ["fixture", "check"],
-      "examples": ["fixture check"],
       "justification": "Exercise generated allow rules."
     },
     {
       "decision": "ask",
       "prefix": ["fixture", "publish"],
-      "examples": ["fixture publish"],
       "justification": "Exercise generated prompt rules."
     },
     {
       "decision": "deny",
       "prefix": ["fixture", "destroy"],
-      "examples": ["fixture destroy"],
       "justification": "Exercise generated forbidden rules."
     }
   ]

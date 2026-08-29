@@ -2,7 +2,7 @@
 
 - Status: Superseded
 - Date: 2026-08-25
-- Superseded by: ADR-0013
+- Superseded by: ADR-0014
 
 In the context of publishing agent-harness as a reusable Codex and Claude Code composition layer
 while the repository also contains personal skills, hooks, and policies, facing a choice between

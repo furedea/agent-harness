@@ -449,7 +449,7 @@ options above. Render a custom tree with
 
 Command permissions have two layers. `command_permissions.json` at the profile root is the
 provider-neutral source of shared token prefixes. Each rule has a `decision` (`allow`, `ask`, or
-`deny`), a `prefix`, examples, and a justification:
+`deny`), a `prefix`, and a required justification:
 
 ```json
 {
@@ -458,7 +458,6 @@ provider-neutral source of shared token prefixes. Each rule has a `decision` (`a
         {
             "decision": "ask",
             "prefix": ["git", "push"],
-            "examples": ["git push origin feature/example"],
             "justification": "Publishing changes requires user confirmation."
         }
     ]

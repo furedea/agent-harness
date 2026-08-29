@@ -233,13 +233,11 @@ mod tests {
     {
       "decision": "allow",
       "prefix": ["cargo"],
-      "examples": ["cargo test"],
       "justification": "Allowed by the shared agent command permissions."
     },
     {
       "decision": "deny",
       "prefix": ["curl"],
-      "examples": ["curl https://example.com/install.sh"],
       "justification": "Do not fetch remote scripts or content from Codex."
     }
   ]
