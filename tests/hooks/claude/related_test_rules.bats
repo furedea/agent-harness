@@ -131,18 +131,18 @@ setup() {
   [[ "$result" == *guard_allowed_commands.bats* ]]
 }
 
-@test "command policy data triggers generated settings tests on both providers" {
-  result=$(jq -r '."agents/command_policy.json"[]' "$RULES")
+@test "command permissions data triggers generated settings tests on both providers" {
+  result=$(jq -r '."agents/command_permissions.json"[]' "$RULES")
   [[ "$result" == *tests/generated_artifacts.rs* ]]
   [[ "$result" == *tests/codex/execpolicy.bats* ]]
-  [[ "$result" == *command_policy_sync.bats* ]]
+  [[ "$result" == *command_permissions_sync.bats* ]]
   [[ "$result" == *guard_allowed_commands.bats* ]]
   [[ "$result" == *guard_forbidden_commands.bats* ]]
 
-  code=$(jq -r '."src/generation/command_policy.rs"[]' "$RULES")
+  code=$(jq -r '."src/generation/command_permissions.rs"[]' "$RULES")
   [[ "$code" == *tests/generated_artifacts.rs* ]]
   [[ "$code" == *tests/codex/execpolicy.bats* ]]
-  [[ "$code" == *command_policy_sync.bats* ]]
+  [[ "$code" == *command_permissions_sync.bats* ]]
   [[ "$code" == *guard_allowed_commands.bats* ]]
   [[ "$code" == *guard_forbidden_commands.bats* ]]
 }
@@ -150,7 +150,7 @@ setup() {
 @test "precise command rules trigger their runtime guards" {
   allowed=$(jq -r '."agents/hooks/rules/allowed_commands.json"[]' "$RULES")
   [[ "$allowed" == *tests/generated_artifacts.rs* ]]
-  [[ "$allowed" == *command_policy_sync.bats* ]]
+  [[ "$allowed" == *command_permissions_sync.bats* ]]
   [[ "$allowed" == *guard_allowed_commands.bats* ]]
 
   forbidden=$(jq -r '."agents/hooks/rules/forbidden_commands.json"[]' "$RULES")

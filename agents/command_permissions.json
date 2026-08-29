@@ -1,0 +1,450 @@
+{
+  "version": 1,
+  "rules": [
+    {
+      "decision": "allow",
+      "prefix": ["actionlint"],
+      "justification": "Allowed by the shared agent command permissions."
+    },
+    {
+      "decision": "allow",
+      "prefix": ["autocorrect"],
+      "justification": "Allowed by the shared agent command permissions."
+    },
+    {
+      "decision": "allow",
+      "prefix": ["bats"],
+      "justification": "Allowed by the shared agent command permissions."
+    },
+    {
+      "decision": "allow",
+      "prefix": ["cargo"],
+      "justification": "Allowed by the shared agent command permissions."
+    },
+    {
+      "decision": "allow",
+      "prefix": ["commitlint"],
+      "justification": "Allowed by the shared agent command permissions."
+    },
+    {
+      "decision": "allow",
+      "prefix": ["deadnix"],
+      "justification": "Allowed by the shared agent command permissions."
+    },
+    {
+      "decision": "allow",
+      "prefix": ["dprint"],
+      "justification": "Allowed by the shared agent command permissions."
+    },
+    {
+      "decision": "allow",
+      "prefix": ["gh", "api"],
+      "justification": "Allowed by the shared agent command permissions."
+    },
+    {
+      "decision": "allow",
+      "prefix": ["gh", "issue"],
+      "justification": "Allowed by the shared agent command permissions."
+    },
+    {
+      "decision": "allow",
+      "prefix": ["gh", "label"],
+      "justification": "Allowed by the shared agent command permissions."
+    },
+    {
+      "decision": "allow",
+      "prefix": ["gh", "pr"],
+      "justification": "Allowed by the shared agent command permissions."
+    },
+    {
+      "decision": "allow",
+      "prefix": ["gh", "run"],
+      "justification": "Allowed by the shared agent command permissions."
+    },
+    {
+      "decision": "allow",
+      "prefix": ["git", "add"],
+      "justification": "Allowed by the shared agent command permissions."
+    },
+    {
+      "decision": "allow",
+      "prefix": ["git", "branch"],
+      "justification": "Allowed by the shared agent command permissions."
+    },
+    {
+      "decision": "allow",
+      "prefix": ["git", "commit"],
+      "justification": "Allowed by the shared agent command permissions."
+    },
+    {
+      "decision": "allow",
+      "prefix": ["git", "fetch"],
+      "justification": "Allowed for refreshing remote refs before creating a pull request."
+    },
+    {
+      "decision": "allow",
+      "prefix": ["git", "ls-files"],
+      "justification": "Allowed by the shared agent command permissions."
+    },
+    {
+      "decision": "allow",
+      "prefix": ["git", "pull"],
+      "justification": "Allowed by the shared agent command permissions."
+    },
+    {
+      "decision": "ask",
+      "prefix": ["git", "push"],
+      "justification": "Publishing changes requires user confirmation."
+    },
+    {
+      "decision": "allow",
+      "prefix": ["git", "rebase"],
+      "justification": "Allowed only through hooks for narrow pre-PR rebases onto origin branches."
+    },
+    {
+      "decision": "allow",
+      "prefix": ["git", "worktree"],
+      "justification": "Allowed only through hooks for isolated task branch worktrees."
+    },
+    {
+      "decision": "allow",
+      "prefix": ["nixfmt"],
+      "justification": "Allowed by the shared agent command permissions."
+    },
+    {
+      "decision": "allow",
+      "prefix": ["npm", "run"],
+      "justification": "Allowed by the shared agent command permissions."
+    },
+    {
+      "decision": "allow",
+      "prefix": ["npm", "test"],
+      "justification": "Allowed by the shared agent command permissions."
+    },
+    {
+      "decision": "allow",
+      "prefix": ["oxfmt"],
+      "justification": "Allowed by the shared agent command permissions."
+    },
+    {
+      "decision": "allow",
+      "prefix": ["oxlint"],
+      "justification": "Allowed by the shared agent command permissions."
+    },
+    {
+      "decision": "allow",
+      "prefix": ["pnpm"],
+      "justification": "Allowed by the shared agent command permissions."
+    },
+    {
+      "decision": "allow",
+      "prefix": ["prettierd"],
+      "justification": "Allowed by the shared agent command permissions."
+    },
+    {
+      "decision": "allow",
+      "prefix": ["selene"],
+      "justification": "Allowed by the shared agent command permissions."
+    },
+    {
+      "decision": "allow",
+      "prefix": ["shellcheck"],
+      "justification": "Allowed by the shared agent command permissions."
+    },
+    {
+      "decision": "allow",
+      "prefix": ["shfmt"],
+      "justification": "Allowed by the shared agent command permissions."
+    },
+    {
+      "decision": "allow",
+      "prefix": ["statix"],
+      "justification": "Allowed by the shared agent command permissions."
+    },
+    {
+      "decision": "allow",
+      "prefix": ["stylua"],
+      "justification": "Allowed by the shared agent command permissions."
+    },
+    {
+      "decision": "allow",
+      "prefix": ["tex-fmt"],
+      "justification": "Allowed by the shared agent command permissions."
+    },
+    {
+      "decision": "allow",
+      "prefix": ["tsgolint"],
+      "justification": "Allowed by the shared agent command permissions."
+    },
+    {
+      "decision": "allow",
+      "prefix": ["uv", "run"],
+      "justification": "Allowed by the shared agent command permissions."
+    },
+    {
+      "decision": "deny",
+      "prefix": ["curl"],
+      "justification": "Do not fetch remote scripts or content from Codex. Ask the user to run it manually."
+    },
+    {
+      "decision": "deny",
+      "prefix": ["wget"],
+      "justification": "Do not fetch remote scripts or content from Codex. Ask the user to run it manually."
+    },
+    {
+      "decision": "deny",
+      "prefix": ["bash", "-c"],
+      "justification": "Do not hide shell commands inside bash -c from Codex policy checks."
+    },
+    {
+      "decision": "deny",
+      "prefix": ["bash", "-lc"],
+      "justification": "Do not hide shell commands inside bash -lc from Codex policy checks."
+    },
+    {
+      "decision": "deny",
+      "prefix": ["sh", "-c"],
+      "justification": "Do not hide shell commands inside sh -c from Codex policy checks."
+    },
+    {
+      "decision": "deny",
+      "prefix": ["zsh", "-c"],
+      "justification": "Do not hide shell commands inside zsh -c from Codex policy checks."
+    },
+    {
+      "decision": "deny",
+      "prefix": ["zsh", "-lc"],
+      "justification": "Do not hide shell commands inside zsh -lc from Codex policy checks."
+    },
+    {
+      "decision": "deny",
+      "prefix": ["rm"],
+      "justification": "Do not delete files from Codex. Ask the user to run destructive cleanup manually."
+    },
+    {
+      "decision": "deny",
+      "prefix": ["sudo"],
+      "justification": "Do not run privileged commands from Codex. Ask the user to run them manually."
+    },
+    {
+      "decision": "deny",
+      "prefix": ["open"],
+      "justification": "Do not launch GUI applications from Codex. Ask the user to open them manually."
+    },
+    {
+      "decision": "deny",
+      "prefix": ["osascript"],
+      "justification": "Do not automate macOS from Codex shell commands."
+    },
+    {
+      "decision": "deny",
+      "prefix": ["pip"],
+      "justification": "Use project-managed package tooling instead of pip from Codex."
+    },
+    {
+      "decision": "deny",
+      "prefix": ["brew", "install"],
+      "justification": "Do not install Homebrew packages from Codex. Add packages declaratively in Nix/Homebrew config."
+    },
+    {
+      "decision": "deny",
+      "prefix": ["brew", "uninstall"],
+      "justification": "Do not uninstall Homebrew packages from Codex. Change declarative Homebrew config instead."
+    },
+    {
+      "decision": "deny",
+      "prefix": ["uv", "python", "install"],
+      "justification": "Do not install Python runtimes from Codex unless the user runs it manually."
+    },
+    {
+      "decision": "deny",
+      "prefix": ["uv", "python", "uninstall"],
+      "justification": "Do not uninstall Python runtimes from Codex unless the user runs it manually."
+    },
+    {
+      "decision": "deny",
+      "prefix": ["uv", "remove"],
+      "justification": "Do not remove project dependencies without an explicit implementation plan."
+    },
+    {
+      "decision": "deny",
+      "prefix": ["uv", "uninstall"],
+      "justification": "Do not uninstall packages from Codex."
+    },
+    {
+      "decision": "deny",
+      "prefix": ["npm", "publish"],
+      "justification": "Do not publish packages from Codex."
+    },
+    {
+      "decision": "deny",
+      "prefix": ["npm", "remove"],
+      "justification": "Do not remove npm dependencies without an explicit implementation plan."
+    },
+    {
+      "decision": "deny",
+      "prefix": ["npm", "uninstall"],
+      "justification": "Do not uninstall npm dependencies without an explicit implementation plan."
+    },
+    {
+      "decision": "deny",
+      "prefix": ["ssh"],
+      "justification": "Do not start SSH sessions from Codex."
+    },
+    {
+      "decision": "deny",
+      "prefix": ["scp"],
+      "justification": "Do not copy files over SSH from Codex."
+    },
+    {
+      "decision": "deny",
+      "prefix": ["rsync"],
+      "justification": "Do not sync files to remote systems from Codex."
+    },
+    {
+      "decision": "deny",
+      "prefix": ["nc"],
+      "justification": "Do not open raw network connections from Codex."
+    },
+    {
+      "decision": "deny",
+      "prefix": ["psql"],
+      "justification": "Do not connect to databases from Codex shell commands."
+    },
+    {
+      "decision": "deny",
+      "prefix": ["mysql"],
+      "justification": "Do not connect to databases from Codex shell commands."
+    },
+    {
+      "decision": "deny",
+      "prefix": ["mongod"],
+      "justification": "Do not start database daemons from Codex."
+    },
+    {
+      "decision": "deny",
+      "prefix": ["docker", "push"],
+      "justification": "Do not push container images from Codex."
+    },
+    {
+      "decision": "deny",
+      "prefix": ["kubectl", "apply"],
+      "justification": "Do not mutate Kubernetes clusters from Codex."
+    },
+    {
+      "decision": "deny",
+      "prefix": ["kubectl", "delete"],
+      "justification": "Do not delete Kubernetes resources from Codex."
+    },
+    {
+      "decision": "deny",
+      "prefix": ["terraform", "apply"],
+      "justification": "Do not mutate infrastructure from Codex."
+    },
+    {
+      "decision": "deny",
+      "prefix": ["terraform", "destroy"],
+      "justification": "Do not destroy infrastructure from Codex."
+    },
+    {
+      "decision": "deny",
+      "prefix": ["defaults", "write"],
+      "justification": "Manage macOS defaults through nix-darwin instead."
+    },
+    {
+      "decision": "deny",
+      "prefix": ["git", "rm"],
+      "justification": "Do not remove tracked files through shell commands from Codex."
+    },
+    {
+      "decision": "deny",
+      "prefix": ["git", "clean"],
+      "justification": "Do not delete untracked files from Codex."
+    },
+    {
+      "decision": "deny",
+      "prefix": ["git", "branch", "-D"],
+      "justification": "Do not force-delete branches from Codex."
+    },
+    {
+      "decision": "deny",
+      "prefix": ["git", "filter-branch"],
+      "justification": "Do not rewrite history from Codex."
+    },
+    {
+      "decision": "deny",
+      "prefix": ["git", "filter-repo"],
+      "justification": "Do not rewrite history from Codex."
+    },
+    {
+      "decision": "deny",
+      "prefix": ["git", "gc", "--prune"],
+      "justification": "Do not prune recovery data from Codex."
+    },
+    {
+      "decision": "deny",
+      "prefix": ["git", "reflog", "delete"],
+      "justification": "Do not delete reflog entries from Codex."
+    },
+    {
+      "decision": "deny",
+      "prefix": ["git", "reflog", "expire"],
+      "justification": "Do not expire reflog entries from Codex."
+    },
+    {
+      "decision": "deny",
+      "prefix": ["git", "replace"],
+      "justification": "Do not alter replacement refs from Codex."
+    },
+    {
+      "decision": "deny",
+      "prefix": ["git", "stash", "clear"],
+      "justification": "Do not delete stashes from Codex."
+    },
+    {
+      "decision": "deny",
+      "prefix": ["git", "stash", "drop"],
+      "justification": "Do not delete stashes from Codex."
+    },
+    {
+      "decision": "deny",
+      "prefix": ["git", "switch", "--discard-changes"],
+      "justification": "Do not discard working-tree changes from Codex."
+    },
+    {
+      "decision": "deny",
+      "prefix": ["git", "symbolic-ref", "--delete"],
+      "justification": "Do not delete refs from Codex."
+    },
+    {
+      "decision": "deny",
+      "prefix": ["git", "symbolic-ref", "-d"],
+      "justification": "Do not delete refs from Codex."
+    },
+    {
+      "decision": "deny",
+      "prefix": ["git", "update-ref", "-d"],
+      "justification": "Do not delete refs from Codex."
+    },
+    {
+      "decision": "deny",
+      "prefix": ["git", "worktree", "remove"],
+      "justification": "Do not remove worktrees from Codex."
+    },
+    {
+      "decision": "deny",
+      "prefix": ["git", "worktree", "prune"],
+      "justification": "Do not prune worktrees from Codex."
+    },
+    {
+      "decision": "deny",
+      "prefix": ["git", "worktree", "move"],
+      "justification": "Do not move worktrees from Codex."
+    },
+    {
+      "decision": "deny",
+      "prefix": ["git", "worktree", "repair"],
+      "justification": "Do not repair worktrees from Codex."
+    }
+  ]
+}

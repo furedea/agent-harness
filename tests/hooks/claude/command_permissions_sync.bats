@@ -3,7 +3,7 @@
 
 setup() {
   load test-helper/setup
-  COMMAND_POLICY="$REPO_ROOT/agents/command_policy.json"
+  COMMAND_PERMISSIONS="$REPO_ROOT/agents/command_permissions.json"
   ALLOWED_RULES="$REPO_ROOT/agents/hooks/rules/allowed_commands.json"
 }
 
@@ -22,7 +22,7 @@ get_settings_allow_prefixes() {
 }
 
 get_policy_allow_prefixes() {
-  jq -r '.rules[] | select(.decision == "allow") | .pattern | join(" ")' "$COMMAND_POLICY"
+  jq -r '.rules[] | select(.decision == "allow") | .prefix | join(" ")' "$COMMAND_PERMISSIONS"
 }
 
 get_allowed_patterns() {
@@ -53,7 +53,7 @@ assert_lines_contain() {
   assert_lines_contain \
     "$(get_settings_allow_prefixes)" \
     "$(get_policy_allow_prefixes)" \
-    "Generated Bash allows missing from agents/command_policy.json:"
+    "Generated Bash allows missing from agents/command_permissions.json:"
 }
 
 @test "every shared allow prefix is generated as a Bash allow" {

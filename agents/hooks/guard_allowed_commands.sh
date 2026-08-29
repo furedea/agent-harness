@@ -15,9 +15,9 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib/command_rules.sh"
 
 HOOK_DIR="$(dirname "${BASH_SOURCE[0]}")"
 readonly HOOK_DIR
-readonly DEFAULT_COMMAND_POLICY_FILE="$HOOK_DIR/rules/command_policy.json"
+readonly DEFAULT_COMMAND_PERMISSIONS_FILE="$HOOK_DIR/rules/command_permissions.json"
 readonly DEFAULT_ALLOWED_RULES_FILE="$HOOK_DIR/rules/allowed_commands.json"
-readonly COMMAND_POLICY_FILE="${AGENT_COMMAND_POLICY:-$DEFAULT_COMMAND_POLICY_FILE}"
+readonly COMMAND_PERMISSIONS_FILE="${AGENT_COMMAND_PERMISSIONS:-$DEFAULT_COMMAND_PERMISSIONS_FILE}"
 readonly ALLOWED_RULES_FILE="${AGENT_ALLOWED_COMMAND_RULES:-$DEFAULT_ALLOWED_RULES_FILE}"
 
 # Require jq for JSON parsing.
@@ -34,8 +34,8 @@ ERRMSG
   exit 2
 fi
 
-if [ ! -f "$COMMAND_POLICY_FILE" ] || ! command_rules_validate_prefix_file "$COMMAND_POLICY_FILE"; then
-  echo "BLOCKED: invalid command prefix policy: $COMMAND_POLICY_FILE" >&2
+if [ ! -f "$COMMAND_PERMISSIONS_FILE" ] || ! command_rules_validate_prefix_file "$COMMAND_PERMISSIONS_FILE"; then
+  echo "BLOCKED: invalid command permissions: $COMMAND_PERMISSIONS_FILE" >&2
   exit 2
 fi
 if [ ! -f "$ALLOWED_RULES_FILE" ] || ! command_rules_validate_regex_file "$ALLOWED_RULES_FILE"; then
@@ -70,7 +70,7 @@ if [ -n "$PROJECT_RULES_FILE" ] && [ -f "$PROJECT_RULES_FILE" ] &&
   exit 2
 fi
 
-# Shared command prefixes come from the generated command policy.
+# Shared command prefixes come from the generated command permissions.
 
 # Precise global forms come from rules/allowed_commands.json.
 
@@ -82,7 +82,7 @@ while IFS= read -r segment; do
   segment=$(normalize_segment "$segment")
   [ -z "$segment" ] && continue
 
-  if ! command_rules_prefix_reason "$segment" "$COMMAND_POLICY_FILE" allow >/dev/null; then
+  if ! command_rules_prefix_reason "$segment" "$COMMAND_PERMISSIONS_FILE" allow >/dev/null; then
     continue
   fi
 

@@ -61,7 +61,7 @@ check_rule() {
   check_rule allow git fetch origin
   check_rule allow git pull --ff-only
   check_rule allow git rebase origin/main
-  check_rule allow git push -u origin feat/example
+  check_rule prompt git push -u origin feat/example
   check_rule allow git worktree list
   check_rule allow git worktree add -b feat/example ../repo-feat-example origin/main
 }

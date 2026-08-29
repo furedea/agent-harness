@@ -75,7 +75,7 @@
         "^uv run --frozen --with pytest pytest( [^;&|<>$`]+)?$",
         "^uv run --frozen python scripts/(collect_transcripts|collect_skills|generate_report|apply_patches|run_audit)\\.py( [^;&|<>$`]+)?$"
       ],
-      "justification": "Allow precise command forms within prefixes approved by the shared command policy."
+      "justification": "Allow precise command forms within prefixes approved by the shared command permissions."
     }
   ]
 }
