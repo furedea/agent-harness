@@ -1,4 +1,4 @@
-# ADR-0014: Separate personal agent source
+# ADR-0015: Separate personal agent source
 
 - Status: Accepted
 - Date: 2026-08-28
