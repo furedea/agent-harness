@@ -347,6 +347,23 @@ agent-harness install --prefix "$HOME"
 agent-harness verify --prefix "$HOME"
 ```
 
+For a project-local installation, set both the output prefix and runtime root. `--prefix` controls
+where files are written; `--runtime-root` controls where generated hook commands and protection
+rules expect those files at runtime. The runtime root must be absolute.
+
+```bash
+agent-harness install \
+  --source /absolute/path/to/agents \
+  --prefix "$PWD" \
+  --runtime-root "$PWD"
+agent-harness verify --source /absolute/path/to/agents --prefix "$PWD"
+```
+
+The default runtime root remains the user's home directory, so existing user-level installs do not
+need the additional option. Relocated hook commands expose the selected directory as
+`AGENT_HARNESS_ROOT`; source-owned adapters that invoke sibling harness assets should resolve them
+from `${AGENT_HARNESS_ROOT:-$HOME}`.
+
 Inspect the built-in components managed by the resolved harness source:
 
 ```bash

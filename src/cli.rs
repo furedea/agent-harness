@@ -10,7 +10,9 @@ use crate::{
     },
     inventory::Inventory,
     profile::Profile,
-    render, runtime, source,
+    render, runtime,
+    runtime_root::RuntimeRoot,
+    source,
 };
 
 #[derive(Debug, Parser)]
@@ -126,6 +128,10 @@ struct InstallArgs {
 
     #[arg(long)]
     prefix: Option<PathBuf>,
+
+    /// Resolve installed hook assets from this absolute directory at runtime.
+    #[arg(long, value_name = "PATH")]
+    runtime_root: Option<PathBuf>,
 
     #[arg(long, value_name = "NAME=PATH")]
     extra_hook: Vec<ExternalHookBundle>,
@@ -258,7 +264,12 @@ fn generate_skills(args: GenerateSkillsArgs, profile: Profile) -> Result<()> {
 fn install(args: InstallArgs, profile: Profile) -> Result<()> {
     let source = source::resolve_source(args.source, profile)?;
     let prefix = args.prefix.unwrap_or_else(default_home_dir);
-    render::install(source.as_path(), &prefix, &args.extra_hook)
+    let runtime_root = args
+        .runtime_root
+        .map(RuntimeRoot::directory)
+        .transpose()?
+        .unwrap_or_else(RuntimeRoot::home);
+    render::install(source.as_path(), &prefix, &runtime_root, &args.extra_hook)
 }
 
 fn list(args: ListArgs, profile: Profile) -> Result<()> {

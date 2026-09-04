@@ -7,6 +7,7 @@ use crate::{
     fs_ops,
     generation::{external_hooks::ExternalHookBundle, io, protection},
     layout::SourceLayout,
+    runtime_root::RuntimeRoot,
 };
 
 const MANAGED_KEYS: &[&str] = &[
@@ -41,21 +42,30 @@ pub(crate) fn sync_generated_config(
     source: &Path,
     target_path: &Path,
     external_hooks: &[ExternalHookBundle],
+    runtime_root: &RuntimeRoot,
 ) -> Result<()> {
-    let source = config_source_content(source, external_hooks)?
+    let source = config_source_content_for_runtime(source, external_hooks, runtime_root)?
         .parse::<DocumentMut>()
         .context("failed to parse generated Codex config source")?;
     sync_managed_document(source, target_path)
 }
 
 fn config_source_content(source: &Path, external_hooks: &[ExternalHookBundle]) -> Result<String> {
+    config_source_content_for_runtime(source, external_hooks, &RuntimeRoot::home())
+}
+
+fn config_source_content_for_runtime(
+    source: &Path,
+    external_hooks: &[ExternalHookBundle],
+    runtime_root: &RuntimeRoot,
+) -> Result<String> {
     let base_path = SourceLayout::new(source).codex_config();
     let base = std::fs::read_to_string(&base_path)
         .with_context(|| format!("failed to read TOML file {}", base_path.display()))?;
     let mut document = format!(
         "{}\n{}",
         base.trim_end(),
-        protection::codex_config_fragment(source, external_hooks)?
+        protection::codex_config_fragment_for_runtime(source, external_hooks, runtime_root)?
     )
     .parse::<DocumentMut>()
     .context("failed to parse generated Codex config")?;

@@ -190,7 +190,7 @@ impl<'a> InstalledLayout<'a> {
         self.root.join(".codex/config.toml")
     }
 
-    pub(crate) fn static_protected_home_paths() -> Vec<String> {
+    pub(crate) fn static_protected_paths() -> Vec<PathBuf> {
         [
             CLAUDE_AGENT_INSTRUCTIONS_PATH,
             CLAUDE_COMMAND_PERMISSIONS_PATH,
@@ -201,20 +201,7 @@ impl<'a> InstalledLayout<'a> {
             CODEX_RULES_PATH,
         ]
         .into_iter()
-        .map(Path::new)
-        .map(Self::home_path)
+        .map(PathBuf::from)
         .collect()
-    }
-
-    pub(crate) fn claude_hook_home_path(path: &str) -> String {
-        Self::home_path(&Path::new(".claude/hooks").join(path))
-    }
-
-    pub(crate) fn codex_hook_home_path(path: &str) -> String {
-        Self::home_path(&Path::new(".codex/hooks").join(path))
-    }
-
-    pub(crate) fn home_path(relative: &Path) -> String {
-        format!("~/{}", relative.to_string_lossy().replace('\\', "/"))
     }
 }
