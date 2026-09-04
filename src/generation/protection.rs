@@ -7,6 +7,7 @@ use crate::{
     fs_ops,
     generation::{external_hooks::ExternalHookBundle, io},
     layout::{InstalledLayout, SourceLayout},
+    runtime_root::RuntimeRoot,
 };
 
 const GLOB_SCAN_MAX_DEPTH: u64 = 5;
@@ -29,11 +30,12 @@ pub(crate) fn write_codex_config_fragment(
 pub(crate) fn write_runtime_policy(
     source: &Path,
     external_hooks: &[ExternalHookBundle],
+    runtime_root: &RuntimeRoot,
     path: &Path,
 ) -> Result<()> {
     let policy = ProtectedPathPolicy {
         version: POLICY_VERSION,
-        paths: protected_paths(source, external_hooks)?,
+        paths: protected_paths_for_runtime(source, external_hooks, runtime_root)?,
     };
     io::write_json(path, &policy)
 }
@@ -42,9 +44,17 @@ pub(crate) fn codex_config_fragment(
     source: &Path,
     external_hooks: &[ExternalHookBundle],
 ) -> Result<String> {
+    codex_config_fragment_for_runtime(source, external_hooks, &RuntimeRoot::home())
+}
+
+pub(crate) fn codex_config_fragment_for_runtime(
+    source: &Path,
+    external_hooks: &[ExternalHookBundle],
+    runtime_root: &RuntimeRoot,
+) -> Result<String> {
     let mut content = String::from("[permissions.guarded.filesystem]\n");
 
-    for path in protected_paths(source, external_hooks)? {
+    for path in protected_paths_for_runtime(source, external_hooks, runtime_root)? {
         content.push_str(&format!("\"{}\" = \"read\"\n", toml_escape(&path)));
     }
     content.push_str(&format!("glob_scan_max_depth = {GLOB_SCAN_MAX_DEPTH}\n"));
@@ -52,6 +62,7 @@ pub(crate) fn codex_config_fragment(
     Ok(content)
 }
 
+#[cfg(test)]
 pub(crate) fn protected_claude_deny_permissions(
     source: &Path,
     external_hooks: &[ExternalHookBundle],
@@ -62,9 +73,18 @@ pub(crate) fn protected_claude_deny_permissions(
         .collect())
 }
 
+#[cfg(test)]
 pub(crate) fn protected_paths(
     source: &Path,
     external_hooks: &[ExternalHookBundle],
+) -> Result<Vec<String>> {
+    protected_paths_for_runtime(source, external_hooks, &RuntimeRoot::home())
+}
+
+pub(crate) fn protected_paths_for_runtime(
+    source: &Path,
+    external_hooks: &[ExternalHookBundle],
+    runtime_root: &RuntimeRoot,
 ) -> Result<Vec<String>> {
     let layout = SourceLayout::new(source);
     let agent_hooks = relative_files(&layout.agent_hooks())?;
@@ -74,22 +94,26 @@ pub(crate) fn protected_paths(
     paths.extend(
         agent_hooks
             .iter()
-            .map(|path| InstalledLayout::claude_hook_home_path(path)),
+            .map(|path| runtime_root.path(&Path::new(".claude/hooks").join(path))),
     );
     paths.extend(
         codex_hooks
             .iter()
-            .map(|path| InstalledLayout::codex_hook_home_path(path)),
+            .map(|path| runtime_root.path(&Path::new(".codex/hooks").join(path))),
     );
     for bundle in external_hooks {
         paths.extend(
             bundle
                 .asset_install_paths()?
                 .into_iter()
-                .map(|path| InstalledLayout::home_path(&path)),
+                .map(|path| runtime_root.path(&path)),
         );
     }
-    paths.extend(InstalledLayout::static_protected_home_paths());
+    paths.extend(
+        InstalledLayout::static_protected_paths()
+            .iter()
+            .map(|path| runtime_root.path(path)),
+    );
     Ok(paths)
 }
 

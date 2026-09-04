@@ -1,6 +1,10 @@
 {
   "model": "fixture-claude",
   "language": "English",
+  "statusLine": {
+    "type": "command",
+    "command": "$HOME/.claude/statusline/statusline.sh"
+  },
   "permissions": {
     "allow": ["Read"],
     "ask": [],

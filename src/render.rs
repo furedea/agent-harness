@@ -9,6 +9,7 @@ use crate::{
         hooks, protection, skills,
     },
     layout::{InstalledLayout, SourceLayout},
+    runtime_root::RuntimeRoot,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -39,6 +40,7 @@ pub(crate) fn generate_skills(
 pub(crate) fn install(
     source: &Path,
     out: &Path,
+    runtime_root: &RuntimeRoot,
     external_hooks: &[ExternalHookBundle],
 ) -> Result<()> {
     let installed = InstalledLayout::new(out);
@@ -61,14 +63,34 @@ pub(crate) fn install(
         &source_layout.claude_statusline(),
         &installed.claude_statusline(),
     )?;
-    hooks::write_codex_hooks(source, &installed.codex_hook_config(), external_hooks)?;
+    hooks::write_codex_hooks_for_runtime(
+        source,
+        &installed.codex_hook_config(),
+        external_hooks,
+        runtime_root,
+    )?;
     generate_skills(source, Provider::Codex, &[], &installed.codex_skills())?;
     generate_skills(source, Provider::Claude, &[], &installed.claude_skills())?;
-    claude_config::write_settings(source, &installed.claude_settings(), external_hooks)?;
+    claude_config::write_settings_for_runtime(
+        source,
+        &installed.claude_settings(),
+        external_hooks,
+        runtime_root,
+    )?;
     command_permissions::write_codex_rules(source, &installed.codex_rules())?;
     command_permissions::write_runtime_policy(source, &installed.claude_command_permissions())?;
-    protection::write_runtime_policy(source, external_hooks, &installed.claude_protected_paths())?;
-    codex_config::sync_generated_config(source, &installed.codex_config(), external_hooks)?;
+    protection::write_runtime_policy(
+        source,
+        external_hooks,
+        runtime_root,
+        &installed.claude_protected_paths(),
+    )?;
+    codex_config::sync_generated_config(
+        source,
+        &installed.codex_config(),
+        external_hooks,
+        runtime_root,
+    )?;
 
     Ok(())
 }
@@ -111,7 +133,7 @@ mod tests {
         let out = root.join("out");
         write_minimal_source(&source)?;
 
-        install(&source, &out, &[])?;
+        install(&source, &out, &RuntimeRoot::home(), &[])?;
 
         assert!(out.join(".codex/AGENTS.md").is_file());
         assert!(out.join(".codex/hooks.json").is_file());
@@ -169,7 +191,7 @@ mod tests {
             std::fs::set_permissions(path, permissions)?;
         }
 
-        install(&source, &out, &[])?;
+        install(&source, &out, &RuntimeRoot::home(), &[])?;
 
         assert!(
             out.join(".claude/hooks/rules/allowed_commands.json")

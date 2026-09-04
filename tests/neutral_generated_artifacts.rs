@@ -74,6 +74,59 @@ fn complete_source_installs_provider_outputs() {
 }
 
 #[test]
+fn complete_source_uses_the_explicit_runtime_root() {
+    let root = test_root("explicit-runtime-root");
+    let project = root.join("project");
+
+    run_harness([
+        "install",
+        "--source",
+        complete_source_root().to_str().unwrap(),
+        "--prefix",
+        project.to_str().unwrap(),
+        "--runtime-root",
+        project.to_str().unwrap(),
+    ]);
+
+    let settings = read_json(&project.join(".claude/settings.json"));
+    let codex_hooks = read_json(&project.join(".codex/hooks.json"));
+    let policy = read_json(&project.join(".claude/hooks/rules/protected_paths.json"));
+    let runtime_root = project.to_str().unwrap();
+
+    assert_eq!(
+        settings["hooks"]["PreToolUse"][0]["hooks"][0]["command"].as_str(),
+        Some(
+            format!("AGENT_HARNESS_ROOT='{runtime_root}' '{runtime_root}'/.claude/hooks/guard.sh")
+                .as_str(),
+        ),
+    );
+    assert_eq!(
+        settings["statusLine"]["command"].as_str(),
+        Some(
+            format!(
+                "AGENT_HARNESS_ROOT='{runtime_root}' '{runtime_root}'/.claude/statusline/statusline.sh"
+            )
+            .as_str(),
+        ),
+    );
+    assert_eq!(
+        codex_hooks["hooks"]["UserPromptSubmit"][0]["hooks"][0]["command"].as_str(),
+        Some(
+            format!(
+                "AGENT_HARNESS_ROOT='{runtime_root}' '{runtime_root}'/.codex/hooks/adapt.sh '{runtime_root}'/.codex/hooks/guard.sh"
+            )
+            .as_str(),
+        ),
+    );
+    assert!(json_array_contains(
+        &policy["paths"],
+        &format!("{runtime_root}/.claude/hooks/guard.sh"),
+    ));
+
+    remove_dir(root);
+}
+
+#[test]
 fn complete_source_generates_shared_command_permissions() {
     let root = test_root("command-permissions");
     let settings_path = root.join("settings.json");

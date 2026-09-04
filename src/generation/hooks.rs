@@ -7,6 +7,7 @@ use serde_json::Value;
 use crate::{
     generation::{external_hooks::ExternalHookBundle, io},
     layout::SourceLayout,
+    runtime_root::RuntimeRoot,
 };
 
 #[derive(Debug, Deserialize)]
@@ -45,7 +46,19 @@ pub(crate) fn write_claude_hooks(
     path: &Path,
     external_hooks: &[ExternalHookBundle],
 ) -> Result<()> {
-    io::write_json(path, &claude_hooks(source, external_hooks)?)
+    write_claude_hooks_for_runtime(source, path, external_hooks, &RuntimeRoot::home())
+}
+
+pub(crate) fn write_claude_hooks_for_runtime(
+    source: &Path,
+    path: &Path,
+    external_hooks: &[ExternalHookBundle],
+    runtime_root: &RuntimeRoot,
+) -> Result<()> {
+    io::write_json(
+        path,
+        &claude_hooks_for_runtime(source, external_hooks, runtime_root)?,
+    )
 }
 
 pub(crate) fn write_codex_hooks(
@@ -53,19 +66,53 @@ pub(crate) fn write_codex_hooks(
     path: &Path,
     external_hooks: &[ExternalHookBundle],
 ) -> Result<()> {
+    write_codex_hooks_for_runtime(source, path, external_hooks, &RuntimeRoot::home())
+}
+
+pub(crate) fn write_codex_hooks_for_runtime(
+    source: &Path,
+    path: &Path,
+    external_hooks: &[ExternalHookBundle],
+    runtime_root: &RuntimeRoot,
+) -> Result<()> {
     let mut hooks = read_hooks(source)?.codex;
     for bundle in external_hooks {
         bundle.merge_codex_hooks(&mut hooks)?;
     }
+    relocate_commands(&mut hooks, runtime_root);
     io::write_json(path, &hooks)
 }
 
-pub(crate) fn claude_hooks(source: &Path, external_hooks: &[ExternalHookBundle]) -> Result<Value> {
+pub(crate) fn claude_hooks_for_runtime(
+    source: &Path,
+    external_hooks: &[ExternalHookBundle],
+    runtime_root: &RuntimeRoot,
+) -> Result<Value> {
     let mut hooks = read_hooks(source)?.claude;
     for bundle in external_hooks {
         bundle.merge_claude_hooks(&mut hooks)?;
     }
+    relocate_commands(&mut hooks, runtime_root);
     Ok(hooks)
+}
+
+fn relocate_commands(value: &mut Value, runtime_root: &RuntimeRoot) {
+    match value {
+        Value::Array(items) => {
+            for item in items {
+                relocate_commands(item, runtime_root);
+            }
+        }
+        Value::Object(object) => {
+            if let Some(Value::String(command)) = object.get_mut("command") {
+                *command = runtime_root.relocate_command(command);
+            }
+            for item in object.values_mut() {
+                relocate_commands(item, runtime_root);
+            }
+        }
+        _ => {}
+    }
 }
 
 pub(crate) fn built_in_hook_metadata(source: &Path) -> Result<Vec<HookMetadata>> {

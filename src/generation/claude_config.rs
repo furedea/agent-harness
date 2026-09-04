@@ -7,15 +7,24 @@ use crate::generation::{
     command_permissions, external_hooks::ExternalHookBundle, hooks, io, protection,
     secret_path_policy,
 };
-use crate::{fs_ops, layout::SourceLayout};
+use crate::{fs_ops, layout::SourceLayout, runtime_root::RuntimeRoot};
 
 pub(crate) fn write_settings(
     source: &Path,
     out: &Path,
     external_hooks: &[ExternalHookBundle],
 ) -> Result<()> {
+    write_settings_for_runtime(source, out, external_hooks, &RuntimeRoot::home())
+}
+
+pub(crate) fn write_settings_for_runtime(
+    source: &Path,
+    out: &Path,
+    external_hooks: &[ExternalHookBundle],
+    runtime_root: &RuntimeRoot,
+) -> Result<()> {
     let base = read_json(&SourceLayout::new(source).claude_settings())?;
-    let settings = build_settings(source, base, external_hooks)?;
+    let settings = build_settings(source, base, external_hooks, runtime_root)?;
     io::write_json(out, &settings)
 }
 
@@ -31,15 +40,18 @@ fn build_settings(
     source: &Path,
     mut settings: Value,
     external_hooks: &[ExternalHookBundle],
+    runtime_root: &RuntimeRoot,
 ) -> Result<Value> {
     let root = object_mut(&mut settings, "Claude settings root")?;
 
+    relocate_status_line(root, runtime_root)?;
+
     root.insert(
         "hooks".to_string(),
-        hooks::claude_hooks(source, external_hooks)?,
+        hooks::claude_hooks_for_runtime(source, external_hooks, runtime_root)?,
     );
-    merge_permissions(root, source, external_hooks)?;
-    merge_sandbox(root, source, external_hooks)?;
+    merge_permissions(root, source, external_hooks, runtime_root)?;
+    merge_sandbox(root, source, external_hooks, runtime_root)?;
 
     Ok(settings)
 }
@@ -48,6 +60,7 @@ fn merge_permissions(
     root: &mut Map<String, Value>,
     source: &Path,
     external_hooks: &[ExternalHookBundle],
+    runtime_root: &RuntimeRoot,
 ) -> Result<()> {
     let permissions = object_entry(root, "permissions")?;
     let mut allow = non_bash_permissions(permissions.get("allow"))?;
@@ -75,8 +88,9 @@ fn merge_permissions(
             .map(Value::String),
     );
     deny.extend(
-        protection::protected_claude_deny_permissions(source, external_hooks)?
+        protection::protected_paths_for_runtime(source, external_hooks, runtime_root)?
             .into_iter()
+            .map(|path| format!("Edit({path})"))
             .map(Value::String),
     );
 
@@ -91,15 +105,27 @@ fn merge_sandbox(
     root: &mut Map<String, Value>,
     source: &Path,
     external_hooks: &[ExternalHookBundle],
+    runtime_root: &RuntimeRoot,
 ) -> Result<()> {
     let sandbox = object_entry(root, "sandbox")?;
     let filesystem = object_entry(sandbox, "filesystem")?;
-    let deny_write = protection::protected_paths(source, external_hooks)?
+    let deny_write = protection::protected_paths_for_runtime(source, external_hooks, runtime_root)?
         .into_iter()
         .map(Value::String)
         .collect();
 
     filesystem.insert("denyWrite".to_string(), Value::Array(deny_write));
+    Ok(())
+}
+
+fn relocate_status_line(root: &mut Map<String, Value>, runtime_root: &RuntimeRoot) -> Result<()> {
+    let Some(status_line) = root.get_mut("statusLine") else {
+        return Ok(());
+    };
+    let status_line = object_mut(status_line, "statusLine")?;
+    if let Some(Value::String(command)) = status_line.get_mut("command") {
+        *command = runtime_root.relocate_command(command);
+    }
     Ok(())
 }
 
@@ -194,7 +220,7 @@ mod tests {
             }
         });
 
-        let settings = build_settings(&root, base, &[])?;
+        let settings = build_settings(&root, base, &[], &RuntimeRoot::home())?;
 
         assert_eq!(
             settings["hooks"]["PreToolUse"][0]["hooks"][1]["command"].as_str(),
