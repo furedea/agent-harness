@@ -1,6 +1,6 @@
 [package]
 name = "agent-harness"
-version = "0.7.1"
+version = "0.8.0"
 edition = "2024"
 homepage = "https://github.com/furedea/agent-harness"
 license = "MIT"

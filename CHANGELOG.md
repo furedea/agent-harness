@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.8.0](https://github.com/furedea/agent-harness/compare/agent-harness-v0.7.1...agent-harness-v0.8.0) (2026-09-04)
+
+
+### ⚠ BREAKING CHANGES
+
+* separate personal agent source ([#116](https://github.com/furedea/agent-harness/issues/116))
+* add flat composable agent profiles ([#115](https://github.com/furedea/agent-harness/issues/115))
+* rename command policy to permissions ([#114](https://github.com/furedea/agent-harness/issues/114))
+
+### Features
+
+* add flat composable agent profiles ([#115](https://github.com/furedea/agent-harness/issues/115)) ([f591930](https://github.com/furedea/agent-harness/commit/f591930ba527115870bd441c133b15f76e26dd07))
+* **cli:** add project-local runtime root ([#122](https://github.com/furedea/agent-harness/issues/122)) ([c666ab7](https://github.com/furedea/agent-harness/commit/c666ab720517dc36585d87ab10da93c6897d0577))
+
+
+### Bug Fixes
+
+* **claude:** use Edit for file permission rules ([#113](https://github.com/furedea/agent-harness/issues/113)) ([4657bd4](https://github.com/furedea/agent-harness/commit/4657bd4246447a5ce7d9b2b422304d1e8d3f4e1e))
+* **deps:** update rust crate serde to v1.0.229 ([#121](https://github.com/furedea/agent-harness/issues/121)) ([7a403f4](https://github.com/furedea/agent-harness/commit/7a403f436b7dc74d488c77856cbb2706564b953e))
+* **nix:** materialize mutable Claude settings ([#118](https://github.com/furedea/agent-harness/issues/118)) ([0e88474](https://github.com/furedea/agent-harness/commit/0e88474981ab204441259c631a433ad4e830d6f6))
+
+
+### Code Refactoring
+
+* rename command policy to permissions ([#114](https://github.com/furedea/agent-harness/issues/114)) ([938e9d2](https://github.com/furedea/agent-harness/commit/938e9d2a6946655ec34a2e6cc81b5ce5f4847437))
+* separate personal agent source ([#116](https://github.com/furedea/agent-harness/issues/116)) ([051656c](https://github.com/furedea/agent-harness/commit/051656c18daa868f1df7377d6c25cacaeeddb09f))
+
 ## [0.7.1](https://github.com/furedea/agent-harness/compare/agent-harness-v0.7.0...agent-harness-v0.7.1) (2026-08-25)
 
 
