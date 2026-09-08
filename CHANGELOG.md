@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.8.1](https://github.com/furedea/agent-harness/compare/agent-harness-v0.8.0...agent-harness-v0.8.1) (2026-09-08)
+
+
+### Bug Fixes
+
+* **deps:** update rust crate serde_json to v1.0.151 ([#123](https://github.com/furedea/agent-harness/issues/123)) ([e91ec95](https://github.com/furedea/agent-harness/commit/e91ec95cc160d9cf5dd7de3f67d4776b5dcf30ad))
+* preserve installations and validate runtime artifacts ([#126](https://github.com/furedea/agent-harness/issues/126)) ([cacb809](https://github.com/furedea/agent-harness/commit/cacb809642e16535aef44d39e46bf62c49882cb7))
+
 ## [0.8.0](https://github.com/furedea/agent-harness/compare/agent-harness-v0.7.1...agent-harness-v0.8.0) (2026-09-04)
 
 
