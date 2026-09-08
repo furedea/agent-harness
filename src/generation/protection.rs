@@ -55,7 +55,7 @@ pub(crate) fn codex_config_fragment_for_runtime(
     let mut content = String::from("[permissions.guarded.filesystem]\n");
 
     for path in protected_paths_for_runtime(source, external_hooks, runtime_root)? {
-        content.push_str(&format!("\"{}\" = \"read\"\n", toml_escape(&path)));
+        content.push_str(&format!("{} = \"read\"\n", toml_edit::Key::new(path)));
     }
     content.push_str(&format!("glob_scan_max_depth = {GLOB_SCAN_MAX_DEPTH}\n"));
 
@@ -124,7 +124,10 @@ fn relative_files(root: &Path) -> Result<Vec<String>> {
             let relative = path
                 .strip_prefix(root)
                 .with_context(|| format!("failed to strip prefix {}", root.display()))?;
-            Ok(relative.to_string_lossy().replace('\\', "/"))
+            let relative = relative.to_string_lossy().into_owned();
+            #[cfg(windows)]
+            let relative = relative.replace('\\', "/");
+            Ok(relative)
         })
         .filter(|path| path.as_ref().is_ok_and(|path| !is_runtime_artifact(path)))
         .collect()
@@ -132,10 +135,6 @@ fn relative_files(root: &Path) -> Result<Vec<String>> {
 
 fn is_runtime_artifact(path: &str) -> bool {
     path.starts_with("docs/logs/")
-}
-
-fn toml_escape(value: &str) -> String {
-    value.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
 #[cfg(test)]
@@ -206,6 +205,30 @@ mod tests {
         Ok(())
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn protection_preserves_special_characters_in_the_runtime_root() -> Result<()> {
+        let root = test_root("runtime-root-special-characters")?;
+        write_minimal_source(&root)?;
+        let runtime_path = PathBuf::from("/work/project\\name\nquoted\"directory");
+        let runtime_root = RuntimeRoot::directory(runtime_path.clone())?;
+        let expected = runtime_path.join(".claude/hooks/guard.sh");
+        let expected = expected.to_str().unwrap();
+
+        let content = codex_config_fragment_for_runtime(&root, &[], &runtime_root)?;
+        let document = content.parse::<toml_edit::DocumentMut>()?;
+
+        assert_eq!(
+            document["permissions"]["guarded"]["filesystem"][expected].as_str(),
+            Some("read"),
+        );
+        assert!(
+            protected_paths_for_runtime(&root, &[], &runtime_root)?.contains(&expected.to_owned())
+        );
+        std::fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
     #[test]
     fn protected_paths_ignore_hook_runtime_logs() -> Result<()> {
         let root = test_root("protected_paths_ignore_hook_runtime_logs")?;
@@ -220,6 +243,19 @@ mod tests {
                 .any(|path| path.contains("docs/logs/audit/2026-05-19.jsonl"))
         );
 
+        std::fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn protected_paths_preserve_backslashes_in_hook_filenames() -> Result<()> {
+        let root = test_root("hook-filename-backslash")?;
+        write_file(&root.join("hooks/guard\\name.sh"), "#!/bin/sh\n")?;
+
+        let paths = protected_paths(&root, &[])?;
+
+        assert!(paths.contains(&"~/.claude/hooks/guard\\name.sh".to_owned()));
         std::fs::remove_dir_all(root)?;
         Ok(())
     }

@@ -21,11 +21,14 @@ impl RuntimeRoot {
     }
 
     pub(crate) fn path(&self, relative: &Path) -> String {
-        let relative = relative.to_string_lossy().replace('\\', "/");
-        match self {
-            Self::Home => format!("~/{relative}"),
-            Self::Directory(root) => root.join(relative).to_string_lossy().replace('\\', "/"),
-        }
+        let path = match self {
+            Self::Home => Path::new("~").join(relative),
+            Self::Directory(root) => root.join(relative),
+        };
+        let path = path.to_string_lossy().into_owned();
+        #[cfg(windows)]
+        let path = path.replace('\\', "/");
+        path
     }
 
     pub(crate) fn relocate_command(&self, command: &str) -> String {
