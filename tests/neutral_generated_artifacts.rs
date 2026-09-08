@@ -96,7 +96,7 @@ fn complete_source_uses_the_explicit_runtime_root() {
     assert_eq!(
         settings["hooks"]["PreToolUse"][0]["hooks"][0]["command"].as_str(),
         Some(
-            format!("AGENT_HARNESS_ROOT='{runtime_root}' '{runtime_root}'/.claude/hooks/guard.sh")
+            format!("export AGENT_HARNESS_ROOT='{runtime_root}'; '{runtime_root}'/.claude/hooks/guard.sh")
                 .as_str(),
         ),
     );
@@ -104,7 +104,7 @@ fn complete_source_uses_the_explicit_runtime_root() {
         settings["statusLine"]["command"].as_str(),
         Some(
             format!(
-                "AGENT_HARNESS_ROOT='{runtime_root}' '{runtime_root}'/.claude/statusline/statusline.sh"
+                "export AGENT_HARNESS_ROOT='{runtime_root}'; '{runtime_root}'/.claude/statusline/statusline.sh"
             )
             .as_str(),
         ),
@@ -113,7 +113,7 @@ fn complete_source_uses_the_explicit_runtime_root() {
         codex_hooks["hooks"]["UserPromptSubmit"][0]["hooks"][0]["command"].as_str(),
         Some(
             format!(
-                "AGENT_HARNESS_ROOT='{runtime_root}' '{runtime_root}'/.codex/hooks/adapt.sh '{runtime_root}'/.codex/hooks/guard.sh"
+                "export AGENT_HARNESS_ROOT='{runtime_root}'; '{runtime_root}'/.codex/hooks/adapt.sh '{runtime_root}'/.codex/hooks/guard.sh"
             )
             .as_str(),
         ),

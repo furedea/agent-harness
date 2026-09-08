@@ -41,7 +41,10 @@ impl RuntimeRoot {
 
         let root = root.to_string_lossy();
         let relocated = replace_home_references(command, &root);
-        format!("AGENT_HARNESS_ROOT={} {relocated}", shell_quote(&root))
+        format!(
+            "export AGENT_HARNESS_ROOT={}; {relocated}",
+            shell_quote(&root)
+        )
     }
 }
 
@@ -78,6 +81,30 @@ fn double_quote_escape(value: &str) -> String {
 mod tests {
     use super::*;
 
+    #[cfg(unix)]
+    #[test]
+    fn directory_exposes_the_runtime_root_to_compound_hook_commands() -> Result<()> {
+        let root = RuntimeRoot::directory(PathBuf::from("/work/project with spaces"))?;
+        let command = root.relocate_command(
+            "if [ -n \"$HOME/.claude/hooks/guard.sh\" ]; then printenv AGENT_HARNESS_ROOT; fi",
+        );
+
+        let output = std::process::Command::new("/bin/sh")
+            .args(["-c", &command])
+            .output()?;
+
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(
+            String::from_utf8(output.stdout)?,
+            "/work/project with spaces\n"
+        );
+        Ok(())
+    }
+
     #[test]
     fn directory_relocates_quoted_and_unquoted_hook_paths() -> Result<()> {
         let root = RuntimeRoot::directory(PathBuf::from("/work/project with spaces"))?;
@@ -86,7 +113,7 @@ mod tests {
             root.relocate_command(
                 "bash \"$HOME/.codex/hooks/adapt.sh\" $HOME/.claude/hooks/guard.sh"
             ),
-            "AGENT_HARNESS_ROOT='/work/project with spaces' bash \"/work/project with spaces/.codex/hooks/adapt.sh\" '/work/project with spaces'/.claude/hooks/guard.sh",
+            "export AGENT_HARNESS_ROOT='/work/project with spaces'; bash \"/work/project with spaces/.codex/hooks/adapt.sh\" '/work/project with spaces'/.claude/hooks/guard.sh",
         );
         Ok(())
     }
