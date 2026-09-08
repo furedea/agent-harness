@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 use crate::{
     fs_ops,
@@ -38,6 +38,38 @@ pub(crate) fn generate_skills(
 }
 
 pub(crate) fn install(
+    source: &Path,
+    out: &Path,
+    runtime_root: &RuntimeRoot,
+    external_hooks: &[ExternalHookBundle],
+) -> Result<()> {
+    let staging = fs_ops::TemporaryDirectory::create()?;
+    let rendered = InstalledLayout::new(staging.path());
+    let installed = InstalledLayout::new(out);
+    if installed.codex_config().exists() {
+        fs_ops::copy_file(&installed.codex_config(), &rendered.codex_config())?;
+    }
+    render_installation(source, staging.path(), runtime_root, external_hooks)?;
+    for (source, target) in rendered
+        .managed_directories()
+        .into_iter()
+        .zip(installed.managed_directories())
+    {
+        fs_ops::copy_dir(&source, &target)?;
+    }
+    for (source, target) in rendered
+        .managed_files()
+        .into_iter()
+        .zip(installed.managed_files())
+    {
+        let content = std::fs::read(&source)
+            .with_context(|| format!("failed to read rendered file {}", source.display()))?;
+        fs_ops::write_file_atomically(&target, &content)?;
+    }
+    Ok(())
+}
+
+fn render_installation(
     source: &Path,
     out: &Path,
     runtime_root: &RuntimeRoot,
@@ -99,9 +131,9 @@ pub(crate) fn verify(root: &Path) -> Result<()> {
     let installed = InstalledLayout::new(root);
     for path in [
         installed.codex_agent_instructions(),
+        installed.codex_config(),
         installed.codex_hook_config(),
         installed.codex_rules(),
-        installed.codex_skills(),
         installed.claude_agent_instructions(),
         installed.claude_allowed_command_rules(),
         installed.claude_command_permissions(),
@@ -110,10 +142,14 @@ pub(crate) fn verify(root: &Path) -> Result<()> {
         installed.claude_secret_commit_policy(),
         installed.claude_secret_path_policy(),
         installed.claude_settings(),
-        installed.claude_skills(),
     ] {
-        if !path.exists() {
-            anyhow::bail!("missing harness path: {}", path.display());
+        if !path.is_file() {
+            anyhow::bail!("missing or invalid harness file: {}", path.display());
+        }
+    }
+    for path in [installed.codex_skills(), installed.claude_skills()] {
+        if !path.is_dir() {
+            anyhow::bail!("missing or invalid harness directory: {}", path.display());
         }
     }
     Ok(())
@@ -202,6 +238,82 @@ mod tests {
                 .is_file()
         );
 
+        std::fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn verify_rejects_a_missing_codex_config() -> Result<()> {
+        let root = test_root("verify-missing-codex-config")?;
+        let source = root.join("source");
+        let out = root.join("out");
+        write_minimal_source(&source)?;
+        install(&source, &out, &RuntimeRoot::home(), &[])?;
+        verify(&out)?;
+        std::fs::remove_file(out.join(".codex/config.toml"))?;
+
+        let error = verify(&out).unwrap_err();
+
+        assert!(error.to_string().contains(".codex/config.toml"));
+        std::fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn install_preserves_existing_files_when_source_generation_fails() -> Result<()> {
+        let root = test_root("install-invalid-source")?;
+        let source = root.join("source");
+        let out = root.join("out");
+        write_minimal_source(&source)?;
+        install(&source, &out, &RuntimeRoot::home(), &[])?;
+        let before = installed_contents(&out)?;
+        write_file(&source.join("AGENTS.md"), "replacement instructions\n")?;
+        std::fs::remove_file(source.join("hooks/hook.sh"))?;
+        write_file(&source.join("codex/config.toml"), "invalid TOML [")?;
+
+        let error = install(&source, &out, &RuntimeRoot::home(), &[]).unwrap_err();
+
+        assert!(format!("{error:#}").contains("TOML"));
+        assert_eq!(installed_contents(&out)?, before);
+        std::fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    fn installed_contents(root: &Path) -> Result<Vec<(PathBuf, Vec<u8>)>> {
+        fs_ops::regular_files(root)?
+            .into_iter()
+            .map(|path| Ok((path.strip_prefix(root)?.to_path_buf(), std::fs::read(path)?)))
+            .collect()
+    }
+
+    #[test]
+    fn verify_rejects_required_paths_with_the_wrong_file_type() -> Result<()> {
+        let root = test_root("verify-wrong-file-type")?;
+        let source = root.join("source");
+        let out = root.join("out");
+        write_minimal_source(&source)?;
+        install(&source, &out, &RuntimeRoot::home(), &[])?;
+        for relative in [".claude/settings.json", ".codex/skills"] {
+            let path = out.join(relative);
+            let backup = path.with_extension("backup");
+            std::fs::rename(&path, &backup)?;
+            if backup.is_dir() {
+                std::fs::write(&path, "not a directory")?;
+            } else {
+                std::fs::create_dir(&path)?;
+            }
+
+            let error = verify(&out).unwrap_err();
+
+            assert!(error.to_string().contains(relative));
+            if path.is_dir() {
+                std::fs::remove_dir(&path)?;
+            } else {
+                std::fs::remove_file(&path)?;
+            }
+            std::fs::rename(backup, path)?;
+        }
+        verify(&out)?;
         std::fs::remove_dir_all(root)?;
         Ok(())
     }

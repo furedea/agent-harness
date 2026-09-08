@@ -1,4 +1,7 @@
+use std::fs::{File, OpenOptions};
+use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use anyhow::{Context, Result};
 
@@ -52,11 +55,108 @@ pub(crate) fn write_file_atomically(target: &Path, content: &[u8]) -> Result<()>
             .with_context(|| format!("failed to create directory {}", parent.display()))?;
     }
 
-    let temporary = target.with_extension("tmp");
-    std::fs::write(&temporary, content)
-        .with_context(|| format!("failed to write temporary file {}", temporary.display()))?;
-    std::fs::rename(&temporary, target)
-        .with_context(|| format!("failed to replace file {}", target.display()))
+    let mut temporary = TemporaryFile::create(target)?;
+    temporary
+        .file
+        .write_all(content)
+        .with_context(|| format!("failed to write temporary file for {}", target.display()))?;
+    temporary.replace(target)
+}
+
+struct TemporaryFile {
+    path: PathBuf,
+    file: File,
+    replaced: bool,
+}
+
+impl TemporaryFile {
+    fn create(target: &Path) -> Result<Self> {
+        static NEXT_ID: AtomicU64 = AtomicU64::new(0);
+        let name = target.file_name().context("output path must name a file")?;
+        loop {
+            let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
+            let mut temporary_name = name.to_os_string();
+            temporary_name.push(format!(".{}.{id}.tmp", std::process::id()));
+            let path = target.with_file_name(temporary_name);
+            let mut options = OpenOptions::new();
+            options.write(true).create_new(true);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::OpenOptionsExt;
+                options.mode(0o600);
+            }
+            match options.open(&path) {
+                Ok(file) => {
+                    return Ok(Self {
+                        path,
+                        file,
+                        replaced: false,
+                    });
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(error) => {
+                    return Err(error).with_context(|| {
+                        format!("failed to create temporary file for {}", target.display())
+                    });
+                }
+            }
+        }
+    }
+
+    fn replace(mut self, target: &Path) -> Result<()> {
+        std::fs::rename(&self.path, target)
+            .with_context(|| format!("failed to replace file {}", target.display()))?;
+        self.replaced = true;
+        Ok(())
+    }
+}
+
+impl Drop for TemporaryFile {
+    fn drop(&mut self) {
+        if !self.replaced {
+            let _ = std::fs::remove_file(&self.path);
+        }
+    }
+}
+
+pub(crate) struct TemporaryDirectory {
+    path: PathBuf,
+}
+
+impl TemporaryDirectory {
+    pub(crate) fn create() -> Result<Self> {
+        static NEXT_ID: AtomicU64 = AtomicU64::new(0);
+        loop {
+            let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
+            let path = std::env::temp_dir()
+                .join(format!("agent-harness-staging-{}-{id}", std::process::id(),));
+            let mut builder = std::fs::DirBuilder::new();
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::DirBuilderExt;
+                builder.mode(0o700);
+            }
+            match builder.create(&path) {
+                Ok(()) => return Ok(Self { path }),
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(error) => {
+                    return Err(error).with_context(|| {
+                        format!("failed to create staging directory {}", path.display())
+                    });
+                }
+            }
+        }
+    }
+
+    pub(crate) fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Drop for TemporaryDirectory {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.path);
+    }
 }
 
 pub(crate) fn regular_files(dir: &Path) -> Result<Vec<PathBuf>> {
@@ -99,6 +199,23 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::*;
+
+    #[test]
+    fn atomic_write_preserves_an_unrelated_temporary_sibling() -> Result<()> {
+        let nanos = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
+        let root = std::env::temp_dir().join(format!("agent-harness-atomic-sibling-{nanos}"));
+        std::fs::create_dir_all(&root)?;
+        let target = root.join("settings.json");
+        let sibling = root.join("settings.tmp");
+        std::fs::write(&sibling, "unrelated\n")?;
+
+        write_file_atomically(&target, b"installed\n")?;
+
+        assert_eq!(std::fs::read_to_string(&sibling)?, "unrelated\n");
+        assert_eq!(std::fs::read_to_string(&target)?, "installed\n");
+        std::fs::remove_dir_all(root)?;
+        Ok(())
+    }
 
     #[test]
     fn atomic_write_replaces_a_symlink_with_a_regular_file() -> Result<()> {

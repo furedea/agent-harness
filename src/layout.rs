@@ -190,6 +190,27 @@ impl<'a> InstalledLayout<'a> {
         self.root.join(".codex/config.toml")
     }
 
+    pub(crate) fn managed_directories(self) -> [PathBuf; 5] {
+        [
+            self.codex_hooks(),
+            self.claude_hooks(),
+            self.claude_statusline(),
+            self.codex_skills(),
+            self.claude_skills(),
+        ]
+    }
+
+    pub(crate) fn managed_files(self) -> [PathBuf; 6] {
+        [
+            self.codex_agent_instructions(),
+            self.claude_agent_instructions(),
+            self.codex_hook_config(),
+            self.claude_settings(),
+            self.codex_rules(),
+            self.codex_config(),
+        ]
+    }
+
     pub(crate) fn static_protected_paths() -> Vec<PathBuf> {
         [
             CLAUDE_AGENT_INSTRUCTIONS_PATH,
