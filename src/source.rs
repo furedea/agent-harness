@@ -57,12 +57,14 @@ pub(crate) fn resolve_source(
 
     for source in installed_source_dirs()? {
         if let Some(profile_source) = profile_source(&source, profile) {
+            validate_source_tree(&profile_source)?;
             return Ok(SourceRoot::external(profile_source));
         }
     }
 
     let cwd = std::env::current_dir().context("failed to read current directory")?;
     if let Some(profile_source) = profile_source(&cwd, profile) {
+        validate_source_tree(&profile_source)?;
         return Ok(SourceRoot::external(profile_source));
     }
 
