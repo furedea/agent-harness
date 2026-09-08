@@ -160,27 +160,22 @@ pub(crate) fn render_skills(
     validate_skill_rendering_targets(&skill_rendering, &skill_dirs)?;
     validate_external_skills(&skill_dirs, external_skills)?;
 
-    if out.exists() {
-        std::fs::remove_dir_all(out)
-            .with_context(|| format!("failed to remove directory {}", out.display()))?;
-    }
-    std::fs::create_dir_all(out)
-        .with_context(|| format!("failed to create directory {}", out.display()))?;
+    let staging = fs_ops::TemporaryDirectory::create()?;
 
     for entry in skill_dirs {
         render_skill_dir(
             &entry,
             &skill_rendering,
             provider,
-            &out.join(entry.file_name().unwrap_or_default()),
+            &staging.path().join(entry.file_name().unwrap_or_default()),
         )?;
     }
 
     for skill in external_skills {
-        fs_ops::copy_dir(&skill.source, &out.join(skill.name.as_str()))?;
+        fs_ops::copy_dir(&skill.source, &staging.path().join(skill.name.as_str()))?;
     }
 
-    Ok(())
+    fs_ops::copy_dir(staging.path(), out)
 }
 
 pub(crate) fn built_in_skill_metadata(source: &Path) -> Result<Vec<SkillMetadata>> {
@@ -724,6 +719,27 @@ mod tests {
         let result = render_skills(&root, Provider::Codex, &external_skills, &root.join("out"));
 
         assert!(result.is_err());
+        std::fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn render_skills_preserves_installed_skills_when_a_source_is_invalid() -> Result<()> {
+        let root = test_root("invalid-source-preserves-skills")?;
+        write_file(
+            &root.join("skills/broken/SKILL.md"),
+            "missing frontmatter\n",
+        )?;
+        let out = root.join("out");
+        write_file(&out.join("existing/SKILL.md"), "installed skill\n")?;
+
+        let error = render_skills(&root, Provider::Codex, &[], &out).unwrap_err();
+
+        assert!(error.to_string().contains("frontmatter"));
+        assert_eq!(
+            std::fs::read_to_string(out.join("existing/SKILL.md"))?,
+            "installed skill\n",
+        );
         std::fs::remove_dir_all(root)?;
         Ok(())
     }
