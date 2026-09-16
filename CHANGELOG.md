@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.9.0](https://github.com/furedea/agent-harness/compare/agent-harness-v0.8.0...agent-harness-v0.9.0) (2026-09-16)
+
+
+### ⚠ BREAKING CHANGES
+
+* rename claude settings source file to settings.json ([#129](https://github.com/furedea/agent-harness/issues/129))
+
+### Bug Fixes
+
+* **deps:** update rust crate serde_json to v1.0.151 ([#123](https://github.com/furedea/agent-harness/issues/123)) ([e91ec95](https://github.com/furedea/agent-harness/commit/e91ec95cc160d9cf5dd7de3f67d4776b5dcf30ad))
+* **deps:** update rust crate toml_edit to v0.25.15 ([#127](https://github.com/furedea/agent-harness/issues/127)) ([9084a0c](https://github.com/furedea/agent-harness/commit/9084a0c4e6ec9eee86bc73da6737ac2a68c6a24e))
+* preserve installations and validate runtime artifacts ([#126](https://github.com/furedea/agent-harness/issues/126)) ([cacb809](https://github.com/furedea/agent-harness/commit/cacb809642e16535aef44d39e46bf62c49882cb7))
+
+
+### Code Refactoring
+
+* rename claude settings source file to settings.json ([#129](https://github.com/furedea/agent-harness/issues/129)) ([05284da](https://github.com/furedea/agent-harness/commit/05284dadb0812812965eaa97bc8d79fd9efd1361))
+
 ## [0.8.0](https://github.com/furedea/agent-harness/compare/agent-harness-v0.7.1...agent-harness-v0.8.0) (2026-09-04)
 
 
