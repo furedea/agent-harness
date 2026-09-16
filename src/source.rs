@@ -262,7 +262,7 @@ mod tests {
             "hooks/rules/secret_commit_policy.json",
             "hooks/rules/secret_path_policy.json",
             "skill_rendering.json",
-            "claude/settings.base.json",
+            "claude/settings.json",
             "codex/config.toml",
         ] {
             let path = root.join(relative);

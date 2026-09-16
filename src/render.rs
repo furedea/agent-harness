@@ -450,7 +450,7 @@ mod tests {
             &source.join("claude/statusline/statusline.sh"),
             "#!/bin/bash\n",
         )?;
-        write_file(&source.join("claude/settings.base.json"), "{}\n")?;
+        write_file(&source.join("claude/settings.json"), "{}\n")?;
         write_file(&source.join("codex/config.toml"), "model = \"gpt-5.5\"\n")?;
         Ok(())
     }
