@@ -17,9 +17,7 @@ let
     else
       cfg.commandPermissions;
 
-  claudeBaseSettings = builtins.fromJSON (
-    builtins.readFile "${profileSource}/claude/settings.base.json"
-  );
+  claudeBaseSettings = builtins.fromJSON (builtins.readFile "${profileSource}/claude/settings.json");
   claudeSettings = pkgs.writeText "agent-harness-claude-settings.json" (
     builtins.toJSON (lib.recursiveUpdate claudeBaseSettings cfg.claude.settings)
   );
@@ -36,7 +34,7 @@ let
     install -m 0644 ${lib.escapeShellArg (toString agentsMd)} "$out/AGENTS.md"
     install -m 0644 ${lib.escapeShellArg (toString commandPermissions)} \
       "$out/command_permissions.json"
-    install -m 0644 ${claudeSettings} "$out/claude/settings.base.json"
+    install -m 0644 ${claudeSettings} "$out/claude/settings.json"
     install -m 0644 ${codexSettings} "$out/codex/config.toml"
   '';
 

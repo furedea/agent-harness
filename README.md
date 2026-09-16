@@ -468,7 +468,7 @@ options above. Render a custom tree with
 | Add or change Claude hooks              | `agents/hooks/*.sh`                                    |
 | Add or change Codex hook adapters       | `agents/codex/hooks/*.sh`                              |
 | Change Codex base config                | `agents/codex/config.toml`                             |
-| Change Claude base settings             | `agents/claude/settings.base.json`                     |
+| Change Claude base settings             | `agents/claude/settings.json`                          |
 
 Command permissions have two layers. `command_permissions.json` at the profile root is the
 provider-neutral source of shared token prefixes. Each rule has a `decision` (`allow`, `ask`, or

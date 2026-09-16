@@ -9,7 +9,7 @@ const FORBIDDEN_COMMAND_RULES_PATH: &str = "hooks/rules/forbidden_commands.json"
 const SECRET_COMMIT_POLICY_PATH: &str = "hooks/rules/secret_commit_policy.json";
 const SECRET_PATH_POLICY_PATH: &str = "hooks/rules/secret_path_policy.json";
 const SKILL_RENDERING_PATH: &str = "skill_rendering.json";
-const CLAUDE_SETTINGS_SOURCE_PATH: &str = "claude/settings.base.json";
+const CLAUDE_SETTINGS_SOURCE_PATH: &str = "claude/settings.json";
 const CODEX_CONFIG_SOURCE_PATH: &str = "codex/config.toml";
 const REQUIRED_SOURCE_FILES: &[&str] = &[
     MANIFEST_PATH,
