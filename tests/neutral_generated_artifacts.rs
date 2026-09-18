@@ -56,6 +56,12 @@ fn complete_source_installs_provider_outputs() {
     assert!(prefix.join(".claude/hooks/guard.sh").is_file());
     assert!(prefix.join(".codex/hooks/adapt.sh").is_file());
     assert!(prefix.join(".codex/hooks/guard.sh").is_file());
+    assert!(prefix.join(".devin/hooks/hook_adapter.py").is_file());
+    let devin_config = read_json(&prefix.join(".config/devin/config.json"));
+    assert_eq!(
+        devin_config["hooks"]["PreToolUse"][0]["matcher"].as_str(),
+        Some("exec"),
+    );
     assert_contains(
         &prefix.join(".claude/skills/example-skill/SKILL.md"),
         "disable-model-invocation: true",
@@ -182,6 +188,71 @@ fn complete_source_generates_shared_command_permissions() {
 }
 
 #[test]
+fn complete_source_generates_devin_hooks() {
+    let root = test_root("devin-hooks");
+    let config_path = root.join("config.json");
+
+    run_harness([
+        "generate-devin-hooks",
+        "--source",
+        complete_source_root().to_str().unwrap(),
+        "--output",
+        config_path.to_str().unwrap(),
+    ]);
+
+    let config = read_json(&config_path);
+    assert_eq!(
+        config["hooks"]["PreToolUse"][0]["hooks"][0]["command"].as_str(),
+        Some("$HOME/.devin/hooks/hook_adapter.py shell forbidden"),
+    );
+
+    remove_dir(root);
+}
+
+#[test]
+fn devin_config_sync_preserves_user_owned_state() {
+    let root = test_root("devin-sync");
+    let source_path = root.join("source.json");
+    let target_path = root.join("target.json");
+
+    std::fs::write(
+        &source_path,
+        r#"{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"generated"}]}]}}"#,
+    )
+    .unwrap();
+    std::fs::write(
+        &target_path,
+        r#"{
+  "version": 1,
+  "devin": {"org_id": "org-123"},
+  "agent": {"model": "swe-2-max"},
+  "hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": "stale"}]}]}
+}
+"#,
+    )
+    .unwrap();
+
+    run_harness([
+        "sync-devin-config",
+        "--source",
+        source_path.to_str().unwrap(),
+        "--target",
+        target_path.to_str().unwrap(),
+    ]);
+
+    let target = read_json(&target_path);
+    assert_eq!(target["version"], 1);
+    assert_eq!(target["devin"]["org_id"], "org-123");
+    assert_eq!(target["agent"]["model"], "swe-2-max");
+    assert_eq!(
+        target["hooks"]["SessionStart"][0]["hooks"][0]["command"].as_str(),
+        Some("generated"),
+    );
+
+    remove_dir(root);
+}
+
+#[test]
 fn complete_source_keeps_protection_layers_aligned() {
     let root = test_root("protected-paths");
     let prefix = root.join("home");
@@ -258,8 +329,10 @@ fn complete_source_inventory_reports_skills_and_hooks() {
     ]);
     assert!(hooks.contains("\nClaude\n"));
     assert!(hooks.contains("\nCodex\n"));
+    assert!(hooks.contains("\nDevin\n"));
     assert!(hooks.contains("guard.sh"));
     assert!(hooks.contains("adapt.sh guard.sh"));
+    assert!(hooks.contains("hook_adapter.py shell forbidden"));
 }
 
 #[test]

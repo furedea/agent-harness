@@ -26,5 +26,20 @@
         }
       ]
     }
+  },
+  "devin": {
+    "hooks": {
+      "PreToolUse": [
+        {
+          "matcher": "exec",
+          "hooks": [
+            {
+              "type": "command",
+              "command": "$HOME/.devin/hooks/hook_adapter.py shell forbidden"
+            }
+          ]
+        }
+      ]
+    }
   }
 }

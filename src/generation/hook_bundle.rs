@@ -90,7 +90,7 @@ impl TemporaryHome {
         ));
         std::fs::create_dir(&path)
             .with_context(|| format!("failed to create temporary home {}", path.display()))?;
-        for provider in [".claude", ".codex"] {
+        for provider in [".claude", ".codex", ".devin"] {
             std::fs::create_dir(path.join(provider)).with_context(|| {
                 format!("failed to create temporary provider directory {provider}")
             })?;
@@ -144,6 +144,7 @@ fn capture_supported_files(
         ".claude/settings.json",
         ".codex/hooks.json",
         ".codex/config.toml",
+        ".devin/hooks.v1.json",
     ] {
         let source = staging.join(relative);
         if !source.is_file() {

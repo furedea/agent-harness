@@ -77,6 +77,28 @@ impl ExternalHookBundle {
         })
     }
 
+    pub(crate) fn merge_devin_hooks(&self, hooks: &mut Value) -> Result<()> {
+        self.validate()?;
+        let path = self.source.join(".devin/hooks.v1.json");
+        if !path.is_file() {
+            return Ok(());
+        }
+
+        let generated = read_json(&path)?;
+        merge_events(
+            &mut hooks["hooks"],
+            &generated,
+            &self.assets()?,
+            &self.source,
+        )
+        .with_context(|| {
+            format!(
+                "failed to merge external hook bundle {}",
+                self.name.as_str()
+            )
+        })
+    }
+
     fn validate(&self) -> Result<()> {
         let path = self.source.join("hook_bundle.json");
         let manifest: HookBundleManifest = serde_json::from_str(
@@ -98,6 +120,7 @@ impl ExternalHookBundle {
         let mut assets = Vec::new();
         self.collect_asset_tree(Path::new(".claude/hooks"), &mut assets)?;
         self.collect_asset_tree(Path::new(".codex/hooks"), &mut assets)?;
+        self.collect_asset_tree(Path::new(".devin/hooks"), &mut assets)?;
         self.collect_codex_scripts(&mut assets)?;
         assets.sort_by(|left, right| left.target.cmp(&right.target));
         Ok(assets)

@@ -37,4 +37,11 @@ assert pkgs.lib.assertMsg (
 ) "Codex config should not be a Home Manager symlink";
 assert pkgs.lib.assertMsg (hasActivation "agentHarnessCodexConfig")
   "Codex config should be materialized during activation";
+assert pkgs.lib.assertMsg (
+  !hasHomeFile ".config/devin/config.json"
+) "Devin config should not be a Home Manager symlink";
+assert pkgs.lib.assertMsg (hasHomeFile ".devin/hooks")
+  "Devin hook scripts should be installed as a Home Manager file";
+assert pkgs.lib.assertMsg (hasActivation "agentHarnessDevinConfig")
+  "Devin config should be materialized during activation";
 configuration.activationPackage

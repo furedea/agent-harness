@@ -147,6 +147,14 @@ in
         description = "Claude Code settings recursively merged over the selected profile.";
       };
     };
+
+    devin = {
+      enable = lib.mkOption {
+        type = lib.types.bool;
+        default = true;
+        description = "Whether to install Devin CLI harness files.";
+      };
+    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -167,23 +175,36 @@ in
           ".claude/skills".source = providerSkills "claude";
           ".claude/statusline".source = "${renderedHarness}/.claude/statusline";
         })
+        (lib.mkIf cfg.devin.enable {
+          ".devin/hooks".source = "${renderedHarness}/.devin/hooks";
+        })
       ];
 
-      activation.agentHarnessCodexConfig = lib.mkIf cfg.codex.enable (
-        lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-          ${lib.getExe cfg.package} sync-codex-config \
-            --source ${renderedHarness}/.codex/config.toml \
-            --target "$HOME/.codex/config.toml"
-        ''
-      );
+      activation = {
+        agentHarnessCodexConfig = lib.mkIf cfg.codex.enable (
+          lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+            ${lib.getExe cfg.package} sync-codex-config \
+              --source ${renderedHarness}/.codex/config.toml \
+              --target "$HOME/.codex/config.toml"
+          ''
+        );
 
-      activation.agentHarnessClaudeSettings = lib.mkIf cfg.claude.enable (
-        lib.hm.dag.entryAfter [ "linkGeneration" ] ''
-          ${lib.getExe cfg.package} sync-claude-settings \
-            --source ${renderedHarness}/.claude/settings.json \
-            --target "$HOME/.claude/settings.json"
-        ''
-      );
+        agentHarnessClaudeSettings = lib.mkIf cfg.claude.enable (
+          lib.hm.dag.entryAfter [ "linkGeneration" ] ''
+            ${lib.getExe cfg.package} sync-claude-settings \
+              --source ${renderedHarness}/.claude/settings.json \
+              --target "$HOME/.claude/settings.json"
+          ''
+        );
+
+        agentHarnessDevinConfig = lib.mkIf cfg.devin.enable (
+          lib.hm.dag.entryAfter [ "linkGeneration" ] ''
+            ${lib.getExe cfg.package} sync-devin-config \
+              --source ${renderedHarness}/.config/devin/config.json \
+              --target "$HOME/.config/devin/config.json"
+          ''
+        );
+      };
     };
   };
 }
