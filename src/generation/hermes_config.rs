@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use anyhow::{Context, Result, bail};
-use serde_yml::{Mapping, Value};
+use serde_norway::{Mapping, Value};
 
 use crate::fs_ops;
 
@@ -15,7 +15,7 @@ pub(crate) fn sync_config(source_path: &Path, target_path: &Path) -> Result<()> 
     let generated = read_yaml(source_path)?;
     let mut existing = read_yaml_or_empty(target_path)?;
     merge_managed_config(&mut existing, generated)?;
-    let content = serde_yml::to_string(&existing)?;
+    let content = serde_norway::to_string(&existing)?;
     fs_ops::write_file_atomically(target_path, content.as_bytes())
 }
 
@@ -25,7 +25,7 @@ fn merge_managed_config(existing: &mut Value, generated: Value) -> Result<()> {
         bail!("generated Hermes config root must be a mapping");
     };
     for (key, value) in generated {
-        if key.as_str() == "plugins" {
+        if key.as_str() == Some("plugins") {
             let entry = existing
                 .entry(key)
                 .or_insert_with(|| Value::Mapping(Mapping::new()));
@@ -43,7 +43,7 @@ fn merge_plugins(existing: &mut Value, generated: Value) -> Result<()> {
         bail!("generated plugins section must be a mapping");
     };
     for (key, value) in generated {
-        if key.as_str() == "enabled" {
+        if key.as_str() == Some("enabled") {
             let entry = existing
                 .entry(key)
                 .or_insert_with(|| Value::Sequence(Vec::new()));
@@ -80,14 +80,14 @@ fn mapping_mut<'a>(value: &'a mut Value, name: &str) -> Result<&'a mut Mapping> 
 fn read_yaml(path: &Path) -> Result<Value> {
     let content = std::fs::read_to_string(path)
         .with_context(|| format!("failed to read YAML file {}", path.display()))?;
-    serde_yml::from_str(&content)
+    serde_norway::from_str(&content)
         .with_context(|| format!("failed to parse YAML file {}", path.display()))
 }
 
 fn read_yaml_or_empty(path: &Path) -> Result<Value> {
     match std::fs::read_to_string(path) {
         Ok(content) => {
-            let value: Value = serde_yml::from_str(&content)
+            let value: Value = serde_norway::from_str(&content)
                 .with_context(|| format!("failed to parse YAML file {}", path.display()))?;
             Ok(match value {
                 Value::Null => Value::Mapping(Mapping::new()),
@@ -123,11 +123,11 @@ mod tests {
 
         sync_config(&source, &target)?;
 
-        let parsed: Value = serde_yml::from_str(&std::fs::read_to_string(&target)?)?;
+        let parsed: Value = serde_norway::from_str(&std::fs::read_to_string(&target)?)?;
         assert_eq!(parsed["model"]["provider"].as_str(), Some("openai-codex"));
         assert_eq!(
             parsed["plugins"]["enabled"],
-            serde_yml::from_str::<Value>("- moshi-hooks\n- agent-harness-hooks\n")?,
+            serde_norway::from_str::<Value>("- moshi-hooks\n- agent-harness-hooks\n")?,
         );
         assert_eq!(parsed["onboarding"]["seen"]["intro"].as_bool(), Some(true));
         std::fs::remove_dir_all(root)?;
@@ -144,7 +144,7 @@ mod tests {
         sync_config(&source, &target)?;
         sync_config(&source, &target)?;
 
-        let parsed: Value = serde_yml::from_str(&std::fs::read_to_string(&target)?)?;
+        let parsed: Value = serde_norway::from_str(&std::fs::read_to_string(&target)?)?;
         assert_eq!(
             parsed["plugins"]["enabled"].as_sequence().map(Vec::len),
             Some(1),
