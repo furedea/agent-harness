@@ -90,7 +90,7 @@ impl TemporaryHome {
         ));
         std::fs::create_dir(&path)
             .with_context(|| format!("failed to create temporary home {}", path.display()))?;
-        for provider in [".claude", ".codex", ".devin"] {
+        for provider in [".claude", ".codex", ".devin", ".hermes", ".pi"] {
             std::fs::create_dir(path.join(provider)).with_context(|| {
                 format!("failed to create temporary provider directory {provider}")
             })?;
@@ -145,6 +145,8 @@ fn capture_supported_files(
         ".codex/hooks.json",
         ".codex/config.toml",
         ".devin/hooks.v1.json",
+        ".hermes/hooks.json",
+        ".pi/hooks.json",
     ] {
         let source = staging.join(relative);
         if !source.is_file() {
@@ -158,7 +160,13 @@ fn capture_supported_files(
         }
         captured = true;
     }
-    for relative in [".claude/hooks", ".codex/hooks"] {
+    for relative in [
+        ".claude/hooks",
+        ".codex/hooks",
+        ".devin/hooks",
+        ".hermes/hooks",
+        ".pi/hooks",
+    ] {
         let source = staging.join(relative);
         if source.is_dir() {
             fs_ops::copy_dir(&source, &output.join(relative))?;

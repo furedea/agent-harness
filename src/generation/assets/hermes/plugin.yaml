@@ -1,0 +1,15 @@
+name: agent-harness-hooks
+version: "1.0"
+description: "Dispatches Hermes Agent lifecycle events to agent-harness hooks."
+provides_hooks:
+  - pre_tool_call
+  - post_tool_call
+  - pre_verify
+  - on_session_start
+  - on_session_end
+  - on_session_finalize
+  - on_session_reset
+  - subagent_start
+  - subagent_stop
+  - pre_approval_request
+  - post_approval_response

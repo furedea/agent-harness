@@ -1,8 +1,10 @@
+pub(crate) mod bridges;
 pub(crate) mod claude_config;
 pub(crate) mod codex_config;
 pub(crate) mod command_permissions;
 pub(crate) mod devin_config;
 pub(crate) mod external_hooks;
+pub(crate) mod hermes_config;
 pub(crate) mod hook_bundle;
 pub(crate) mod hooks;
 mod io;

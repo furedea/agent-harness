@@ -17,3 +17,4 @@ ignore:
   - "**/{.venv,.uv-cache,.ruff_cache,.pytest_cache,.ipynb_checkpoints,__pycache__,node_modules,target}"
   - docs/logs
   - "**/docs/logs"
+  - "**/__init__.py"

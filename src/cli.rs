@@ -6,7 +6,8 @@ use clap::{Parser, Subcommand, ValueEnum};
 use crate::{
     generation::{
         claude_config, codex_config, command_permissions, devin_config,
-        external_hooks::ExternalHookBundle, hook_bundle, hooks, protection, skills::ExternalSkill,
+        external_hooks::ExternalHookBundle, hermes_config, hook_bundle, hooks, protection,
+        skills::ExternalSkill,
     },
     inventory::Inventory,
     profile::Profile,
@@ -40,6 +41,10 @@ enum Command {
     GenerateCodexHooks(GenerateFileArgs),
     /// Generate the Devin CLI hooks config fragment.
     GenerateDevinHooks(GenerateFileArgs),
+    /// Generate the Hermes Agent hook manifest consumed by the plugin.
+    GenerateHermesHooks(GenerateFileArgs),
+    /// Generate the pi hook manifest consumed by the bridge extension.
+    GeneratePiHooks(GenerateFileArgs),
     /// Generate Codex execpolicy rules.
     GenerateCodexRules(GenerateFileArgs),
     /// Generate the shared runtime command permissions.
@@ -60,6 +65,8 @@ enum Command {
     SyncClaudeSettings(SyncConfigArgs),
     /// Merge generated top-level keys into an existing Devin CLI config.
     SyncDevinConfig(SyncConfigArgs),
+    /// Merge managed keys into an existing Hermes Agent config.
+    SyncHermesConfig(SyncConfigArgs),
     /// Verify managed files and source-declared runtime commands.
     Verify(VerifyArgs),
 }
@@ -182,6 +189,8 @@ pub fn run() -> Result<()> {
         Command::GenerateCodexConfigFragment(args) => write_codex_config_fragment(args, profile),
         Command::GenerateCodexHooks(args) => write_codex_hooks(args, profile),
         Command::GenerateDevinHooks(args) => write_devin_hooks(args, profile),
+        Command::GenerateHermesHooks(args) => write_hermes_hooks(args, profile),
+        Command::GeneratePiHooks(args) => write_pi_hooks(args, profile),
         Command::GenerateCodexRules(args) => write_codex_rules(args, profile),
         Command::GenerateCommandPermissions(args) => write_command_permissions(args, profile),
         Command::GenerateForbiddenCommands(args) => write_forbidden_commands(args, profile),
@@ -196,6 +205,7 @@ pub fn run() -> Result<()> {
             claude_config::sync_settings(&args.source, &args.target)
         }
         Command::SyncDevinConfig(args) => devin_config::sync_config(&args.source, &args.target),
+        Command::SyncHermesConfig(args) => hermes_config::sync_config(&args.source, &args.target),
         Command::Verify(args) => {
             let source = source::resolve_source(args.source, profile)?;
             let prefix = args.prefix.unwrap_or_else(default_home_dir);
@@ -237,6 +247,16 @@ fn write_codex_hooks(args: GenerateFileArgs, profile: Profile) -> Result<()> {
 fn write_devin_hooks(args: GenerateFileArgs, profile: Profile) -> Result<()> {
     let source = source::resolve_source(args.source, profile)?;
     hooks::write_devin_hooks(source.as_path(), &args.output, &args.extra_hook)
+}
+
+fn write_hermes_hooks(args: GenerateFileArgs, profile: Profile) -> Result<()> {
+    let source = source::resolve_source(args.source, profile)?;
+    hooks::write_hermes_hooks(source.as_path(), &args.output, &args.extra_hook)
+}
+
+fn write_pi_hooks(args: GenerateFileArgs, profile: Profile) -> Result<()> {
+    let source = source::resolve_source(args.source, profile)?;
+    hooks::write_pi_hooks(source.as_path(), &args.output, &args.extra_hook)
 }
 
 fn write_codex_rules(args: GenerateFileArgs, profile: Profile) -> Result<()> {

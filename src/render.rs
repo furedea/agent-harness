@@ -5,8 +5,8 @@ use anyhow::{Context, Result};
 use crate::{
     fs_ops,
     generation::{
-        claude_config, codex_config, command_permissions, external_hooks::ExternalHookBundle,
-        hooks, protection, skills,
+        bridges, claude_config, codex_config, command_permissions,
+        external_hooks::ExternalHookBundle, hermes_config, hooks, protection, skills,
     },
     layout::{InstalledLayout, SourceLayout},
     runtime_root::RuntimeRoot,
@@ -89,6 +89,10 @@ fn render_installation(
     fs_ops::copy_dir(&source_layout.codex_hooks(), &installed.codex_hooks())?;
     fs_ops::copy_dir(&source_layout.agent_hooks(), &installed.claude_hooks())?;
     fs_ops::copy_dir(&source_layout.devin_hooks(), &installed.devin_hooks())?;
+    fs_ops::copy_dir(&source_layout.hermes_hooks(), &installed.hermes_hooks())?;
+    fs_ops::copy_dir(&source_layout.pi_hooks(), &installed.pi_hooks())?;
+    bridges::write_hermes_plugin(&installed.hermes_plugin())?;
+    bridges::write_pi_bridge(&installed.pi_hook_bridge())?;
     for bundle in external_hooks {
         bundle.copy_assets(out)?;
     }
@@ -130,6 +134,19 @@ fn render_installation(
         external_hooks,
         runtime_root,
     )?;
+    hooks::write_hermes_hooks_for_runtime(
+        source,
+        &installed.hermes_manifest(),
+        external_hooks,
+        runtime_root,
+    )?;
+    hooks::write_pi_hooks_for_runtime(
+        source,
+        &installed.pi_manifest(),
+        external_hooks,
+        runtime_root,
+    )?;
+    hermes_config::write_managed_config(&installed.hermes_managed_config())?;
 
     Ok(())
 }
@@ -150,6 +167,9 @@ pub(crate) fn verify(root: &Path) -> Result<()> {
         installed.claude_secret_path_policy(),
         installed.claude_settings(),
         installed.devin_config(),
+        installed.hermes_manifest(),
+        installed.hermes_managed_config(),
+        installed.pi_manifest(),
     ] {
         if !path.is_file() {
             anyhow::bail!("missing or invalid harness file: {}", path.display());

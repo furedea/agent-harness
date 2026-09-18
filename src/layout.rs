@@ -37,6 +37,9 @@ const CODEX_AGENT_INSTRUCTIONS_PATH: &str = ".codex/AGENTS.md";
 const CODEX_HOOK_CONFIG_PATH: &str = ".codex/hooks.json";
 const CODEX_RULES_PATH: &str = ".codex/rules/default.rules";
 const DEVIN_CONFIG_PATH: &str = ".config/devin/config.json";
+const HERMES_MANIFEST_PATH: &str = ".hermes/hooks.json";
+const HERMES_MANAGED_CONFIG_PATH: &str = ".hermes/managed-config.yaml";
+const PI_MANIFEST_PATH: &str = ".pi/agent/hooks.json";
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct SourceLayout<'a> {
@@ -108,6 +111,14 @@ impl<'a> SourceLayout<'a> {
         self.root.join("devin/hooks")
     }
 
+    pub(crate) fn hermes_hooks(self) -> PathBuf {
+        self.root.join("hermes/hooks")
+    }
+
+    pub(crate) fn pi_hooks(self) -> PathBuf {
+        self.root.join("pi/hooks")
+    }
+
     pub(crate) fn claude_statusline(self) -> PathBuf {
         self.root.join("claude/statusline")
     }
@@ -149,6 +160,34 @@ impl<'a> InstalledLayout<'a> {
 
     pub(crate) fn devin_config(self) -> PathBuf {
         self.root.join(DEVIN_CONFIG_PATH)
+    }
+
+    pub(crate) fn hermes_hooks(self) -> PathBuf {
+        self.root.join(".hermes/hooks")
+    }
+
+    pub(crate) fn hermes_plugin(self) -> PathBuf {
+        self.root.join(".hermes/plugins/agent-harness-hooks")
+    }
+
+    pub(crate) fn hermes_manifest(self) -> PathBuf {
+        self.root.join(HERMES_MANIFEST_PATH)
+    }
+
+    pub(crate) fn hermes_managed_config(self) -> PathBuf {
+        self.root.join(HERMES_MANAGED_CONFIG_PATH)
+    }
+
+    pub(crate) fn pi_hooks(self) -> PathBuf {
+        self.root.join(".pi/hooks")
+    }
+
+    pub(crate) fn pi_hook_bridge(self) -> PathBuf {
+        self.root.join(".pi/agent/extensions/hook_bridge.ts")
+    }
+
+    pub(crate) fn pi_manifest(self) -> PathBuf {
+        self.root.join(PI_MANIFEST_PATH)
     }
 
     pub(crate) fn claude_statusline(self) -> PathBuf {
@@ -203,18 +242,21 @@ impl<'a> InstalledLayout<'a> {
         self.root.join(".codex/config.toml")
     }
 
-    pub(crate) fn managed_directories(self) -> [PathBuf; 6] {
+    pub(crate) fn managed_directories(self) -> [PathBuf; 9] {
         [
             self.codex_hooks(),
             self.claude_hooks(),
             self.devin_hooks(),
+            self.hermes_hooks(),
+            self.hermes_plugin(),
+            self.pi_hooks(),
             self.claude_statusline(),
             self.codex_skills(),
             self.claude_skills(),
         ]
     }
 
-    pub(crate) fn managed_files(self) -> [PathBuf; 7] {
+    pub(crate) fn managed_files(self) -> [PathBuf; 11] {
         [
             self.codex_agent_instructions(),
             self.claude_agent_instructions(),
@@ -223,6 +265,10 @@ impl<'a> InstalledLayout<'a> {
             self.codex_rules(),
             self.codex_config(),
             self.devin_config(),
+            self.hermes_manifest(),
+            self.hermes_managed_config(),
+            self.pi_manifest(),
+            self.pi_hook_bridge(),
         ]
     }
 
