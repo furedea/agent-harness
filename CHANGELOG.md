@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.9.1](https://github.com/furedea/agent-harness/compare/agent-harness-v0.9.0...agent-harness-v0.9.1) (2026-09-18)
+
+
+### Features
+
+* add Devin CLI hook provider ([#131](https://github.com/furedea/agent-harness/issues/131)) ([5449a5e](https://github.com/furedea/agent-harness/commit/5449a5e1ac6fa49b4fa121edb97a74e880b747eb)), closes [#130](https://github.com/furedea/agent-harness/issues/130)
+* add Hermes Agent and pi hook providers ([#134](https://github.com/furedea/agent-harness/issues/134)) ([8935eb9](https://github.com/furedea/agent-harness/commit/8935eb9de9c04f4ddb5ce8c5f68cc78e993d69b4))
+* **devin:** generate command permissions into Devin config ([#136](https://github.com/furedea/agent-harness/issues/136)) ([f107690](https://github.com/furedea/agent-harness/commit/f107690771d2a754f4da083d1a00bafaae1596e0))
+
 ## [0.9.0](https://github.com/furedea/agent-harness/compare/agent-harness-v0.8.0...agent-harness-v0.9.0) (2026-09-16)
 
 
