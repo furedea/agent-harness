@@ -86,6 +86,24 @@ pub(crate) fn claude_deny_permissions(source: &Path) -> Result<Vec<String>> {
         .collect())
 }
 
+pub(crate) fn devin_permissions(source: &Path) -> Result<serde_json::Value> {
+    let policy = read_policy(source)?;
+    Ok(serde_json::json!({
+        "allow": devin_permissions_for(&policy, Decision::Allow),
+        "ask": devin_permissions_for(&policy, Decision::Ask),
+        "deny": devin_permissions_for(&policy, Decision::Deny),
+    }))
+}
+
+fn devin_permissions_for(policy: &CommandPermissions, decision: Decision) -> Vec<String> {
+    policy
+        .rules
+        .iter()
+        .filter(|rule| rule.decision == decision)
+        .map(|rule| devin_permission(&rule.prefix))
+        .collect()
+}
+
 fn read_policy(source: &Path) -> Result<CommandPermissions> {
     let path = SourceLayout::new(source).command_permissions();
     let content = std::fs::read_to_string(&path)
@@ -184,6 +202,10 @@ fn claude_permission(pattern: &[String]) -> String {
     format!("Bash({}:*)", pattern.join(" "))
 }
 
+fn devin_permission(pattern: &[String]) -> String {
+    format!("Exec({})", pattern.join(" "))
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
@@ -280,6 +302,44 @@ mod tests {
         let permissions = claude_ask_permissions(&root)?;
 
         assert_eq!(permissions, ["Bash(git push:*)"]);
+
+        std::fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn devin_permissions_use_exec_prefix_syntax() -> Result<()> {
+        let root = test_root("devin_permissions_use_exec_prefix_syntax")?;
+        write_policy(&root)?;
+
+        let permissions = devin_permissions(&root)?;
+
+        assert_eq!(permissions["allow"], serde_json::json!(["Exec(cargo)"]));
+        assert_eq!(permissions["deny"], serde_json::json!(["Exec(curl)"]));
+
+        std::fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn devin_permissions_join_prefix_segments_with_spaces() -> Result<()> {
+        let root = test_root("devin_permissions_join_prefix_segments_with_spaces")?;
+        write_file(
+            &root.join("command_permissions.json"),
+            r#"{
+  "version": 1,
+  "rules": [{
+    "decision": "ask",
+    "prefix": ["git", "push"],
+    "justification": "Publishing changes requires confirmation."
+  }]
+}
+"#,
+        )?;
+
+        let permissions = devin_permissions(&root)?;
+
+        assert_eq!(permissions["ask"], serde_json::json!(["Exec(git push)"]));
 
         std::fs::remove_dir_all(root)?;
         Ok(())

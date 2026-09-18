@@ -5,7 +5,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::{
-    generation::{external_hooks::ExternalHookBundle, io},
+    generation::{command_permissions, external_hooks::ExternalHookBundle, io},
     layout::SourceLayout,
     runtime_root::RuntimeRoot,
 };
@@ -111,14 +111,21 @@ pub(crate) fn devin_hooks_for_runtime(
     external_hooks: &[ExternalHookBundle],
     runtime_root: &RuntimeRoot,
 ) -> Result<Value> {
-    let mut hooks = read_hooks(source)?
+    let mut config = read_hooks(source)?
         .devin
         .unwrap_or_else(|| serde_json::json!({ "hooks": {} }));
     for bundle in external_hooks {
-        bundle.merge_devin_hooks(&mut hooks)?;
+        bundle.merge_devin_hooks(&mut config)?;
     }
-    relocate_commands(&mut hooks, runtime_root);
-    Ok(hooks)
+    relocate_commands(&mut config, runtime_root);
+    let Some(root) = config.as_object_mut() else {
+        bail!("hook config devin section must be a JSON object");
+    };
+    root.insert(
+        "permissions".to_string(),
+        command_permissions::devin_permissions(source)?,
+    );
+    Ok(config)
 }
 
 pub(crate) fn claude_hooks_for_runtime(
@@ -335,6 +342,7 @@ mod tests {
     fn write_devin_hooks_renders_the_devin_section_as_a_config_fragment() -> Result<()> {
         let root = test_root("write_devin_hooks_renders_the_devin_section_as_a_config_fragment")?;
         write_hook_config(&root)?;
+        write_command_policy(&root)?;
         let output = root.join("devin-hooks.json");
 
         write_devin_hooks(&root, &output, &[])?;
@@ -354,18 +362,42 @@ mod tests {
     }
 
     #[test]
+    fn write_devin_hooks_includes_command_permissions() -> Result<()> {
+        let root = test_root("write_devin_hooks_includes_command_permissions")?;
+        write_hook_config(&root)?;
+        write_command_policy(&root)?;
+        let output = root.join("devin-hooks.json");
+
+        write_devin_hooks(&root, &output, &[])?;
+
+        let config: Value = serde_json::from_str(&std::fs::read_to_string(&output)?)?;
+        assert_eq!(
+            config["permissions"],
+            serde_json::json!({
+                "allow": ["Exec(cargo)"],
+                "ask": ["Exec(git push)"],
+                "deny": ["Exec(curl)"]
+            })
+        );
+
+        std::fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
     fn write_devin_hooks_emits_empty_hooks_when_the_section_is_missing() -> Result<()> {
         let root = test_root("write_devin_hooks_emits_empty_hooks_when_the_section_is_missing")?;
         write_file(
             &root.join("hooks.json"),
             r#"{"version":1,"claude":{},"codex":{"hooks":{}}}"#,
         )?;
+        write_command_policy(&root)?;
         let output = root.join("devin-hooks.json");
 
         write_devin_hooks(&root, &output, &[])?;
 
         let hooks: Value = serde_json::from_str(&std::fs::read_to_string(&output)?)?;
-        assert_eq!(hooks, serde_json::json!({"hooks": {}}));
+        assert_eq!(hooks["hooks"], serde_json::json!({}));
 
         std::fs::remove_dir_all(root)?;
         Ok(())
@@ -392,6 +424,33 @@ mod tests {
         let root = std::env::temp_dir().join(format!("agent-harness-{name}-{nanos}"));
         std::fs::create_dir_all(&root)?;
         Ok(root)
+    }
+
+    fn write_command_policy(root: &Path) -> Result<()> {
+        write_file(
+            &root.join("command_permissions.json"),
+            r#"{
+  "version": 1,
+  "rules": [
+    {
+      "decision": "allow",
+      "prefix": ["cargo"],
+      "justification": "Allowed by the shared agent command permissions."
+    },
+    {
+      "decision": "ask",
+      "prefix": ["git", "push"],
+      "justification": "Publishing changes requires confirmation."
+    },
+    {
+      "decision": "deny",
+      "prefix": ["curl"],
+      "justification": "Do not fetch remote scripts or content."
+    }
+  ]
+}
+"#,
+        )
     }
 
     fn write_hook_config(root: &Path) -> Result<()> {

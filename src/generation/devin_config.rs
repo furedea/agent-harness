@@ -15,11 +15,55 @@ pub(crate) fn sync_config(source_path: &Path, target_path: &Path) -> Result<()> 
 
 fn merge_managed_config(existing: &mut Value, generated: Value) -> Result<()> {
     let existing = object_mut(existing, "existing Devin config root")?;
-    let Value::Object(generated) = generated else {
+    let Value::Object(mut generated) = generated else {
         bail!("generated Devin config root must be a JSON object");
     };
+    if let Some(permissions) = generated.remove("permissions") {
+        merge_permissions(existing, permissions)?;
+    }
     existing.extend(generated);
     Ok(())
+}
+
+// Exec(...) entries are managed by agent-harness, the same way Bash(...)
+// entries are managed in Claude settings. Other entry kinds stay user-owned.
+fn merge_permissions(existing: &mut Map<String, Value>, generated: Value) -> Result<()> {
+    let Value::Object(generated) = generated else {
+        bail!("generated Devin permissions must be a JSON object");
+    };
+    let permissions = existing
+        .entry("permissions".to_string())
+        .or_insert_with(|| Value::Object(Map::new()));
+    let permissions = object_mut(permissions, "existing Devin permissions")?;
+
+    for (key, value) in generated {
+        let Value::Array(generated_entries) = value else {
+            bail!("generated Devin permissions.{key} must be a JSON array");
+        };
+        let mut entries = user_owned_entries(permissions.get(&key))?;
+        entries.extend(generated_entries);
+        permissions.insert(key, Value::Array(entries));
+    }
+    Ok(())
+}
+
+fn user_owned_entries(value: Option<&Value>) -> Result<Vec<Value>> {
+    let Some(value) = value else {
+        return Ok(Vec::new());
+    };
+    let Some(values) = value.as_array() else {
+        bail!("existing Devin permissions entries must be JSON arrays");
+    };
+
+    Ok(values
+        .iter()
+        .filter(|entry| {
+            !entry
+                .as_str()
+                .is_some_and(|permission| permission.starts_with("Exec("))
+        })
+        .cloned()
+        .collect())
 }
 
 fn object_mut<'a>(value: &'a mut Value, name: &str) -> Result<&'a mut Map<String, Value>> {
@@ -83,6 +127,95 @@ mod tests {
                 "agent": {"model": "swe-2-max"},
                 "hooks": {"SessionStart": ["generated-hook"]}
             }),
+        );
+        std::fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn sync_config_merges_permissions_and_preserves_user_entries() -> Result<()> {
+        let root = test_root("sync-devin-config-permissions")?;
+        let source = root.join("generated.json");
+        let target = root.join("config.json");
+        let existing = json!({
+            "version": 1,
+            "agent": {"model": "swe-2-max"},
+            "permissions": {
+                "allow": ["Exec(ls)", "Read(**)", "mcp__github__*"],
+                "deny": ["Exec(rm)", "Write(.env*)"]
+            }
+        });
+        let generated = json!({
+            "hooks": {},
+            "permissions": {
+                "allow": ["Exec(cargo)", "Exec(git status)"],
+                "ask": ["Exec(git push)"],
+                "deny": ["Exec(curl)"]
+            }
+        });
+        write_file(&source, &serde_json::to_string(&generated)?)?;
+        write_file(&target, &serde_json::to_string(&existing)?)?;
+
+        sync_config(&source, &target)?;
+
+        assert_eq!(
+            read_json(&target)?,
+            json!({
+                "version": 1,
+                "agent": {"model": "swe-2-max"},
+                "hooks": {},
+                "permissions": {
+                    "allow": ["Read(**)", "mcp__github__*", "Exec(cargo)", "Exec(git status)"],
+                    "ask": ["Exec(git push)"],
+                    "deny": ["Write(.env*)", "Exec(curl)"]
+                }
+            }),
+        );
+        std::fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn sync_config_permissions_merge_is_idempotent() -> Result<()> {
+        let root = test_root("sync-devin-config-permissions-idempotent")?;
+        let source = root.join("generated.json");
+        let target = root.join("config.json");
+        let generated = json!({
+            "permissions": {
+                "allow": ["Exec(cargo)"],
+                "ask": [],
+                "deny": ["Exec(curl)"]
+            }
+        });
+        write_file(&source, &serde_json::to_string(&generated)?)?;
+
+        sync_config(&source, &target)?;
+        let first = read_json(&target)?;
+        sync_config(&source, &target)?;
+
+        assert_eq!(read_json(&target)?, first);
+        assert_eq!(first["permissions"]["allow"], json!(["Exec(cargo)"]),);
+        std::fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn sync_config_without_generated_permissions_keeps_existing_permissions() -> Result<()> {
+        let root = test_root("sync-devin-config-no-permissions")?;
+        let source = root.join("generated.json");
+        let target = root.join("config.json");
+        let existing = json!({
+            "permissions": {"allow": ["Exec(ls)", "Read(**)"]}
+        });
+        let generated = json!({"hooks": {}});
+        write_file(&source, &serde_json::to_string(&generated)?)?;
+        write_file(&target, &serde_json::to_string(&existing)?)?;
+
+        sync_config(&source, &target)?;
+
+        assert_eq!(
+            read_json(&target)?["permissions"],
+            json!({"allow": ["Exec(ls)", "Read(**)"]}),
         );
         std::fs::remove_dir_all(root)?;
         Ok(())
