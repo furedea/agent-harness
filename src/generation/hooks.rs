@@ -15,12 +15,14 @@ struct HookConfig {
     version: u64,
     claude: Value,
     codex: Value,
+    devin: Option<Value>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, clap::ValueEnum)]
 pub(crate) enum HookProvider {
     Claude,
     Codex,
+    Devin,
 }
 
 impl HookProvider {
@@ -28,6 +30,7 @@ impl HookProvider {
         match self {
             Self::Claude => "Claude",
             Self::Codex => "Codex",
+            Self::Devin => "Devin",
         }
     }
 }
@@ -83,6 +86,41 @@ pub(crate) fn write_codex_hooks_for_runtime(
     io::write_json(path, &hooks)
 }
 
+pub(crate) fn write_devin_hooks(
+    source: &Path,
+    path: &Path,
+    external_hooks: &[ExternalHookBundle],
+) -> Result<()> {
+    write_devin_hooks_for_runtime(source, path, external_hooks, &RuntimeRoot::home())
+}
+
+pub(crate) fn write_devin_hooks_for_runtime(
+    source: &Path,
+    path: &Path,
+    external_hooks: &[ExternalHookBundle],
+    runtime_root: &RuntimeRoot,
+) -> Result<()> {
+    io::write_json(
+        path,
+        &devin_hooks_for_runtime(source, external_hooks, runtime_root)?,
+    )
+}
+
+pub(crate) fn devin_hooks_for_runtime(
+    source: &Path,
+    external_hooks: &[ExternalHookBundle],
+    runtime_root: &RuntimeRoot,
+) -> Result<Value> {
+    let mut hooks = read_hooks(source)?
+        .devin
+        .unwrap_or_else(|| serde_json::json!({ "hooks": {} }));
+    for bundle in external_hooks {
+        bundle.merge_devin_hooks(&mut hooks)?;
+    }
+    relocate_commands(&mut hooks, runtime_root);
+    Ok(hooks)
+}
+
 pub(crate) fn claude_hooks_for_runtime(
     source: &Path,
     external_hooks: &[ExternalHookBundle],
@@ -123,6 +161,12 @@ pub(crate) fn built_in_hook_metadata(source: &Path) -> Result<Vec<HookMetadata>>
         .context("hook config codex section must contain hooks")?;
     let mut metadata = hook_metadata(HookProvider::Claude, &config.claude)?;
     metadata.extend(hook_metadata(HookProvider::Codex, codex)?);
+    if let Some(devin) = &config.devin {
+        let devin = devin
+            .get("hooks")
+            .context("hook config devin section must contain hooks")?;
+        metadata.extend(hook_metadata(HookProvider::Devin, devin)?);
+    }
     metadata.sort_by(|left, right| {
         left.provider
             .cmp(&right.provider)
@@ -141,8 +185,11 @@ fn hook_event_rank(event: &str) -> usize {
         "PermissionDenied" => 4,
         "Notification" => 5,
         "SubagentStop" => 6,
+        "PermissionRequest" => 6,
         "Stop" => 7,
         "PreCompact" => 8,
+        "PostCompaction" => 9,
+        "SessionEnd" => 10,
         _ => usize::MAX,
     }
 }
@@ -166,6 +213,13 @@ fn validate_hooks(config: &HookConfig) -> Result<()> {
     }
     if !config.codex.is_object() {
         bail!("hook config codex section must be a JSON object");
+    }
+    if config
+        .devin
+        .as_ref()
+        .is_some_and(|devin| !devin.is_object())
+    {
+        bail!("hook config devin section must be a JSON object");
     }
     Ok(())
 }
@@ -278,6 +332,46 @@ mod tests {
     }
 
     #[test]
+    fn write_devin_hooks_renders_the_devin_section_as_a_config_fragment() -> Result<()> {
+        let root = test_root("write_devin_hooks_renders_the_devin_section_as_a_config_fragment")?;
+        write_hook_config(&root)?;
+        let output = root.join("devin-hooks.json");
+
+        write_devin_hooks(&root, &output, &[])?;
+
+        let hooks: Value = serde_json::from_str(&std::fs::read_to_string(&output)?)?;
+        assert_eq!(
+            hooks["hooks"]["PreToolUse"][0]["matcher"].as_str(),
+            Some("exec"),
+        );
+        assert_eq!(
+            hooks["hooks"]["PreToolUse"][0]["hooks"][0]["command"].as_str(),
+            Some("$HOME/.devin/hooks/hook_adapter.py shell forbidden"),
+        );
+
+        std::fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn write_devin_hooks_emits_empty_hooks_when_the_section_is_missing() -> Result<()> {
+        let root = test_root("write_devin_hooks_emits_empty_hooks_when_the_section_is_missing")?;
+        write_file(
+            &root.join("hooks.json"),
+            r#"{"version":1,"claude":{},"codex":{"hooks":{}}}"#,
+        )?;
+        let output = root.join("devin-hooks.json");
+
+        write_devin_hooks(&root, &output, &[])?;
+
+        let hooks: Value = serde_json::from_str(&std::fs::read_to_string(&output)?)?;
+        assert_eq!(hooks, serde_json::json!({"hooks": {}}));
+
+        std::fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
     fn read_hooks_rejects_unsupported_version() -> Result<()> {
         let root = test_root("read_hooks_rejects_unsupported_version")?;
         write_file(
@@ -328,6 +422,21 @@ mod tests {
               "command": "$HOME/.codex/hooks/adapt_shell_command.sh",
               "statusMessage": "Checking command permissions",
               "timeout": 30,
+              "type": "command"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "devin": {
+    "hooks": {
+      "PreToolUse": [
+        {
+          "matcher": "exec",
+          "hooks": [
+            {
+              "command": "$HOME/.devin/hooks/hook_adapter.py shell forbidden",
               "type": "command"
             }
           ]

@@ -27,10 +27,12 @@ impl Inventory {
             "Agent Harness inventory\n\n\
              Skills                  {}\n\
              Claude hook events      {}\n\
-             Codex hook events       {}\n",
+             Codex hook events       {}\n\
+             Devin hook events       {}\n",
             self.skills.len(),
             self.hook_event_count(HookProvider::Claude),
             self.hook_event_count(HookProvider::Codex),
+            self.hook_event_count(HookProvider::Devin),
         )
     }
 
@@ -53,7 +55,11 @@ impl Inventory {
 
     pub(crate) fn hooks(&self, provider: Option<HookProvider>) -> String {
         let mut lines = vec!["Hooks".to_owned()];
-        for current_provider in [HookProvider::Claude, HookProvider::Codex] {
+        for current_provider in [
+            HookProvider::Claude,
+            HookProvider::Codex,
+            HookProvider::Devin,
+        ] {
             if provider.is_some_and(|provider| provider != current_provider) {
                 continue;
             }
@@ -155,6 +161,7 @@ fn shorten_hook_command(command: &str) -> String {
 fn shorten_hook_path(part: &str) -> String {
     part.strip_prefix("$HOME/.claude/hooks/")
         .or_else(|| part.strip_prefix("$HOME/.codex/hooks/"))
+        .or_else(|| part.strip_prefix("$HOME/.devin/hooks/"))
         .unwrap_or(part)
         .to_owned()
 }

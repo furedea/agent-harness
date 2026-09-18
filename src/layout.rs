@@ -36,6 +36,7 @@ const CLAUDE_SETTINGS_PATH: &str = ".claude/settings.json";
 const CODEX_AGENT_INSTRUCTIONS_PATH: &str = ".codex/AGENTS.md";
 const CODEX_HOOK_CONFIG_PATH: &str = ".codex/hooks.json";
 const CODEX_RULES_PATH: &str = ".codex/rules/default.rules";
+const DEVIN_CONFIG_PATH: &str = ".config/devin/config.json";
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct SourceLayout<'a> {
@@ -103,6 +104,10 @@ impl<'a> SourceLayout<'a> {
         self.root.join("codex/hooks")
     }
 
+    pub(crate) fn devin_hooks(self) -> PathBuf {
+        self.root.join("devin/hooks")
+    }
+
     pub(crate) fn claude_statusline(self) -> PathBuf {
         self.root.join("claude/statusline")
     }
@@ -136,6 +141,14 @@ impl<'a> InstalledLayout<'a> {
 
     pub(crate) fn claude_hooks(self) -> PathBuf {
         self.root.join(".claude/hooks")
+    }
+
+    pub(crate) fn devin_hooks(self) -> PathBuf {
+        self.root.join(".devin/hooks")
+    }
+
+    pub(crate) fn devin_config(self) -> PathBuf {
+        self.root.join(DEVIN_CONFIG_PATH)
     }
 
     pub(crate) fn claude_statusline(self) -> PathBuf {
@@ -190,17 +203,18 @@ impl<'a> InstalledLayout<'a> {
         self.root.join(".codex/config.toml")
     }
 
-    pub(crate) fn managed_directories(self) -> [PathBuf; 5] {
+    pub(crate) fn managed_directories(self) -> [PathBuf; 6] {
         [
             self.codex_hooks(),
             self.claude_hooks(),
+            self.devin_hooks(),
             self.claude_statusline(),
             self.codex_skills(),
             self.claude_skills(),
         ]
     }
 
-    pub(crate) fn managed_files(self) -> [PathBuf; 6] {
+    pub(crate) fn managed_files(self) -> [PathBuf; 7] {
         [
             self.codex_agent_instructions(),
             self.claude_agent_instructions(),
@@ -208,6 +222,7 @@ impl<'a> InstalledLayout<'a> {
             self.claude_settings(),
             self.codex_rules(),
             self.codex_config(),
+            self.devin_config(),
         ]
     }
 

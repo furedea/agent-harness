@@ -101,6 +101,49 @@ fn external_codex_hooks_are_composed_with_built_in_hooks() {
 }
 
 #[test]
+fn external_devin_hooks_are_composed_with_built_in_hooks() {
+    let root = test_root("external-devin-hooks");
+    let bundle = root.join("moshi");
+    let config_path = root.join("config.json");
+    std::fs::create_dir_all(bundle.join(".devin/hooks")).unwrap();
+    std::fs::write(bundle.join("hook_bundle.json"), r#"{"version":1}"#).unwrap();
+    std::fs::write(bundle.join(".devin/hooks/moshi-devin.sh"), "#!/bin/bash\n").unwrap();
+    let command = format!(
+        "bash '{}/.devin/hooks/moshi-devin.sh' notify",
+        bundle.display(),
+    );
+    std::fs::write(
+        bundle.join(".devin/hooks.v1.json"),
+        format!(
+            r#"{{"SessionStart":[{{"hooks":[{{"type":"command","command":"{command}"}}]}}]}}"#,
+        ),
+    )
+    .unwrap();
+
+    run_harness([
+        "generate-devin-hooks",
+        "--source",
+        complete_source_root().to_str().unwrap(),
+        "--extra-hook",
+        &format!("moshi={}", bundle.display()),
+        "--output",
+        config_path.to_str().unwrap(),
+    ]);
+
+    let config = read_json(&config_path);
+    assert!(hook_command_exists(
+        &config,
+        "bash \"$HOME/.devin/hooks/external/moshi/moshi-devin.sh\" notify",
+    ));
+    assert!(hook_command_exists(
+        &config,
+        "$HOME/.devin/hooks/hook_adapter.py shell forbidden",
+    ));
+
+    remove_dir(root);
+}
+
+#[test]
 fn external_hook_features_are_composed_with_codex_config() {
     let root = test_root("external-codex-features");
     let bundle = root.join("herdr");

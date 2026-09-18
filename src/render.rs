@@ -88,6 +88,7 @@ fn render_installation(
     )?;
     fs_ops::copy_dir(&source_layout.codex_hooks(), &installed.codex_hooks())?;
     fs_ops::copy_dir(&source_layout.agent_hooks(), &installed.claude_hooks())?;
+    fs_ops::copy_dir(&source_layout.devin_hooks(), &installed.devin_hooks())?;
     for bundle in external_hooks {
         bundle.copy_assets(out)?;
     }
@@ -123,6 +124,12 @@ fn render_installation(
         external_hooks,
         runtime_root,
     )?;
+    hooks::write_devin_hooks_for_runtime(
+        source,
+        &installed.devin_config(),
+        external_hooks,
+        runtime_root,
+    )?;
 
     Ok(())
 }
@@ -142,6 +149,7 @@ pub(crate) fn verify(root: &Path) -> Result<()> {
         installed.claude_secret_commit_policy(),
         installed.claude_secret_path_policy(),
         installed.claude_settings(),
+        installed.devin_config(),
     ] {
         if !path.is_file() {
             anyhow::bail!("missing or invalid harness file: {}", path.display());
@@ -204,6 +212,8 @@ mod tests {
         assert!(source.join("hooks/rules/forbidden_commands.json").is_file());
         assert!(out.join(".codex/config.toml").is_file());
         assert!(out.join(".claude/settings.json").is_file());
+        assert!(out.join(".devin/hooks").is_dir());
+        assert!(out.join(".config/devin/config.json").is_file());
 
         let codex_config = std::fs::read_to_string(out.join(".codex/config.toml"))?;
         assert!(codex_config.contains("[permissions.guarded.filesystem]"));

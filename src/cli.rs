@@ -5,8 +5,8 @@ use clap::{Parser, Subcommand, ValueEnum};
 
 use crate::{
     generation::{
-        claude_config, codex_config, command_permissions, external_hooks::ExternalHookBundle,
-        hook_bundle, hooks, protection, skills::ExternalSkill,
+        claude_config, codex_config, command_permissions, devin_config,
+        external_hooks::ExternalHookBundle, hook_bundle, hooks, protection, skills::ExternalSkill,
     },
     inventory::Inventory,
     profile::Profile,
@@ -38,6 +38,8 @@ enum Command {
     GenerateCodexConfigFragment(GenerateFileArgs),
     /// Generate Codex hook configuration.
     GenerateCodexHooks(GenerateFileArgs),
+    /// Generate the Devin CLI hooks config fragment.
+    GenerateDevinHooks(GenerateFileArgs),
     /// Generate Codex execpolicy rules.
     GenerateCodexRules(GenerateFileArgs),
     /// Generate the shared runtime command permissions.
@@ -56,6 +58,8 @@ enum Command {
     SyncCodexConfig(SyncConfigArgs),
     /// Merge generated top-level keys into existing Claude Code settings.
     SyncClaudeSettings(SyncConfigArgs),
+    /// Merge generated top-level keys into an existing Devin CLI config.
+    SyncDevinConfig(SyncConfigArgs),
     /// Verify managed files and source-declared runtime commands.
     Verify(VerifyArgs),
 }
@@ -82,7 +86,7 @@ enum ListCommand {
 struct ListHooksArgs {
     /// Show hooks for one provider.
     #[arg(long, value_enum)]
-    provider: Option<Provider>,
+    provider: Option<hooks::HookProvider>,
 }
 
 #[derive(Debug, clap::Args)]
@@ -177,6 +181,7 @@ pub fn run() -> Result<()> {
         Command::GenerateCodexConfigSource(args) => generate_codex_config_source(args, profile),
         Command::GenerateCodexConfigFragment(args) => write_codex_config_fragment(args, profile),
         Command::GenerateCodexHooks(args) => write_codex_hooks(args, profile),
+        Command::GenerateDevinHooks(args) => write_devin_hooks(args, profile),
         Command::GenerateCodexRules(args) => write_codex_rules(args, profile),
         Command::GenerateCommandPermissions(args) => write_command_permissions(args, profile),
         Command::GenerateForbiddenCommands(args) => write_forbidden_commands(args, profile),
@@ -190,6 +195,7 @@ pub fn run() -> Result<()> {
         Command::SyncClaudeSettings(args) => {
             claude_config::sync_settings(&args.source, &args.target)
         }
+        Command::SyncDevinConfig(args) => devin_config::sync_config(&args.source, &args.target),
         Command::Verify(args) => {
             let source = source::resolve_source(args.source, profile)?;
             let prefix = args.prefix.unwrap_or_else(default_home_dir);
@@ -226,6 +232,11 @@ fn write_codex_config_fragment(args: GenerateFileArgs, profile: Profile) -> Resu
 fn write_codex_hooks(args: GenerateFileArgs, profile: Profile) -> Result<()> {
     let source = source::resolve_source(args.source, profile)?;
     hooks::write_codex_hooks(source.as_path(), &args.output, &args.extra_hook)
+}
+
+fn write_devin_hooks(args: GenerateFileArgs, profile: Profile) -> Result<()> {
+    let source = source::resolve_source(args.source, profile)?;
+    hooks::write_devin_hooks(source.as_path(), &args.output, &args.extra_hook)
 }
 
 fn write_codex_rules(args: GenerateFileArgs, profile: Profile) -> Result<()> {
@@ -276,9 +287,7 @@ fn list(args: ListArgs, profile: Profile) -> Result<()> {
     let source = source::resolve_source(args.source, profile)?;
     let inventory = Inventory::load(source.as_path())?;
     let output = match args.command {
-        Some(ListCommand::Hooks(hook_args)) => {
-            inventory.hooks(hook_args.provider.map(Provider::hook_provider))
-        }
+        Some(ListCommand::Hooks(hook_args)) => inventory.hooks(hook_args.provider),
         Some(ListCommand::Skills) => inventory.skills(),
         None => inventory.summary(),
     };
@@ -302,15 +311,6 @@ impl From<Provider> for render::Provider {
         match provider {
             Provider::Claude => Self::Claude,
             Provider::Codex => Self::Codex,
-        }
-    }
-}
-
-impl Provider {
-    fn hook_provider(self) -> hooks::HookProvider {
-        match self {
-            Self::Claude => hooks::HookProvider::Claude,
-            Self::Codex => hooks::HookProvider::Codex,
         }
     }
 }
