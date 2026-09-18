@@ -26,8 +26,8 @@ Provider settings
 
 - **Shared hooks**: reuse hook behavior across Codex and Claude Code, including tools whose CLI
   normally writes directly into each provider's config directory.
-- **One set of guardrails**: generate Claude Bash permissions and Codex execpolicy from one neutral
-  `allow` / `ask` / `deny` source.
+- **One set of guardrails**: generate Claude Bash permissions, Codex execpolicy, and Devin Exec
+  permissions from one neutral `allow` / `ask` / `deny` source.
 - **Composable extensions**: combine built-in behavior with external skills and hook bundles.
 - **CLI-to-Nix bridge**: turn command output into a skill, or capture supported files created by
   hook installers inside an isolated build home.
@@ -324,6 +324,8 @@ config directories.
 | `~/.claude/hooks/`             | Claude Code hooks and policy guards |
 | `~/.claude/skills/`            | Rendered Claude Code skills         |
 | `~/.claude/statusline/`        | Claude Code status line command     |
+| `~/.devin/hooks/`              | Devin hook adapters                 |
+| `~/.config/devin/config.json`  | Devin hooks and command permissions |
 
 Installation replaces the managed hook and skill directories and rewrites Claude Code's managed
 settings. Codex config synchronization replaces only these managed top-level keys and preserves
@@ -334,6 +336,12 @@ model, model_reasoning_effort, personality, approval_policy, sandbox_mode,
 approvals_reviewer, notice, tui, plugins, features, default_permissions,
 permissions
 ```
+
+Devin config synchronization replaces the managed top-level keys and, inside `permissions`,
+replaces only `Exec(...)` entries — the same managed-namespace convention as `Bash(...)` entries in
+Claude settings. Non-Exec entries such as `Read(...)`, `Write(...)`, `Fetch(...)`, and `mcp__*`
+rules stay user-owned. Approvals saved interactively as `Exec(...)` are replaced on the next sync;
+add persistent command rules to `command_permissions.json` instead.
 
 `verify` checks the required paths and runtime commands declared by the resolved source manifest. It
 does not compare installed file contents with the selected source.
@@ -385,11 +393,13 @@ The CLI also exposes lower-level generation commands for inspecting or composing
 | `generate-codex-hooks`           | Codex hook JSON                                    |
 | `generate-codex-rules`           | Codex execpolicy rules                             |
 | `generate-command-permissions`   | Shared runtime command permissions                 |
+| `generate-devin-hooks`           | Devin config fragment (hooks and permissions)      |
 | `generate-forbidden-commands`    | Global precise forbidden-command regex rules       |
 | `generate-hook-bundle`           | Isolated, versioned external hook bundle           |
 | `generate-skills`                | Provider-specific built-in and external skill tree |
 | `sync-claude-settings`           | Top-level merge into existing Claude settings      |
 | `sync-codex-config`              | Managed-key merge into an existing Codex config    |
+| `sync-devin-config`              | Managed merge into an existing Devin config        |
 
 ```bash
 agent-harness generate-skills \
