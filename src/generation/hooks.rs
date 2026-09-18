@@ -16,6 +16,8 @@ struct HookConfig {
     claude: Value,
     codex: Value,
     devin: Option<Value>,
+    hermes: Option<Value>,
+    pi: Option<Value>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, clap::ValueEnum)]
@@ -23,6 +25,8 @@ pub(crate) enum HookProvider {
     Claude,
     Codex,
     Devin,
+    Hermes,
+    Pi,
 }
 
 impl HookProvider {
@@ -31,6 +35,8 @@ impl HookProvider {
             Self::Claude => "Claude",
             Self::Codex => "Codex",
             Self::Devin => "Devin",
+            Self::Hermes => "Hermes",
+            Self::Pi => "Pi",
         }
     }
 }
@@ -128,6 +134,76 @@ pub(crate) fn devin_hooks_for_runtime(
     Ok(config)
 }
 
+pub(crate) fn write_hermes_hooks(
+    source: &Path,
+    path: &Path,
+    external_hooks: &[ExternalHookBundle],
+) -> Result<()> {
+    write_hermes_hooks_for_runtime(source, path, external_hooks, &RuntimeRoot::home())
+}
+
+pub(crate) fn write_hermes_hooks_for_runtime(
+    source: &Path,
+    path: &Path,
+    external_hooks: &[ExternalHookBundle],
+    runtime_root: &RuntimeRoot,
+) -> Result<()> {
+    io::write_json(
+        path,
+        &hermes_hooks_for_runtime(source, external_hooks, runtime_root)?,
+    )
+}
+
+pub(crate) fn hermes_hooks_for_runtime(
+    source: &Path,
+    external_hooks: &[ExternalHookBundle],
+    runtime_root: &RuntimeRoot,
+) -> Result<Value> {
+    let mut hooks = read_hooks(source)?
+        .hermes
+        .unwrap_or_else(|| serde_json::json!({ "hooks": {} }));
+    for bundle in external_hooks {
+        bundle.merge_hermes_hooks(&mut hooks)?;
+    }
+    relocate_commands(&mut hooks, runtime_root);
+    Ok(hooks)
+}
+
+pub(crate) fn write_pi_hooks(
+    source: &Path,
+    path: &Path,
+    external_hooks: &[ExternalHookBundle],
+) -> Result<()> {
+    write_pi_hooks_for_runtime(source, path, external_hooks, &RuntimeRoot::home())
+}
+
+pub(crate) fn write_pi_hooks_for_runtime(
+    source: &Path,
+    path: &Path,
+    external_hooks: &[ExternalHookBundle],
+    runtime_root: &RuntimeRoot,
+) -> Result<()> {
+    io::write_json(
+        path,
+        &pi_hooks_for_runtime(source, external_hooks, runtime_root)?,
+    )
+}
+
+pub(crate) fn pi_hooks_for_runtime(
+    source: &Path,
+    external_hooks: &[ExternalHookBundle],
+    runtime_root: &RuntimeRoot,
+) -> Result<Value> {
+    let mut hooks = read_hooks(source)?
+        .pi
+        .unwrap_or_else(|| serde_json::json!({ "hooks": {} }));
+    for bundle in external_hooks {
+        bundle.merge_pi_hooks(&mut hooks)?;
+    }
+    relocate_commands(&mut hooks, runtime_root);
+    Ok(hooks)
+}
+
 pub(crate) fn claude_hooks_for_runtime(
     source: &Path,
     external_hooks: &[ExternalHookBundle],
@@ -173,6 +249,20 @@ pub(crate) fn built_in_hook_metadata(source: &Path) -> Result<Vec<HookMetadata>>
             .get("hooks")
             .context("hook config devin section must contain hooks")?;
         metadata.extend(hook_metadata(HookProvider::Devin, devin)?);
+    }
+    for (provider, section) in [
+        (HookProvider::Hermes, &config.hermes),
+        (HookProvider::Pi, &config.pi),
+    ] {
+        if let Some(section) = section {
+            let hooks = section.get("hooks").with_context(|| {
+                format!(
+                    "hook config {} section must contain hooks",
+                    provider.display_name().to_lowercase()
+                )
+            })?;
+            metadata.extend(hook_metadata(provider, hooks)?);
+        }
     }
     metadata.sort_by(|left, right| {
         left.provider
@@ -227,6 +317,11 @@ fn validate_hooks(config: &HookConfig) -> Result<()> {
         .is_some_and(|devin| !devin.is_object())
     {
         bail!("hook config devin section must be a JSON object");
+    }
+    for (name, section) in [("hermes", &config.hermes), ("pi", &config.pi)] {
+        if section.as_ref().is_some_and(|value| !value.is_object()) {
+            bail!("hook config {name} section must be a JSON object");
+        }
     }
     Ok(())
 }

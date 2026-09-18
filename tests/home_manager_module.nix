@@ -44,4 +44,21 @@ assert pkgs.lib.assertMsg (hasHomeFile ".devin/hooks")
   "Devin hook scripts should be installed as a Home Manager file";
 assert pkgs.lib.assertMsg (hasActivation "agentHarnessDevinConfig")
   "Devin config should be materialized during activation";
+assert pkgs.lib.assertMsg (
+  !hasHomeFile ".hermes/config.yaml"
+) "Hermes config should not be a Home Manager symlink";
+assert pkgs.lib.assertMsg (hasHomeFile ".hermes/hooks")
+  "Hermes hook scripts should be installed as a Home Manager file";
+assert pkgs.lib.assertMsg (hasHomeFile ".hermes/hooks.json")
+  "Hermes hook manifest should be installed as a Home Manager file";
+assert pkgs.lib.assertMsg (hasHomeFile ".hermes/plugins/agent-harness-hooks")
+  "Hermes bridge plugin should be installed as a Home Manager file";
+assert pkgs.lib.assertMsg (hasActivation "agentHarnessHermesConfig")
+  "Hermes config should be materialized during activation";
+assert pkgs.lib.assertMsg (hasHomeFile ".pi/hooks")
+  "pi hook scripts should be installed as a Home Manager file";
+assert pkgs.lib.assertMsg (hasHomeFile ".pi/agent/hooks.json")
+  "pi hook manifest should be installed as a Home Manager file";
+assert pkgs.lib.assertMsg (hasHomeFile ".pi/agent/extensions/hook_bridge.ts")
+  "pi bridge extension should be installed as a Home Manager file";
 configuration.activationPackage

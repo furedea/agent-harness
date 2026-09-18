@@ -28,11 +28,15 @@ impl Inventory {
              Skills                  {}\n\
              Claude hook events      {}\n\
              Codex hook events       {}\n\
-             Devin hook events       {}\n",
+             Devin hook events       {}\n\
+             Hermes hook events      {}\n\
+             Pi hook events          {}\n",
             self.skills.len(),
             self.hook_event_count(HookProvider::Claude),
             self.hook_event_count(HookProvider::Codex),
             self.hook_event_count(HookProvider::Devin),
+            self.hook_event_count(HookProvider::Hermes),
+            self.hook_event_count(HookProvider::Pi),
         )
     }
 
@@ -59,6 +63,8 @@ impl Inventory {
             HookProvider::Claude,
             HookProvider::Codex,
             HookProvider::Devin,
+            HookProvider::Hermes,
+            HookProvider::Pi,
         ] {
             if provider.is_some_and(|provider| provider != current_provider) {
                 continue;
@@ -162,6 +168,8 @@ fn shorten_hook_path(part: &str) -> String {
     part.strip_prefix("$HOME/.claude/hooks/")
         .or_else(|| part.strip_prefix("$HOME/.codex/hooks/"))
         .or_else(|| part.strip_prefix("$HOME/.devin/hooks/"))
+        .or_else(|| part.strip_prefix("$HOME/.hermes/hooks/"))
+        .or_else(|| part.strip_prefix("$HOME/.pi/hooks/"))
         .unwrap_or(part)
         .to_owned()
 }

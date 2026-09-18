@@ -155,6 +155,22 @@ in
         description = "Whether to install Devin CLI harness files.";
       };
     };
+
+    hermes = {
+      enable = lib.mkOption {
+        type = lib.types.bool;
+        default = true;
+        description = "Whether to install Hermes Agent harness files.";
+      };
+    };
+
+    pi = {
+      enable = lib.mkOption {
+        type = lib.types.bool;
+        default = true;
+        description = "Whether to install pi harness files.";
+      };
+    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -177,6 +193,18 @@ in
         })
         (lib.mkIf cfg.devin.enable {
           ".devin/hooks".source = "${renderedHarness}/.devin/hooks";
+        })
+        (lib.mkIf cfg.hermes.enable {
+          ".hermes/hooks".source = "${renderedHarness}/.hermes/hooks";
+          ".hermes/hooks.json".source = "${renderedHarness}/.hermes/hooks.json";
+          ".hermes/plugins/agent-harness-hooks".source =
+            "${renderedHarness}/.hermes/plugins/agent-harness-hooks";
+        })
+        (lib.mkIf cfg.pi.enable {
+          ".pi/hooks".source = "${renderedHarness}/.pi/hooks";
+          ".pi/agent/hooks.json".source = "${renderedHarness}/.pi/agent/hooks.json";
+          ".pi/agent/extensions/hook_bridge.ts".source =
+            "${renderedHarness}/.pi/agent/extensions/hook_bridge.ts";
         })
       ];
 
@@ -202,6 +230,14 @@ in
             ${lib.getExe cfg.package} sync-devin-config \
               --source ${renderedHarness}/.config/devin/config.json \
               --target "$HOME/.config/devin/config.json"
+          ''
+        );
+
+        agentHarnessHermesConfig = lib.mkIf cfg.hermes.enable (
+          lib.hm.dag.entryAfter [ "linkGeneration" ] ''
+            ${lib.getExe cfg.package} sync-hermes-config \
+              --source ${renderedHarness}/.hermes/managed-config.yaml \
+              --target "$HOME/.hermes/config.yaml"
           ''
         );
       };

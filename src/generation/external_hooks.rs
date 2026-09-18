@@ -99,6 +99,50 @@ impl ExternalHookBundle {
         })
     }
 
+    pub(crate) fn merge_hermes_hooks(&self, hooks: &mut Value) -> Result<()> {
+        self.validate()?;
+        let path = self.source.join(".hermes/hooks.json");
+        if !path.is_file() {
+            return Ok(());
+        }
+
+        let generated = read_json(&path)?;
+        merge_events(
+            &mut hooks["hooks"],
+            &generated,
+            &self.assets()?,
+            &self.source,
+        )
+        .with_context(|| {
+            format!(
+                "failed to merge external hook bundle {}",
+                self.name.as_str()
+            )
+        })
+    }
+
+    pub(crate) fn merge_pi_hooks(&self, hooks: &mut Value) -> Result<()> {
+        self.validate()?;
+        let path = self.source.join(".pi/hooks.json");
+        if !path.is_file() {
+            return Ok(());
+        }
+
+        let generated = read_json(&path)?;
+        merge_events(
+            &mut hooks["hooks"],
+            &generated,
+            &self.assets()?,
+            &self.source,
+        )
+        .with_context(|| {
+            format!(
+                "failed to merge external hook bundle {}",
+                self.name.as_str()
+            )
+        })
+    }
+
     fn validate(&self) -> Result<()> {
         let path = self.source.join("hook_bundle.json");
         let manifest: HookBundleManifest = serde_json::from_str(
@@ -121,6 +165,8 @@ impl ExternalHookBundle {
         self.collect_asset_tree(Path::new(".claude/hooks"), &mut assets)?;
         self.collect_asset_tree(Path::new(".codex/hooks"), &mut assets)?;
         self.collect_asset_tree(Path::new(".devin/hooks"), &mut assets)?;
+        self.collect_asset_tree(Path::new(".hermes/hooks"), &mut assets)?;
+        self.collect_asset_tree(Path::new(".pi/hooks"), &mut assets)?;
         self.collect_codex_scripts(&mut assets)?;
         assets.sort_by(|left, right| left.target.cmp(&right.target));
         Ok(assets)

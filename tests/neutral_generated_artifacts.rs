@@ -62,6 +62,29 @@ fn complete_source_installs_provider_outputs() {
         devin_config["hooks"]["PreToolUse"][0]["matcher"].as_str(),
         Some("exec"),
     );
+    assert!(prefix.join(".hermes/hooks/hook_adapter.py").is_file());
+    assert!(
+        prefix
+            .join(".hermes/plugins/agent-harness-hooks/plugin.yaml")
+            .is_file()
+    );
+    assert!(
+        prefix
+            .join(".hermes/plugins/agent-harness-hooks/__init__.py")
+            .is_file()
+    );
+    let hermes_manifest = read_json(&prefix.join(".hermes/hooks.json"));
+    assert_eq!(
+        hermes_manifest["hooks"]["pre_tool_call"][0]["matcher"].as_str(),
+        Some("^(terminal|exec_command)$"),
+    );
+    assert!(prefix.join(".pi/hooks/hook_adapter.py").is_file());
+    assert!(prefix.join(".pi/agent/extensions/hook_bridge.ts").is_file());
+    let pi_manifest = read_json(&prefix.join(".pi/agent/hooks.json"));
+    assert_eq!(
+        pi_manifest["hooks"]["tool_call"][0]["matcher"].as_str(),
+        Some("^bash$"),
+    );
     assert_contains(
         &prefix.join(".claude/skills/example-skill/SKILL.md"),
         "disable-model-invocation: true",
@@ -205,6 +228,125 @@ fn complete_source_generates_devin_hooks() {
         config["hooks"]["PreToolUse"][0]["hooks"][0]["command"].as_str(),
         Some("$HOME/.devin/hooks/hook_adapter.py shell forbidden"),
     );
+
+    remove_dir(root);
+}
+
+#[test]
+fn complete_source_generates_hermes_hooks() {
+    let root = test_root("hermes-hooks");
+    let manifest_path = root.join("hooks.json");
+
+    run_harness([
+        "generate-hermes-hooks",
+        "--source",
+        complete_source_root().to_str().unwrap(),
+        "--output",
+        manifest_path.to_str().unwrap(),
+    ]);
+
+    let manifest = read_json(&manifest_path);
+    assert_eq!(
+        manifest["hooks"]["pre_tool_call"][0]["hooks"][0]["command"].as_str(),
+        Some("$HOME/.hermes/hooks/hook_adapter.py shell forbidden"),
+    );
+
+    remove_dir(root);
+}
+
+#[test]
+fn complete_source_generates_pi_hooks() {
+    let root = test_root("pi-hooks");
+    let manifest_path = root.join("hooks.json");
+
+    run_harness([
+        "generate-pi-hooks",
+        "--source",
+        complete_source_root().to_str().unwrap(),
+        "--output",
+        manifest_path.to_str().unwrap(),
+    ]);
+
+    let manifest = read_json(&manifest_path);
+    assert_eq!(
+        manifest["hooks"]["tool_call"][0]["hooks"][0]["command"].as_str(),
+        Some("$HOME/.pi/hooks/hook_adapter.py shell forbidden"),
+    );
+
+    remove_dir(root);
+}
+
+#[test]
+fn hermes_config_sync_unions_plugins_enabled() {
+    let root = test_root("hermes-sync");
+    let source_path = root.join("managed.yaml");
+    let target_path = root.join("config.yaml");
+
+    std::fs::write(
+        &source_path,
+        "plugins:\n  enabled:\n    - agent-harness-hooks\n",
+    )
+    .unwrap();
+    std::fs::write(
+        &target_path,
+        "model:\n  provider: openai-codex\nplugins:\n  enabled:\n    - moshi-hooks\n",
+    )
+    .unwrap();
+
+    run_harness([
+        "sync-hermes-config",
+        "--source",
+        source_path.to_str().unwrap(),
+        "--target",
+        target_path.to_str().unwrap(),
+    ]);
+
+    let content = std::fs::read_to_string(&target_path).unwrap();
+    assert!(content.contains("model:"));
+    assert!(content.contains("provider: openai-codex"));
+    assert!(content.contains("- moshi-hooks"));
+    assert!(content.contains("- agent-harness-hooks"));
+
+    remove_dir(root);
+}
+
+#[test]
+fn hermes_config_sync_dedupes_and_creates_target() {
+    let root = test_root("hermes-sync-create");
+    let source_path = root.join("managed.yaml");
+    let target_path = root.join("nested/config.yaml");
+
+    std::fs::write(
+        &source_path,
+        "plugins:\n  enabled:\n    - agent-harness-hooks\n",
+    )
+    .unwrap();
+
+    run_harness([
+        "sync-hermes-config",
+        "--source",
+        source_path.to_str().unwrap(),
+        "--target",
+        target_path.to_str().unwrap(),
+    ]);
+
+    let content = std::fs::read_to_string(&target_path).unwrap();
+    assert!(content.contains("- agent-harness-hooks"));
+
+    std::fs::write(
+        &target_path,
+        "plugins:\n  enabled:\n    - agent-harness-hooks\n",
+    )
+    .unwrap();
+    run_harness([
+        "sync-hermes-config",
+        "--source",
+        source_path.to_str().unwrap(),
+        "--target",
+        target_path.to_str().unwrap(),
+    ]);
+    let content = std::fs::read_to_string(&target_path).unwrap();
+    assert_eq!(content.matches("agent-harness-hooks").count(), 1);
 
     remove_dir(root);
 }

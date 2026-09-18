@@ -41,5 +41,35 @@
         }
       ]
     }
+  },
+  "hermes": {
+    "hooks": {
+      "pre_tool_call": [
+        {
+          "matcher": "^(terminal|exec_command)$",
+          "hooks": [
+            {
+              "type": "command",
+              "command": "$HOME/.hermes/hooks/hook_adapter.py shell forbidden"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "pi": {
+    "hooks": {
+      "tool_call": [
+        {
+          "matcher": "^bash$",
+          "hooks": [
+            {
+              "type": "command",
+              "command": "$HOME/.pi/hooks/hook_adapter.py shell forbidden"
+            }
+          ]
+        }
+      ]
+    }
   }
 }
