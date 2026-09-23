@@ -1,16 +1,27 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 
 use crate::fs_ops;
 
-const HERMES_PLUGIN_MANIFEST: &str = include_str!("assets/hermes/plugin.yaml");
-const HERMES_PLUGIN_INIT: &str = include_str!("assets/hermes/__init__.py");
+const HERMES_PLUGIN_ASSETS: [(&str, &str); 2] = [
+    ("plugin.yaml", include_str!("assets/hermes/plugin.yaml")),
+    ("__init__.py", include_str!("assets/hermes/__init__.py")),
+];
 const PI_HOOK_BRIDGE: &str = include_str!("assets/pi/hook_bridge.ts");
 
 pub(crate) fn write_hermes_plugin(dir: &Path) -> Result<()> {
-    fs_ops::write_file_atomically(&dir.join("plugin.yaml"), HERMES_PLUGIN_MANIFEST.as_bytes())?;
-    fs_ops::write_file_atomically(&dir.join("__init__.py"), HERMES_PLUGIN_INIT.as_bytes())
+    for (name, content) in HERMES_PLUGIN_ASSETS {
+        fs_ops::write_file_atomically(&dir.join(name), content.as_bytes())?;
+    }
+    Ok(())
+}
+
+pub(crate) fn hermes_plugin_files(dir: &Path) -> Vec<PathBuf> {
+    HERMES_PLUGIN_ASSETS
+        .iter()
+        .map(|(name, _)| dir.join(name))
+        .collect()
 }
 
 pub(crate) fn write_pi_bridge(path: &Path) -> Result<()> {

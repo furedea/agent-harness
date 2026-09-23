@@ -422,6 +422,75 @@ fn complete_source_keeps_protection_layers_aligned() {
 }
 
 #[test]
+fn complete_source_protects_every_rendered_provider_file_and_sync_target() {
+    let root = test_root("protected-rendered-files");
+    let prefix = root.join("home");
+
+    run_harness([
+        "install",
+        "--source",
+        complete_source_root().to_str().unwrap(),
+        "--prefix",
+        prefix.to_str().unwrap(),
+    ]);
+
+    let policy_paths =
+        string_set(&read_json(&prefix.join(".claude/hooks/rules/protected_paths.json"))["paths"]);
+    let settings = read_json(&prefix.join(".claude/settings.json"));
+    let deny_edit = string_set(&settings["permissions"]["deny"]);
+    let codex_config = read_toml(&prefix.join(".codex/config.toml"));
+    let guarded = &codex_config["permissions"]["guarded"]["filesystem"];
+    let mut expected = rendered_harness_files(&prefix);
+    expected.extend(
+        [
+            "~/.claude/settings.json",
+            "~/.codex/config.toml",
+            "~/.config/devin/config.json",
+            "~/.hermes/config.yaml",
+        ]
+        .map(str::to_owned),
+    );
+
+    assert!(expected.contains("~/.claude/hooks/lib/provider_adapter.py"));
+    assert!(expected.contains("~/.pi/agent/extensions/hook_bridge.ts"));
+    for path in &expected {
+        assert!(policy_paths.contains(path), "{path} is not protected");
+        assert!(
+            deny_edit.contains(&format!("Edit({path})")),
+            "{path} is not denied"
+        );
+        assert_eq!(
+            guarded[path.as_str()].as_str(),
+            Some("read"),
+            "{path} is not guarded"
+        );
+    }
+
+    remove_dir(root);
+}
+
+fn rendered_harness_files(prefix: &Path) -> BTreeSet<String> {
+    let skills = [prefix.join(".claude/skills"), prefix.join(".codex/skills")];
+    let mut pending = vec![prefix.to_path_buf()];
+    let mut files = BTreeSet::new();
+    while let Some(dir) = pending.pop() {
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            if skills.contains(&path) {
+                continue;
+            }
+            if path.is_dir() {
+                pending.push(path);
+            } else {
+                let relative = path.strip_prefix(prefix).unwrap().to_str().unwrap();
+                files.insert(format!("~/{relative}"));
+            }
+        }
+    }
+    files
+}
+
+#[test]
 fn complete_source_verify_checks_declared_runtime_commands() {
     let root = test_root("runtime-commands");
     let prefix = root.join("home");
