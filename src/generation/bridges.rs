@@ -64,6 +64,14 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn pi_bridge_runs_the_adapter_with_an_isolated_interpreter() {
+        assert!(
+            PI_HOOK_BRIDGE.contains(r#"spawn("python3", ["-I", "-B", ADAPTER, "dispatch", event]"#)
+        );
+        assert!(!PI_HOOK_BRIDGE.contains(r#"spawn("python3", [ADAPTER"#));
+    }
+
     fn test_root(name: &str) -> Result<PathBuf> {
         let nanos = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
         let root = std::env::temp_dir().join(format!("agent-harness-{name}-{nanos}"));
