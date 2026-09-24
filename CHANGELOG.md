@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.2](https://github.com/furedea/agent-harness/compare/agent-harness-v0.9.1...agent-harness-v0.9.2) (2026-09-24)
+
+
+### Bug Fixes
+
+* **deps:** update rust crate clap to v4.6.7 ([#138](https://github.com/furedea/agent-harness/issues/138)) ([8813668](https://github.com/furedea/agent-harness/commit/8813668c41e5ffeb3df111eb4881d4e5d83ee72a))
+
 ## [0.9.1](https://github.com/furedea/agent-harness/compare/agent-harness-v0.9.0...agent-harness-v0.9.1) (2026-09-18)
 
 
