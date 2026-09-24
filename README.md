@@ -287,6 +287,8 @@ The complete module interface is:
 
 Generated hook wiring, Bash command permissions, and protected paths remain harness-managed after
 the provider settings merge. This prevents a settings overlay from silently removing enforcement.
+Protected paths cover every file the harness renders or syncs for Claude Code, Codex, Devin, Hermes,
+and pi, including the mutable provider configs, but not skills.
 Set either provider's `enable` option to `false` to install only the other provider.
 
 The Home Manager module materializes `~/.claude/settings.json` as a writable regular file because

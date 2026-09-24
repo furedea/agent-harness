@@ -28,7 +28,8 @@ function dispatch(event: string, payload: unknown): Promise<AdapterRun> {
 			clearTimeout(timer);
 			resolve(result);
 		};
-		const child = spawn("python3", [ADAPTER, "dispatch", event], {
+		// -I -B mirrors the adapter shebang, which a bare interpreter call would bypass.
+		const child = spawn("python3", ["-I", "-B", ADAPTER, "dispatch", event], {
 			stdio: ["pipe", "pipe", "pipe"],
 		});
 		const timer = setTimeout(() => {
