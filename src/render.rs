@@ -86,20 +86,14 @@ fn render_installation(
         &source_layout.agent_instructions(),
         &installed.claude_agent_instructions(),
     )?;
-    fs_ops::copy_dir(&source_layout.codex_hooks(), &installed.codex_hooks())?;
-    fs_ops::copy_dir(&source_layout.agent_hooks(), &installed.claude_hooks())?;
-    fs_ops::copy_dir(&source_layout.devin_hooks(), &installed.devin_hooks())?;
-    fs_ops::copy_dir(&source_layout.hermes_hooks(), &installed.hermes_hooks())?;
-    fs_ops::copy_dir(&source_layout.pi_hooks(), &installed.pi_hooks())?;
+    for (source, target) in installed.synced_directories(source_layout) {
+        fs_ops::copy_dir(&source, &target)?;
+    }
     bridges::write_hermes_plugin(&installed.hermes_plugin())?;
     bridges::write_pi_bridge(&installed.pi_hook_bridge())?;
     for bundle in external_hooks {
         bundle.copy_assets(out)?;
     }
-    fs_ops::copy_dir(
-        &source_layout.claude_statusline(),
-        &installed.claude_statusline(),
-    )?;
     hooks::write_codex_hooks_for_runtime(
         source,
         &installed.codex_hook_config(),

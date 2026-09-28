@@ -211,6 +211,75 @@ fn complete_source_generates_shared_command_permissions() {
 }
 
 #[test]
+fn complete_source_keeps_source_permission_rules_in_generated_claude_settings() {
+    let root = test_root("source-permission-rules");
+    let settings_path = root.join("settings.json");
+
+    run_harness([
+        "generate-claude-settings",
+        "--source",
+        complete_source_root().to_str().unwrap(),
+        "--output",
+        settings_path.to_str().unwrap(),
+    ]);
+
+    let settings = read_json(&settings_path);
+    assert!(json_array_contains(
+        &settings["permissions"]["ask"],
+        "Bash(dangerouslyDisableSandbox:true)",
+    ));
+    assert!(json_array_contains(
+        &settings["permissions"]["allow"],
+        "Read"
+    ));
+    assert_eq!(settings["permissions"]["defaultMode"], "acceptEdits");
+
+    remove_dir(root);
+}
+
+#[test]
+fn installed_claude_settings_keep_source_ask_rules_after_sync() {
+    let root = test_root("claude-settings-sync");
+    let prefix = root.join("rendered");
+    let installed_path = prefix.join(".claude/settings.json");
+    let target_path = root.join("home/.claude/settings.json");
+
+    run_harness([
+        "install",
+        "--source",
+        complete_source_root().to_str().unwrap(),
+        "--prefix",
+        prefix.to_str().unwrap(),
+    ]);
+    std::fs::create_dir_all(target_path.parent().unwrap()).unwrap();
+    std::fs::write(
+        &target_path,
+        r#"{"permissions": {"allow": ["Bash(stale:*)"], "ask": []}}"#,
+    )
+    .unwrap();
+    run_harness([
+        "sync-claude-settings",
+        "--source",
+        installed_path.to_str().unwrap(),
+        "--target",
+        target_path.to_str().unwrap(),
+    ]);
+
+    let installed = read_json(&installed_path);
+    let target = read_json(&target_path);
+    assert!(json_array_contains(
+        &installed["permissions"]["ask"],
+        "Bash(dangerouslyDisableSandbox:true)",
+    ));
+    assert!(json_array_contains(
+        &target["permissions"]["ask"],
+        "Bash(dangerouslyDisableSandbox:true)",
+    ));
+
+    remove_dir(root);
+}
+
+#[test]
 fn complete_source_generates_devin_hooks() {
     let root = test_root("devin-hooks");
     let config_path = root.join("config.json");
@@ -419,6 +488,75 @@ fn complete_source_keeps_protection_layers_aligned() {
     assert!(!policy_paths.iter().any(|path| path.starts_with('/')));
 
     remove_dir(root);
+}
+
+#[test]
+fn complete_source_protects_every_rendered_provider_file_and_sync_target() {
+    let root = test_root("protected-rendered-files");
+    let prefix = root.join("home");
+
+    run_harness([
+        "install",
+        "--source",
+        complete_source_root().to_str().unwrap(),
+        "--prefix",
+        prefix.to_str().unwrap(),
+    ]);
+
+    let policy_paths =
+        string_set(&read_json(&prefix.join(".claude/hooks/rules/protected_paths.json"))["paths"]);
+    let settings = read_json(&prefix.join(".claude/settings.json"));
+    let deny_edit = string_set(&settings["permissions"]["deny"]);
+    let codex_config = read_toml(&prefix.join(".codex/config.toml"));
+    let guarded = &codex_config["permissions"]["guarded"]["filesystem"];
+    let mut expected = rendered_harness_files(&prefix);
+    expected.extend(
+        [
+            "~/.claude/settings.json",
+            "~/.codex/config.toml",
+            "~/.config/devin/config.json",
+            "~/.hermes/config.yaml",
+        ]
+        .map(str::to_owned),
+    );
+
+    assert!(expected.contains("~/.claude/hooks/lib/provider_adapter.py"));
+    assert!(expected.contains("~/.pi/agent/extensions/hook_bridge.ts"));
+    for path in &expected {
+        assert!(policy_paths.contains(path), "{path} is not protected");
+        assert!(
+            deny_edit.contains(&format!("Edit({path})")),
+            "{path} is not denied"
+        );
+        assert_eq!(
+            guarded[path.as_str()].as_str(),
+            Some("read"),
+            "{path} is not guarded"
+        );
+    }
+
+    remove_dir(root);
+}
+
+fn rendered_harness_files(prefix: &Path) -> BTreeSet<String> {
+    let skills = [prefix.join(".claude/skills"), prefix.join(".codex/skills")];
+    let mut pending = vec![prefix.to_path_buf()];
+    let mut files = BTreeSet::new();
+    while let Some(dir) = pending.pop() {
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            if skills.contains(&path) {
+                continue;
+            }
+            if path.is_dir() {
+                pending.push(path);
+            } else {
+                let relative = path.strip_prefix(prefix).unwrap().to_str().unwrap();
+                files.insert(format!("~/{relative}"));
+            }
+        }
+    }
+    files
 }
 
 #[test]

@@ -37,6 +37,7 @@ const CODEX_AGENT_INSTRUCTIONS_PATH: &str = ".codex/AGENTS.md";
 const CODEX_HOOK_CONFIG_PATH: &str = ".codex/hooks.json";
 const CODEX_RULES_PATH: &str = ".codex/rules/default.rules";
 const DEVIN_CONFIG_PATH: &str = ".config/devin/config.json";
+const HERMES_CONFIG_PATH: &str = ".hermes/config.yaml";
 const HERMES_MANIFEST_PATH: &str = ".hermes/hooks.json";
 const HERMES_MANAGED_CONFIG_PATH: &str = ".hermes/managed-config.yaml";
 const PI_MANIFEST_PATH: &str = ".pi/agent/hooks.json";
@@ -138,6 +139,10 @@ impl<'a> InstalledLayout<'a> {
         Self { root }
     }
 
+    pub(crate) fn relative() -> Self {
+        Self::new(Path::new(""))
+    }
+
     pub(crate) fn codex_agent_instructions(self) -> PathBuf {
         self.root.join(CODEX_AGENT_INSTRUCTIONS_PATH)
     }
@@ -176,6 +181,10 @@ impl<'a> InstalledLayout<'a> {
 
     pub(crate) fn hermes_managed_config(self) -> PathBuf {
         self.root.join(HERMES_MANAGED_CONFIG_PATH)
+    }
+
+    pub(crate) fn hermes_config(self) -> PathBuf {
+        self.root.join(HERMES_CONFIG_PATH)
     }
 
     pub(crate) fn pi_hooks(self) -> PathBuf {
@@ -272,18 +281,25 @@ impl<'a> InstalledLayout<'a> {
         ]
     }
 
-    pub(crate) fn static_protected_paths() -> Vec<PathBuf> {
+    pub(crate) fn synced_directories(self, source: SourceLayout) -> [(PathBuf, PathBuf); 6] {
         [
-            CLAUDE_AGENT_INSTRUCTIONS_PATH,
-            CLAUDE_COMMAND_PERMISSIONS_PATH,
-            CLAUDE_PROTECTED_PATHS_PATH,
-            CLAUDE_SETTINGS_PATH,
-            CODEX_AGENT_INSTRUCTIONS_PATH,
-            CODEX_HOOK_CONFIG_PATH,
-            CODEX_RULES_PATH,
+            (source.codex_hooks(), self.codex_hooks()),
+            (source.agent_hooks(), self.claude_hooks()),
+            (source.devin_hooks(), self.devin_hooks()),
+            (source.hermes_hooks(), self.hermes_hooks()),
+            (source.pi_hooks(), self.pi_hooks()),
+            (source.claude_statusline(), self.claude_statusline()),
         ]
-        .into_iter()
-        .map(PathBuf::from)
-        .collect()
+    }
+
+    /// Generated files plus the mutable provider configs that installation syncs them into.
+    pub(crate) fn generated_files(self) -> Vec<PathBuf> {
+        let mut files = self.managed_files().to_vec();
+        files.extend([
+            self.claude_command_permissions(),
+            self.claude_protected_paths(),
+            self.hermes_config(),
+        ]);
+        files
     }
 }

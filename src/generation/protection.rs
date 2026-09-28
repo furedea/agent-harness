@@ -1,11 +1,11 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use serde::Serialize;
 
 use crate::{
     fs_ops,
-    generation::{external_hooks::ExternalHookBundle, io},
+    generation::{bridges, external_hooks::ExternalHookBundle, io},
     layout::{InstalledLayout, SourceLayout},
     runtime_root::RuntimeRoot,
 };
@@ -86,34 +86,39 @@ pub(crate) fn protected_paths_for_runtime(
     external_hooks: &[ExternalHookBundle],
     runtime_root: &RuntimeRoot,
 ) -> Result<Vec<String>> {
-    let layout = SourceLayout::new(source);
-    let agent_hooks = relative_files(&layout.agent_hooks())?;
-    let codex_hooks = relative_files(&layout.codex_hooks())?;
+    let mut paths = Vec::new();
+    for path in harness_owned_files(source, external_hooks)? {
+        let path = runtime_root.path(&path);
+        if !paths.contains(&path) {
+            paths.push(path);
+        }
+    }
+    Ok(paths)
+}
+
+/// Every installed file the harness renders or syncs, except skills, relative to the root.
+///
+/// Derived from the same tables the installer uses, so a new provider output is protected
+/// as soon as it is rendered.
+fn harness_owned_files(
+    source: &Path,
+    external_hooks: &[ExternalHookBundle],
+) -> Result<Vec<PathBuf>> {
+    let installed = InstalledLayout::relative();
     let mut paths = Vec::new();
 
-    paths.extend(
-        agent_hooks
-            .iter()
-            .map(|path| runtime_root.path(&Path::new(".claude/hooks").join(path))),
-    );
-    paths.extend(
-        codex_hooks
-            .iter()
-            .map(|path| runtime_root.path(&Path::new(".codex/hooks").join(path))),
-    );
-    for bundle in external_hooks {
+    for (source_dir, target_dir) in installed.synced_directories(SourceLayout::new(source)) {
         paths.extend(
-            bundle
-                .asset_install_paths()?
+            relative_files(&source_dir)?
                 .into_iter()
-                .map(|path| runtime_root.path(&path)),
+                .map(|path| target_dir.join(path)),
         );
     }
-    paths.extend(
-        InstalledLayout::static_protected_paths()
-            .iter()
-            .map(|path| runtime_root.path(path)),
-    );
+    paths.extend(bridges::hermes_plugin_files(&installed.hermes_plugin()));
+    for bundle in external_hooks {
+        paths.extend(bundle.asset_install_paths()?);
+    }
+    paths.extend(installed.generated_files());
     Ok(paths)
 }
 
