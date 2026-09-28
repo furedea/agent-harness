@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.9.2](https://github.com/furedea/agent-harness/compare/agent-harness-v0.9.1...agent-harness-v0.9.2) (2026-09-28)
+
+
+### Bug Fixes
+
+* **deps:** update rust crate clap to v4.6.7 ([#138](https://github.com/furedea/agent-harness/issues/138)) ([8813668](https://github.com/furedea/agent-harness/commit/8813668c41e5ffeb3df111eb4881d4e5d83ee72a))
+* protect provider files and keep source Claude permission rules ([#140](https://github.com/furedea/agent-harness/issues/140)) ([9d9a8a3](https://github.com/furedea/agent-harness/commit/9d9a8a31257487aa2cd474812c13ae821cc98a63))
+
 ## [0.9.1](https://github.com/furedea/agent-harness/compare/agent-harness-v0.9.0...agent-harness-v0.9.1) (2026-09-18)
 
 
