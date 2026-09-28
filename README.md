@@ -339,11 +339,20 @@ approvals_reviewer, notice, tui, plugins, features, default_permissions,
 permissions
 ```
 
+Generated Claude settings keep every `permissions.allow`, `permissions.ask`, and
+`permissions.deny` entry declared by the source `claude/settings.json`, followed by the generated
+`Bash(...)`, `Read(...)`, and `Edit(...)` entries. Each rule is listed once, and a rule declared in
+more than one list is kept only in its most restrictive list (`deny` over `ask` over `allow`), so
+the merge never widens a permission. `defaultMode` and other permission keys pass through
+unchanged. Claude settings synchronization replaces the whole generated `permissions` key, so
+approvals Claude Code saves interactively into `~/.claude/settings.json` do not survive the next
+sync; add persistent rules to `command_permissions.json` or the source `claude/settings.json`
+instead.
+
 Devin config synchronization replaces the managed top-level keys and, inside `permissions`,
-replaces only `Exec(...)` entries — the same managed-namespace convention as `Bash(...)` entries in
-Claude settings. Non-Exec entries such as `Read(...)`, `Write(...)`, `Fetch(...)`, and `mcp__*`
-rules stay user-owned. Approvals saved interactively as `Exec(...)` are replaced on the next sync;
-add persistent command rules to `command_permissions.json` instead.
+replaces only `Exec(...)` entries. Non-Exec entries such as `Read(...)`, `Write(...)`, `Fetch(...)`,
+and `mcp__*` rules stay user-owned. Approvals saved interactively as `Exec(...)` are replaced on the
+next sync; add persistent command rules to `command_permissions.json` instead.
 
 `verify` checks the required paths and runtime commands declared by the resolved source manifest. It
 does not compare installed file contents with the selected source.

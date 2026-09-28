@@ -211,6 +211,75 @@ fn complete_source_generates_shared_command_permissions() {
 }
 
 #[test]
+fn complete_source_keeps_source_permission_rules_in_generated_claude_settings() {
+    let root = test_root("source-permission-rules");
+    let settings_path = root.join("settings.json");
+
+    run_harness([
+        "generate-claude-settings",
+        "--source",
+        complete_source_root().to_str().unwrap(),
+        "--output",
+        settings_path.to_str().unwrap(),
+    ]);
+
+    let settings = read_json(&settings_path);
+    assert!(json_array_contains(
+        &settings["permissions"]["ask"],
+        "Bash(dangerouslyDisableSandbox:true)",
+    ));
+    assert!(json_array_contains(
+        &settings["permissions"]["allow"],
+        "Read"
+    ));
+    assert_eq!(settings["permissions"]["defaultMode"], "acceptEdits");
+
+    remove_dir(root);
+}
+
+#[test]
+fn installed_claude_settings_keep_source_ask_rules_after_sync() {
+    let root = test_root("claude-settings-sync");
+    let prefix = root.join("rendered");
+    let installed_path = prefix.join(".claude/settings.json");
+    let target_path = root.join("home/.claude/settings.json");
+
+    run_harness([
+        "install",
+        "--source",
+        complete_source_root().to_str().unwrap(),
+        "--prefix",
+        prefix.to_str().unwrap(),
+    ]);
+    std::fs::create_dir_all(target_path.parent().unwrap()).unwrap();
+    std::fs::write(
+        &target_path,
+        r#"{"permissions": {"allow": ["Bash(stale:*)"], "ask": []}}"#,
+    )
+    .unwrap();
+    run_harness([
+        "sync-claude-settings",
+        "--source",
+        installed_path.to_str().unwrap(),
+        "--target",
+        target_path.to_str().unwrap(),
+    ]);
+
+    let installed = read_json(&installed_path);
+    let target = read_json(&target_path);
+    assert!(json_array_contains(
+        &installed["permissions"]["ask"],
+        "Bash(dangerouslyDisableSandbox:true)",
+    ));
+    assert!(json_array_contains(
+        &target["permissions"]["ask"],
+        "Bash(dangerouslyDisableSandbox:true)",
+    ));
+
+    remove_dir(root);
+}
+
+#[test]
 fn complete_source_generates_devin_hooks() {
     let root = test_root("devin-hooks");
     let config_path = root.join("config.json");

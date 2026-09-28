@@ -7,8 +7,9 @@
   },
   "permissions": {
     "allow": ["Read"],
-    "ask": [],
-    "deny": []
+    "ask": ["Bash(dangerouslyDisableSandbox:true)"],
+    "deny": [],
+    "defaultMode": "acceptEdits"
   },
   "sandbox": {
     "filesystem": {

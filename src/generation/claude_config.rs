@@ -4,8 +4,8 @@ use anyhow::{Context, Result, bail};
 use serde_json::{Map, Value};
 
 use crate::generation::{
-    command_permissions, external_hooks::ExternalHookBundle, hooks, io, protection,
-    secret_path_policy,
+    claude_permissions::PermissionRules, command_permissions, external_hooks::ExternalHookBundle,
+    hooks, io, protection, secret_path_policy,
 };
 use crate::{fs_ops, layout::SourceLayout, runtime_root::RuntimeRoot};
 
@@ -63,41 +63,19 @@ fn merge_permissions(
     runtime_root: &RuntimeRoot,
 ) -> Result<()> {
     let permissions = object_entry(root, "permissions")?;
-    let mut allow = non_bash_permissions(permissions.get("allow"))?;
-    let mut ask = non_bash_permissions(permissions.get("ask"))?;
-    let mut deny = non_bash_permissions(permissions.get("deny"))?;
+    let mut rules = PermissionRules::parse(permissions)?;
 
-    allow.extend(
-        command_permissions::claude_allow_permissions(source)?
-            .into_iter()
-            .map(Value::String),
-    );
-    ask.extend(
-        command_permissions::claude_ask_permissions(source)?
-            .into_iter()
-            .map(Value::String),
-    );
-    deny.extend(
-        secret_path_policy::claude_deny_permissions(source)?
-            .into_iter()
-            .map(Value::String),
-    );
-    deny.extend(
-        command_permissions::claude_deny_permissions(source)?
-            .into_iter()
-            .map(Value::String),
-    );
-    deny.extend(
+    rules.extend_allow(command_permissions::claude_allow_permissions(source)?);
+    rules.extend_ask(command_permissions::claude_ask_permissions(source)?);
+    rules.extend_deny(secret_path_policy::claude_deny_permissions(source)?);
+    rules.extend_deny(command_permissions::claude_deny_permissions(source)?);
+    rules.extend_deny(
         protection::protected_paths_for_runtime(source, external_hooks, runtime_root)?
             .into_iter()
-            .map(|path| format!("Edit({path})"))
-            .map(Value::String),
+            .map(|path| format!("Edit({path})")),
     );
 
-    permissions.insert("allow".to_string(), Value::Array(allow));
-    permissions.insert("ask".to_string(), Value::Array(ask));
-    permissions.insert("deny".to_string(), Value::Array(deny));
-
+    rules.write_into(permissions);
     Ok(())
 }
 
@@ -144,25 +122,6 @@ fn object_mut<'a>(value: &'a mut Value, name: &str) -> Result<&'a mut Map<String
         Value::Object(object) => Ok(object),
         _ => bail!("{name} must be a JSON object"),
     }
-}
-
-fn non_bash_permissions(value: Option<&Value>) -> Result<Vec<Value>> {
-    let Some(value) = value else {
-        return Ok(Vec::new());
-    };
-    let Some(values) = value.as_array() else {
-        bail!("permissions entries must be JSON arrays");
-    };
-
-    Ok(values
-        .iter()
-        .filter(|entry| {
-            !entry
-                .as_str()
-                .is_some_and(|permission| permission.starts_with("Bash("))
-        })
-        .cloned()
-        .collect())
 }
 
 fn merge_managed_settings(existing: &mut Value, generated: Value) -> Result<()> {
@@ -233,18 +192,22 @@ mod tests {
             array_strings(&settings["permissions"]["allow"]).contains(&"Bash(cargo:*)".to_string())
         );
         assert!(
-            !array_strings(&settings["permissions"]["allow"]).contains(&"Bash(old:*)".to_string())
+            array_strings(&settings["permissions"]["allow"]).contains(&"Bash(old:*)".to_string())
         );
         assert!(
             array_strings(&settings["permissions"]["ask"]).contains(&"Read(docs/**)".to_string())
         );
         assert!(
-            !array_strings(&settings["permissions"]["ask"])
-                .contains(&"Bash(old-ask:*)".to_string())
+            array_strings(&settings["permissions"]["ask"]).contains(&"Bash(old-ask:*)".to_string())
         );
         assert!(
             array_strings(&settings["permissions"]["deny"]).contains(&"Bash(curl:*)".to_string())
         );
+        assert!(
+            array_strings(&settings["permissions"]["deny"])
+                .contains(&"Bash(old-deny:*)".to_string())
+        );
+        assert_eq!(settings["permissions"]["defaultMode"], "auto");
         assert!(
             array_strings(&settings["permissions"]["deny"]).contains(&"Read(.env*)".to_string())
         );
@@ -252,6 +215,32 @@ mod tests {
             array_strings(&settings["sandbox"]["filesystem"]["denyWrite"])
                 .contains(&"~/.claude/hooks/guard.sh".to_string())
         );
+
+        std::fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn build_settings_never_widens_a_rule_declared_by_both_source_and_generation() -> Result<()> {
+        let root =
+            test_root("build_settings_never_widens_a_rule_declared_by_both_source_and_generation")?;
+        write_minimal_source(&root)?;
+        let base = json!({
+            "permissions": {
+                "allow": ["Bash(curl:*)"],
+                "ask": ["Bash(cargo:*)"]
+            }
+        });
+
+        let settings = build_settings(&root, base, &[], &RuntimeRoot::home())?;
+
+        let allow = array_strings(&settings["permissions"]["allow"]);
+        let ask = array_strings(&settings["permissions"]["ask"]);
+        let deny = array_strings(&settings["permissions"]["deny"]);
+        assert!(!allow.contains(&"Bash(curl:*)".to_string()));
+        assert!(deny.contains(&"Bash(curl:*)".to_string()));
+        assert!(!allow.contains(&"Bash(cargo:*)".to_string()));
+        assert!(ask.contains(&"Bash(cargo:*)".to_string()));
 
         std::fs::remove_dir_all(root)?;
         Ok(())
