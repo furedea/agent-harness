@@ -1,6 +1,6 @@
 ls:
   .dir: regex:\.?[a-z0-9]+(-[a-z0-9]+)*
-  .md: regex:[a-z0-9]*([._][a-z0-9]+)* | regex:(README|CONTRIBUTING|CHANGELOG|AGENTS|CLAUDE|SKILL)
+  .md: regex:[a-z0-9]*([._][a-z0-9]+)* | regex:(README|CONTRIBUTING|CHANGELOG|AGENTS|CLAUDE|SKILL) | regex:(README|DESIGN)(_ja)?
   .toml: regex:[a-z0-9]*([._][a-z0-9]+)* | regex:Cargo
   .lock: regex:[a-z0-9]*([._][a-z0-9]+)* | regex:Cargo
   .json: regex:[a-z0-9]*([._][a-z0-9]+)* | regex:package-lock

@@ -1,5 +1,10 @@
 # agent-harness
 
+<p align="center">
+  <a href="README.md"><img alt="English" src="https://img.shields.io/badge/lang-English-0969da"></a>
+  <a href="README_ja.md"><img alt="日本語" src="https://img.shields.io/badge/lang-%E6%97%A5%E6%9C%AC%E8%AA%9E-8c959f"></a>
+</p>
+
 **Share hooks—not just skills—across Codex and Claude Code.**
 
 `agent-harness` is a Nix-native composition layer for hooks, skills, agent instructions, command
@@ -35,6 +40,9 @@ Provider settings
   configuration expected by each agent.
 - **State-aware Codex updates**: replace harness-owned keys while preserving tool-owned and
   user-owned Codex configuration.
+
+For the problems this design addresses, the core decisions, and the alternatives considered, see
+[docs/DESIGN.md](docs/DESIGN.md).
 
 ## Sources
 
