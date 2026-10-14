@@ -1,9 +1,55 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 560" width="980" height="560" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" fill="#000">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 790" width="980" height="790" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" fill="#000">
   <title>agent-harness architecture</title>
-  <desc>A table of what agent-harness shares and where it renders it. Rows are instructions, permissions, hooks, skills, and provider settings, each with its source file. Columns are Claude Code, Codex, Devin, Hermes Agent, and pi, with the native file each one receives. Below the table, two guarantees: protected paths come from one list, and configs that agents also write are merged by managed key only.</desc>
-  <rect width="980" height="560" fill="#fff"/>
+  <desc>Inputs are a user's source tree and external tools such as Herdr and Moshi, whose skills and hooks are captured by Nix builders in an isolated home. The Home Manager module composes them and renders a table of outputs. Rows are instructions, permissions, hooks, skills, and provider settings, each with its source file. Columns are Claude Code, Codex, Devin, Hermes Agent, and pi, with the native file each one receives. Below the table, two guarantees: protected paths come from one list, and configs that agents also write are merged by managed key only.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#000"/>
+    </marker>
+  </defs>
+  <rect width="980" height="790" fill="#fff"/>
 
-  <text x="20" y="32" font-size="16" font-weight="600">One source tree, rendered into each agent's native files</text>
+  <!-- Inputs -->
+  <text x="20" y="32" font-size="16" font-weight="600">Inputs, composed with Nix</text>
+
+  <rect x="20" y="48" width="290" height="112" fill="none" stroke="#000" stroke-width="1.5"/>
+  <text x="36" y="72" font-weight="600">Your source tree</text>
+  <text x="36" y="90" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#555">dotfiles/agents/</text>
+  <text x="36" y="116">AGENTS.md, command permissions,</text>
+  <text x="36" y="134">hooks, skills, and base settings</text>
+
+  <rect x="330" y="48" width="630" height="112" fill="none" stroke="#000" stroke-width="1.5" stroke-dasharray="6 4"/>
+  <text x="346" y="72" font-weight="600">External tools, captured at Nix build time</text>
+  <g font-weight="600">
+    <text x="346" y="98">Herdr</text>
+    <text x="346" y="134">Moshi</text>
+  </g>
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11">
+    <text x="410" y="98">herdr --skill</text>
+    <text x="410" y="116">herdr integration install</text>
+    <text x="410" y="134">moshi-hook install</text>
+    <text x="640" y="98">buildSkillFromCommand</text>
+    <text x="640" y="116">buildHookBundleFromCommands</text>
+    <text x="640" y="134">buildHookBundleFromCommands</text>
+  </g>
+  <g stroke="#000" stroke-width="1">
+    <line x1="590" y1="94" x2="632" y2="94" marker-end="url(#arrow)"/>
+    <line x1="590" y1="112" x2="632" y2="112" marker-end="url(#arrow)"/>
+    <line x1="590" y1="130" x2="632" y2="130" marker-end="url(#arrow)"/>
+  </g>
+  <text x="346" y="152" font-size="11" fill="#555">Installers run in an isolated HOME and become versioned skill and hook bundles.</text>
+
+  <line x1="165" y1="160" x2="165" y2="186" stroke="#000" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="645" y1="160" x2="645" y2="186" stroke="#000" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#arrow)"/>
+
+  <rect x="20" y="190" width="940" height="40" fill="none" stroke="#000" stroke-width="2.5"/>
+  <text x="36" y="215" font-weight="600">Home Manager module</text>
+  <text x="196" y="215" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11.5">programs.agent-harness = { source = ./agents; skills.herdr = ...; hooks.moshi = ...; }</text>
+
+  <line x1="490" y1="230" x2="490" y2="256" stroke="#000" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <g transform="translate(0,230)">
+  <text x="20" y="52" font-size="16" font-weight="600">Rendered into each agent's native files</text>
+  <g transform="translate(0,20)">
 
   <!-- Table frame -->
   <rect x="20" y="52" width="940" height="296" fill="none" stroke="#000" stroke-width="1.5"/>
@@ -122,4 +168,6 @@
   <text x="516" y="474">Agents also write their settings files, such as trust.</text>
   <text x="516" y="494">sync-* replaces only harness-owned keys, so agent state</text>
   <text x="516" y="514">stays and generated enforcement is never dropped.</text>
+  </g>
+  </g>
 </svg>
