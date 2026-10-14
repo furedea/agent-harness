@@ -1,108 +1,125 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 680" width="960" height="680" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" fill="#000">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 560" width="980" height="560" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" fill="#000">
   <title>agent-harness architecture</title>
-  <desc>Three properties of agent-harness. One neutral command rule becomes Claude Code, Codex, and Devin permission syntax. One protected-path inventory feeds four enforcement layers. Rendered files are replaced on install, while configs that agents also write are merged by managed key only.</desc>
-  <defs>
-    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-      <path d="M0,0 L10,5 L0,10 z" fill="#000"/>
-    </marker>
-  </defs>
-  <rect width="960" height="680" fill="#fff"/>
+  <desc>A table of what agent-harness shares and where it renders it. Rows are instructions, permissions, hooks, skills, and provider settings, each with its source file. Columns are Claude Code, Codex, Devin, Hermes Agent, and pi, with the native file each one receives. Below the table, two guarantees: protected paths come from one list, and configs that agents also write are merged by managed key only.</desc>
+  <rect width="980" height="560" fill="#fff"/>
 
-  <!-- 1. One rule, every agent's syntax -->
-  <text x="20" y="32" font-size="15" font-weight="600">1. One neutral rule becomes each agent's permission syntax</text>
-  <rect x="20" y="48" width="300" height="118" fill="none" stroke="#000" stroke-width="1.5"/>
-  <text x="36" y="72" font-weight="600">command_permissions.json</text>
-  <g font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12">
-    <text x="36" y="100">{ "decision": "ask",</text>
-    <text x="36" y="120">  "prefix": ["git", "push"],</text>
-    <text x="36" y="140">  "justification": "..." }</text>
+  <text x="20" y="32" font-size="16" font-weight="600">One source tree, rendered into each agent's native files</text>
+
+  <!-- Table frame -->
+  <rect x="20" y="52" width="940" height="296" fill="none" stroke="#000" stroke-width="1.5"/>
+  <line x1="20" y1="88" x2="960" y2="88" stroke="#000" stroke-width="1.5"/>
+  <g stroke="#000" stroke-width="0.75">
+    <line x1="20" y1="140" x2="960" y2="140"/>
+    <line x1="20" y1="192" x2="960" y2="192"/>
+    <line x1="20" y1="244" x2="960" y2="244"/>
+    <line x1="20" y1="296" x2="960" y2="296"/>
+  </g>
+  <line x1="220" y1="52" x2="220" y2="348" stroke="#000" stroke-width="1.5"/>
+  <g stroke="#000" stroke-width="0.75">
+    <line x1="368" y1="52" x2="368" y2="348"/>
+    <line x1="516" y1="52" x2="516" y2="348"/>
+    <line x1="664" y1="52" x2="664" y2="348"/>
+    <line x1="812" y1="52" x2="812" y2="348"/>
   </g>
 
-  <line x1="320" y1="107" x2="370" y2="107" stroke="#000" stroke-width="1.5"/>
-  <line x1="370" y1="64" x2="370" y2="150" stroke="#000" stroke-width="1.5"/>
-  <line x1="370" y1="64" x2="416" y2="64" stroke="#000" stroke-width="1.5" marker-end="url(#arrow)"/>
-  <line x1="370" y1="107" x2="416" y2="107" stroke="#000" stroke-width="1.5" marker-end="url(#arrow)"/>
-  <line x1="370" y1="150" x2="416" y2="150" stroke="#000" stroke-width="1.5" marker-end="url(#arrow)"/>
-
-  <rect x="420" y="46" width="520" height="36" fill="none" stroke="#000" stroke-width="1.2"/>
-  <rect x="420" y="89" width="520" height="36" fill="none" stroke="#000" stroke-width="1.2"/>
-  <rect x="420" y="132" width="520" height="36" fill="none" stroke="#000" stroke-width="1.2"/>
+  <!-- Header -->
   <g font-weight="600">
-    <text x="434" y="68">Claude Code</text>
-    <text x="434" y="111">Codex</text>
-    <text x="434" y="154">Devin</text>
-  </g>
-  <g font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11.5">
-    <text x="548" y="68">permissions.ask: Bash(git push:*)</text>
-    <text x="548" y="111">prefix_rule(pattern=["git","push"], decision="prompt")</text>
-    <text x="548" y="154">permissions.ask: Exec(git push)</text>
+    <text x="34" y="75">Shared item / source</text>
+    <text x="234" y="75">Claude Code</text>
+    <text x="382" y="75">Codex</text>
+    <text x="530" y="75">Devin</text>
+    <text x="678" y="75">Hermes Agent</text>
+    <text x="826" y="75">pi</text>
   </g>
 
-  <!-- 2. One inventory, four enforcement layers -->
-  <text x="20" y="214" font-size="15" font-weight="600">2. One protected-path inventory feeds every enforcement layer</text>
-  <rect x="20" y="230" width="300" height="160" fill="none" stroke="#000" stroke-width="1.5"/>
-  <text x="36" y="254" font-weight="600">Protected-path inventory</text>
-  <text x="36" y="274" fill="#555">computed once by generation/protection</text>
-  <text x="36" y="302">Every rendered hook, rule, and</text>
-  <text x="36" y="320">instruction file, plus the configs</text>
-  <text x="36" y="338">the harness syncs.</text>
-  <text x="36" y="366" fill="#555">Example:</text>
-  <text x="96" y="366" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12">~/.claude/settings.json</text>
-
-  <line x1="320" y1="310" x2="370" y2="310" stroke="#000" stroke-width="1.5"/>
-  <line x1="370" y1="246" x2="370" y2="375" stroke="#000" stroke-width="1.5"/>
-  <line x1="370" y1="246" x2="416" y2="246" stroke="#000" stroke-width="1.5" marker-end="url(#arrow)"/>
-  <line x1="370" y1="289" x2="416" y2="289" stroke="#000" stroke-width="1.5" marker-end="url(#arrow)"/>
-  <line x1="370" y1="332" x2="416" y2="332" stroke="#000" stroke-width="1.5" marker-end="url(#arrow)"/>
-  <line x1="370" y1="375" x2="416" y2="375" stroke="#000" stroke-width="1.5" marker-end="url(#arrow)"/>
-
-  <rect x="420" y="228" width="520" height="36" fill="none" stroke="#000" stroke-width="1.2"/>
-  <rect x="420" y="271" width="520" height="36" fill="none" stroke="#000" stroke-width="1.2"/>
-  <rect x="420" y="314" width="520" height="36" fill="none" stroke="#000" stroke-width="1.2"/>
-  <rect x="420" y="357" width="520" height="36" fill="none" stroke="#000" stroke-width="1.2"/>
+  <!-- Row labels -->
   <g font-weight="600">
-    <text x="434" y="250">Claude rules</text>
-    <text x="434" y="293">Claude sandbox</text>
-    <text x="434" y="336">Codex</text>
-    <text x="434" y="379">Runtime hook</text>
+    <text x="34" y="110">Instructions</text>
+    <text x="34" y="162">Permissions</text>
+    <text x="34" y="214">Hooks</text>
+    <text x="34" y="266">Skills</text>
+    <text x="34" y="318">Provider settings</text>
   </g>
-  <g font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11.5">
-    <text x="548" y="250">permissions.deny: Edit(~/.claude/settings.json)</text>
-    <text x="548" y="293">filesystem.denyWrite: ~/.claude/settings.json</text>
-    <text x="548" y="336">guarded.filesystem: "~/.claude/settings.json"="read"</text>
-    <text x="548" y="379">protected_paths.json</text>
-  </g>
-  <text x="710" y="379" fill="#555">blocks writes; fails closed</text>
-
-  <!-- 3. Two write modes -->
-  <text x="20" y="438" font-size="15" font-weight="600">3. Rendered files are replaced; files agents also write are merged</text>
-
-  <rect x="20" y="454" width="450" height="176" fill="none" stroke="#000" stroke-width="1.5"/>
-  <text x="36" y="478" font-weight="600">Replaced by install</text>
-  <text x="36" y="498" fill="#555">rendered into staging, then swapped in</text>
-  <g font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12">
-    <text x="36" y="526">AGENTS.md, CLAUDE.md</text>
-    <text x="36" y="548">hooks/, hooks.json, hook manifests</text>
-    <text x="36" y="570">skills/</text>
-    <text x="36" y="592">rules/default.rules</text>
-    <text x="36" y="614">Hermes plugin, pi bridge</text>
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="10.5" fill="#555">
+    <text x="34" y="128">AGENTS.md</text>
+    <text x="34" y="180">command_permissions.json</text>
+    <text x="34" y="232">hooks.json, hooks/</text>
+    <text x="34" y="284">skills/</text>
+    <text x="34" y="336">claude/, codex/ base files</text>
   </g>
 
-  <rect x="490" y="454" width="450" height="176" fill="none" stroke="#000" stroke-width="1.5"/>
-  <text x="506" y="478" font-weight="600">Merged by sync-*: managed keys only</text>
-  <text x="506" y="498" fill="#555">agent-owned state such as trust and approvals stays</text>
-  <g font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12">
-    <text x="506" y="526">~/.claude/settings.json</text>
-    <text x="506" y="548">~/.codex/config.toml</text>
-    <text x="506" y="570">~/.config/devin/config.json</text>
-    <text x="506" y="592">~/.hermes/config.yaml</text>
-  </g>
-  <g fill="#555" font-size="12">
-    <text x="726" y="526">generated top-level keys</text>
-    <text x="726" y="548">managed top-level keys</text>
-    <text x="726" y="570">managed keys, Exec(...) rules</text>
-    <text x="726" y="592">plugins.enabled</text>
+  <!-- Cells: primary line -->
+  <g>
+    <text x="234" y="110">CLAUDE.md</text>
+    <text x="382" y="110">AGENTS.md</text>
+
+    <text x="234" y="162">Bash(...) rules</text>
+    <text x="382" y="162">execpolicy rules</text>
+    <text x="530" y="162">Exec(...) rules</text>
+
+    <text x="234" y="214">hook wiring, scripts</text>
+    <text x="382" y="214">hook wiring, scripts</text>
+    <text x="530" y="214">hook wiring, scripts</text>
+    <text x="678" y="214">manifest, plugin</text>
+    <text x="826" y="214">manifest, bridge</text>
+
+    <text x="234" y="266">skills</text>
+    <text x="382" y="266">skills</text>
+
+    <text x="234" y="318">base settings</text>
+    <text x="382" y="318">base config</text>
   </g>
 
-  <text x="20" y="662" font-size="12">Users edit only the neutral source tree. Every agent file shown here is generated from it.</text>
+  <!-- Cells: installed location -->
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="10.5" fill="#555">
+    <text x="234" y="128">~/.claude/</text>
+    <text x="382" y="128">~/.codex/</text>
+
+    <text x="234" y="180">settings.json</text>
+    <text x="382" y="180">rules/default.rules</text>
+    <text x="530" y="180">devin/config.json</text>
+
+    <text x="234" y="232">settings.json</text>
+    <text x="382" y="232">hooks.json</text>
+    <text x="530" y="232">devin/config.json</text>
+    <text x="678" y="232">~/.hermes/</text>
+    <text x="826" y="232">~/.pi/agent/</text>
+
+    <text x="234" y="284">~/.claude/skills/</text>
+    <text x="382" y="284">~/.codex/skills/</text>
+
+    <text x="234" y="336">settings.json</text>
+    <text x="382" y="336">config.toml</text>
+  </g>
+
+  <!-- Not rendered -->
+  <g fill="#999" font-size="14">
+    <text x="530" y="118">-</text>
+    <text x="678" y="118">-</text>
+    <text x="826" y="118">-</text>
+    <text x="678" y="170">-</text>
+    <text x="826" y="170">-</text>
+    <text x="530" y="274">-</text>
+    <text x="678" y="274">-</text>
+    <text x="826" y="274">-</text>
+    <text x="530" y="326">-</text>
+    <text x="678" y="326">-</text>
+    <text x="826" y="326">-</text>
+  </g>
+
+  <text x="20" y="372" font-size="12" fill="#555">External skill directories and hook bundles (for example Herdr or Moshi) join the Skills and Hooks rows. "-" means not rendered.</text>
+
+  <!-- Guarantees -->
+  <text x="20" y="412" font-size="15" font-weight="600">What keeps the rendered files intact</text>
+  <rect x="20" y="426" width="460" height="104" fill="none" stroke="#000" stroke-width="1.5"/>
+  <text x="36" y="452" font-weight="600">Protection from one list</text>
+  <text x="36" y="474">Agents could edit these files to lift their own limits.</text>
+  <text x="36" y="494">One generated list of protected paths feeds Claude deny</text>
+  <text x="36" y="514">rules, the sandbox, Codex guards, and the runtime hook.</text>
+
+  <rect x="500" y="426" width="460" height="104" fill="none" stroke="#000" stroke-width="1.5"/>
+  <text x="516" y="452" font-weight="600">Merge by managed key</text>
+  <text x="516" y="474">Agents also write their settings files, such as trust.</text>
+  <text x="516" y="494">sync-* replaces only harness-owned keys, so agent state</text>
+  <text x="516" y="514">stays and generated enforcement is never dropped.</text>
 </svg>
