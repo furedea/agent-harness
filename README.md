@@ -1,10 +1,15 @@
 # agent-harness
 
-**Share hooks—not just skills—across Codex and Claude Code.**
+<p align="center">
+  <a href="README.md"><img alt="English" src="https://img.shields.io/badge/lang-English-0969da"></a>
+  <a href="README_ja.md"><img alt="日本語" src="https://img.shields.io/badge/lang-%E6%97%A5%E6%9C%AC%E8%AA%9E-8c959f"></a>
+</p>
+
+**Share hooks—not just skills—across coding agents.**
 
 `agent-harness` is a Nix-native composition layer for hooks, skills, agent instructions, command
 permissions, and provider settings. Define one environment, then render the native files expected
-by both Codex and Claude Code.
+by Claude Code, Codex, Devin, Hermes Agent, and pi.
 
 The packaged default stays deliberately small. Personal or team behavior lives in a complete
 source tree beside the rest of its configuration and can compose local or Nix-built skills and
@@ -19,13 +24,16 @@ Provider settings
               v
         agent-harness
         |-- Claude Code: settings, hooks, and skills
-        `-- Codex: config, hooks, adapters, rules, and skills
+        |-- Codex: config, hooks, adapters, rules, and skills
+        |-- Devin: config, hooks, and command permissions
+        |-- Hermes Agent: hook manifest, plugin, and config
+        `-- pi: hook manifest and bridge extension
 ```
 
 ## Why
 
-- **Shared hooks**: reuse hook behavior across Codex and Claude Code, including tools whose CLI
-  normally writes directly into each provider's config directory.
+- **Shared hooks**: reuse hook behavior across Claude Code, Codex, Devin, Hermes Agent, and pi,
+  including tools whose CLI normally writes directly into each provider's config directory.
 - **One set of guardrails**: generate Claude Bash permissions, Codex execpolicy, and Devin Exec
   permissions from one neutral `allow` / `ask` / `deny` source.
 - **Composable extensions**: combine built-in behavior with external skills and hook bundles.
@@ -33,8 +41,11 @@ Provider settings
   hook installers inside an isolated build home.
 - **Provider-native output**: render the adapters, hook wiring, permissions, rules, and
   configuration expected by each agent.
-- **State-aware Codex updates**: replace harness-owned keys while preserving tool-owned and
-  user-owned Codex configuration.
+- **State-aware config sync**: replace harness-owned keys while preserving tool-owned and
+  user-owned state in the Claude Code, Codex, Devin, and Hermes Agent configs.
+
+For the problems this design addresses, the core decisions, and the alternatives considered, see
+[docs/DESIGN.md](docs/DESIGN.md).
 
 ## Sources
 
@@ -174,8 +185,8 @@ For Nix on Apple Silicon macOS:
 nix profile install github:furedea/agent-harness
 ```
 
-After installing the binary, `agent-harness install` is still required to render the Codex and
-Claude Code configuration. `verify` checks the required installed paths and the runtime commands
+After installing the binary, `agent-harness install` is still required to render the provider
+configuration. `verify` checks the required installed paths and the runtime commands
 declared by the resolved source manifest.
 
 ## Other Installation Methods
@@ -284,17 +295,21 @@ The complete module interface is:
 | `claude.settings`    | `{}`          | Optionally override keys in the selected Claude base.         |
 | `codex.enable`       | `true`        | Install Codex files.                                          |
 | `codex.settings`     | `{}`          | Optionally override keys in the selected Codex base.          |
+| `devin.enable`       | `true`        | Install Devin files.                                          |
+| `hermes.enable`      | `true`        | Install Hermes Agent files.                                   |
+| `pi.enable`          | `true`        | Install pi files.                                             |
 
 Generated hook wiring, Bash command permissions, and protected paths remain harness-managed after
 the provider settings merge. This prevents a settings overlay from silently removing enforcement.
 Protected paths cover every file the harness renders or syncs for Claude Code, Codex, Devin, Hermes,
 and pi, including the mutable provider configs, but not skills.
-Set either provider's `enable` option to `false` to install only the other provider.
+Set a provider's `enable` option to `false` to skip its files.
 
 The Home Manager module materializes `~/.claude/settings.json` as a writable regular file because
 Claude Code may update it. On activation, generated top-level keys replace the corresponding
 existing values, while top-level keys absent from the generated settings are preserved. Other
-Claude Code files remain Home Manager-managed symlinks.
+Claude Code files remain Home Manager-managed symlinks. Activation also syncs the Codex, Devin, and
+Hermes Agent configs as described in [What Gets Installed](#what-gets-installed).
 
 ## Optional Integrity Check
 
@@ -310,24 +325,31 @@ sha256sum -c agent-harness-x86_64-unknown-linux-musl.tar.xz.sha256
 
 ## What Gets Installed
 
-`agent-harness install --prefix "$HOME"` writes the rendered harness into Codex and Claude Code
-config directories.
+`agent-harness install --prefix "$HOME"` writes the rendered harness into the Claude Code, Codex,
+Devin, Hermes Agent, and pi config directories.
 
-| Path                           | Purpose                             |
-| ------------------------------ | ----------------------------------- |
-| `~/.codex/AGENTS.md`           | Codex agent instructions            |
-| `~/.codex/config.toml`         | Managed Codex config                |
-| `~/.codex/hooks.json`          | Codex hook wiring                   |
-| `~/.codex/hooks/`              | Codex hook adapters                 |
-| `~/.codex/rules/default.rules` | Codex command permissions           |
-| `~/.codex/skills/`             | Rendered Codex skills               |
-| `~/.claude/CLAUDE.md`          | Claude Code agent instructions      |
-| `~/.claude/settings.json`      | Claude Code settings                |
-| `~/.claude/hooks/`             | Claude Code hooks and policy guards |
-| `~/.claude/skills/`            | Rendered Claude Code skills         |
-| `~/.claude/statusline/`        | Claude Code status line command     |
-| `~/.devin/hooks/`              | Devin hook adapters                 |
-| `~/.config/devin/config.json`  | Devin hooks and command permissions |
+| Path                                     | Purpose                                      |
+| ---------------------------------------- | -------------------------------------------- |
+| `~/.codex/AGENTS.md`                     | Codex agent instructions                     |
+| `~/.codex/config.toml`                   | Managed Codex config                         |
+| `~/.codex/hooks.json`                    | Codex hook wiring                            |
+| `~/.codex/hooks/`                        | Codex hook adapters                          |
+| `~/.codex/rules/default.rules`           | Codex command permissions                    |
+| `~/.codex/skills/`                       | Rendered Codex skills                        |
+| `~/.claude/CLAUDE.md`                    | Claude Code agent instructions               |
+| `~/.claude/settings.json`                | Claude Code settings                         |
+| `~/.claude/hooks/`                       | Claude Code hooks and policy guards          |
+| `~/.claude/skills/`                      | Rendered Claude Code skills                  |
+| `~/.claude/statusline/`                  | Claude Code status line command              |
+| `~/.devin/hooks/`                        | Devin hook adapters                          |
+| `~/.config/devin/config.json`            | Devin hooks and command permissions          |
+| `~/.hermes/hooks.json`                   | Hermes Agent hook manifest                   |
+| `~/.hermes/hooks/`                       | Hermes Agent hook adapters                   |
+| `~/.hermes/plugins/agent-harness-hooks/` | Hermes Agent plugin that runs the manifest   |
+| `~/.hermes/managed-config.yaml`          | Hermes Agent keys to sync into `config.yaml` |
+| `~/.pi/agent/hooks.json`                 | pi hook manifest                             |
+| `~/.pi/agent/extensions/hook_bridge.ts`  | pi extension that runs the manifest          |
+| `~/.pi/hooks/`                           | pi hook adapters                             |
 
 Installation replaces the managed hook and skill directories and rewrites Claude Code's managed
 settings. Codex config synchronization replaces only these managed top-level keys and preserves
@@ -353,6 +375,10 @@ Devin config synchronization replaces the managed top-level keys and, inside `pe
 replaces only `Exec(...)` entries. Non-Exec entries such as `Read(...)`, `Write(...)`, `Fetch(...)`,
 and `mcp__*` rules stay user-owned. Approvals saved interactively as `Exec(...)` are replaced on the
 next sync; add persistent command rules to `command_permissions.json` instead.
+
+`install` does not edit `~/.hermes/config.yaml`. `sync-hermes-config` merges
+`~/.hermes/managed-config.yaml` into it: generated `plugins.enabled` entries are appended once, and
+all other Hermes Agent state is preserved. The Home Manager module runs this sync on activation.
 
 `verify` checks the required paths and runtime commands declared by the resolved source manifest. It
 does not compare installed file contents with the selected source.
@@ -406,11 +432,14 @@ The CLI also exposes lower-level generation commands for inspecting or composing
 | `generate-command-permissions`   | Shared runtime command permissions                 |
 | `generate-devin-hooks`           | Devin config fragment (hooks and permissions)      |
 | `generate-forbidden-commands`    | Global precise forbidden-command regex rules       |
+| `generate-hermes-hooks`          | Hermes Agent hook manifest                         |
 | `generate-hook-bundle`           | Isolated, versioned external hook bundle           |
+| `generate-pi-hooks`              | pi hook manifest                                   |
 | `generate-skills`                | Provider-specific built-in and external skill tree |
 | `sync-claude-settings`           | Top-level merge into existing Claude settings      |
 | `sync-codex-config`              | Managed-key merge into an existing Codex config    |
 | `sync-devin-config`              | Managed merge into an existing Devin config        |
+| `sync-hermes-config`             | Managed-key merge into an existing Hermes config   |
 
 ```bash
 agent-harness generate-skills \
@@ -488,6 +517,7 @@ options above. Render a custom tree with
 | Add or change hook wiring               | `agents/hooks.json`                                    |
 | Add or change Claude hooks              | `agents/hooks/*.sh`                                    |
 | Add or change Codex hook adapters       | `agents/codex/hooks/*.sh`                              |
+| Add or change Devin, Hermes, pi hooks   | `agents/{devin,hermes,pi}/hooks/`                      |
 | Change Codex base config                | `agents/codex/config.toml`                             |
 | Change Claude base settings             | `agents/claude/settings.json`                          |
 
