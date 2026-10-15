@@ -4,6 +4,6 @@
   "private": true,
   "description": "Locked JavaScript tools used by agent-harness CI.",
   "devDependencies": {
-    "@openai/codex": "0.158.0"
+    "@openai/codex": "0.162.1"
   }
 }
