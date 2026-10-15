@@ -169,7 +169,7 @@ in
 
     github.agentToken = {
       enable = lib.mkEnableOption ''
-        an agent-scoped GitHub token for gh and git push inside the Claude Code sandbox.
+        an agent-scoped GitHub token for gh inside the Claude Code sandbox and git push.
         The token's own permissions are the safety boundary: anything running in the
         sandbox can use it'';
 

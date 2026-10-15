@@ -4,10 +4,8 @@ let
     "github.com"
     "api.github.com"
   ];
-  sandboxedCommands = [
-    "gh *"
-    "git push *"
-  ];
+  # git push stays excluded so it chains with git commit, which must sign outside the sandbox.
+  sandboxedCommands = [ "gh *" ];
   # gh reads these files from GH_CONFIG_DIR; checking them catches globs that target the token file.
   configFiles = [
     "hosts.yml"
@@ -59,8 +57,8 @@ let
 in
 {
   /**
-    Claude settings that let gh and git push authenticate inside the sandbox
-    with the token stored in `configDir`.
+    Claude settings that let gh run inside the sandbox and gh and git push
+    authenticate with the token stored in `configDir`.
   */
   applyToClaudeSettings =
     configDir: settings:

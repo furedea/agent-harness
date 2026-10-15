@@ -122,7 +122,7 @@ moshiHooks = agent-harness.lib.${pkgs.system}.buildHookBundleFromCommands {
 
 ### Claude サンドボックス内のエージェント用 GitHub トークン
 
-既定では，ユーザーの GitHub トークンはサンドボックスの外でしか読めない．そのため Claude のソース設定は `gh *` と `git push *` を `sandbox.excludedCommands` に列挙する．それでも `git commit -m x && git push` のような連結した呼び出しはサンドボックス内で実行され，承認プロンプトで止まる．オプトインの `github.agentToken` オプションは，サンドボックス内で読めるエージェント専用のトークンを Claude Code に与える．
+既定では，ユーザーの GitHub トークンはサンドボックスの外でしか読めない．そのため Claude のソース設定は `gh *` を `sandbox.excludedCommands` に列挙する．gh を他のコマンドと連結した呼び出しはサンドボックス内で実行され，認証に失敗して承認プロンプトで止まる．オプトインの `github.agentToken` オプションは，サンドボックス内で読めるエージェント専用のトークンを Claude Code に与える．
 
 1. エージェントが変更してよいリポジトリに限定した [fine-grained personal access token](https://github.com/settings/personal-access-tokens/new) を作成する．Contents，Pull requests，Issues を read and write，Actions と Metadata を read にし，有効期限は 90 日などにする．
 2. エージェント用の設定ディレクトリに保存する．`--insecure-storage` を付けると，トークンはシステムのキーリングではなくそのディレクトリの `hosts.yml` に書き込まれる．キーリングはサンドボックスから届かず，ユーザー自身のトークンも保持している:
@@ -138,11 +138,12 @@ moshiHooks = agent-harness.lib.${pkgs.system}.buildHookBundleFromCommands {
     # configDir の既定値は "${config.home.homeDirectory}/.config/agent-harness/gh"．
     ```
 
-生成される Claude の設定は，`env.GH_CONFIG_DIR` に絶対パスの `configDir` を設定し，`github.com` と `api.github.com` を `sandbox.network.allowedDomains` に加え，gh が TLS を検証できるよう `sandbox.enableWeakerNetworkIsolation` を有効にし，ソース設定が列挙していても `gh *` と `git push *` を `sandbox.excludedCommands` から除く．この除去は，ソース設定を正とする原則の唯一の例外である（[ADR-0019](docs/adr/0019_opt_in_agent_github_token_in_claude_sandbox.md)）．`configDir` が相対パスの場合や，`Read(...)` の拒否，`sandbox.filesystem.denyRead` の項目，シークレットパスポリシーのルールがそれを隠す場合は評価が失敗する．ユーザー自身の `~/.config/gh/hosts.yml` の拒否はそのまま残る．オプションが無効なら，生成物は変わらない．
+生成される Claude の設定は，`env.GH_CONFIG_DIR` に絶対パスの `configDir` を設定し，`github.com` と `api.github.com` を `sandbox.network.allowedDomains` に加え，gh が TLS を検証できるよう `sandbox.enableWeakerNetworkIsolation` を有効にし，ソース設定が列挙していても `gh *` を `sandbox.excludedCommands` から除く．この除去は，ソース設定を正とする原則の唯一の例外である（[ADR-0020](docs/adr/0020_keep_git_push_outside_the_claude_sandbox.md)）．`git push *` を含む他の除外は，ソースの列挙どおりに残る．コミット署名はサンドボックスの外でしか動かないため，`git add x && git commit -m y && git push` のような連結をサンドボックスの外で実行できるよう，`git add *`，`git status *`，`git commit *`，`git push *` をすべて除外しておく．除外された `git push` も `GH_CONFIG_DIR` を引き継ぐので，エージェント用トークンで認証する．`configDir` が相対パスの場合や，`Read(...)` の拒否，`sandbox.filesystem.denyRead` の項目，シークレットパスポリシーのルールがそれを隠す場合は評価が失敗する．ユーザー自身の `~/.config/gh/hosts.yml` の拒否はそのまま残る．オプションが無効なら，生成物は変わらない．
 
 脅威モデル:
 
 - サンドボックス内で動くものはすべて，API の直接呼び出しを含め，権限の範囲内でトークンを使える．安全境界はコマンドルールではなく，トークンの fine-grained な権限である．
+- gh は意図してサンドボックス内で実行する．外で実行すると，`gh gist create`，`gh release upload`，`gh api --input` などで読めるローカルファイルを何でもアップロードできてしまう．サンドボックスの外の git push が送れるのはリポジトリのコミットだけである．
 - git は `gh auth git-credential`（`gh auth setup-git` で設定する）で認証するため，リモートは HTTPS でなければならない．SSH のリモートはこの仕組みの外で，引き続きユーザーの SSH 鍵を使う．
 - 対象は Claude Code だけである．Codex，Devin，Hermes，pi は既定の挙動のままである．
 
