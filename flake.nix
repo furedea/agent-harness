@@ -50,6 +50,12 @@
           source = ./tests/fixtures/complete-source;
         };
 
+        agent-github-token = import ./tests/agent_github_token.nix {
+          agentHarnessModule = self.homeManagerModules.default;
+          inherit home-manager pkgs;
+          source = ./tests/fixtures/complete-source;
+        };
+
         skill-from-command = self.lib.${system}.buildSkillFromCommand {
           name = "example";
           command = [

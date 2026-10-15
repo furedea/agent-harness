@@ -68,10 +68,11 @@ agent breaks in predictable ways:
 
 - Decision: sync commands replace harness-owned keys and preserve everything else. Source
   permission rules are kept, deduplicated, and a rule in several lists stays only in the most
-  restrictive one.
+  restrictive one. The opt-in agent GitHub token is the one composition that overrides the source
+  sandbox exclusions.
 - Reason: agents keep writing their own state, but a settings overlay must never weaken or remove
   generated enforcement.
-- ADRs: [0016], [0018].
+- ADRs: [0016], [0018], [0019].
 
 ## Alternatives considered
 
@@ -161,3 +162,4 @@ workflows:
 [0016]: adr/0016_materialize_mutable_claude_settings.md
 [0017]: adr/0017_separate_output_and_runtime_roots.md
 [0018]: adr/0018_preserve_source_claude_permission_rules.md
+[0019]: adr/0019_opt_in_agent_github_token_in_claude_sandbox.md
