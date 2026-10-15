@@ -46,7 +46,7 @@
 
 - 決定：同期コマンドは harness が所有するキーを置き換え，それ以外は残す．ソースの権限ルールは残して重複を除き，複数のリストにあるルールは最も厳しいリストにだけ残す．オプトインのエージェント用 GitHub トークンだけは，ソースのサンドボックス除外を上書きする．
 - 理由：エージェントは自分の状態を書き込み続けるが，設定のオーバーレイが生成した強制力を弱めたり取り除いたりしてはならない．
-- ADR: [0016]，[0018]，[0019]．
+- ADR: [0016]，[0018]，[0020]．
 
 ## 検討した代替案
 
@@ -125,4 +125,4 @@ flake は，スキルとフックバンドルのビルダーもチェックと�
 [0016]: adr/0016_materialize_mutable_claude_settings.md
 [0017]: adr/0017_separate_output_and_runtime_roots.md
 [0018]: adr/0018_preserve_source_claude_permission_rules.md
-[0019]: adr/0019_opt_in_agent_github_token_in_claude_sandbox.md
+[0020]: adr/0020_keep_git_push_outside_the_claude_sandbox.md

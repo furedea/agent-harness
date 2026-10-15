@@ -108,8 +108,9 @@ assert lib.assertMsg (
   enabledSettings.sandbox.excludedCommands == [
     "docker *"
     "git commit *"
+    "git push *"
   ]
-) "agent token must run gh and git push inside the sandbox";
+) "agent token must run gh inside the sandbox and keep git push outside";
 assert lib.assertMsg (
   enabledSettings.permissions.deny == [ "Read(~/.config/gh/hosts.yml)" ]
 ) "agent token must keep the normal gh token denied";

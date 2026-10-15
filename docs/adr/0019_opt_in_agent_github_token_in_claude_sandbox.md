@@ -1,7 +1,8 @@
 # ADR-0019: Opt in to an agent GitHub token inside the Claude sandbox
 
-- Status: Accepted
+- Status: Superseded
 - Date: 2026-10-15
+- Superseded by: ADR-0020
 
 In the context of Claude Code running `gh` and `git push` outside the sandbox through
 `sandbox.excludedCommands` because the user's GitHub token is unreadable inside it, facing chained

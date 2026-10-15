@@ -152,9 +152,9 @@ moshiHooks = agent-harness.lib.${pkgs.system}.buildHookBundleFromCommands {
 ### Agent GitHub token in the Claude sandbox
 
 By default the user's GitHub token is readable only outside the sandbox, so the Claude source
-settings list `gh *` and `git push *` in `sandbox.excludedCommands`. A chained call such as
-`git commit -m x && git push` still runs sandboxed and ends in an approval prompt. The opt-in
-`github.agentToken` option gives Claude Code its own token that is readable inside the sandbox:
+settings list `gh *` in `sandbox.excludedCommands`. A call that chains gh with other commands then
+runs sandboxed, fails authentication, and ends in an approval prompt. The opt-in `github.agentToken`
+option gives Claude Code its own token that is readable inside the sandbox:
 
 1. Create a [fine-grained personal access token](https://github.com/settings/personal-access-tokens/new)
    limited to the repositories agents may change, with Contents, Pull requests, and Issues set to
@@ -176,9 +176,13 @@ settings list `gh *` and `git push *` in `sandbox.excludedCommands`. A chained c
 
 The rendered Claude settings then set `env.GH_CONFIG_DIR` to the absolute `configDir`, add
 `github.com` and `api.github.com` to `sandbox.network.allowedDomains`, set
-`sandbox.enableWeakerNetworkIsolation` so gh can verify TLS, and remove `gh *` and `git push *`
-from `sandbox.excludedCommands` even when the source settings list them. That removal is the one
-exception to the source settings being authoritative ([ADR-0019](docs/adr/0019_opt_in_agent_github_token_in_claude_sandbox.md)).
+`sandbox.enableWeakerNetworkIsolation` so gh can verify TLS, and remove `gh *` from
+`sandbox.excludedCommands` even when the source settings list it. That removal is the one exception
+to the source settings being authoritative ([ADR-0020](docs/adr/0020_keep_git_push_outside_the_claude_sandbox.md)).
+`git push *` and every other exclusion stay as the source lists them: commit signing works only
+outside the sandbox, so `git add *`, `git status *`, `git commit *`, and `git push *` should all be
+excluded to keep a chained `git add x && git commit -m y && git push` outside it. An excluded
+`git push` still inherits `GH_CONFIG_DIR` and authenticates with the agent token.
 Evaluation fails when `configDir` is relative or when a `Read(...)` denial, `sandbox.filesystem.denyRead`
 entry, or secret path policy rule hides it. Denials of the user's own `~/.config/gh/hosts.yml` stay
 in place. With the option disabled, the rendered output is unchanged.
@@ -187,6 +191,9 @@ Threat model:
 
 - Anything running inside the sandbox can use the token within its permissions, including direct
   API calls; the token's fine-grained scope, not the command rules, is the safety boundary.
+- gh runs inside the sandbox on purpose: outside it, gh could upload any readable local file, for
+  example with `gh gist create`, `gh release upload`, or `gh api --input`. git push outside the
+  sandbox can only send repository commits.
 - git authenticates through `gh auth git-credential` (set up with `gh auth setup-git`), so remotes
   must use HTTPS. SSH remotes keep using the user's SSH keys outside this mechanism.
 - Only Claude Code is covered. Codex, Devin, Hermes, and pi still use the default behavior.
