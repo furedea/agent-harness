@@ -17,9 +17,21 @@ let
     else
       cfg.commandPermissions;
 
+  agentGithubToken = import ./agent_github_token.nix { inherit lib; };
+  inherit (cfg.github) agentToken;
+  agentTokenDenials = agentGithubToken.readDenialsCovering {
+    inherit (config.home) homeDirectory;
+    inherit (agentToken) configDir;
+    settings = cfg.claude.composedSettings;
+    secretPathPolicy = builtins.fromJSON (
+      builtins.readFile "${profileSource}/hooks/rules/secret_path_policy.json"
+    );
+  };
+
   claudeBaseSettings = builtins.fromJSON (builtins.readFile "${profileSource}/claude/settings.json");
+  claudeSourceSettings = lib.recursiveUpdate claudeBaseSettings cfg.claude.settings;
   claudeSettings = pkgs.writeText "agent-harness-claude-settings.json" (
-    builtins.toJSON (lib.recursiveUpdate claudeBaseSettings cfg.claude.settings)
+    builtins.toJSON cfg.claude.composedSettings
   );
 
   codexFormat = pkgs.formats.toml { };
@@ -146,6 +158,27 @@ in
         default = { };
         description = "Claude Code settings recursively merged over the selected profile.";
       };
+
+      composedSettings = lib.mkOption {
+        type = lib.types.attrsOf lib.types.anything;
+        readOnly = true;
+        internal = true;
+        description = "Claude Code source settings after profile, override, and opt-in composition.";
+      };
+    };
+
+    github.agentToken = {
+      enable = lib.mkEnableOption ''
+        an agent-scoped GitHub token for gh and git push inside the Claude Code sandbox.
+        The token's own permissions are the safety boundary: anything running in the
+        sandbox can use it'';
+
+      configDir = lib.mkOption {
+        type = lib.types.str;
+        default = "${config.home.homeDirectory}/.config/agent-harness/gh";
+        defaultText = lib.literalExpression ''"''${config.home.homeDirectory}/.config/agent-harness/gh"'';
+        description = "Absolute GH_CONFIG_DIR that holds the agent token, readable inside the sandbox.";
+      };
     };
 
     devin = {
@@ -174,6 +207,25 @@ in
   };
 
   config = lib.mkIf cfg.enable {
+    programs.agent-harness.claude.composedSettings =
+      if agentToken.enable then
+        agentGithubToken.applyToClaudeSettings agentToken.configDir claudeSourceSettings
+      else
+        claudeSourceSettings;
+
+    assertions = lib.optionals agentToken.enable [
+      {
+        assertion = lib.hasPrefix "/" agentToken.configDir;
+        message = "programs.agent-harness.github.agentToken.configDir must be an absolute path.";
+      }
+      {
+        assertion = agentTokenDenials == [ ];
+        message =
+          "programs.agent-harness.github.agentToken.configDir is unreadable in the sandbox "
+          + "because of Read denials: ${lib.concatStringsSep ", " agentTokenDenials}";
+      }
+    ];
+
     home = {
       packages = [ cfg.package ];
 

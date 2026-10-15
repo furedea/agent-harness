@@ -120,6 +120,32 @@ moshiHooks = agent-harness.lib.${pkgs.system}.buildHookBundleFromCommands {
 };
 ```
 
+### Claude サンドボックス内のエージェント用 GitHub トークン
+
+既定では，ユーザーの GitHub トークンはサンドボックスの外でしか読めない．そのため Claude のソース設定は `gh *` と `git push *` を `sandbox.excludedCommands` に列挙する．それでも `git commit -m x && git push` のような連結した呼び出しはサンドボックス内で実行され，承認プロンプトで止まる．オプトインの `github.agentToken` オプションは，サンドボックス内で読めるエージェント専用のトークンを Claude Code に与える．
+
+1. エージェントが変更してよいリポジトリに限定した [fine-grained personal access token](https://github.com/settings/personal-access-tokens/new) を作成する．Contents，Pull requests，Issues を read and write，Actions と Metadata を read にし，有効期限は 90 日などにする．
+2. エージェント用の設定ディレクトリに保存する．`--insecure-storage` を付けると，トークンはシステムのキーリングではなくそのディレクトリの `hosts.yml` に書き込まれる．キーリングはサンドボックスから届かず，ユーザー自身のトークンも保持している:
+
+    ```bash
+    GH_CONFIG_DIR="$HOME/.config/agent-harness/gh" gh auth login --with-token --insecure-storage < token.txt
+    ```
+
+3. オプションを有効にし，Home Manager の設定を switch する:
+
+    ```nix
+    programs.agent-harness.github.agentToken.enable = true;
+    # configDir の既定値は "${config.home.homeDirectory}/.config/agent-harness/gh"．
+    ```
+
+生成される Claude の設定は，`env.GH_CONFIG_DIR` に絶対パスの `configDir` を設定し，`github.com` と `api.github.com` を `sandbox.network.allowedDomains` に加え，gh が TLS を検証できるよう `sandbox.enableWeakerNetworkIsolation` を有効にし，ソース設定が列挙していても `gh *` と `git push *` を `sandbox.excludedCommands` から除く．この除去は，ソース設定を正とする原則の唯一の例外である（[ADR-0019](docs/adr/0019_opt_in_agent_github_token_in_claude_sandbox.md)）．`configDir` が相対パスの場合や，`Read(...)` の拒否，`sandbox.filesystem.denyRead` の項目，シークレットパスポリシーのルールがそれを隠す場合は評価が失敗する．ユーザー自身の `~/.config/gh/hosts.yml` の拒否はそのまま残る．オプションが無効なら，生成物は変わらない．
+
+脅威モデル:
+
+- サンドボックス内で動くものはすべて，API の直接呼び出しを含め，権限の範囲内でトークンを使える．安全境界はコマンドルールではなく，トークンの fine-grained な権限である．
+- git は `gh auth git-credential`（`gh auth setup-git` で設定する）で認証するため，リモートは HTTPS でなければならない．SSH のリモートはこの仕組みの外で，引き続きユーザーの SSH 鍵を使う．
+- 対象は Claude Code だけである．Codex，Devin，Hermes，pi は既定の挙動のままである．
+
 ## クイックインストール
 
 リリースバイナリは現在 `x86_64-unknown-linux-musl` 向けにだけビルドしている．そのプラットフォームで最も手早いのは，cargo-dist が生成するシェルインストーラである．
