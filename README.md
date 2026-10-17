@@ -185,6 +185,13 @@ Evaluation fails when `configDir` is relative or when a `Read(...)` denial, `san
 entry, or secret path policy rule hides it. Denials of the user's own `~/.config/gh/hosts.yml` stay
 in place. With the option disabled, the rendered output is unchanged.
 
+The rendered Codex config sets `shell_environment_policy.set.GH_CONFIG_DIR` to the same `configDir`
+and adds `"~/.config/gh/hosts.yml" = "deny"` to `[permissions.guarded.filesystem]`. Codex config
+synchronization manages only that one `shell_environment_policy` key, so other entries Codex or the
+user keep there survive. The read denial takes effect only in sessions that select the `guarded`
+permissions profile (`default_permissions = "guarded"`); the generated profile lists only harness
+files and these denials, so it is not selected by default.
+
 #### Agent commits
 
 Commit signing works only outside the sandbox, so the source settings pick one of two setups for
@@ -226,7 +233,8 @@ Threat model:
   sandbox in setup (a) can only send repository commits.
 - git authenticates through `gh auth git-credential` (set up with `gh auth setup-git`), so remotes
   must use HTTPS. SSH remotes keep using the user's SSH keys outside this mechanism.
-- Only Claude Code is covered. Codex, Devin, Hermes, and pi still use the default behavior.
+- Claude Code and Codex shell commands receive the token. Devin, Hermes, and pi still use the
+  default behavior.
 
 #### GitHub App token source
 
@@ -234,8 +242,8 @@ A personal access token has to be recreated when it expires. With `source = "app
 supplies the agent token instead: a per-user scheduled job mints a one-hour installation access
 token at login and every 50 minutes, and writes it to `hosts.yml` in `configDir` atomically with mode
 0600. The job is a launchd agent on macOS, which also runs a missed interval after wake, and a
-systemd user service with a persistent timer on Linux. Everything the option does to the Claude
-settings is the same for both sources.
+systemd user service with a persistent timer on Linux. Everything the option does to the Claude and
+Codex settings is the same for both sources.
 
 1. [Register a GitHub App](https://github.com/settings/apps/new) with webhooks disabled and these
    repository permissions: Contents, Pull requests, and Issues set to read and write; Actions and
@@ -264,7 +272,8 @@ settings is the same for both sources.
 
 The private key path must be absolute. The rendered Claude settings add `Read(//<path>)` to
 `permissions.deny` and the path to `sandbox.filesystem.denyRead`, so neither Claude Code tools nor
-sandboxed commands can read the key. With `installationId` unset, the job uses the App's only
+sandboxed commands can read the key. The rendered Codex config denies the key in
+`[permissions.guarded.filesystem]` as well. With `installationId` unset, the job uses the App's only
 installation and fails when it has several.
 
 The job records each refresh in `agent_harness_token.json` beside the token. If it stops, pushes
@@ -499,6 +508,9 @@ model, model_reasoning_effort, personality, approval_policy, sandbox_mode,
 approvals_reviewer, notice, tui, plugins, features, default_permissions,
 permissions
 ```
+
+It also manages the single key `shell_environment_policy.set.GH_CONFIG_DIR`, set or removed to
+match the source, and leaves the rest of `shell_environment_policy` alone.
 
 Generated Claude settings keep every `permissions.allow`, `permissions.ask`, and
 `permissions.deny` entry declared by the source `claude/settings.json`, followed by the generated
