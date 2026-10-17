@@ -1,6 +1,7 @@
 mod cli;
 mod fs_ops;
 mod generation;
+mod github_app;
 mod inventory;
 mod layout;
 mod manifest;
