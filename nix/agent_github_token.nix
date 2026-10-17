@@ -4,7 +4,7 @@ let
     "github.com"
     "api.github.com"
   ];
-  # git push stays excluded so it chains with git commit, which must sign outside the sandbox.
+  # git exclusions stay as the source lists them: signed agent commits exclude git, unsigned ones do not.
   sandboxedCommands = [ "gh *" ];
   # gh reads these files from GH_CONFIG_DIR; checking them catches globs that target the token file.
   configFiles = [
