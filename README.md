@@ -179,13 +179,43 @@ The rendered Claude settings then set `env.GH_CONFIG_DIR` to the absolute `confi
 `sandbox.enableWeakerNetworkIsolation` so gh can verify TLS, and remove `gh *` from
 `sandbox.excludedCommands` even when the source settings list it. That removal is the one exception
 to the source settings being authoritative ([ADR-0020](docs/adr/0020_keep_git_push_outside_the_claude_sandbox.md)).
-`git push *` and every other exclusion stay as the source lists them: commit signing works only
-outside the sandbox, so `git add *`, `git status *`, `git commit *`, and `git push *` should all be
-excluded to keep a chained `git add x && git commit -m y && git push` outside it. An excluded
-`git push` still inherits `GH_CONFIG_DIR` and authenticates with the agent token.
+`git push *` and every other exclusion stay as the source lists them, so the source settings choose
+where git runs (see [Agent commits](#agent-commits)).
 Evaluation fails when `configDir` is relative or when a `Read(...)` denial, `sandbox.filesystem.denyRead`
 entry, or secret path policy rule hides it. Denials of the user's own `~/.config/gh/hosts.yml` stay
 in place. With the option disabled, the rendered output is unchanged.
+
+#### Agent commits
+
+Commit signing works only outside the sandbox, so the source settings pick one of two setups for
+agent git:
+
+- **(a) Sign agent commits.** List `git add *`, `git status *`, `git commit *`, and `git push *` in
+  `sandbox.excludedCommands` so a chained `git add x && git commit -m y && git push` runs outside
+  the sandbox, where signing works. An excluded `git push` still inherits `GH_CONFIG_DIR` and
+  authenticates with the agent token. Repository git hooks then also run outside the sandbox, so an
+  agent can run unsandboxed code by editing a hook configuration such as `lefthook.yml`, a script a
+  hook calls, or build settings that a hook's tool reads.
+- **(b) Leave agent commits unsigned (recommended when hooks or the tools they run read repository
+  files).** Disable signing for Claude Code only and exclude no git commands, so git, its hooks, and
+  push all run inside the sandbox and push authenticates with the agent token, from either source.
+  Commits that reach the default branch through squash merges are still signed, by GitHub
+  ([ADR-0022](docs/adr/0022_leave_agent_commits_unsigned_inside_the_claude_sandbox.md)).
+
+For (b), set `GIT_CONFIG_*` in the Claude source settings' `env`. It overrides git's config files
+for Claude Code processes only, while the user's own commits stay signed (git 2.31 or later):
+
+```json
+{
+  "env": {
+    "GIT_CONFIG_COUNT": "2",
+    "GIT_CONFIG_KEY_0": "commit.gpgsign",
+    "GIT_CONFIG_VALUE_0": "false",
+    "GIT_CONFIG_KEY_1": "tag.gpgsign",
+    "GIT_CONFIG_VALUE_1": "false"
+  }
+}
+```
 
 Threat model:
 
@@ -193,7 +223,7 @@ Threat model:
   API calls; the token's fine-grained scope, not the command rules, is the safety boundary.
 - gh runs inside the sandbox on purpose: outside it, gh could upload any readable local file, for
   example with `gh gist create`, `gh release upload`, or `gh api --input`. git push outside the
-  sandbox can only send repository commits.
+  sandbox in setup (a) can only send repository commits.
 - git authenticates through `gh auth git-credential` (set up with `gh auth setup-git`), so remotes
   must use HTTPS. SSH remotes keep using the user's SSH keys outside this mechanism.
 - Only Claude Code is covered. Codex, Devin, Hermes, and pi still use the default behavior.
