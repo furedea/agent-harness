@@ -58,6 +58,13 @@
           source = ./tests/fixtures/complete-source;
         };
 
+        agent-github-app-token = import ./tests/agent_github_app_token.nix {
+          agentHarnessModule = self.homeManagerModules.default;
+          inherit home-manager pkgs;
+          linuxPkgs = import nixpkgs { system = "x86_64-linux"; };
+          source = ./tests/fixtures/complete-source;
+        };
+
         skill-from-command = self.lib.${system}.buildSkillFromCommand {
           name = "example";
           command = [

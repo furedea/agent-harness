@@ -147,6 +147,49 @@ moshiHooks = agent-harness.lib.${pkgs.system}.buildHookBundleFromCommands {
 - git は `gh auth git-credential`（`gh auth setup-git` で設定する）で認証するため，リモートは HTTPS でなければならない．SSH のリモートはこの仕組みの外で，引き続きユーザーの SSH 鍵を使う．
 - 対象は Claude Code だけである．Codex，Devin，Hermes，pi は既定の挙動のままである．
 
+#### GitHub App をトークンの供給元にする
+
+personal access token は期限が切れるたびに作り直す必要がある．`source = "app"` にすると，GitHub App がエージェント用トークンを供給する．ユーザーごとの定期ジョブが，ログイン時と 50 分ごとに有効期間 1 時間のインストールアクセストークンを発行し，`configDir` の `hosts.yml` へ mode 0600 でアトミックに書き込む．ジョブは macOS では launchd エージェントで，スリープ復帰後に逃した実行を 1 回行う．Linux では systemd のユーザーサービスと永続タイマーである．このオプションが Claude の設定に加える変更は，どちらの供給元でも同じである．
+
+1. Webhook を無効にして [GitHub App を登録](https://github.com/settings/apps/new)し，リポジトリ権限を次のようにする: Contents，Pull requests，Issues は read and write，Actions と Metadata は read．Workflows は付与しない．付与すると，サンドボックス内のコードがリポジトリのシークレット付きで動くワークフローを書き換えられてしまう．
+2. エージェントが変更してよいリポジトリに App をインストールする．
+3. 秘密鍵を生成し，`configDir` の外に mode 0600 で保存する:
+
+    ```bash
+    install -m 0600 ~/Downloads/my-agent-app.*.private-key.pem ~/.config/agent-harness/github_app.pem
+    ```
+
+4. 供給元を設定して switch する:
+
+    ```nix
+    programs.agent-harness.github.agentToken = {
+      enable = true;
+      source = "app";
+      app = {
+        id = 123456;
+        privateKeyPath = "${config.home.homeDirectory}/.config/agent-harness/github_app.pem";
+        # installationId = 7890123;  # App のインストールが複数あるときだけ必要．
+      };
+    };
+    ```
+
+秘密鍵のパスは絶対パスでなければならない．生成される Claude の設定は `permissions.deny` に `Read(//<path>)` を，`sandbox.filesystem.denyRead` にそのパスを加えるので，Claude Code のツールからもサンドボックス内のコマンドからも鍵は読めない．`installationId` を指定しない場合，ジョブは App の唯一のインストールを使い，インストールが複数あると失敗する．
+
+ジョブは更新のたびに，トークンの隣の `agent_harness_token.json` に結果を記録する．ジョブが止まると 1 時間以内に push が失敗し始めるので，次のコマンドで確認する:
+
+```bash
+agent-harness github-app-token status --config-dir ~/.config/agent-harness/gh
+```
+
+このコマンドは有効期限を表示し，トークンがない場合，最後の更新が失敗した場合，残りが 5 分以下の場合は終了ステータス 1 で終わる．ジョブの出力は macOS では `~/Library/Logs/agent-harness-github-app-token.log` に，Linux ではユーザージャーナルに出る．`agent-harness github-app-token refresh` を同じ引数で実行すれば，任意のタイミングでトークンを発行できる．
+
+App を使う場合に追加される脅威モデル:
+
+- 秘密鍵は SSH 鍵に相当する長期間有効なシークレットで，持っていればすべてのインストールに対してトークンを発行できる．mode 0600 を保ち，他人が読めるバックアップに含めない．
+- インストールトークンは 1 時間以内に失効するので，漏れても有効な期間は短い．
+- push，プルリクエスト，コメントは App のボットアカウントとして記録される．
+- Pull requests の write 権限を持つトークンはプルリクエストを承認できる．ブランチ保護で承認を必須にする場合は，ボットを承認者として数えない．
+
 ## クイックインストール
 
 リリースバイナリは現在 `x86_64-unknown-linux-musl` 向けにだけビルドしている．そのプラットフォームで最も手早いのは，cargo-dist が生成するシェルインストーラである．
