@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.9.3](https://github.com/furedea/agent-harness/compare/agent-harness-v0.9.2...agent-harness-v0.9.3) (2026-10-17)
+
+
+### Features
+
+* opt in to an agent GitHub token inside the Claude sandbox ([#149](https://github.com/furedea/agent-harness/issues/149)) ([672bcf8](https://github.com/furedea/agent-harness/commit/672bcf8869090153c7085a164a6a7bdd12991280))
+* refresh the agent GitHub token from a GitHub App ([#152](https://github.com/furedea/agent-harness/issues/152)) ([79fd03c](https://github.com/furedea/agent-harness/commit/79fd03c7561bdcba50ba3c3524b9808b4eafa02d))
+
+
+### Bug Fixes
+
+* **deps:** update rust crate serde_json to v1.0.154 ([#146](https://github.com/furedea/agent-harness/issues/146)) ([6c6beb6](https://github.com/furedea/agent-harness/commit/6c6beb6205ddf9cf5b3e74f0f8f3b96f4d2d7f46))
+* **deps:** update rust crate toml_edit to v0.25.17 ([#147](https://github.com/furedea/agent-harness/issues/147)) ([b57cee3](https://github.com/furedea/agent-harness/commit/b57cee369441dbdd7fbacb2ee088993bcafa8466))
+* keep git push outside the Claude sandbox with the agent token ([#151](https://github.com/furedea/agent-harness/issues/151)) ([3a757e0](https://github.com/furedea/agent-harness/commit/3a757e0c44bfb16ce0dd672a5b54254ac09bbede))
+
 ## [0.9.2](https://github.com/furedea/agent-harness/compare/agent-harness-v0.9.1...agent-harness-v0.9.2) (2026-09-28)
 
 
