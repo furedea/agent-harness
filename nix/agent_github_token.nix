@@ -78,6 +78,21 @@ in
     };
 
   /**
+    Claude settings that hide the GitHub App private key from Claude Code tools and the sandbox.
+  */
+  denyPrivateKeyRead =
+    privateKeyPath: settings:
+    lib.recursiveUpdate settings {
+      # Read rules need a leading // for absolute paths; sandbox paths use a single /.
+      permissions.deny = lib.unique (
+        (settings.permissions.deny or [ ]) ++ [ "Read(/${privateKeyPath})" ]
+      );
+      sandbox.filesystem.denyRead = lib.unique (
+        (settings.sandbox.filesystem.denyRead or [ ]) ++ [ privateKeyPath ]
+      );
+    };
+
+  /**
     Read deny patterns that would hide the token files in `configDir` from the sandbox.
   */
   readDenialsCovering =

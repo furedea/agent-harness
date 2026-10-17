@@ -79,6 +79,7 @@
 | `generation/skills`，`external_hooks`，`hook_bundle`                        | スキルを生成し，外部のバンドルを合成する．                                             |
 | `inventory`                                                                 | ソースが提供するスキルとフックを一覧にする．                                           |
 | `runtime_root`                                                              | プロジェクトローカルのインストール向けにフックのコマンドを移し替える．                 |
+| `github_app`                                                                | エージェント用トークンのために GitHub App のインストールトークンを発行する（[0021]）． |
 | `runtime`                                                                   | manifest の実行時コマンドが `PATH` にあるかを確認する．                                |
 
 ## 検証
@@ -107,6 +108,7 @@ flake は，スキルとフックバンドルのビルダーもチェックと�
 - 生成した Claude の設定から消えたキーは，既存の `settings.json` からは消えない（[0016]）．
 - Claude Code や Devin が対話的に保存した承認は，次の同期で置き換わる．永続させたいルールはソースに書く．
 - スキルは生成するが，保護の対象にはしない．
+- GitHub App のトークン供給元は github.com とだけ通信し，GitHub Enterprise Server には対応しない（[0021]）．
 
 ## 変更履歴の要点
 
@@ -126,3 +128,4 @@ flake は，スキルとフックバンドルのビルダーもチェックと�
 [0017]: adr/0017_separate_output_and_runtime_roots.md
 [0018]: adr/0018_preserve_source_claude_permission_rules.md
 [0020]: adr/0020_keep_git_push_outside_the_claude_sandbox.md
+[0021]: adr/0021_refresh_the_agent_token_from_a_github_app.md

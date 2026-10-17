@@ -106,6 +106,7 @@ directories. `sync-*` commands merge managed keys into configs that agents also 
 | `generation/skills`, `external_hooks`, `hook_bundle`                        | Render skills and compose external bundles.                                    |
 | `inventory`                                                                 | Lists the skills and hooks a source provides.                                  |
 | `runtime_root`                                                              | Relocates hook commands for project-local installs.                            |
+| `github_app`                                                                | Mints GitHub App installation tokens for the agent token option ([0021]).      |
 | `runtime`                                                                   | Checks that the manifest's runtime commands are on `PATH`.                     |
 
 ## Verification
@@ -141,6 +142,7 @@ workflows:
 - Approvals that Claude Code or Devin save interactively are replaced on the next sync. Persistent
   rules belong in the source.
 - Skills are rendered but not protected.
+- The GitHub App token source talks only to github.com, not GitHub Enterprise Server ([0021]).
 
 ## Changelog highlights
 
@@ -163,3 +165,4 @@ workflows:
 [0017]: adr/0017_separate_output_and_runtime_roots.md
 [0018]: adr/0018_preserve_source_claude_permission_rules.md
 [0020]: adr/0020_keep_git_push_outside_the_claude_sandbox.md
+[0021]: adr/0021_refresh_the_agent_token_from_a_github_app.md

@@ -198,6 +198,66 @@ Threat model:
   must use HTTPS. SSH remotes keep using the user's SSH keys outside this mechanism.
 - Only Claude Code is covered. Codex, Devin, Hermes, and pi still use the default behavior.
 
+#### GitHub App token source
+
+A personal access token has to be recreated when it expires. With `source = "app"`, a GitHub App
+supplies the agent token instead: a per-user scheduled job mints a one-hour installation access
+token at login and every 50 minutes, and writes it to `hosts.yml` in `configDir` atomically with mode
+0600. The job is a launchd agent on macOS, which also runs a missed interval after wake, and a
+systemd user service with a persistent timer on Linux. Everything the option does to the Claude
+settings is the same for both sources.
+
+1. [Register a GitHub App](https://github.com/settings/apps/new) with webhooks disabled and these
+   repository permissions: Contents, Pull requests, and Issues set to read and write; Actions and
+   Metadata set to read. Do not grant Workflows: it would let sandboxed code rewrite workflows that
+   run with repository secrets.
+2. Install the App on the repositories agents may change.
+3. Generate a private key and store it with mode 0600 outside `configDir`:
+
+    ```bash
+    install -m 0600 ~/Downloads/my-agent-app.*.private-key.pem ~/.config/agent-harness/github_app.pem
+    ```
+
+4. Configure the source and switch:
+
+    ```nix
+    programs.agent-harness.github.agentToken = {
+      enable = true;
+      source = "app";
+      app = {
+        id = 123456;
+        privateKeyPath = "${config.home.homeDirectory}/.config/agent-harness/github_app.pem";
+        # installationId = 7890123;  # Required only when the App has several installations.
+      };
+    };
+    ```
+
+The private key path must be absolute. The rendered Claude settings add `Read(//<path>)` to
+`permissions.deny` and the path to `sandbox.filesystem.denyRead`, so neither Claude Code tools nor
+sandboxed commands can read the key. With `installationId` unset, the job uses the App's only
+installation and fails when it has several.
+
+The job records each refresh in `agent_harness_token.json` beside the token. If it stops, pushes
+start failing within the hour, so check it with:
+
+```bash
+agent-harness github-app-token status --config-dir ~/.config/agent-harness/gh
+```
+
+The command prints the expiry and exits with status 1 when no token exists, the last refresh
+failed, or the token has five minutes or less left. Job output goes to
+`~/Library/Logs/agent-harness-github-app-token.log` on macOS and to the user journal on Linux.
+`agent-harness github-app-token refresh` mints a token on demand with the same arguments as the job.
+
+Additional threat model for the App source:
+
+- The private key is a long-lived secret equivalent to an SSH key: anyone holding it can mint tokens
+  for every installation. Keep it at mode 0600 and out of backups that others can read.
+- Installation tokens expire within an hour, so a leaked token is short-lived.
+- Pushes, pull requests, and comments appear as the App's bot account.
+- A token with Pull requests write can approve pull requests. If branch protection ever requires
+  approvals, do not let the bot count as an approver.
+
 ## Quick Install
 
 Release binaries are currently built for `x86_64-unknown-linux-musl`. The quickest install on that

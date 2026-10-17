@@ -27,6 +27,8 @@
         src = ./.;
 
         cargoLock.lockFile = ./Cargo.lock;
+        # Tests generate throwaway RSA keys with the openssl CLI instead of committing key material.
+        nativeCheckInputs = [ pkgs.openssl ];
 
         postInstall = ''
           mkdir -p $out/share/agent-harness
@@ -53,6 +55,13 @@
         agent-github-token = import ./tests/agent_github_token.nix {
           agentHarnessModule = self.homeManagerModules.default;
           inherit home-manager pkgs;
+          source = ./tests/fixtures/complete-source;
+        };
+
+        agent-github-app-token = import ./tests/agent_github_app_token.nix {
+          agentHarnessModule = self.homeManagerModules.default;
+          inherit home-manager pkgs;
+          linuxPkgs = import nixpkgs { system = "x86_64-linux"; };
           source = ./tests/fixtures/complete-source;
         };
 
@@ -102,6 +111,7 @@
           ls-lint
           nixfmt-rfc-style
           nodejs_22
+          openssl
           rustc
           rustfmt
           statix

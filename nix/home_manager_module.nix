@@ -87,6 +87,8 @@ let
     '';
 in
 {
+  imports = [ ./agent_github_app_token_module.nix ];
+
   options.programs.agent-harness = {
     enable = lib.mkEnableOption "agent harness";
 
@@ -207,11 +209,22 @@ in
   };
 
   config = lib.mkIf cfg.enable {
-    programs.agent-harness.claude.composedSettings =
-      if agentToken.enable then
-        agentGithubToken.applyToClaudeSettings agentToken.configDir claudeSourceSettings
-      else
-        claudeSourceSettings;
+    programs.agent-harness.claude.composedSettings = lib.pipe claudeSourceSettings [
+      (
+        settings:
+        if agentToken.enable then
+          agentGithubToken.applyToClaudeSettings agentToken.configDir settings
+        else
+          settings
+      )
+      (
+        settings:
+        if agentToken.enable && agentToken.source == "app" then
+          agentGithubToken.denyPrivateKeyRead agentToken.app.privateKeyPath settings
+        else
+          settings
+      )
+    ];
 
     assertions = lib.optionals agentToken.enable [
       {
