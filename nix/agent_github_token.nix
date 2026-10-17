@@ -93,6 +93,26 @@ in
     };
 
   /**
+    Codex settings that point shell commands at the token in `configDir` and keep the normal
+    gh token unreadable in the guarded permissions profile.
+  */
+  applyToCodexSettings =
+    configDir: settings:
+    lib.recursiveUpdate settings {
+      shell_environment_policy.set.GH_CONFIG_DIR = configDir;
+      permissions.guarded.filesystem."~/.config/gh/hosts.yml" = "deny";
+    };
+
+  /**
+    Codex settings that hide the GitHub App private key in the guarded permissions profile.
+  */
+  denyCodexPrivateKeyRead =
+    privateKeyPath: settings:
+    lib.recursiveUpdate settings {
+      permissions.guarded.filesystem.${privateKeyPath} = "deny";
+    };
+
+  /**
     Read deny patterns that would hide the token files in `configDir` from the sandbox.
   */
   readDenialsCovering =

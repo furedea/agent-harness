@@ -654,6 +654,49 @@ trust_level = "trusted"
 }
 
 #[test]
+fn codex_config_sync_manages_only_the_agent_gh_config_dir_in_the_shell_environment() {
+    let root = test_root("codex-sync-shell-environment");
+    let source_path = root.join("source.toml");
+    let target_path = root.join("target.toml");
+
+    std::fs::write(
+        &source_path,
+        "[shell_environment_policy.set]\nGH_CONFIG_DIR = \"/agent/gh\"\n",
+    )
+    .unwrap();
+    std::fs::write(
+        &target_path,
+        "[shell_environment_policy]\ninherit = \"core\"\n\n[shell_environment_policy.set]\nCODEX_OWNED = \"1\"\n",
+    )
+    .unwrap();
+    let sync = || {
+        run_harness([
+            "sync-codex-config",
+            "--source",
+            source_path.to_str().unwrap(),
+            "--target",
+            target_path.to_str().unwrap(),
+        ])
+    };
+
+    sync();
+    let target = read_toml(&target_path);
+    let policy = &target["shell_environment_policy"];
+    assert_eq!(policy["set"]["GH_CONFIG_DIR"].as_str(), Some("/agent/gh"));
+    assert_eq!(policy["set"]["CODEX_OWNED"].as_str(), Some("1"));
+    assert_eq!(policy["inherit"].as_str(), Some("core"));
+
+    std::fs::write(&source_path, "").unwrap();
+    sync();
+    let target = read_toml(&target_path);
+    let set = &target["shell_environment_policy"]["set"];
+    assert!(set.get("GH_CONFIG_DIR").is_none());
+    assert_eq!(set["CODEX_OWNED"].as_str(), Some("1"));
+
+    remove_dir(root);
+}
+
+#[test]
 fn generate_skills_accepts_an_external_skill_directory() {
     let root = test_root("external-skill");
     let external_skill = root.join("upstream/external-tool");

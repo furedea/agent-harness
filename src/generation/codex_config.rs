@@ -24,6 +24,8 @@ const MANAGED_KEYS: &[&str] = &[
     "default_permissions",
     "permissions",
 ];
+/// Single keys inside Codex-owned tables, so syncing them leaves sibling keys untouched.
+const MANAGED_NESTED_KEYS: &[&[&str]] = &[&["shell_environment_policy", "set", "GH_CONFIG_DIR"]];
 
 pub(crate) fn write_config_source(
     source: &Path,
@@ -62,13 +64,18 @@ fn config_source_content_for_runtime(
     let base_path = SourceLayout::new(source).codex_config();
     let base = std::fs::read_to_string(&base_path)
         .with_context(|| format!("failed to read TOML file {}", base_path.display()))?;
-    let mut document = format!(
-        "{}\n{}",
-        base.trim_end(),
+    let mut document = base
+        .parse::<DocumentMut>()
+        .with_context(|| format!("failed to parse TOML file {}", base_path.display()))?;
+    // Merge rather than concatenate: the source may already declare guarded entries, such as
+    // the agent GitHub token's read denials.
+    let protection =
         protection::codex_config_fragment_for_runtime(source, external_hooks, runtime_root)?
-    )
-    .parse::<DocumentMut>()
-    .context("failed to parse generated Codex config")?;
+            .parse::<DocumentMut>()
+            .context("failed to parse generated Codex config")?;
+    for (key, item) in protection.iter() {
+        merge_item(&mut document[key], item);
+    }
     for bundle in external_hooks {
         let Some(path) = bundle.codex_config_path()? else {
             continue;
@@ -122,8 +129,38 @@ fn sync_managed_document(source: DocumentMut, target_path: &Path) -> Result<()> 
             }
         }
     }
+    for path in MANAGED_NESTED_KEYS {
+        sync_nested_key(&source, &mut target, path);
+    }
 
     write_toml_document(target_path, &target)
+}
+
+fn sync_nested_key(source: &DocumentMut, target: &mut DocumentMut, path: &[&str]) {
+    let Some((key, tables)) = path.split_last() else {
+        return;
+    };
+    let value = tables
+        .iter()
+        .try_fold(source.as_item(), |item, table| item.get(table))
+        .and_then(|item| item.get(key));
+    match value {
+        Some(value) => {
+            let mut item = target.as_item_mut();
+            for table in tables {
+                item = &mut item[table];
+            }
+            item[key] = value.clone();
+        }
+        None => {
+            let parent = tables
+                .iter()
+                .try_fold(target.as_item_mut(), |item, table| item.get_mut(table));
+            if let Some(table) = parent.and_then(Item::as_table_like_mut) {
+                table.remove(key);
+            }
+        }
+    }
 }
 
 fn read_toml_document(path: &Path) -> Result<DocumentMut> {
@@ -190,6 +227,27 @@ trust_level = "trusted"
         assert!(content.contains("model = \"gpt-5.5\""));
         assert!(content.contains("[permissions.guarded.filesystem]"));
         assert!(content.contains("\"~/.codex/hooks/adapt.sh\" = \"read\""));
+
+        std::fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn write_config_source_keeps_guarded_filesystem_entries_from_the_source() -> Result<()> {
+        let root = test_root("write_config_source_keeps_guarded_filesystem_entries")?;
+        write_minimal_source(&root)?;
+        write_file(
+            &root.join("codex/config.toml"),
+            "[permissions.guarded.filesystem]\n\"~/.config/gh/hosts.yml\" = \"deny\"\n",
+        )?;
+        let out = root.join("config.toml");
+
+        write_config_source(&root, &out, &[])?;
+
+        let document = std::fs::read_to_string(&out)?.parse::<DocumentMut>()?;
+        let guarded = &document["permissions"]["guarded"]["filesystem"];
+        assert_eq!(guarded["~/.config/gh/hosts.yml"].as_str(), Some("deny"));
+        assert_eq!(guarded["~/.codex/hooks/adapt.sh"].as_str(), Some("read"));
 
         std::fs::remove_dir_all(root)?;
         Ok(())
