@@ -36,9 +36,8 @@ let
 
   codexFormat = pkgs.formats.toml { };
   codexBaseSettings = builtins.fromTOML (builtins.readFile "${profileSource}/codex/config.toml");
-  codexSettings = codexFormat.generate "agent-harness-codex-settings.toml" (
-    lib.recursiveUpdate codexBaseSettings cfg.codex.settings
-  );
+  codexSourceSettings = lib.recursiveUpdate codexBaseSettings cfg.codex.settings;
+  codexSettings = codexFormat.generate "agent-harness-codex-settings.toml" cfg.codex.composedSettings;
 
   composedSource = pkgs.runCommand "agent-harness-${cfg.profile}-source" { } ''
     cp -R ${lib.escapeShellArg "${profileSource}/."} "$out"
@@ -146,6 +145,13 @@ in
         default = { };
         description = "Codex settings recursively merged over the selected profile.";
       };
+
+      composedSettings = lib.mkOption {
+        type = lib.types.attrsOf lib.types.anything;
+        readOnly = true;
+        internal = true;
+        description = "Codex source settings after profile, override, and opt-in composition.";
+      };
     };
 
     claude = {
@@ -171,9 +177,9 @@ in
 
     github.agentToken = {
       enable = lib.mkEnableOption ''
-        an agent-scoped GitHub token for gh inside the Claude Code sandbox and git push.
-        The token's own permissions are the safety boundary: anything running in the
-        sandbox can use it'';
+        an agent-scoped GitHub token for gh inside the Claude Code sandbox, Codex shell
+        commands, and git push. The token's own permissions are the safety boundary: anything
+        running in the sandbox can use it'';
 
       configDir = lib.mkOption {
         type = lib.types.str;
@@ -221,6 +227,26 @@ in
         settings:
         if agentToken.enable && agentToken.source == "app" then
           agentGithubToken.denyPrivateKeyRead agentToken.app.privateKeyPath settings
+        else
+          settings
+      )
+    ];
+
+    programs.agent-harness.codex.composedSettings = lib.pipe codexSourceSettings [
+      (
+        settings:
+        if agentToken.enable then
+          agentGithubToken.applyToCodexSettings {
+            inherit (agentToken) configDir;
+            claudeSettings = cfg.claude.composedSettings;
+          } settings
+        else
+          settings
+      )
+      (
+        settings:
+        if agentToken.enable && agentToken.source == "app" then
+          agentGithubToken.denyCodexPrivateKeyRead agentToken.app.privateKeyPath settings
         else
           settings
       )

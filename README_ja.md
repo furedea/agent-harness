@@ -140,6 +140,10 @@ moshiHooks = agent-harness.lib.${pkgs.system}.buildHookBundleFromCommands {
 
 生成される Claude の設定は，`env.GH_CONFIG_DIR` に絶対パスの `configDir` を設定し，`github.com` と `api.github.com` を `sandbox.network.allowedDomains` に加え，gh が TLS を検証できるよう `sandbox.enableWeakerNetworkIsolation` を有効にし，ソース設定が列挙していても `gh *` を `sandbox.excludedCommands` から除く．この除去は，ソース設定を正とする原則の唯一の例外である（[ADR-0020](docs/adr/0020_keep_git_push_outside_the_claude_sandbox.md)）．`git push *` を含む他の除外は，ソースの列挙どおりに残る．そのため git をどこで実行するかはソース設定が決める（[エージェントのコミット](#エージェントのコミット)を参照）．`configDir` が相対パスの場合や，`Read(...)` の拒否，`sandbox.filesystem.denyRead` の項目，シークレットパスポリシーのルールがそれを隠す場合は評価が失敗する．ユーザー自身の `~/.config/gh/hosts.yml` の拒否はそのまま残る．オプションが無効なら，生成物は変わらない．
 
+生成される Codex の設定は，`shell_environment_policy.set.GH_CONFIG_DIR` に同じ `configDir` を設定し，`guarded` 権限プロファイルを既定にする（`default_permissions = "guarded"` は `sandbox_mode` より優先される）．このプロファイルは `~/.config/gh/hosts.yml` を除くすべてを読め（`":root" = "read"`），作業ディレクトリ（`:workspace_roots`），`:tmpdir`，`:slash_tmp`，Claude の `sandbox.filesystem.allowWrite` のうち絶対パスと `~/` のパスに書け，ネットワークを使える．Codex 設定の同期が管理するのは `shell_environment_policy` の中の `GH_CONFIG_DIR` だけなので，Codex やユーザーがそこに置く他の項目は残る．
+
+Codex は，リンクされた worktree の git ディレクトリ（`<repo>/.git/worktrees/<name>`）を，そのパスちょうどをプロファイルに書かない限り読み取り専用にする．そのため Codex では worktree からのコミットは承認が必要なままで，本体のチェックアウトでのコミットはサンドボックスの中で動く（[ADR-0023](docs/adr/0023_default_codex_to_the_guarded_profile_with_the_agent_token.md)）．
+
 #### エージェントのコミット
 
 コミット署名はサンドボックスの外でしか動かないため，ソース設定はエージェントの git について次の 2 つの構成のどちらかを選ぶ:

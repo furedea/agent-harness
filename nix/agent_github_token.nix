@@ -93,6 +93,45 @@ in
     };
 
   /**
+    Codex settings that point shell commands at the token in `configDir` and make the guarded
+    permissions profile the default: it reads everything except the normal gh token, writes the
+    workspace, temporary directories, and the absolute paths in Claude's `allowWrite`, and allows
+    network so git push and gh work inside the sandbox.
+  */
+  applyToCodexSettings =
+    { configDir, claudeSettings }:
+    settings:
+    let
+      # Relative allowWrite entries name Claude's working directory, which :workspace_roots covers.
+      cacheWrites = lib.filter (path: lib.hasPrefix "/" path || lib.hasPrefix "~/" path) (
+        claudeSettings.sandbox.filesystem.allowWrite or [ ]
+      );
+    in
+    lib.recursiveUpdate settings {
+      shell_environment_policy.set.GH_CONFIG_DIR = configDir;
+      default_permissions = "guarded";
+      permissions.guarded = {
+        filesystem = lib.genAttrs cacheWrites (_: "write") // {
+          ":root" = "read";
+          ":tmpdir" = "write";
+          ":slash_tmp" = "write";
+          ":workspace_roots"."." = "write";
+          "~/.config/gh/hosts.yml" = "deny";
+        };
+        network.enabled = true;
+      };
+    };
+
+  /**
+    Codex settings that hide the GitHub App private key in the guarded permissions profile.
+  */
+  denyCodexPrivateKeyRead =
+    privateKeyPath: settings:
+    lib.recursiveUpdate settings {
+      permissions.guarded.filesystem.${privateKeyPath} = "deny";
+    };
+
+  /**
     Read deny patterns that would hide the token files in `configDir` from the sandbox.
   */
   readDenialsCovering =

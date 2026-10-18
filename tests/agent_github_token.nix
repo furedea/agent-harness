@@ -17,6 +17,12 @@ let
         "api.day.app"
         "github.com"
       ];
+      # Relative entries name Claude's own working directory, which Codex covers with :workspace_roots.
+      filesystem.allowWrite = [
+        "~/.cache/nix"
+        "/opt/cache"
+        "."
+      ];
       excludedCommands = [
         "docker *"
         "gh *"
@@ -25,6 +31,7 @@ let
       ];
     };
   };
+  codexSourceSettings.shell_environment_policy.set.EXISTING = "1";
 
   configure =
     agentHarness:
@@ -42,21 +49,27 @@ let
             enable = true;
             inherit source;
             claude.settings = sourceSettings;
+            codex.settings = codexSourceSettings;
           } agentHarness;
         }
       ];
     }).config;
 
   composedSettings = config: config.programs.agent-harness.claude.composedSettings;
+  composedCodexSettings = config: config.programs.agent-harness.codex.composedSettings;
   # Home Manager throws on evaluation when a module assertion fails.
   isRejected = config: !(builtins.tryEval config.home.username).success;
   sourceComposition = lib.recursiveUpdate (builtins.fromJSON (
     builtins.readFile (source + "/claude/settings.json")
   )) sourceSettings;
+  codexSourceComposition = lib.recursiveUpdate (builtins.fromTOML (
+    builtins.readFile (source + "/codex/config.toml")
+  )) codexSourceSettings;
 
   disabled = configure { };
   enabled = configure { github.agentToken.enable = true; };
   enabledSettings = composedSettings enabled;
+  enabledCodexSettings = composedCodexSettings enabled;
   customDir = configure {
     github.agentToken = {
       enable = true;
@@ -114,6 +127,36 @@ assert lib.assertMsg (
 assert lib.assertMsg (
   enabledSettings.permissions.deny == [ "Read(~/.config/gh/hosts.yml)" ]
 ) "agent token must keep the normal gh token denied";
+assert lib.assertMsg (
+  composedCodexSettings disabled == codexSourceComposition
+) "disabled agent token must leave composed Codex settings unchanged";
+assert lib.assertMsg (
+  enabledCodexSettings.shell_environment_policy.set == {
+    EXISTING = "1";
+    GH_CONFIG_DIR = defaultConfigDir;
+  }
+) "agent token must point GH_CONFIG_DIR at the config directory for Codex shell commands";
+assert lib.assertMsg (
+  enabledCodexSettings.default_permissions == "guarded"
+) "agent token must make the guarded profile the Codex default";
+assert lib.assertMsg
+  (
+    enabledCodexSettings.permissions.guarded.filesystem == {
+      ":root" = "read";
+      ":tmpdir" = "write";
+      ":slash_tmp" = "write";
+      ":workspace_roots"."." = "write";
+      "~/.cache/nix" = "write";
+      "/opt/cache" = "write";
+      "~/.config/gh/hosts.yml" = "deny";
+    }
+  )
+  "the guarded profile must read everything but the normal gh token and write only the workspace, temporary directories, and Claude's absolute allowWrite caches";
+assert lib.assertMsg enabledCodexSettings.permissions.guarded.network.enabled
+  "the guarded profile must allow network so Codex can push and open PRs";
+assert lib.assertMsg (
+  (composedCodexSettings customDir).shell_environment_policy.set.GH_CONFIG_DIR == "/opt/agent-gh"
+) "agent token must use a configured config directory for Codex";
 assert lib.assertMsg (
   !isRejected enabled
 ) "default agent token config directory must be readable inside the sandbox";
