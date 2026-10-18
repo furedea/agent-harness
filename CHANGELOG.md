@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.4](https://github.com/furedea/agent-harness/compare/agent-harness-v0.9.3...agent-harness-v0.9.4) (2026-10-18)
+
+
+### Features
+
+* give Codex shell commands the agent GitHub token ([#154](https://github.com/furedea/agent-harness/issues/154)) ([a955afe](https://github.com/furedea/agent-harness/commit/a955afe29216ce8496ea22731878303c694c807e))
+
 ## [0.9.3](https://github.com/furedea/agent-harness/compare/agent-harness-v0.9.2...agent-harness-v0.9.3) (2026-10-17)
 
 
