@@ -7,6 +7,7 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-25.11-darwin";
+    nixpkgs-unstable.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
   };
 
   outputs =
@@ -14,6 +15,7 @@
       self,
       home-manager,
       nixpkgs,
+      nixpkgs-unstable,
       ...
     }:
     let
@@ -100,22 +102,25 @@
       };
 
       devShells.${system}.default = pkgs.mkShell {
-        packages = with pkgs; [
-          cargo
-          cargo-deny
-          cargo-machete
-          clippy
-          commitlint
-          deadnix
-          lefthook
-          ls-lint
-          nixfmt-rfc-style
-          nodejs_22
-          openssl
-          rustc
-          rustfmt
-          statix
-        ];
+        packages =
+          with pkgs;
+          [
+            cargo
+            cargo-deny
+            cargo-machete
+            clippy
+            commitlint
+            deadnix
+            ls-lint
+            nixfmt-rfc-style
+            nodejs_22
+            openssl
+            rustc
+            rustfmt
+            statix
+          ]
+          # lefthook before 2.1.6 runs hooks under a pty, which agent sandboxes deny.
+          ++ [ nixpkgs-unstable.legacyPackages.${system}.lefthook ];
       };
     };
 }
