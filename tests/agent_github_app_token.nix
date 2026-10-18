@@ -115,10 +115,7 @@ assert lib.assertMsg (
   && darwinAppSettings.sandbox.filesystem.denyRead == [ privateKeyPath ]
 ) "the App private key must be unreadable to Claude tools and sandboxed commands";
 assert lib.assertMsg (
-  (composedCodexSettings darwinApp).permissions.guarded.filesystem == {
-    "~/.config/gh/hosts.yml" = "deny";
-    ${privateKeyPath} = "deny";
-  }
+  (composedCodexSettings darwinApp).permissions.guarded.filesystem.${privateKeyPath} == "deny"
 ) "the App private key must be unreadable in the Codex guarded profile";
 assert lib.assertMsg (
   darwinAppSettings.env.GH_CONFIG_DIR == configDir

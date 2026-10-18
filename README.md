@@ -186,11 +186,17 @@ entry, or secret path policy rule hides it. Denials of the user's own `~/.config
 in place. With the option disabled, the rendered output is unchanged.
 
 The rendered Codex config sets `shell_environment_policy.set.GH_CONFIG_DIR` to the same `configDir`
-and adds `"~/.config/gh/hosts.yml" = "deny"` to `[permissions.guarded.filesystem]`. Codex config
-synchronization manages only that one `shell_environment_policy` key, so other entries Codex or the
-user keep there survive. The read denial takes effect only in sessions that select the `guarded`
-permissions profile (`default_permissions = "guarded"`); the generated profile lists only harness
-files and these denials, so it is not selected by default.
+and makes the `guarded` permissions profile the default (`default_permissions = "guarded"`, which
+takes precedence over `sandbox_mode`). The profile reads everything (`":root" = "read"`) except
+`~/.config/gh/hosts.yml`, writes the workspace (`:workspace_roots`), `:tmpdir`, `:slash_tmp`, and
+the absolute and `~/` paths in Claude's `sandbox.filesystem.allowWrite`, and enables network. Codex
+config synchronization manages only the `GH_CONFIG_DIR` key inside `shell_environment_policy`, so
+other entries Codex or the user keep there survive.
+
+Codex keeps the git directory of a linked worktree (`<repo>/.git/worktrees/<name>`) read-only unless
+the profile names that exact path, so commits from a worktree still need approval in Codex; commits
+in a main checkout run inside the sandbox
+([ADR-0023](docs/adr/0023_default_codex_to_the_guarded_profile_with_the_agent_token.md)).
 
 #### Agent commits
 

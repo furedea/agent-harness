@@ -236,7 +236,10 @@ in
       (
         settings:
         if agentToken.enable then
-          agentGithubToken.applyToCodexSettings agentToken.configDir settings
+          agentGithubToken.applyToCodexSettings {
+            inherit (agentToken) configDir;
+            claudeSettings = cfg.claude.composedSettings;
+          } settings
         else
           settings
       )

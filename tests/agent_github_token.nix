@@ -17,6 +17,12 @@ let
         "api.day.app"
         "github.com"
       ];
+      # Relative entries name Claude's own working directory, which Codex covers with :workspace_roots.
+      filesystem.allowWrite = [
+        "~/.cache/nix"
+        "/opt/cache"
+        "."
+      ];
       excludedCommands = [
         "docker *"
         "gh *"
@@ -131,10 +137,23 @@ assert lib.assertMsg (
   }
 ) "agent token must point GH_CONFIG_DIR at the config directory for Codex shell commands";
 assert lib.assertMsg (
-  enabledCodexSettings.permissions.guarded.filesystem == {
-    "~/.config/gh/hosts.yml" = "deny";
-  }
-) "agent token must keep the normal gh token unreadable in the Codex guarded profile";
+  enabledCodexSettings.default_permissions == "guarded"
+) "agent token must make the guarded profile the Codex default";
+assert lib.assertMsg
+  (
+    enabledCodexSettings.permissions.guarded.filesystem == {
+      ":root" = "read";
+      ":tmpdir" = "write";
+      ":slash_tmp" = "write";
+      ":workspace_roots"."." = "write";
+      "~/.cache/nix" = "write";
+      "/opt/cache" = "write";
+      "~/.config/gh/hosts.yml" = "deny";
+    }
+  )
+  "the guarded profile must read everything but the normal gh token and write only the workspace, temporary directories, and Claude's absolute allowWrite caches";
+assert lib.assertMsg enabledCodexSettings.permissions.guarded.network.enabled
+  "the guarded profile must allow network so Codex can push and open PRs";
 assert lib.assertMsg (
   (composedCodexSettings customDir).shell_environment_policy.set.GH_CONFIG_DIR == "/opt/agent-gh"
 ) "agent token must use a configured config directory for Codex";
