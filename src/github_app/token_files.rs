@@ -44,6 +44,15 @@ pub(crate) struct TokenExpiry {
 pub(crate) struct TokenIssuer {
     pub(crate) app_id: u64,
     pub(crate) installation_id: u64,
+    pub(crate) selection: InstallationSelection,
+}
+
+/// How refresh chose the installation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum InstallationSelection {
+    Configured,
+    OnlyInstallation,
 }
 
 /// How the token in `hosts.yml` relates to the recorded one.
@@ -347,6 +356,7 @@ mod tests {
     const ISSUER: TokenIssuer = TokenIssuer {
         app_id: 12_345,
         installation_id: 42,
+        selection: InstallationSelection::Configured,
     };
 
     fn token(token: &str, expires_at: &str) -> InstallationToken {

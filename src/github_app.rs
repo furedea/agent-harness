@@ -10,7 +10,9 @@ use anyhow::{Context, Result, bail};
 use api::InstallationToken;
 pub(crate) use api::{GitHubAppApi, GitHubRestApi};
 use jwt::AppPrivateKey;
-use token_files::{HostsToken, RefreshStatus, TokenExpiry, TokenFiles, TokenIssuer};
+use token_files::{
+    HostsToken, InstallationSelection, RefreshStatus, TokenExpiry, TokenFiles, TokenIssuer,
+};
 
 /// Refresh mints a new token once the current one has less than this left.
 const MINT_BELOW_REMAINING_SECS: u64 = 20 * 60;
@@ -120,14 +122,19 @@ fn can_keep_current_token(files: &TokenFiles, request: &RefreshRequest, now_unix
         && token.expires_at_unix.saturating_sub(now_unix) >= MINT_BELOW_REMAINING_SECS
 }
 
-/// Without a configured installation, any installation of the same App matches because the App
-/// had only one when the token was minted.
+/// Without a configured installation, a token minted for the App's only installation matches
+/// because the App had only one then. Switching between a configured and an unset installation
+/// never matches, so an unset one is resolved again.
 fn is_issued_for(token: &TokenExpiry, request: &RefreshRequest) -> bool {
     token.issuer.is_some_and(|issuer| {
         issuer.app_id == request.app_id
-            && request
-                .installation_id
-                .is_none_or(|installation_id| installation_id == issuer.installation_id)
+            && match request.installation_id {
+                Some(installation_id) => {
+                    issuer.selection == InstallationSelection::Configured
+                        && issuer.installation_id == installation_id
+                }
+                None => issuer.selection == InstallationSelection::OnlyInstallation,
+            }
     })
 }
 
@@ -138,9 +145,12 @@ fn mint_token(
 ) -> Result<(TokenIssuer, InstallationToken)> {
     let key = AppPrivateKey::read(&request.private_key)?;
     let app_jwt = jwt::app_jwt(request.app_id, &key, now_unix)?;
-    let installation_id = match request.installation_id {
-        Some(installation_id) => installation_id,
-        None => single_installation(api, &app_jwt)?,
+    let (installation_id, selection) = match request.installation_id {
+        Some(installation_id) => (installation_id, InstallationSelection::Configured),
+        None => (
+            single_installation(api, &app_jwt)?,
+            InstallationSelection::OnlyInstallation,
+        ),
     };
     let token = api
         .create_installation_token(&app_jwt, installation_id)
@@ -148,6 +158,7 @@ fn mint_token(
     let issuer = TokenIssuer {
         app_id: request.app_id,
         installation_id,
+        selection,
     };
     Ok((issuer, token))
 }
@@ -488,9 +499,52 @@ mod tests {
         let api = FakeApi::default();
 
         refresh(&fixture.request(None), &api, NOW + 600)?;
-        refresh(&fixture.request(Some(42)), &api, NOW + 600)?;
 
         assert!(api.token_requests.borrow().is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn refresh_mints_when_an_installation_id_is_configured_after_none() -> Result<()> {
+        let fixture = Fixture::new("unset-to-set")?;
+        let single = FakeApi {
+            installations: vec![42],
+            ..FakeApi::default()
+        };
+        refresh(&fixture.request(None), &single, NOW)?;
+
+        fixture.assert_refresh_mints(&fixture.request(Some(42)))
+    }
+
+    #[test]
+    fn refresh_resolves_the_installation_again_when_the_id_is_unset() -> Result<()> {
+        let fixture = Fixture::new("set-to-unset")?;
+        refresh(&fixture.request(Some(42)), &FakeApi::default(), NOW)?;
+        let single = FakeApi {
+            installations: vec![43],
+            ..FakeApi::default()
+        };
+
+        refresh(&fixture.request(None), &single, NOW + 600)?;
+
+        assert_eq!(single.token_requests.borrow()[0].1, 43);
+        assert!(fixture.hosts()?.contains("ghs_for_43"));
+        Ok(())
+    }
+
+    #[test]
+    fn refresh_fails_when_the_id_is_unset_and_the_app_has_several_installations() -> Result<()> {
+        let fixture = Fixture::new("set-to-unset-several")?;
+        refresh(&fixture.request(Some(42)), &FakeApi::default(), NOW)?;
+        let several = FakeApi {
+            installations: vec![42, 43],
+            ..FakeApi::default()
+        };
+
+        let error = refresh(&fixture.request(None), &several, NOW + 600).unwrap_err();
+
+        assert!(format!("{error:#}").contains("installed 2 times"));
+        assert!(several.token_requests.borrow().is_empty());
         Ok(())
     }
 
