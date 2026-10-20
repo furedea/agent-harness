@@ -245,9 +245,9 @@ Threat model:
 #### GitHub App token source
 
 A personal access token has to be recreated when it expires. With `source = "app"`, a GitHub App
-supplies the agent token instead: a per-user scheduled job mints a one-hour installation access
-token at login and every 50 minutes, and writes it to `hosts.yml` in `configDir` atomically with mode
-0600. The job is a launchd agent on macOS, which also runs a missed interval after wake, and a
+supplies the agent token instead: a per-user scheduled job checks the token at login and every 5
+minutes, mints a one-hour installation access token when the current one has less than 20 minutes
+left, and writes it to `hosts.yml` in `configDir` atomically with mode 0600. The job is a launchd agent on macOS, which also runs a missed interval after wake, and a
 systemd user service with a persistent timer on Linux. Everything the option does to the Claude and
 Codex settings is the same for both sources.
 
@@ -290,9 +290,12 @@ agent-harness github-app-token status --config-dir ~/.config/agent-harness/gh
 ```
 
 The command prints the expiry and exits with status 1 when no token exists, the last refresh
-failed, or the token has five minutes or less left. Job output goes to
+failed, `hosts.yml` is missing or holds a different token than the last refresh recorded, or the
+token has five minutes or less left. Job output goes to
 `~/Library/Logs/agent-harness-github-app-token.log` on macOS and to the user journal on Linux.
-`agent-harness github-app-token refresh` mints a token on demand with the same arguments as the job.
+`agent-harness github-app-token refresh --force` mints a token on demand with the same arguments as
+the job; without `--force` it keeps a token that has 20 minutes or more left, is still in
+`hosts.yml`, and was issued for the configured App and installation.
 
 Additional threat model for the App source:
 

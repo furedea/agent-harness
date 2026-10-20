@@ -9,8 +9,9 @@ let
   inherit (cfg.github) agentToken;
   inherit (agentToken) app;
   jobName = "agent-harness-github-app-token";
-  # Installation tokens live for one hour; refreshing every 50 minutes keeps a margin.
-  refreshIntervalSecs = 50 * 60;
+  # Installation tokens live for one hour. The job checks every 5 minutes and mints only when
+  # under 20 minutes remain, so a late or skipped run still leaves time before expiry.
+  checkIntervalSecs = 5 * 60;
 
   refreshCommand = [
     (lib.getExe cfg.package)
@@ -85,7 +86,7 @@ in
           config = {
             ProgramArguments = refreshCommand;
             # launchd runs a missed interval once after wake.
-            StartInterval = refreshIntervalSecs;
+            StartInterval = checkIntervalSecs;
             RunAtLoad = true;
             ProcessType = "Background";
             StandardOutPath = "${config.home.homeDirectory}/Library/Logs/${jobName}.log";
@@ -104,10 +105,10 @@ in
             Install.WantedBy = [ "default.target" ];
           };
           timers.${jobName} = {
-            Unit.Description = "Refresh the agent-harness GitHub App token at least every 50 minutes";
+            Unit.Description = "Check the agent-harness GitHub App token every 5 minutes";
             Timer = {
               # Wall-clock schedule with Persistent catches up after suspend, unlike monotonic timers.
-              OnCalendar = "*:0/50";
+              OnCalendar = "*:0/5";
               Persistent = true;
             };
             Install.WantedBy = [ "timers.target" ];

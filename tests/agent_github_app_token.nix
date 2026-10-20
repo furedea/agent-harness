@@ -97,9 +97,9 @@ assert lib.assertMsg (
 assert lib.assertMsg (
   darwinAgent.enable
   && lib.tail darwinAgent.config.ProgramArguments == refreshArguments [ ]
-  && darwinAgent.config.StartInterval == 3000
+  && darwinAgent.config.StartInterval == 300
   && darwinAgent.config.RunAtLoad
-) "the App source must refresh every 50 minutes and at load through launchd";
+) "the App source must check the token every 5 minutes and at load through launchd";
 assert lib.assertMsg (
   lib.tail explicitInstallation.launchd.agents.agent-harness-github-app-token.config.ProgramArguments
   == refreshArguments [
@@ -124,8 +124,8 @@ assert lib.assertMsg (
 assert lib.assertMsg (
   lib.hasInfix "github-app-token refresh --app-id 12345" (toString linuxService.Service.ExecStart)
   && linuxService.Install.WantedBy == [ "default.target" ]
-  && linuxTimer.Timer.OnCalendar == "*:0/50"
+  && linuxTimer.Timer.OnCalendar == "*:0/5"
   && linuxTimer.Timer.Persistent
-) "the App source must refresh at login and every 50 minutes through systemd";
+) "the App source must check the token at login and every 5 minutes through systemd";
 assert lib.assertMsg (isRejected relativeKey) "a relative App private key path must be rejected";
 pkgs.emptyFile
