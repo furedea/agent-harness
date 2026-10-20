@@ -20,3 +20,10 @@ whose licenses add ISC, BSD-3-Clause, and CDLA-Permissive-2.0 to the allow list,
 is as sensitive as an SSH key, pushes and pull requests attributed to the App's bot, a token that
 can approve pull requests and so must not count toward required approvals, support for github.com
 only, and a status check that the user runs instead of a push notification.
+
+## Amendment (2026-10-20)
+
+Refreshing every 50 minutes left only a 10-minute margin, so a launchd deferral or sleep let the
+one-hour token lapse (Issue 163). The job now checks the token every 5 minutes and mints a new one
+only when less than 20 minutes remain, when `hosts.yml` is missing or does not hold the recorded
+token, or when the App or installation changed; `github-app-token refresh --force` always mints.
