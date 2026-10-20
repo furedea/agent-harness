@@ -61,13 +61,19 @@ CodeQL.
 ## Release
 
 Releases are managed by Release Please. Merging the release PR updates `Cargo.toml`, `Cargo.lock`,
-`.release-please-manifest.json`, and `CHANGELOG.md`, then publishes a GitHub Release with the
-`x86_64-unknown-linux-musl` cargo-dist archive, its checksum, a shell installer, and build provenance
-attestations.
+`.release-please-manifest.json`, and `CHANGELOG.md`, tags the merge commit, and creates a draft
+GitHub Release. The `Release Please` workflow then starts the `Release Artifacts` workflow on that
+tag, which tests and builds the `x86_64-unknown-linux-musl` cargo-dist archive, smoke-tests it,
+attests its provenance, and uploads the archive, its checksum, and a shell installer. The release is
+published only after every step succeeds; if one fails, it stays a draft.
 
-If the release assets need to be rebuilt for an existing tag, run the `Release Please` workflow
-manually with the tag name, for example:
+To resume a draft release whose artifact run failed, start the same workflow on the tag so the
+attestation records the tagged commit:
 
-```text
-agent-harness-v0.5.0
+```bash
+tag=agent-harness-v0.9.5
+gh workflow run release_artifacts.yml --ref "$tag" -f tag_name="$tag"
 ```
+
+The workflow fails before building when it is started from any other ref or when the release is
+already published. A published release is never rebuilt in place; ship a fix as a new release.

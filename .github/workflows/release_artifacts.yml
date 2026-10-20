@@ -1,0 +1,170 @@
+name: Release Artifacts
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: Draft release tag to build artifacts for; run the workflow on the same tag
+        required: true
+        type: string
+
+permissions: {}
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: ${{ github.workflow }}-${{ inputs.tag_name }}
+  cancel-in-progress: false
+
+jobs:
+  release-artifacts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      CARGO_DIST_VERSION: 0.30.2
+      TARGET: x86_64-unknown-linux-musl
+      TAG_NAME: ${{ inputs.tag_name }}
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+          ref: ${{ env.TAG_NAME }}
+
+      - name: Verify release target
+        env:
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          # Provenance must name the tagged commit, so the workflow runs on the tag.
+          if [[ "$GITHUB_REF" != "refs/tags/$TAG_NAME" ]]; then
+            echo "Run this workflow on the release tag itself:"
+            echo "  gh workflow run release_artifacts.yml --ref $TAG_NAME -f tag_name=$TAG_NAME"
+            exit 1
+          fi
+
+          head_sha="$(git rev-parse HEAD)"
+          if [[ "$head_sha" != "$GITHUB_SHA" ]]; then
+            echo "$TAG_NAME points to $head_sha, but this run is for $GITHUB_SHA."
+            exit 1
+          fi
+
+          # Re-uploading with --clobber deletes assets first, so never touch a published release.
+          is_draft="$(gh release view "$TAG_NAME" --json isDraft --jq .isDraft)"
+          if [[ "$is_draft" != "true" ]]; then
+            echo "$TAG_NAME is already published; ship fixes as a new release instead."
+            exit 1
+          fi
+
+      - name: Install Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1.17.0
+        with:
+          toolchain: 1.98.1
+          rustflags: ""
+
+      - name: Install Rust release target
+        run: rustup target add "$TARGET"
+
+      - name: Install musl build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends musl-tools
+
+      - name: Install cargo-dist
+        run: |
+          curl --proto '=https' --tlsv1.2 -LsSf \
+            "https://github.com/axodotdev/cargo-dist/releases/download/v${CARGO_DIST_VERSION}/cargo-dist-installer.sh" \
+            | sh
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+      - name: Run tests
+        run: cargo test --locked
+
+      - name: Build release artifacts
+        run: |
+          set -euo pipefail
+
+          dist build \
+            --tag "$TAG_NAME" \
+            --target "$TARGET" \
+            --artifacts=all \
+            --output-format=json \
+            > dist-manifest.json
+          dist print-upload-files-from-manifest \
+            --manifest dist-manifest.json \
+            > dist-upload-files.txt
+
+      - name: Smoke test packaged archive
+        run: |
+          set -euo pipefail
+
+          archive_path="$(
+            find target/distrib -maxdepth 1 -type f \
+              \( -name "agent-harness-${TARGET}.tar.xz" -o -name "agent-harness-${TARGET}.tar.gz" \) \
+              | head -n 1
+          )"
+
+          if [[ -z "$archive_path" ]]; then
+            echo "agent-harness archive for ${TARGET} was not produced."
+            exit 1
+          fi
+
+          tmpdir="$(mktemp -d)"
+          mkdir -p "$tmpdir/install" "$tmpdir/home"
+
+          case "$archive_path" in
+            *.tar.xz)
+              tar -xJf "$archive_path" -C "$tmpdir/install" --strip-components=1
+              ;;
+            *.tar.gz)
+              tar -xzf "$archive_path" -C "$tmpdir/install" --strip-components=1
+              ;;
+            *)
+              echo "unsupported archive format: $archive_path"
+              exit 1
+              ;;
+          esac
+
+          "$tmpdir/install/agent-harness" --version
+          "$tmpdir/install/agent-harness" install --prefix "$tmpdir/home"
+          "$tmpdir/install/agent-harness" verify --prefix "$tmpdir/home"
+
+      - name: Attest release artifacts
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: target/distrib/*
+
+      - name: Upload release artifacts
+        env:
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          mapfile -t artifact_paths < dist-upload-files.txt
+          if ((${#artifact_paths[@]} == 0)); then
+            echo "cargo-dist did not report uploadable files."
+            exit 1
+          fi
+
+          gh release upload "$TAG_NAME" "${artifact_paths[@]}" --clobber
+
+      - name: Publish release
+        env:
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          # Publishing without make_latest marks the release latest. An older tag's run
+          # can finish last, so let GitHub pick latest by date and semantic version.
+          release_id="$(gh release view "$TAG_NAME" --json databaseId --jq .databaseId)"
+          gh api -X PATCH "repos/$GH_REPO/releases/$release_id" -F draft=false -f make_latest=legacy
