@@ -78,7 +78,7 @@ enum Command {
 
 #[derive(Debug, Subcommand)]
 enum GithubAppTokenCommand {
-    /// Mint an installation access token into a gh config directory.
+    /// Mint an installation access token into a gh config directory when the current one expires soon.
     Refresh(GithubAppTokenRefreshArgs),
     /// Report the token expiry, failing when the token is stale or the last refresh failed.
     Status(GithubAppTokenStatusArgs),
@@ -98,6 +98,10 @@ struct GithubAppTokenRefreshArgs {
 
     #[arg(long, value_name = "PATH")]
     config_dir: PathBuf,
+
+    /// Mint even when the current token has at least 20 minutes left.
+    #[arg(long)]
+    force: bool,
 }
 
 #[derive(Debug, clap::Args)]
@@ -351,6 +355,7 @@ fn github_app_token(command: GithubAppTokenCommand) -> Result<()> {
                 installation_id: args.installation_id,
                 private_key: args.private_key,
                 config_dir: args.config_dir,
+                force: args.force,
             };
             github_app::refresh(&request, &GitHubRestApi::new(), now_unix)
         }
@@ -396,7 +401,7 @@ impl From<Provider> for render::Provider {
 mod tests {
     use clap::{CommandFactory, Parser};
 
-    use super::{Cli, Profile};
+    use super::{Cli, Command, GithubAppTokenCommand, Profile};
 
     #[test]
     fn commands_default_to_the_minimal_profile() {
@@ -460,6 +465,28 @@ mod tests {
             "/home/test/.config/agent-harness/gh",
         ]);
         assert!(cli.is_ok(), "{}", cli.unwrap_err());
+    }
+
+    #[test]
+    fn github_app_token_refresh_accepts_force() {
+        let cli = Cli::try_parse_from([
+            "agent-harness",
+            "github-app-token",
+            "refresh",
+            "--app-id",
+            "12345",
+            "--private-key",
+            "/keys/app.pem",
+            "--config-dir",
+            "/home/test/.config/agent-harness/gh",
+            "--force",
+        ])
+        .unwrap();
+
+        let Command::GithubAppToken(GithubAppTokenCommand::Refresh(args)) = cli.command else {
+            panic!("expected github-app-token refresh");
+        };
+        assert!(args.force);
     }
 
     #[test]

@@ -174,7 +174,7 @@ Codex は，リンクされた worktree の git ディレクトリ（`<repo>/.gi
 
 #### GitHub App をトークンの供給元にする
 
-personal access token は期限が切れるたびに作り直す必要がある．`source = "app"` にすると，GitHub App がエージェント用トークンを供給する．ユーザーごとの定期ジョブが，ログイン時と 50 分ごとに有効期間 1 時間のインストールアクセストークンを発行し，`configDir` の `hosts.yml` へ mode 0600 でアトミックに書き込む．ジョブは macOS では launchd エージェントで，スリープ復帰後に逃した実行を 1 回行う．Linux では systemd のユーザーサービスと永続タイマーである．このオプションが Claude の設定に加える変更は，どちらの供給元でも同じである．
+personal access token は期限が切れるたびに作り直す必要がある．`source = "app"` にすると，GitHub App がエージェント用トークンを供給する．ユーザーごとの定期ジョブが，ログイン時と 5 分ごとにトークンを確認し，残りが 20 分未満なら有効期間 1 時間のインストールアクセストークンを発行して，`configDir` の `hosts.yml` へ mode 0600 でアトミックに書き込む．ジョブは macOS では launchd エージェントで，スリープ復帰後に逃した実行を 1 回行う．Linux では systemd のユーザーサービスと永続タイマーである．このオプションが Claude の設定に加える変更は，どちらの供給元でも同じである．
 
 1. Webhook を無効にして [GitHub App を登録](https://github.com/settings/apps/new)し，リポジトリ権限を次のようにする: Contents，Pull requests，Issues は read and write，Actions と Metadata は read．Workflows は付与しない．付与すると，サンドボックス内のコードがリポジトリのシークレット付きで動くワークフローを書き換えられてしまう．
 2. エージェントが変更してよいリポジトリに App をインストールする．
@@ -206,7 +206,7 @@ personal access token は期限が切れるたびに作り直す必要がある�
 agent-harness github-app-token status --config-dir ~/.config/agent-harness/gh
 ```
 
-このコマンドは有効期限を表示し，トークンがない場合，最後の更新が失敗した場合，残りが 5 分以下の場合は終了ステータス 1 で終わる．ジョブの出力は macOS では `~/Library/Logs/agent-harness-github-app-token.log` に，Linux ではユーザージャーナルに出る．`agent-harness github-app-token refresh` を同じ引数で実行すれば，任意のタイミングでトークンを発行できる．
+このコマンドは有効期限を表示し，トークンがない場合，最後の更新が失敗した場合，残りが 5 分以下の場合は終了ステータス 1 で終わる．ジョブの出力は macOS では `~/Library/Logs/agent-harness-github-app-token.log` に，Linux ではユーザージャーナルに出る．`agent-harness github-app-token refresh --force` を同じ引数で実行すれば，任意のタイミングでトークンを発行できる．`--force` を付けない場合，残りが 20 分以上のトークンはそのまま使う．
 
 App を使う場合に追加される脅威モデル:
 

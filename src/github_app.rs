@@ -12,7 +12,10 @@ pub(crate) use api::{GitHubAppApi, GitHubRestApi};
 use jwt::AppPrivateKey;
 use token_files::{RefreshStatus, TokenFiles};
 
-/// The refresh job runs every 50 minutes, so a healthy token keeps at least 10 minutes.
+/// Refresh mints a new token once the current one has less than this left.
+const MINT_BELOW_REMAINING_SECS: u64 = 20 * 60;
+/// The refresh job checks every 5 minutes and mints below 20 minutes left, so a healthy token keeps
+/// at least 15 minutes.
 const STALE_AFTER_REMAINING_SECS: u64 = 5 * 60;
 
 /// Inputs for minting an installation access token into `config_dir`.
@@ -22,15 +25,23 @@ pub(crate) struct RefreshRequest {
     pub(crate) installation_id: Option<u64>,
     pub(crate) private_key: PathBuf,
     pub(crate) config_dir: PathBuf,
+    /// Mints even when the current token still has enough time left.
+    pub(crate) force: bool,
 }
 
 /// Mints a fresh installation token and writes it for gh, recording any failure beside it.
+///
+/// Skips minting while the current token has at least 20 minutes left, unless forced or the last
+/// refresh failed.
 pub(crate) fn refresh(
     request: &RefreshRequest,
     api: &impl GitHubAppApi,
     now_unix: u64,
 ) -> Result<()> {
     let files = TokenFiles::new(&request.config_dir);
+    if !request.force && has_enough_time_left(&files, now_unix) {
+        return Ok(());
+    }
     match mint_token(request, api, now_unix) {
         Ok(token) => files.write_token(&token, now_unix),
         Err(error) => {
@@ -74,6 +85,18 @@ pub(crate) fn status(config_dir: &Path, now_unix: u64) -> Result<String> {
         token.expires_at,
         remaining_secs / 60,
     ))
+}
+
+/// An unreadable or corrupt status counts as no token, so the caller mints a new one.
+fn has_enough_time_left(files: &TokenFiles, now_unix: u64) -> bool {
+    let Ok(Some(RefreshStatus {
+        token: Some(token),
+        last_failure: None,
+    })) = files.status()
+    else {
+        return false;
+    };
+    token.expires_at_unix.saturating_sub(now_unix) >= MINT_BELOW_REMAINING_SECS
 }
 
 fn mint_token(
@@ -295,6 +318,85 @@ mod tests {
     }
 
     #[test]
+    fn refresh_skips_minting_while_enough_time_remains() -> Result<()> {
+        let fixture = Fixture::new("skip-fresh")?;
+        refresh(&fixture.request(Some(42)), &FakeApi::default(), NOW)?;
+        let api = FakeApi::default();
+
+        refresh(&fixture.request(Some(42)), &api, NOW + 2_400)?;
+
+        assert!(api.token_requests.borrow().is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn refresh_mints_when_the_token_is_near_expiry() -> Result<()> {
+        let fixture = Fixture::new("near-expiry")?;
+        refresh(&fixture.request(Some(42)), &FakeApi::default(), NOW)?;
+        let api = FakeApi::default();
+
+        refresh(&fixture.request(Some(42)), &api, NOW + 2_401)?;
+
+        assert_eq!(api.token_requests.borrow().len(), 1);
+        Ok(())
+    }
+
+    #[test]
+    fn refresh_mints_when_no_token_was_recorded() -> Result<()> {
+        let fixture = Fixture::new("no-record")?;
+        let api = FakeApi::default();
+
+        refresh(&fixture.request(Some(42)), &api, NOW)?;
+
+        assert_eq!(api.token_requests.borrow().len(), 1);
+        Ok(())
+    }
+
+    #[test]
+    fn refresh_mints_when_the_recorded_status_is_corrupt() -> Result<()> {
+        let fixture = Fixture::new("corrupt")?;
+        std::fs::create_dir_all(&fixture.config_dir)?;
+        std::fs::write(fixture.config_dir.join("agent_harness_token.json"), "{")?;
+        let api = FakeApi::default();
+
+        refresh(&fixture.request(Some(42)), &api, NOW)?;
+
+        assert_eq!(api.token_requests.borrow().len(), 1);
+        assert!(status(&fixture.config_dir, NOW)?.contains(EXPIRES_AT));
+        Ok(())
+    }
+
+    #[test]
+    fn refresh_mints_after_a_failed_refresh() -> Result<()> {
+        let fixture = Fixture::new("retry")?;
+        refresh(&fixture.request(Some(42)), &FakeApi::default(), NOW)?;
+        let failing = FakeApi {
+            fail_with: Some("GitHub is unreachable"),
+            ..FakeApi::default()
+        };
+        assert!(refresh(&fixture.forced_request(), &failing, NOW).is_err());
+        let api = FakeApi::default();
+
+        refresh(&fixture.request(Some(42)), &api, NOW + 600)?;
+
+        assert_eq!(api.token_requests.borrow().len(), 1);
+        assert!(status(&fixture.config_dir, NOW + 600).is_ok());
+        Ok(())
+    }
+
+    #[test]
+    fn forced_refresh_mints_while_enough_time_remains() -> Result<()> {
+        let fixture = Fixture::new("forced")?;
+        refresh(&fixture.request(Some(42)), &FakeApi::default(), NOW)?;
+        let api = FakeApi::default();
+
+        refresh(&fixture.forced_request(), &api, NOW + 600)?;
+
+        assert_eq!(api.token_requests.borrow().len(), 1);
+        Ok(())
+    }
+
+    #[test]
     fn status_reports_a_fresh_token() -> Result<()> {
         let fixture = Fixture::new("fresh")?;
         refresh(&fixture.request(Some(42)), &FakeApi::default(), NOW)?;
@@ -352,6 +454,14 @@ mod tests {
                 installation_id,
                 private_key: self.private_key.clone(),
                 config_dir: self.config_dir.clone(),
+                force: false,
+            }
+        }
+
+        fn forced_request(&self) -> RefreshRequest {
+            RefreshRequest {
+                force: true,
+                ..self.request(Some(42))
             }
         }
 
