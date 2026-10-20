@@ -28,13 +28,31 @@ fn release_workflow_uses_cargo_dist_artifacts() {
     let version = config["workspace"]["metadata"]["dist"]["cargo-dist-version"]
         .as_str()
         .expect("cargo-dist-version should be a string");
-    let workflow = fs::read_to_string(".github/workflows/release_please.yml")
-        .expect("release workflow should be readable");
+    let workflow = fs::read_to_string(".github/workflows/release_artifacts.yml")
+        .expect("release artifacts workflow should be readable");
 
     assert!(workflow.contains(&format!("CARGO_DIST_VERSION: {version}")));
     assert!(workflow.contains("dist build"));
     assert!(workflow.contains("dist print-upload-files-from-manifest"));
     assert!(workflow.contains("gh release upload"));
+}
+
+#[test]
+fn release_please_starts_artifacts_on_the_draft_release_tag() {
+    let workflow = fs::read_to_string(".github/workflows/release_please.yml")
+        .expect("release workflow should be readable");
+    let config: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string("release-please-config.json")
+            .expect("release-please config should be readable"),
+    )
+    .expect("release-please config should parse");
+    let package = &config["packages"]["."];
+
+    assert_eq!(package["draft"].as_bool(), Some(true));
+    assert_eq!(package["force-tag-creation"].as_bool(), Some(true));
+    assert!(workflow.contains(
+        r#"gh workflow run release_artifacts.yml --ref "$TAG_NAME" -f tag_name="$TAG_NAME""#
+    ));
 }
 
 fn read_toml(path: impl AsRef<Path>) -> DocumentMut {

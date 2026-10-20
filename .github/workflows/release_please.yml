@@ -4,12 +4,6 @@ on:
   push:
     branches:
       - main
-  workflow_dispatch:
-    inputs:
-      tag_name:
-        description: Existing release tag to rebuild artifacts for
-        required: true
-        type: string
 
 permissions: {}
 
@@ -23,16 +17,13 @@ concurrency:
 
 jobs:
   release-please:
-    if: ${{ github.event_name == 'push' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
+      actions: write
       contents: write
       issues: write
       pull-requests: write
-    outputs:
-      release_created: ${{ steps.release.outputs.release_created }}
-      tag_name: ${{ steps.release.outputs.tag_name }}
     steps:
       - name: Check release token
         env:
@@ -53,114 +44,10 @@ jobs:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
-  release-artifacts:
-    needs: release-please
-    if: ${{ always() && (needs.release-please.outputs.release_created == 'true' || github.event_name == 'workflow_dispatch') }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    permissions:
-      contents: write
-      id-token: write
-      attestations: write
-    env:
-      CARGO_DIST_VERSION: 0.30.2
-      TARGET: x86_64-unknown-linux-musl
-      TAG_NAME: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || needs.release-please.outputs.tag_name }}
-    steps:
-      - name: Checkout release tag
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
-        with:
-          persist-credentials: false
-          ref: ${{ env.TAG_NAME }}
-
-      - name: Install Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1.17.0
-        with:
-          toolchain: 1.98.1
-          rustflags: ""
-
-      - name: Install Rust release target
-        run: rustup target add "$TARGET"
-
-      - name: Install musl build tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends musl-tools
-
-      - name: Install cargo-dist
-        run: |
-          curl --proto '=https' --tlsv1.2 -LsSf \
-            "https://github.com/axodotdev/cargo-dist/releases/download/v${CARGO_DIST_VERSION}/cargo-dist-installer.sh" \
-            | sh
-          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
-
-      - name: Run tests
-        run: cargo test --locked
-
-      - name: Build release artifacts
-        run: |
-          set -euo pipefail
-
-          dist build \
-            --tag "$TAG_NAME" \
-            --target "$TARGET" \
-            --artifacts=all \
-            --output-format=json \
-            > dist-manifest.json
-          dist print-upload-files-from-manifest \
-            --manifest dist-manifest.json \
-            > dist-upload-files.txt
-
-      - name: Smoke test packaged archive
-        run: |
-          set -euo pipefail
-
-          archive_path="$(
-            find target/distrib -maxdepth 1 -type f \
-              \( -name "agent-harness-${TARGET}.tar.xz" -o -name "agent-harness-${TARGET}.tar.gz" \) \
-              | head -n 1
-          )"
-
-          if [[ -z "$archive_path" ]]; then
-            echo "agent-harness archive for ${TARGET} was not produced."
-            exit 1
-          fi
-
-          tmpdir="$(mktemp -d)"
-          mkdir -p "$tmpdir/install" "$tmpdir/home"
-
-          case "$archive_path" in
-            *.tar.xz)
-              tar -xJf "$archive_path" -C "$tmpdir/install" --strip-components=1
-              ;;
-            *.tar.gz)
-              tar -xzf "$archive_path" -C "$tmpdir/install" --strip-components=1
-              ;;
-            *)
-              echo "unsupported archive format: $archive_path"
-              exit 1
-              ;;
-          esac
-
-          "$tmpdir/install/agent-harness" --version
-          "$tmpdir/install/agent-harness" install --prefix "$tmpdir/home"
-          "$tmpdir/install/agent-harness" verify --prefix "$tmpdir/home"
-
-      - name: Attest release artifacts
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
-        with:
-          subject-path: target/distrib/*
-
-      - name: Upload release artifacts
+      - name: Build artifacts on the release tag
+        if: ${{ steps.release.outputs.release_created == 'true' }}
         env:
+          GH_REPO: ${{ github.repository }}
           GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-
-          mapfile -t artifact_paths < dist-upload-files.txt
-          if ((${#artifact_paths[@]} == 0)); then
-            echo "cargo-dist did not report uploadable files."
-            exit 1
-          fi
-
-          gh release upload "$TAG_NAME" "${artifact_paths[@]}" --clobber
+          TAG_NAME: ${{ steps.release.outputs.tag_name }}
+        run: gh workflow run release_artifacts.yml --ref "$TAG_NAME" -f tag_name="$TAG_NAME"
