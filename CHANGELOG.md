@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.5](https://github.com/furedea/agent-harness/compare/agent-harness-v0.9.4...agent-harness-v0.9.5) (2026-10-20)
+
+
+### Bug Fixes
+
+* **github-app:** refresh the agent token early and often ([#164](https://github.com/furedea/agent-harness/issues/164)) ([46a25fb](https://github.com/furedea/agent-harness/commit/46a25fb1febcad5ef060571acb29825f610eff21))
+
 ## [0.9.4](https://github.com/furedea/agent-harness/compare/agent-harness-v0.9.3...agent-harness-v0.9.4) (2026-10-18)
 
 
