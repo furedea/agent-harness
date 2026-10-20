@@ -290,10 +290,12 @@ agent-harness github-app-token status --config-dir ~/.config/agent-harness/gh
 ```
 
 The command prints the expiry and exits with status 1 when no token exists, the last refresh
-failed, or the token has five minutes or less left. Job output goes to
+failed, `hosts.yml` is missing or holds a different token than the last refresh recorded, or the
+token has five minutes or less left. Job output goes to
 `~/Library/Logs/agent-harness-github-app-token.log` on macOS and to the user journal on Linux.
 `agent-harness github-app-token refresh --force` mints a token on demand with the same arguments as
-the job; without `--force` it keeps a token that has 20 minutes or more left.
+the job; without `--force` it keeps a token that has 20 minutes or more left, is still in
+`hosts.yml`, and was issued for the configured App and installation.
 
 Additional threat model for the App source:
 

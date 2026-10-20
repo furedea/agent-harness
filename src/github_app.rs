@@ -10,7 +10,7 @@ use anyhow::{Context, Result, bail};
 use api::InstallationToken;
 pub(crate) use api::{GitHubAppApi, GitHubRestApi};
 use jwt::AppPrivateKey;
-use token_files::{RefreshStatus, TokenFiles};
+use token_files::{HostsToken, RefreshStatus, TokenExpiry, TokenFiles, TokenIssuer};
 
 /// Refresh mints a new token once the current one has less than this left.
 const MINT_BELOW_REMAINING_SECS: u64 = 20 * 60;
@@ -31,19 +31,19 @@ pub(crate) struct RefreshRequest {
 
 /// Mints a fresh installation token and writes it for gh, recording any failure beside it.
 ///
-/// Skips minting while the current token has at least 20 minutes left, unless forced or the last
-/// refresh failed.
+/// Skips minting while `hosts.yml` holds the recorded token, issued for the requested App and
+/// installation, with at least 20 minutes left, unless forced or the last refresh failed.
 pub(crate) fn refresh(
     request: &RefreshRequest,
     api: &impl GitHubAppApi,
     now_unix: u64,
 ) -> Result<()> {
     let files = TokenFiles::new(&request.config_dir);
-    if !request.force && has_enough_time_left(&files, now_unix) {
+    if !request.force && can_keep_current_token(&files, request, now_unix) {
         return Ok(());
     }
     match mint_token(request, api, now_unix) {
-        Ok(token) => files.write_token(&token, now_unix),
+        Ok((issuer, token)) => files.write_token(&token, issuer, now_unix),
         Err(error) => {
             files.record_failure(&format!("{error:#}"), now_unix)?;
             Err(error)
@@ -51,9 +51,11 @@ pub(crate) fn refresh(
     }
 }
 
-/// Describes the current token, failing when it is missing, expiring, or the last refresh failed.
+/// Describes the current token, failing when it is missing, expiring, not the token in `hosts.yml`,
+/// or the last refresh failed.
 pub(crate) fn status(config_dir: &Path, now_unix: u64) -> Result<String> {
-    let status = TokenFiles::new(config_dir).status()?.unwrap_or_default();
+    let files = TokenFiles::new(config_dir);
+    let status = files.status()?.unwrap_or_default();
     let RefreshStatus {
         token,
         last_failure,
@@ -72,6 +74,23 @@ pub(crate) fn status(config_dir: &Path, now_unix: u64) -> Result<String> {
             token.expires_at,
         );
     }
+    let hosts_path = files.hosts_path();
+    match files.hosts_token(&token)? {
+        HostsToken::Recorded => {}
+        HostsToken::Missing => bail!(
+            "{} is missing; the next refresh mints a new GitHub App token",
+            hosts_path.display(),
+        ),
+        HostsToken::Different => bail!(
+            "{} holds a different token than the last refresh recorded; the next refresh mints a \
+             new GitHub App token",
+            hosts_path.display(),
+        ),
+        HostsToken::Unverifiable => bail!(
+            "the GitHub App token was recorded by an older release; the next refresh mints a new \
+             one"
+        ),
+    }
     let remaining_secs = token.expires_at_unix.saturating_sub(now_unix);
     if remaining_secs <= STALE_AFTER_REMAINING_SECS {
         bail!(
@@ -87,8 +106,8 @@ pub(crate) fn status(config_dir: &Path, now_unix: u64) -> Result<String> {
     ))
 }
 
-/// An unreadable or corrupt status counts as no token, so the caller mints a new one.
-fn has_enough_time_left(files: &TokenFiles, now_unix: u64) -> bool {
+/// An unreadable or corrupt status or `hosts.yml` counts as no token, so the caller mints a new one.
+fn can_keep_current_token(files: &TokenFiles, request: &RefreshRequest, now_unix: u64) -> bool {
     let Ok(Some(RefreshStatus {
         token: Some(token),
         last_failure: None,
@@ -96,22 +115,41 @@ fn has_enough_time_left(files: &TokenFiles, now_unix: u64) -> bool {
     else {
         return false;
     };
-    token.expires_at_unix.saturating_sub(now_unix) >= MINT_BELOW_REMAINING_SECS
+    is_issued_for(&token, request)
+        && matches!(files.hosts_token(&token), Ok(HostsToken::Recorded))
+        && token.expires_at_unix.saturating_sub(now_unix) >= MINT_BELOW_REMAINING_SECS
+}
+
+/// Without a configured installation, any installation of the same App matches because the App
+/// had only one when the token was minted.
+fn is_issued_for(token: &TokenExpiry, request: &RefreshRequest) -> bool {
+    token.issuer.is_some_and(|issuer| {
+        issuer.app_id == request.app_id
+            && request
+                .installation_id
+                .is_none_or(|installation_id| installation_id == issuer.installation_id)
+    })
 }
 
 fn mint_token(
     request: &RefreshRequest,
     api: &impl GitHubAppApi,
     now_unix: u64,
-) -> Result<InstallationToken> {
+) -> Result<(TokenIssuer, InstallationToken)> {
     let key = AppPrivateKey::read(&request.private_key)?;
     let app_jwt = jwt::app_jwt(request.app_id, &key, now_unix)?;
     let installation_id = match request.installation_id {
         Some(installation_id) => installation_id,
         None => single_installation(api, &app_jwt)?,
     };
-    api.create_installation_token(&app_jwt, installation_id)
-        .with_context(|| format!("failed to mint a token for installation {installation_id}"))
+    let token = api
+        .create_installation_token(&app_jwt, installation_id)
+        .with_context(|| format!("failed to mint a token for installation {installation_id}"))?;
+    let issuer = TokenIssuer {
+        app_id: request.app_id,
+        installation_id,
+    };
+    Ok((issuer, token))
 }
 
 fn single_installation(api: &impl GitHubAppApi, app_jwt: &str) -> Result<u64> {
@@ -385,6 +423,99 @@ mod tests {
     }
 
     #[test]
+    fn refresh_mints_when_hosts_yml_is_missing() -> Result<()> {
+        let fixture = Fixture::new("hosts-missing")?;
+        refresh(&fixture.request(Some(42)), &FakeApi::default(), NOW)?;
+        std::fs::remove_file(fixture.config_dir.join("hosts.yml"))?;
+
+        let error = status(&fixture.config_dir, NOW + 600).unwrap_err();
+        assert!(format!("{error:#}").contains("hosts.yml is missing"));
+        fixture.assert_refresh_mints(&fixture.request(Some(42)))
+    }
+
+    #[test]
+    fn refresh_mints_when_hosts_yml_is_corrupt() -> Result<()> {
+        let fixture = Fixture::new("hosts-corrupt")?;
+        refresh(&fixture.request(Some(42)), &FakeApi::default(), NOW)?;
+        std::fs::write(fixture.config_dir.join("hosts.yml"), "github.com: [")?;
+
+        let error = status(&fixture.config_dir, NOW + 600).unwrap_err();
+        assert!(format!("{error:#}").contains("hosts.yml"));
+        fixture.assert_refresh_mints(&fixture.request(Some(42)))
+    }
+
+    #[test]
+    fn refresh_mints_when_hosts_yml_holds_a_different_token() -> Result<()> {
+        let fixture = Fixture::new("hosts-mismatch")?;
+        refresh(&fixture.request(Some(42)), &FakeApi::default(), NOW)?;
+        std::fs::write(
+            fixture.config_dir.join("hosts.yml"),
+            "github.com:\n    oauth_token: ghs_someone_else\n    user: x-access-token\n",
+        )?;
+
+        let error = status(&fixture.config_dir, NOW + 600).unwrap_err();
+        assert!(format!("{error:#}").contains("different token"));
+        fixture.assert_refresh_mints(&fixture.request(Some(42)))
+    }
+
+    #[test]
+    fn refresh_mints_when_the_app_changes() -> Result<()> {
+        let fixture = Fixture::new("app-switch")?;
+        refresh(&fixture.request(Some(42)), &FakeApi::default(), NOW)?;
+
+        fixture.assert_refresh_mints(&RefreshRequest {
+            app_id: 99_999,
+            ..fixture.request(Some(42))
+        })
+    }
+
+    #[test]
+    fn refresh_mints_when_the_installation_changes() -> Result<()> {
+        let fixture = Fixture::new("installation-switch")?;
+        refresh(&fixture.request(Some(42)), &FakeApi::default(), NOW)?;
+
+        fixture.assert_refresh_mints(&fixture.request(Some(43)))
+    }
+
+    #[test]
+    fn refresh_keeps_the_token_of_the_only_installation() -> Result<()> {
+        let fixture = Fixture::new("only-installation")?;
+        let single = FakeApi {
+            installations: vec![42],
+            ..FakeApi::default()
+        };
+        refresh(&fixture.request(None), &single, NOW)?;
+        let api = FakeApi::default();
+
+        refresh(&fixture.request(None), &api, NOW + 600)?;
+        refresh(&fixture.request(Some(42)), &api, NOW + 600)?;
+
+        assert!(api.token_requests.borrow().is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn refresh_mints_once_over_a_record_without_issuer_or_fingerprint() -> Result<()> {
+        let fixture = Fixture::new("legacy")?;
+        refresh(&fixture.request(Some(42)), &FakeApi::default(), NOW)?;
+        std::fs::write(
+            fixture.config_dir.join("agent_harness_token.json"),
+            format!(
+                r#"{{"token":{{"refreshed_at_unix":{NOW},"expires_at":"{EXPIRES_AT}","expires_at_unix":{}}},"last_failure":null}}"#,
+                NOW + 3_600,
+            ),
+        )?;
+
+        let error = status(&fixture.config_dir, NOW + 600).unwrap_err();
+        assert!(format!("{error:#}").contains("older release"));
+        fixture.assert_refresh_mints(&fixture.request(Some(42)))?;
+        let api = FakeApi::default();
+        refresh(&fixture.request(Some(42)), &api, NOW + 600)?;
+        assert!(api.token_requests.borrow().is_empty());
+        Ok(())
+    }
+
+    #[test]
     fn forced_refresh_mints_while_enough_time_remains() -> Result<()> {
         let fixture = Fixture::new("forced")?;
         refresh(&fixture.request(Some(42)), &FakeApi::default(), NOW)?;
@@ -463,6 +594,17 @@ mod tests {
                 force: true,
                 ..self.request(Some(42))
             }
+        }
+
+        /// Refreshes 10 minutes after the first mint, when the token alone would be kept.
+        fn assert_refresh_mints(&self, request: &RefreshRequest) -> Result<()> {
+            let api = FakeApi::default();
+
+            refresh(request, &api, NOW + 600)?;
+
+            assert_eq!(api.token_requests.borrow().len(), 1);
+            status(&self.config_dir, NOW + 600)?;
+            Ok(())
         }
 
         fn hosts(&self) -> Result<String> {

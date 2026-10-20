@@ -206,7 +206,7 @@ personal access token は期限が切れるたびに作り直す必要がある�
 agent-harness github-app-token status --config-dir ~/.config/agent-harness/gh
 ```
 
-このコマンドは有効期限を表示し，トークンがない場合，最後の更新が失敗した場合，残りが 5 分以下の場合は終了ステータス 1 で終わる．ジョブの出力は macOS では `~/Library/Logs/agent-harness-github-app-token.log` に，Linux ではユーザージャーナルに出る．`agent-harness github-app-token refresh --force` を同じ引数で実行すれば，任意のタイミングでトークンを発行できる．`--force` を付けない場合，残りが 20 分以上のトークンはそのまま使う．
+このコマンドは有効期限を表示し，トークンがない場合，最後の更新が失敗した場合，`hosts.yml` がないか最後の更新で記録したものと違うトークンを持つ場合，残りが 5 分以下の場合は終了ステータス 1 で終わる．ジョブの出力は macOS では `~/Library/Logs/agent-harness-github-app-token.log` に，Linux ではユーザージャーナルに出る．`agent-harness github-app-token refresh --force` を同じ引数で実行すれば，任意のタイミングでトークンを発行できる．`--force` を付けない場合，残りが 20 分以上で，`hosts.yml` に残っており，設定した App とインストールで発行されたトークンはそのまま使う．
 
 App を使う場合に追加される脅威モデル:
 
