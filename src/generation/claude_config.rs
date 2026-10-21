@@ -4,8 +4,8 @@ use anyhow::{Context, Result, bail};
 use serde_json::{Map, Value};
 
 use crate::generation::{
-    claude_permissions::PermissionRules, command_permissions, external_hooks::ExternalHookBundle,
-    hooks, io, protection, secret_path_policy,
+    GenerationContext, claude_permissions::PermissionRules, command_permissions,
+    external_hooks::ExternalHookBundle, hooks, io, protection, secret_path_policy,
 };
 use crate::{fs_ops, layout::SourceLayout, runtime_root::RuntimeRoot};
 
@@ -14,17 +14,12 @@ pub(crate) fn write_settings(
     out: &Path,
     external_hooks: &[ExternalHookBundle],
 ) -> Result<()> {
-    write_settings_for_runtime(source, out, external_hooks, &RuntimeRoot::home())
+    write_settings_for_runtime(GenerationContext::home(source, external_hooks), out)
 }
 
-pub(crate) fn write_settings_for_runtime(
-    source: &Path,
-    out: &Path,
-    external_hooks: &[ExternalHookBundle],
-    runtime_root: &RuntimeRoot,
-) -> Result<()> {
-    let base = read_json(&SourceLayout::new(source).claude_settings())?;
-    let settings = build_settings(source, base, external_hooks, runtime_root)?;
+pub(crate) fn write_settings_for_runtime(context: GenerationContext<'_>, out: &Path) -> Result<()> {
+    let base = read_json(&SourceLayout::new(context.source).claude_settings())?;
+    let settings = build_settings(context, base)?;
     io::write_json(out, &settings)
 }
 
@@ -36,32 +31,23 @@ pub(crate) fn sync_settings(source_path: &Path, target_path: &Path) -> Result<()
     fs_ops::write_file_atomically(target_path, content.as_bytes())
 }
 
-fn build_settings(
-    source: &Path,
-    mut settings: Value,
-    external_hooks: &[ExternalHookBundle],
-    runtime_root: &RuntimeRoot,
-) -> Result<Value> {
+fn build_settings(context: GenerationContext<'_>, mut settings: Value) -> Result<Value> {
     let root = object_mut(&mut settings, "Claude settings root")?;
 
-    relocate_status_line(root, runtime_root)?;
+    relocate_status_line(root, context.runtime_root)?;
 
     root.insert(
         "hooks".to_string(),
-        hooks::claude_hooks_for_runtime(source, external_hooks, runtime_root)?,
+        hooks::claude_hooks_for_runtime(context)?,
     );
-    merge_permissions(root, source, external_hooks, runtime_root)?;
-    merge_sandbox(root, source, external_hooks, runtime_root)?;
+    merge_permissions(root, context)?;
+    merge_sandbox(root, context)?;
 
     Ok(settings)
 }
 
-fn merge_permissions(
-    root: &mut Map<String, Value>,
-    source: &Path,
-    external_hooks: &[ExternalHookBundle],
-    runtime_root: &RuntimeRoot,
-) -> Result<()> {
+fn merge_permissions(root: &mut Map<String, Value>, context: GenerationContext<'_>) -> Result<()> {
+    let source = context.source;
     let permissions = object_entry(root, "permissions")?;
     let mut rules = PermissionRules::parse(permissions)?;
 
@@ -70,7 +56,7 @@ fn merge_permissions(
     rules.extend_deny(secret_path_policy::claude_deny_permissions(source)?);
     rules.extend_deny(command_permissions::claude_deny_permissions(source)?);
     rules.extend_deny(
-        protection::protected_paths_for_runtime(source, external_hooks, runtime_root)?
+        protected_paths(context)?
             .into_iter()
             .map(|path| format!("Edit({path})")),
     );
@@ -79,21 +65,24 @@ fn merge_permissions(
     Ok(())
 }
 
-fn merge_sandbox(
-    root: &mut Map<String, Value>,
-    source: &Path,
-    external_hooks: &[ExternalHookBundle],
-    runtime_root: &RuntimeRoot,
-) -> Result<()> {
+fn merge_sandbox(root: &mut Map<String, Value>, context: GenerationContext<'_>) -> Result<()> {
     let sandbox = object_entry(root, "sandbox")?;
     let filesystem = object_entry(sandbox, "filesystem")?;
-    let deny_write = protection::protected_paths_for_runtime(source, external_hooks, runtime_root)?
+    let deny_write = protected_paths(context)?
         .into_iter()
         .map(Value::String)
         .collect();
 
     filesystem.insert("denyWrite".to_string(), Value::Array(deny_write));
     Ok(())
+}
+
+fn protected_paths(context: GenerationContext<'_>) -> Result<Vec<String>> {
+    protection::protected_paths_for_runtime(
+        context.source,
+        context.external_hooks,
+        context.runtime_root,
+    )
 }
 
 fn relocate_status_line(root: &mut Map<String, Value>, runtime_root: &RuntimeRoot) -> Result<()> {
@@ -179,7 +168,7 @@ mod tests {
             }
         });
 
-        let settings = build_settings(&root, base, &[], &RuntimeRoot::home())?;
+        let settings = build_settings(GenerationContext::home(&root, &[]), base)?;
 
         assert_eq!(
             settings["hooks"]["PreToolUse"][0]["hooks"][1]["command"].as_str(),
@@ -232,7 +221,7 @@ mod tests {
             }
         });
 
-        let settings = build_settings(&root, base, &[], &RuntimeRoot::home())?;
+        let settings = build_settings(GenerationContext::home(&root, &[]), base)?;
 
         let allow = array_strings(&settings["permissions"]["allow"]);
         let ask = array_strings(&settings["permissions"]["ask"]);
@@ -382,9 +371,8 @@ mod tests {
     }
 
     fn write_file(path: &Path, content: &str) -> Result<()> {
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
+        let parent = path.parent().context("test file path must have a parent")?;
+        std::fs::create_dir_all(parent)?;
         std::fs::write(path, content)?;
         Ok(())
     }

@@ -1,9 +1,11 @@
+use std::ffi::OsString;
+use std::fs::DirEntry;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, ensure};
 use serde::Deserialize;
-use serde_json::Value;
+use serde_json::{Map, Value};
 
 use crate::fs_ops;
 
@@ -18,10 +20,9 @@ pub(crate) struct ExternalHookBundle {
 impl ExternalHookBundle {
     pub(crate) fn copy_assets(&self, output: &Path) -> Result<()> {
         self.validate()?;
-        for asset in self.assets()? {
-            self.copy_asset(&asset.source, &output.join(asset.target))?;
-        }
-        Ok(())
+        self.assets()?
+            .iter()
+            .try_for_each(|asset| self.copy_asset(&asset.source, &output.join(&asset.target)))
     }
 
     pub(crate) fn asset_install_paths(&self) -> Result<Vec<PathBuf>> {
@@ -40,107 +41,46 @@ impl ExternalHookBundle {
     }
 
     pub(crate) fn merge_claude_hooks(&self, hooks: &mut Value) -> Result<()> {
-        self.validate()?;
-        let path = self.source.join(".claude/settings.json");
-        if !path.is_file() {
-            return Ok(());
-        }
-
-        let generated = read_json(&path)?;
-        merge_events(hooks, &generated["hooks"], &self.assets()?, &self.source).with_context(|| {
-            format!(
-                "failed to merge external hook bundle {}",
-                self.name.as_str()
-            )
-        })
+        self.merge_hooks(hooks, &CLAUDE_HOOK_FILE)
     }
 
     pub(crate) fn merge_codex_hooks(&self, hooks: &mut Value) -> Result<()> {
-        self.validate()?;
-        let path = self.source.join(".codex/hooks.json");
-        if !path.is_file() {
-            return Ok(());
-        }
-
-        let generated = read_json(&path)?;
-        merge_events(
-            &mut hooks["hooks"],
-            &generated["hooks"],
-            &self.assets()?,
-            &self.source,
-        )
-        .with_context(|| {
-            format!(
-                "failed to merge external hook bundle {}",
-                self.name.as_str()
-            )
-        })
+        self.merge_hooks(&mut hooks["hooks"], &CODEX_HOOK_FILE)
     }
 
     pub(crate) fn merge_devin_hooks(&self, hooks: &mut Value) -> Result<()> {
-        self.validate()?;
-        let path = self.source.join(".devin/hooks.v1.json");
-        if !path.is_file() {
-            return Ok(());
-        }
-
-        let generated = read_json(&path)?;
-        merge_events(
-            &mut hooks["hooks"],
-            &generated,
-            &self.assets()?,
-            &self.source,
-        )
-        .with_context(|| {
-            format!(
-                "failed to merge external hook bundle {}",
-                self.name.as_str()
-            )
-        })
+        self.merge_hooks(&mut hooks["hooks"], &DEVIN_HOOK_FILE)
     }
 
     pub(crate) fn merge_hermes_hooks(&self, hooks: &mut Value) -> Result<()> {
-        self.validate()?;
-        let path = self.source.join(".hermes/hooks.json");
-        if !path.is_file() {
-            return Ok(());
-        }
-
-        let generated = read_json(&path)?;
-        merge_events(
-            &mut hooks["hooks"],
-            &generated,
-            &self.assets()?,
-            &self.source,
-        )
-        .with_context(|| {
-            format!(
-                "failed to merge external hook bundle {}",
-                self.name.as_str()
-            )
-        })
+        self.merge_hooks(&mut hooks["hooks"], &HERMES_HOOK_FILE)
     }
 
     pub(crate) fn merge_pi_hooks(&self, hooks: &mut Value) -> Result<()> {
-        self.validate()?;
-        let path = self.source.join(".pi/hooks.json");
-        if !path.is_file() {
-            return Ok(());
-        }
+        self.merge_hooks(&mut hooks["hooks"], &PI_HOOK_FILE)
+    }
 
-        let generated = read_json(&path)?;
-        merge_events(
-            &mut hooks["hooks"],
-            &generated,
-            &self.assets()?,
-            &self.source,
+    fn merge_hooks(&self, target: &mut Value, file: &HookFile) -> Result<()> {
+        self.validate()?;
+        match read_optional_json(&self.source.join(file.path))? {
+            Some(generated) => self.merge_generated(target, file.events(&generated)),
+            None => Ok(()),
+        }
+    }
+
+    fn merge_generated(&self, target: &mut Value, events: &Value) -> Result<()> {
+        let relocation = CommandRelocation {
+            assets: &self.assets()?,
+            source: &self.source,
+        };
+        merge_events(target, events, &relocation).with_context(|| self.merge_failure())
+    }
+
+    fn merge_failure(&self) -> String {
+        format!(
+            "failed to merge external hook bundle {}",
+            self.name.as_str()
         )
-        .with_context(|| {
-            format!(
-                "failed to merge external hook bundle {}",
-                self.name.as_str()
-            )
-        })
     }
 
     fn validate(&self) -> Result<()> {
@@ -150,72 +90,46 @@ impl ExternalHookBundle {
                 .with_context(|| format!("failed to read {}", path.display()))?,
         )
         .with_context(|| format!("failed to parse {}", path.display()))?;
-        if manifest.version != SUPPORTED_BUNDLE_VERSION {
-            bail!(
-                "unsupported external hook bundle version for {}: {}",
-                self.name.as_str(),
-                manifest.version,
-            );
-        }
+        ensure!(
+            manifest.version == SUPPORTED_BUNDLE_VERSION,
+            "unsupported external hook bundle version for {}: {}",
+            self.name.as_str(),
+            manifest.version,
+        );
         Ok(())
     }
 
     fn assets(&self) -> Result<Vec<HookAsset>> {
-        let mut assets = Vec::new();
-        self.collect_asset_tree(Path::new(".claude/hooks"), &mut assets)?;
-        self.collect_asset_tree(Path::new(".codex/hooks"), &mut assets)?;
-        self.collect_asset_tree(Path::new(".devin/hooks"), &mut assets)?;
-        self.collect_asset_tree(Path::new(".hermes/hooks"), &mut assets)?;
-        self.collect_asset_tree(Path::new(".pi/hooks"), &mut assets)?;
-        self.collect_codex_scripts(&mut assets)?;
+        let mut assets = PROVIDER_HOOK_DIRS
+            .iter()
+            .map(|relative| self.asset_tree(Path::new(relative)))
+            .collect::<Result<Vec<_>>>()?
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>();
+        assets.extend(self.codex_scripts()?);
         assets.sort_by(|left, right| left.target.cmp(&right.target));
         Ok(assets)
     }
 
-    fn collect_asset_tree(&self, relative: &Path, assets: &mut Vec<HookAsset>) -> Result<()> {
+    fn asset_tree(&self, relative: &Path) -> Result<Vec<HookAsset>> {
         let source = self.source.join(relative);
-        if !source.is_dir() {
-            return Ok(());
-        }
-        for file in fs_ops::regular_files(&source)? {
-            let suffix = file
-                .strip_prefix(&source)
-                .with_context(|| format!("failed to strip prefix {}", source.display()))?
-                .to_path_buf();
-            assets.push(HookAsset {
-                source: file,
-                target: self.asset_root(relative).join(suffix),
-            });
-        }
-        Ok(())
+        let target_root = self.asset_root(relative);
+        existing_regular_files(&source)?
+            .into_iter()
+            .map(|file| tree_asset(file, &source, &target_root))
+            .collect()
     }
 
-    fn collect_codex_scripts(&self, assets: &mut Vec<HookAsset>) -> Result<()> {
-        let source = self.source.join(".codex");
-        if !source.is_dir() {
-            return Ok(());
-        }
-        for entry in std::fs::read_dir(&source)
-            .with_context(|| format!("failed to read {}", source.display()))?
-        {
-            let entry =
-                entry.with_context(|| format!("failed to read entry in {}", source.display()))?;
-            let path = entry.path();
-            if entry
-                .file_type()
-                .with_context(|| format!("failed to inspect {}", path.display()))?
-                .is_file()
-                && path.extension().and_then(|extension| extension.to_str()) == Some("sh")
-            {
-                assets.push(HookAsset {
-                    source: path,
-                    target: self
-                        .asset_root(Path::new(".codex/hooks"))
-                        .join(entry.file_name()),
-                });
-            }
-        }
-        Ok(())
+    fn codex_scripts(&self) -> Result<Vec<HookAsset>> {
+        let target_root = self.asset_root(Path::new(".codex/hooks"));
+        Ok(shell_scripts(&self.source.join(".codex"))?
+            .into_iter()
+            .map(|(source, file_name)| HookAsset {
+                source,
+                target: target_root.join(file_name),
+            })
+            .collect())
     }
 
     fn asset_root(&self, provider_hooks: &Path) -> PathBuf {
@@ -223,15 +137,63 @@ impl ExternalHookBundle {
     }
 
     fn copy_asset(&self, source: &Path, target: &Path) -> Result<()> {
-        if target.exists() {
-            bail!(
-                "external hook bundle {} conflicts with {}",
-                self.name.as_str(),
-                target.display(),
-            );
-        }
+        ensure!(
+            !target.exists(),
+            "external hook bundle {} conflicts with {}",
+            self.name.as_str(),
+            target.display(),
+        );
         fs_ops::copy_file(source, target)
     }
+}
+
+const PROVIDER_HOOK_DIRS: [&str; 5] = [
+    ".claude/hooks",
+    ".codex/hooks",
+    ".devin/hooks",
+    ".hermes/hooks",
+    ".pi/hooks",
+];
+
+const CLAUDE_HOOK_FILE: HookFile = HookFile {
+    path: ".claude/settings.json",
+    events_key: Some("hooks"),
+};
+const CODEX_HOOK_FILE: HookFile = HookFile {
+    path: ".codex/hooks.json",
+    events_key: Some("hooks"),
+};
+const DEVIN_HOOK_FILE: HookFile = HookFile {
+    path: ".devin/hooks.v1.json",
+    events_key: None,
+};
+const HERMES_HOOK_FILE: HookFile = HookFile {
+    path: ".hermes/hooks.json",
+    events_key: None,
+};
+const PI_HOOK_FILE: HookFile = HookFile {
+    path: ".pi/hooks.json",
+    events_key: None,
+};
+
+/// A provider hook file inside a bundle and where its events live in that file.
+struct HookFile {
+    path: &'static str,
+    events_key: Option<&'static str>,
+}
+
+impl HookFile {
+    fn events<'a>(&self, generated: &'a Value) -> &'a Value {
+        match self.events_key {
+            Some(key) => &generated[key],
+            None => generated,
+        }
+    }
+}
+
+struct CommandRelocation<'a> {
+    assets: &'a [HookAsset],
+    source: &'a Path,
 }
 
 #[derive(Debug)]
@@ -247,14 +209,19 @@ impl FromStr for ExternalHookBundle {
         let (name, source) = value
             .split_once('=')
             .ok_or_else(|| "external hook bundle must use NAME=PATH format".to_string())?;
-        if source.is_empty() {
-            return Err("external hook bundle path must not be empty".to_string());
-        }
+        let source = parse_bundle_source(source)?;
         Ok(Self {
             name: HookBundleName::parse(name).map_err(|error| error.to_string())?,
-            source: PathBuf::from(source),
+            source,
         })
     }
+}
+
+fn parse_bundle_source(source: &str) -> std::result::Result<PathBuf, String> {
+    if source.is_empty() {
+        return Err("external hook bundle path must not be empty".to_string());
+    }
+    Ok(PathBuf::from(source))
 }
 
 #[derive(Clone, Debug)]
@@ -267,11 +234,10 @@ impl HookBundleName {
             && value
                 .chars()
                 .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '-');
-        if !is_valid {
-            bail!(
-                "external hook bundle name must contain only lowercase ASCII letters, digits, and hyphens: {value}"
-            );
-        }
+        ensure!(
+            is_valid,
+            "external hook bundle name must contain only lowercase ASCII letters, digits, and hyphens: {value}"
+        );
         Ok(Self(value))
     }
 
@@ -289,8 +255,7 @@ struct HookBundleManifest {
 fn merge_events(
     target: &mut Value,
     generated: &Value,
-    assets: &[HookAsset],
-    source: &Path,
+    relocation: &CommandRelocation,
 ) -> Result<()> {
     let target = target
         .as_object_mut()
@@ -308,48 +273,64 @@ fn merge_events(
             .or_insert_with(|| Value::Array(Vec::new()))
             .as_array_mut()
             .with_context(|| format!("hook event {event} must be an array"))?;
-        for group in groups {
-            let mut group = group.clone();
-            replace_command_paths(&mut group, assets, source)?;
-            if !target_groups.contains(&group) {
-                target_groups.push(group);
-            }
-        }
+        merge_groups(target_groups, groups, relocation)?;
     }
     Ok(())
 }
 
-fn replace_command_paths(value: &mut Value, assets: &[HookAsset], source: &Path) -> Result<()> {
-    match value {
-        Value::Array(items) => {
-            for item in items {
-                replace_command_paths(item, assets, source)?;
-            }
-        }
-        Value::Object(object) => {
-            if let Some(Value::String(command)) = object.get_mut("command") {
-                *command = normalize_command(command, assets);
-                let source_prefix = format!("{}/", source.display());
-                if command.contains(&source_prefix) {
-                    bail!("command contains uncaptured external hook bundle path: {command}");
-                }
-            }
-            for item in object.values_mut() {
-                replace_command_paths(item, assets, source)?;
-            }
-        }
-        _ => {}
+fn merge_groups(
+    target_groups: &mut Vec<Value>,
+    groups: &[Value],
+    relocation: &CommandRelocation,
+) -> Result<()> {
+    for group in groups {
+        let mut group = group.clone();
+        replace_command_paths(&mut group, relocation)?;
+        push_unique(target_groups, group);
     }
     Ok(())
+}
+
+fn push_unique(values: &mut Vec<Value>, value: Value) {
+    if !values.contains(&value) {
+        values.push(value);
+    }
+}
+
+fn replace_command_paths(value: &mut Value, relocation: &CommandRelocation) -> Result<()> {
+    match value {
+        Value::Array(items) => items
+            .iter_mut()
+            .try_for_each(|item| replace_command_paths(item, relocation)),
+        Value::Object(object) => replace_object_command_paths(object, relocation),
+        _ => Ok(()),
+    }
+}
+
+fn replace_object_command_paths(
+    object: &mut Map<String, Value>,
+    relocation: &CommandRelocation,
+) -> Result<()> {
+    if let Some(Value::String(command)) = object.get_mut("command") {
+        *command = normalize_command(command, relocation.assets);
+        let source_prefix = format!("{}/", relocation.source.display());
+        ensure!(
+            !command.contains(&source_prefix),
+            "command contains uncaptured external hook bundle path: {command}"
+        );
+    }
+    object
+        .values_mut()
+        .try_for_each(|item| replace_command_paths(item, relocation))
 }
 
 fn normalize_command(command: &str, assets: &[HookAsset]) -> String {
-    assets
-        .iter()
-        .fold(command.to_string(), relocate_asset_command)
+    assets.iter().fold(command.to_string(), |command, asset| {
+        relocate_asset_command(&command, asset)
+    })
 }
 
-fn relocate_asset_command(command: String, asset: &HookAsset) -> String {
+fn relocate_asset_command(command: &str, asset: &HookAsset) -> String {
     let source = asset.source.to_string_lossy();
     let target = format!("$HOME/{}", asset.target.display());
     let quoted_target = format!("\"{target}\"");
@@ -357,6 +338,55 @@ fn relocate_asset_command(command: String, asset: &HookAsset) -> String {
         .replace(&format!("'{source}'"), &quoted_target)
         .replace(&format!("\"{source}\""), &quoted_target)
         .replace(source.as_ref(), &target)
+}
+
+fn tree_asset(file: PathBuf, source: &Path, target_root: &Path) -> Result<HookAsset> {
+    let suffix = file
+        .strip_prefix(source)
+        .with_context(|| format!("failed to strip prefix {}", source.display()))?;
+    let target = target_root.join(suffix);
+    Ok(HookAsset {
+        source: file,
+        target,
+    })
+}
+
+fn existing_regular_files(dir: &Path) -> Result<Vec<PathBuf>> {
+    if !dir.is_dir() {
+        return Ok(Vec::new());
+    }
+    fs_ops::regular_files(dir)
+}
+
+fn shell_scripts(dir: &Path) -> Result<Vec<(PathBuf, OsString)>> {
+    if !dir.is_dir() {
+        return Ok(Vec::new());
+    }
+    let mut scripts = Vec::new();
+    for entry in
+        std::fs::read_dir(dir).with_context(|| format!("failed to read {}", dir.display()))?
+    {
+        let entry = entry.with_context(|| format!("failed to read entry in {}", dir.display()))?;
+        scripts.extend(shell_script(&entry)?);
+    }
+    Ok(scripts)
+}
+
+fn shell_script(entry: &DirEntry) -> Result<Option<(PathBuf, OsString)>> {
+    let path = entry.path();
+    let is_file = entry
+        .file_type()
+        .with_context(|| format!("failed to inspect {}", path.display()))?
+        .is_file();
+    let is_shell = path.extension().and_then(|extension| extension.to_str()) == Some("sh");
+    Ok((is_file && is_shell).then(|| (path, entry.file_name())))
+}
+
+fn read_optional_json(path: &Path) -> Result<Option<Value>> {
+    if !path.is_file() {
+        return Ok(None);
+    }
+    read_json(path).map(Some)
 }
 
 fn read_json(path: &Path) -> Result<Value> {

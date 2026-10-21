@@ -1,3 +1,4 @@
+use std::fmt::Write;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
@@ -27,15 +28,10 @@ pub(crate) fn write_codex_config_fragment(
     io::write_file(path, &codex_config_fragment(source, external_hooks)?)
 }
 
-pub(crate) fn write_runtime_policy(
-    source: &Path,
-    external_hooks: &[ExternalHookBundle],
-    runtime_root: &RuntimeRoot,
-    path: &Path,
-) -> Result<()> {
+pub(crate) fn write_runtime_policy(paths: Vec<String>, path: &Path) -> Result<()> {
     let policy = ProtectedPathPolicy {
         version: POLICY_VERSION,
-        paths: protected_paths_for_runtime(source, external_hooks, runtime_root)?,
+        paths,
     };
     io::write_json(path, &policy)
 }
@@ -55,9 +51,9 @@ pub(crate) fn codex_config_fragment_for_runtime(
     let mut content = String::from("[permissions.guarded.filesystem]\n");
 
     for path in protected_paths_for_runtime(source, external_hooks, runtime_root)? {
-        content.push_str(&format!("{} = \"read\"\n", toml_edit::Key::new(path)));
+        writeln!(content, "{} = \"read\"", toml_edit::Key::new(path))?;
     }
-    content.push_str(&format!("glob_scan_max_depth = {GLOB_SCAN_MAX_DEPTH}\n"));
+    writeln!(content, "glob_scan_max_depth = {GLOB_SCAN_MAX_DEPTH}")?;
 
     Ok(content)
 }
@@ -88,12 +84,15 @@ pub(crate) fn protected_paths_for_runtime(
 ) -> Result<Vec<String>> {
     let mut paths = Vec::new();
     for path in harness_owned_files(source, external_hooks)? {
-        let path = runtime_root.path(&path);
-        if !paths.contains(&path) {
-            paths.push(path);
-        }
+        push_unique(&mut paths, runtime_root.path(&path));
     }
     Ok(paths)
+}
+
+fn push_unique(paths: &mut Vec<String>, path: String) {
+    if !paths.contains(&path) {
+        paths.push(path);
+    }
 }
 
 /// Every installed file the harness renders or syncs, except skills, relative to the root.
@@ -286,9 +285,7 @@ mod tests {
     }
 
     fn write_file(path: &Path, content: &str) -> Result<()> {
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
+        path.parent().map(std::fs::create_dir_all).transpose()?;
         std::fs::write(path, content)?;
         Ok(())
     }

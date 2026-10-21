@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use toml_edit::{DocumentMut, Item};
+use toml_edit::{DocumentMut, Item, Table};
 
 use crate::{
     fs_ops,
@@ -37,19 +37,17 @@ pub(crate) fn write_config_source(
 
 pub(crate) fn sync_managed_config(source_path: &Path, target_path: &Path) -> Result<()> {
     let source = read_toml_document(source_path)?;
-    sync_managed_document(source, target_path)
+    sync_managed_document(&source, target_path)
 }
 
-pub(crate) fn sync_generated_config(
+pub(crate) fn generated_config_source(
     source: &Path,
-    target_path: &Path,
     external_hooks: &[ExternalHookBundle],
     runtime_root: &RuntimeRoot,
-) -> Result<()> {
-    let source = config_source_content_for_runtime(source, external_hooks, runtime_root)?
+) -> Result<DocumentMut> {
+    config_source_content_for_runtime(source, external_hooks, runtime_root)?
         .parse::<DocumentMut>()
-        .context("failed to parse generated Codex config source")?;
-    sync_managed_document(source, target_path)
+        .context("failed to parse generated Codex config source")
 }
 
 fn config_source_content(source: &Path, external_hooks: &[ExternalHookBundle]) -> Result<String> {
@@ -77,13 +75,17 @@ fn config_source_content_for_runtime(
         merge_item(&mut document[key], item);
     }
     for bundle in external_hooks {
-        let Some(path) = bundle.codex_config_path()? else {
-            continue;
-        };
-        let generated = read_toml_document(&path)?;
-        merge_external_features(&mut document, &generated, &path)?;
+        merge_external_config(&mut document, bundle)?;
     }
     Ok(document.to_string())
+}
+
+fn merge_external_config(document: &mut DocumentMut, bundle: &ExternalHookBundle) -> Result<()> {
+    let Some(path) = bundle.codex_config_path()? else {
+        return Ok(());
+    };
+    let generated = read_toml_document(&path)?;
+    merge_external_features(document, &generated, &path)
 }
 
 fn merge_external_features(
@@ -92,12 +94,11 @@ fn merge_external_features(
     path: &Path,
 ) -> Result<()> {
     for (key, item) in source.iter() {
-        if key != "features" {
-            anyhow::bail!(
-                "external hook config {} contains unsupported top-level key: {key}",
-                path.display(),
-            );
-        }
+        anyhow::ensure!(
+            key == "features",
+            "external hook config {} contains unsupported top-level key: {key}",
+            path.display(),
+        );
         merge_item(&mut target[key], item);
     }
     Ok(())
@@ -105,35 +106,45 @@ fn merge_external_features(
 
 fn merge_item(target: &mut Item, source: &Item) {
     match (target.as_table_mut(), source.as_table()) {
-        (Some(target), Some(source)) => {
-            for (key, item) in source {
-                merge_item(&mut target[key], item);
-            }
-        }
+        (Some(target), Some(source)) => merge_tables(target, source),
         _ => *target = source.clone(),
     }
 }
 
-fn sync_managed_document(source: DocumentMut, target_path: &Path) -> Result<()> {
+fn merge_tables(target: &mut Table, source: &Table) {
+    for (key, item) in source {
+        merge_item(&mut target[key], item);
+    }
+}
+
+pub(crate) fn sync_managed_document(source: &DocumentMut, target_path: &Path) -> Result<()> {
     let mut target = if target_path.exists() {
         read_toml_document(target_path)?
     } else {
         DocumentMut::new()
     };
 
-    for key in MANAGED_KEYS {
-        match source.get(key) {
-            Some(item) => target[key] = item.clone(),
-            None => {
-                target.remove(key);
-            }
-        }
-    }
+    sync_managed_keys(source, &mut target);
     for path in MANAGED_NESTED_KEYS {
-        sync_nested_key(&source, &mut target, path);
+        sync_nested_key(source, &mut target, path);
     }
 
     write_toml_document(target_path, &target)
+}
+
+fn sync_managed_keys(source: &DocumentMut, target: &mut DocumentMut) {
+    for key in MANAGED_KEYS {
+        sync_key(source, target, key);
+    }
+}
+
+fn sync_key(source: &DocumentMut, target: &mut DocumentMut, key: &str) {
+    match source.get(key) {
+        Some(item) => target[key] = item.clone(),
+        None => {
+            target.remove(key);
+        }
+    }
 }
 
 fn sync_nested_key(source: &DocumentMut, target: &mut DocumentMut, path: &[&str]) {
@@ -144,22 +155,25 @@ fn sync_nested_key(source: &DocumentMut, target: &mut DocumentMut, path: &[&str]
         .iter()
         .try_fold(source.as_item(), |item, table| item.get(table))
         .and_then(|item| item.get(key));
-    match value {
-        Some(value) => {
-            let mut item = target.as_item_mut();
-            for table in tables {
-                item = &mut item[table];
-            }
-            item[key] = value.clone();
-        }
-        None => {
-            let parent = tables
-                .iter()
-                .try_fold(target.as_item_mut(), |item, table| item.get_mut(table));
-            if let Some(table) = parent.and_then(Item::as_table_like_mut) {
-                table.remove(key);
-            }
-        }
+    if let Some(value) = value {
+        nested_item_mut(target, tables)[key] = value.clone();
+    } else {
+        remove_nested_key(target, tables, key);
+    }
+}
+
+fn nested_item_mut<'a>(target: &'a mut DocumentMut, tables: &[&str]) -> &'a mut Item {
+    tables
+        .iter()
+        .fold(target.as_item_mut(), |item, table| &mut item[table])
+}
+
+fn remove_nested_key(target: &mut DocumentMut, tables: &[&str], key: &str) {
+    let parent = tables
+        .iter()
+        .try_fold(target.as_item_mut(), |item, table| item.get_mut(table));
+    if let Some(table) = parent.and_then(Item::as_table_like_mut) {
+        table.remove(key);
     }
 }
 
@@ -196,14 +210,7 @@ trust_level = "trusted"
 
         let mut merged = target.parse::<DocumentMut>()?;
         let source = source.parse::<DocumentMut>()?;
-        for key in MANAGED_KEYS {
-            match source.get(key) {
-                Some(item) => merged[key] = item.clone(),
-                None => {
-                    merged.remove(key);
-                }
-            }
-        }
+        sync_managed_keys(&source, &mut merged);
 
         assert_eq!(merged["model"].as_str(), Some("gpt-5.5"));
         assert_eq!(merged["features"]["hooks"].as_bool(), Some(true));
@@ -275,9 +282,7 @@ trust_level = "trusted"
     }
 
     fn write_file(path: &Path, content: &str) -> Result<()> {
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
+        path.parent().map(std::fs::create_dir_all).transpose()?;
         std::fs::write(path, content)?;
         Ok(())
     }

@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, ensure};
 use serde::Deserialize;
 
 const SUPPORTED_VERSION: u64 = 1;
@@ -19,13 +19,12 @@ impl Manifest {
             .with_context(|| format!("failed to read source manifest {}", path.display()))?;
         let manifest = serde_json::from_str::<Self>(&content)
             .with_context(|| format!("failed to parse source manifest {}", path.display()))?;
-        if manifest.version != SUPPORTED_VERSION {
-            bail!(
-                "unsupported source manifest version {} in {}",
-                manifest.version,
-                path.display(),
-            );
-        }
+        ensure!(
+            manifest.version == SUPPORTED_VERSION,
+            "unsupported source manifest version {} in {}",
+            manifest.version,
+            path.display(),
+        );
         Ok(manifest)
     }
 

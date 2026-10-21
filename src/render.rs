@@ -1,15 +1,14 @@
 use std::path::Path;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, ensure};
 
 use crate::{
     fs_ops,
     generation::{
-        bridges, claude_config, codex_config, command_permissions,
-        external_hooks::ExternalHookBundle, hermes_config, hooks, protection, skills,
+        GenerationContext, bridges, claude_config, codex_config, command_permissions,
+        hermes_config, hooks, protection, skills,
     },
     layout::{InstalledLayout, SourceLayout},
-    runtime_root::RuntimeRoot,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -30,26 +29,20 @@ pub(crate) fn generate_codex_config_source(source: &Path, out: &Path) -> Result<
 
 pub(crate) fn generate_skills(
     source: &Path,
-    provider: Provider,
     external_skills: &[skills::ExternalSkill],
-    out: &Path,
+    target: skills::SkillTarget<'_>,
 ) -> Result<()> {
-    skills::render_skills(source, provider, external_skills, out)
+    skills::render_skills(source, external_skills, target)
 }
 
-pub(crate) fn install(
-    source: &Path,
-    out: &Path,
-    runtime_root: &RuntimeRoot,
-    external_hooks: &[ExternalHookBundle],
-) -> Result<()> {
+pub(crate) fn install(context: GenerationContext<'_>, out: &Path) -> Result<()> {
     let staging = fs_ops::TemporaryDirectory::create()?;
     let rendered = InstalledLayout::new(staging.path());
     let installed = InstalledLayout::new(out);
     if installed.codex_config().exists() {
         fs_ops::copy_file(&installed.codex_config(), &rendered.codex_config())?;
     }
-    render_installation(source, staging.path(), runtime_root, external_hooks)?;
+    render_installation(context, staging.path())?;
     for (source, target) in rendered
         .managed_directories()
         .into_iter()
@@ -62,19 +55,19 @@ pub(crate) fn install(
         .into_iter()
         .zip(installed.managed_files())
     {
-        let content = std::fs::read(&source)
+        let bytes = std::fs::read(&source)
             .with_context(|| format!("failed to read rendered file {}", source.display()))?;
-        fs_ops::write_file_atomically(&target, &content)?;
+        fs_ops::write_file_atomically(&target, &bytes)?;
     }
     Ok(())
 }
 
-fn render_installation(
-    source: &Path,
-    out: &Path,
-    runtime_root: &RuntimeRoot,
-    external_hooks: &[ExternalHookBundle],
-) -> Result<()> {
+fn render_installation(context: GenerationContext<'_>, out: &Path) -> Result<()> {
+    let GenerationContext {
+        source,
+        external_hooks,
+        runtime_root,
+    } = context;
     let installed = InstalledLayout::new(out);
     let source_layout = SourceLayout::new(source);
     command_permissions::validate_regex_policies(source)?;
@@ -94,52 +87,37 @@ fn render_installation(
     for bundle in external_hooks {
         bundle.copy_assets(out)?;
     }
-    hooks::write_codex_hooks_for_runtime(
+    hooks::write_codex_hooks_for_runtime(context, &installed.codex_hook_config())?;
+    generate_skills(
         source,
-        &installed.codex_hook_config(),
-        external_hooks,
-        runtime_root,
+        &[],
+        skills::SkillTarget {
+            provider: Provider::Codex,
+            path: &installed.codex_skills(),
+        },
     )?;
-    generate_skills(source, Provider::Codex, &[], &installed.codex_skills())?;
-    generate_skills(source, Provider::Claude, &[], &installed.claude_skills())?;
-    claude_config::write_settings_for_runtime(
+    generate_skills(
         source,
-        &installed.claude_settings(),
-        external_hooks,
-        runtime_root,
+        &[],
+        skills::SkillTarget {
+            provider: Provider::Claude,
+            path: &installed.claude_skills(),
+        },
     )?;
+    claude_config::write_settings_for_runtime(context, &installed.claude_settings())?;
     command_permissions::write_codex_rules(source, &installed.codex_rules())?;
     command_permissions::write_runtime_policy(source, &installed.claude_command_permissions())?;
     protection::write_runtime_policy(
-        source,
-        external_hooks,
-        runtime_root,
+        protection::protected_paths_for_runtime(source, external_hooks, runtime_root)?,
         &installed.claude_protected_paths(),
     )?;
-    codex_config::sync_generated_config(
-        source,
+    codex_config::sync_managed_document(
+        &codex_config::generated_config_source(source, external_hooks, runtime_root)?,
         &installed.codex_config(),
-        external_hooks,
-        runtime_root,
     )?;
-    hooks::write_devin_hooks_for_runtime(
-        source,
-        &installed.devin_config(),
-        external_hooks,
-        runtime_root,
-    )?;
-    hooks::write_hermes_hooks_for_runtime(
-        source,
-        &installed.hermes_manifest(),
-        external_hooks,
-        runtime_root,
-    )?;
-    hooks::write_pi_hooks_for_runtime(
-        source,
-        &installed.pi_manifest(),
-        external_hooks,
-        runtime_root,
-    )?;
+    hooks::write_devin_hooks_for_runtime(context, &installed.devin_config())?;
+    hooks::write_hermes_hooks_for_runtime(context, &installed.hermes_manifest())?;
+    hooks::write_pi_hooks_for_runtime(context, &installed.pi_manifest())?;
     hermes_config::write_managed_config(&installed.hermes_managed_config())?;
 
     Ok(())
@@ -165,14 +143,18 @@ pub(crate) fn verify(root: &Path) -> Result<()> {
         installed.hermes_managed_config(),
         installed.pi_manifest(),
     ] {
-        if !path.is_file() {
-            anyhow::bail!("missing or invalid harness file: {}", path.display());
-        }
+        ensure!(
+            path.is_file(),
+            "missing or invalid harness file: {}",
+            path.display()
+        );
     }
     for path in [installed.codex_skills(), installed.claude_skills()] {
-        if !path.is_dir() {
-            anyhow::bail!("missing or invalid harness directory: {}", path.display());
-        }
+        ensure!(
+            path.is_dir(),
+            "missing or invalid harness directory: {}",
+            path.display()
+        );
     }
     Ok(())
 }
@@ -191,43 +173,34 @@ mod tests {
         let out = root.join("out");
         write_minimal_source(&source)?;
 
-        install(&source, &out, &RuntimeRoot::home(), &[])?;
+        install(GenerationContext::home(&source, &[]), &out)?;
 
-        assert!(out.join(".codex/AGENTS.md").is_file());
-        assert!(out.join(".codex/hooks.json").is_file());
-        assert!(out.join(".claude/CLAUDE.md").is_file());
-        assert!(out.join(".codex/skills/example/SKILL.md").is_file());
-        assert!(out.join(".codex/rules/default.rules").is_file());
-        assert!(out.join(".claude/skills/example/SKILL.md").is_file());
-        assert!(
-            out.join(".claude/hooks/rules/forbidden_commands.json")
-                .is_file()
-        );
-        assert!(
-            out.join(".claude/hooks/rules/command_permissions.json")
-                .is_file()
-        );
+        let missing_files: Vec<&str> = [
+            ".codex/AGENTS.md",
+            ".codex/hooks.json",
+            ".claude/CLAUDE.md",
+            ".codex/skills/example/SKILL.md",
+            ".codex/rules/default.rules",
+            ".claude/skills/example/SKILL.md",
+            ".claude/hooks/rules/forbidden_commands.json",
+            ".claude/hooks/rules/command_permissions.json",
+            ".claude/hooks/rules/allowed_commands.json",
+            ".claude/hooks/rules/secret_path_policy.json",
+            ".claude/hooks/rules/secret_commit_policy.json",
+            ".codex/config.toml",
+            ".claude/settings.json",
+            ".config/devin/config.json",
+        ]
+        .into_iter()
+        .filter(|relative| !out.join(relative).is_file())
+        .collect();
+        assert!(missing_files.is_empty(), "missing files: {missing_files:?}");
         let forbidden =
             std::fs::read_to_string(out.join(".claude/hooks/rules/forbidden_commands.json"))?;
         assert!(forbidden.contains("never-match-forbidden"));
-        assert!(
-            out.join(".claude/hooks/rules/allowed_commands.json")
-                .is_file()
-        );
-        assert!(
-            out.join(".claude/hooks/rules/secret_path_policy.json")
-                .is_file()
-        );
-        assert!(
-            out.join(".claude/hooks/rules/secret_commit_policy.json")
-                .is_file()
-        );
         assert!(!out.join(".claude/rules/forbidden_commands.json").exists());
         assert!(source.join("hooks/rules/forbidden_commands.json").is_file());
-        assert!(out.join(".codex/config.toml").is_file());
-        assert!(out.join(".claude/settings.json").is_file());
         assert!(out.join(".devin/hooks").is_dir());
-        assert!(out.join(".config/devin/config.json").is_file());
 
         let codex_config = std::fs::read_to_string(out.join(".codex/config.toml"))?;
         assert!(codex_config.contains("[permissions.guarded.filesystem]"));
@@ -244,14 +217,11 @@ mod tests {
         let source = root.join("source");
         let out = root.join("out");
         write_minimal_source(&source)?;
-        for file_name in ["allowed_commands.json", "forbidden_commands.json"] {
-            let path = source.join("hooks/rules").join(file_name);
-            let mut permissions = std::fs::metadata(&path)?.permissions();
-            permissions.set_readonly(true);
-            std::fs::set_permissions(path, permissions)?;
-        }
+        ["allowed_commands.json", "forbidden_commands.json"]
+            .into_iter()
+            .try_for_each(|file_name| set_readonly(&source.join("hooks/rules").join(file_name)))?;
 
-        install(&source, &out, &RuntimeRoot::home(), &[])?;
+        install(GenerationContext::home(&source, &[]), &out)?;
 
         assert!(
             out.join(".claude/hooks/rules/allowed_commands.json")
@@ -272,7 +242,7 @@ mod tests {
         let source = root.join("source");
         let out = root.join("out");
         write_minimal_source(&source)?;
-        install(&source, &out, &RuntimeRoot::home(), &[])?;
+        install(GenerationContext::home(&source, &[]), &out)?;
         verify(&out)?;
         std::fs::remove_file(out.join(".codex/config.toml"))?;
 
@@ -289,13 +259,13 @@ mod tests {
         let source = root.join("source");
         let out = root.join("out");
         write_minimal_source(&source)?;
-        install(&source, &out, &RuntimeRoot::home(), &[])?;
+        install(GenerationContext::home(&source, &[]), &out)?;
         let before = installed_contents(&out)?;
         write_file(&source.join("AGENTS.md"), "replacement instructions\n")?;
         std::fs::remove_file(source.join("hooks/hook.sh"))?;
         write_file(&source.join("codex/config.toml"), "invalid TOML [")?;
 
-        let error = install(&source, &out, &RuntimeRoot::home(), &[]).unwrap_err();
+        let error = install(GenerationContext::home(&source, &[]), &out).unwrap_err();
 
         assert!(format!("{error:#}").contains("TOML"));
         assert_eq!(installed_contents(&out)?, before);
@@ -316,29 +286,31 @@ mod tests {
         let source = root.join("source");
         let out = root.join("out");
         write_minimal_source(&source)?;
-        install(&source, &out, &RuntimeRoot::home(), &[])?;
-        for relative in [".claude/settings.json", ".codex/skills"] {
-            let path = out.join(relative);
-            let backup = path.with_extension("backup");
-            std::fs::rename(&path, &backup)?;
-            if backup.is_dir() {
-                std::fs::write(&path, "not a directory")?;
-            } else {
-                std::fs::create_dir(&path)?;
-            }
-
-            let error = verify(&out).unwrap_err();
-
-            assert!(error.to_string().contains(relative));
-            if path.is_dir() {
-                std::fs::remove_dir(&path)?;
-            } else {
-                std::fs::remove_file(&path)?;
-            }
-            std::fs::rename(backup, path)?;
-        }
+        install(GenerationContext::home(&source, &[]), &out)?;
+        let replace_with_directory = |path: &Path| std::fs::create_dir(path);
+        let replace_with_file = |path: &Path| std::fs::write(path, "not a directory");
+        assert_verify_rejects(&out, ".claude/settings.json", replace_with_directory)?;
+        assert_verify_rejects(&out, ".codex/skills", replace_with_file)?;
         verify(&out)?;
         std::fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    fn assert_verify_rejects(
+        out: &Path,
+        relative: &str,
+        replace: impl Fn(&Path) -> std::io::Result<()>,
+    ) -> Result<()> {
+        let path = out.join(relative);
+        let backup = path.with_extension("backup");
+        std::fs::rename(&path, &backup)?;
+        replace(&path)?;
+
+        let error = verify(out).unwrap_err();
+
+        assert!(error.to_string().contains(relative));
+        std::fs::remove_dir(&path).or_else(|_| std::fs::remove_file(&path))?;
+        std::fs::rename(backup, path)?;
         Ok(())
     }
 
@@ -383,7 +355,14 @@ mod tests {
         let out = root.join("skills");
         write_minimal_source(&source)?;
 
-        generate_skills(&source, Provider::Codex, &[], &out)?;
+        generate_skills(
+            &source,
+            &[],
+            skills::SkillTarget {
+                provider: Provider::Codex,
+                path: &out,
+            },
+        )?;
 
         assert!(out.join("example/SKILL.md").is_file());
 
@@ -479,10 +458,15 @@ mod tests {
         Ok(())
     }
 
+    fn set_readonly(path: &Path) -> Result<()> {
+        let mut permissions = std::fs::metadata(path)?.permissions();
+        permissions.set_readonly(true);
+        std::fs::set_permissions(path, permissions)?;
+        Ok(())
+    }
+
     fn write_file(path: &Path, content: &str) -> Result<()> {
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
+        path.parent().map(std::fs::create_dir_all).transpose()?;
         std::fs::write(path, content)?;
         Ok(())
     }

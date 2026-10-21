@@ -1,11 +1,12 @@
+use std::cmp::Ordering;
 use std::path::Path;
 
 use anyhow::{Context, Result, bail};
 use serde::Deserialize;
-use serde_json::Value;
+use serde_json::{Map, Value};
 
 use crate::{
-    generation::{command_permissions, external_hooks::ExternalHookBundle, io},
+    generation::{GenerationContext, command_permissions, external_hooks::ExternalHookBundle, io},
     layout::SourceLayout,
     runtime_root::RuntimeRoot,
 };
@@ -55,19 +56,8 @@ pub(crate) fn write_claude_hooks(
     path: &Path,
     external_hooks: &[ExternalHookBundle],
 ) -> Result<()> {
-    write_claude_hooks_for_runtime(source, path, external_hooks, &RuntimeRoot::home())
-}
-
-pub(crate) fn write_claude_hooks_for_runtime(
-    source: &Path,
-    path: &Path,
-    external_hooks: &[ExternalHookBundle],
-    runtime_root: &RuntimeRoot,
-) -> Result<()> {
-    io::write_json(
-        path,
-        &claude_hooks_for_runtime(source, external_hooks, runtime_root)?,
-    )
+    let context = GenerationContext::home(source, external_hooks);
+    io::write_json(path, &claude_hooks_for_runtime(context)?)
 }
 
 pub(crate) fn write_codex_hooks(
@@ -75,20 +65,18 @@ pub(crate) fn write_codex_hooks(
     path: &Path,
     external_hooks: &[ExternalHookBundle],
 ) -> Result<()> {
-    write_codex_hooks_for_runtime(source, path, external_hooks, &RuntimeRoot::home())
+    write_codex_hooks_for_runtime(GenerationContext::home(source, external_hooks), path)
 }
 
 pub(crate) fn write_codex_hooks_for_runtime(
-    source: &Path,
+    context: GenerationContext<'_>,
     path: &Path,
-    external_hooks: &[ExternalHookBundle],
-    runtime_root: &RuntimeRoot,
 ) -> Result<()> {
-    let mut hooks = read_hooks(source)?.codex;
-    for bundle in external_hooks {
+    let mut hooks = read_hooks(context.source)?.codex;
+    for bundle in context.external_hooks {
         bundle.merge_codex_hooks(&mut hooks)?;
     }
-    relocate_commands(&mut hooks, runtime_root);
+    relocate_commands(&mut hooks, context.runtime_root);
     io::write_json(path, &hooks)
 }
 
@@ -97,39 +85,30 @@ pub(crate) fn write_devin_hooks(
     path: &Path,
     external_hooks: &[ExternalHookBundle],
 ) -> Result<()> {
-    write_devin_hooks_for_runtime(source, path, external_hooks, &RuntimeRoot::home())
+    write_devin_hooks_for_runtime(GenerationContext::home(source, external_hooks), path)
 }
 
 pub(crate) fn write_devin_hooks_for_runtime(
-    source: &Path,
+    context: GenerationContext<'_>,
     path: &Path,
-    external_hooks: &[ExternalHookBundle],
-    runtime_root: &RuntimeRoot,
 ) -> Result<()> {
-    io::write_json(
-        path,
-        &devin_hooks_for_runtime(source, external_hooks, runtime_root)?,
-    )
+    io::write_json(path, &devin_hooks_for_runtime(context)?)
 }
 
-pub(crate) fn devin_hooks_for_runtime(
-    source: &Path,
-    external_hooks: &[ExternalHookBundle],
-    runtime_root: &RuntimeRoot,
-) -> Result<Value> {
-    let mut config = read_hooks(source)?
+pub(crate) fn devin_hooks_for_runtime(context: GenerationContext<'_>) -> Result<Value> {
+    let mut config = read_hooks(context.source)?
         .devin
         .unwrap_or_else(|| serde_json::json!({ "hooks": {} }));
-    for bundle in external_hooks {
+    for bundle in context.external_hooks {
         bundle.merge_devin_hooks(&mut config)?;
     }
-    relocate_commands(&mut config, runtime_root);
+    relocate_commands(&mut config, context.runtime_root);
     let Some(root) = config.as_object_mut() else {
         bail!("hook config devin section must be a JSON object");
     };
     root.insert(
         "permissions".to_string(),
-        command_permissions::devin_permissions(source)?,
+        command_permissions::devin_permissions(context.source)?,
     );
     Ok(config)
 }
@@ -139,33 +118,24 @@ pub(crate) fn write_hermes_hooks(
     path: &Path,
     external_hooks: &[ExternalHookBundle],
 ) -> Result<()> {
-    write_hermes_hooks_for_runtime(source, path, external_hooks, &RuntimeRoot::home())
+    write_hermes_hooks_for_runtime(GenerationContext::home(source, external_hooks), path)
 }
 
 pub(crate) fn write_hermes_hooks_for_runtime(
-    source: &Path,
+    context: GenerationContext<'_>,
     path: &Path,
-    external_hooks: &[ExternalHookBundle],
-    runtime_root: &RuntimeRoot,
 ) -> Result<()> {
-    io::write_json(
-        path,
-        &hermes_hooks_for_runtime(source, external_hooks, runtime_root)?,
-    )
+    io::write_json(path, &hermes_hooks_for_runtime(context)?)
 }
 
-pub(crate) fn hermes_hooks_for_runtime(
-    source: &Path,
-    external_hooks: &[ExternalHookBundle],
-    runtime_root: &RuntimeRoot,
-) -> Result<Value> {
-    let mut hooks = read_hooks(source)?
+pub(crate) fn hermes_hooks_for_runtime(context: GenerationContext<'_>) -> Result<Value> {
+    let mut hooks = read_hooks(context.source)?
         .hermes
         .unwrap_or_else(|| serde_json::json!({ "hooks": {} }));
-    for bundle in external_hooks {
+    for bundle in context.external_hooks {
         bundle.merge_hermes_hooks(&mut hooks)?;
     }
-    relocate_commands(&mut hooks, runtime_root);
+    relocate_commands(&mut hooks, context.runtime_root);
     Ok(hooks)
 }
 
@@ -174,65 +144,54 @@ pub(crate) fn write_pi_hooks(
     path: &Path,
     external_hooks: &[ExternalHookBundle],
 ) -> Result<()> {
-    write_pi_hooks_for_runtime(source, path, external_hooks, &RuntimeRoot::home())
+    write_pi_hooks_for_runtime(GenerationContext::home(source, external_hooks), path)
 }
 
 pub(crate) fn write_pi_hooks_for_runtime(
-    source: &Path,
+    context: GenerationContext<'_>,
     path: &Path,
-    external_hooks: &[ExternalHookBundle],
-    runtime_root: &RuntimeRoot,
 ) -> Result<()> {
-    io::write_json(
-        path,
-        &pi_hooks_for_runtime(source, external_hooks, runtime_root)?,
-    )
+    io::write_json(path, &pi_hooks_for_runtime(context)?)
 }
 
-pub(crate) fn pi_hooks_for_runtime(
-    source: &Path,
-    external_hooks: &[ExternalHookBundle],
-    runtime_root: &RuntimeRoot,
-) -> Result<Value> {
-    let mut hooks = read_hooks(source)?
+pub(crate) fn pi_hooks_for_runtime(context: GenerationContext<'_>) -> Result<Value> {
+    let mut hooks = read_hooks(context.source)?
         .pi
         .unwrap_or_else(|| serde_json::json!({ "hooks": {} }));
-    for bundle in external_hooks {
+    for bundle in context.external_hooks {
         bundle.merge_pi_hooks(&mut hooks)?;
     }
-    relocate_commands(&mut hooks, runtime_root);
+    relocate_commands(&mut hooks, context.runtime_root);
     Ok(hooks)
 }
 
-pub(crate) fn claude_hooks_for_runtime(
-    source: &Path,
-    external_hooks: &[ExternalHookBundle],
-    runtime_root: &RuntimeRoot,
-) -> Result<Value> {
-    let mut hooks = read_hooks(source)?.claude;
-    for bundle in external_hooks {
+pub(crate) fn claude_hooks_for_runtime(context: GenerationContext<'_>) -> Result<Value> {
+    let mut hooks = read_hooks(context.source)?.claude;
+    for bundle in context.external_hooks {
         bundle.merge_claude_hooks(&mut hooks)?;
     }
-    relocate_commands(&mut hooks, runtime_root);
+    relocate_commands(&mut hooks, context.runtime_root);
     Ok(hooks)
 }
 
 fn relocate_commands(value: &mut Value, runtime_root: &RuntimeRoot) {
     match value {
-        Value::Array(items) => {
-            for item in items {
-                relocate_commands(item, runtime_root);
-            }
-        }
-        Value::Object(object) => {
-            if let Some(Value::String(command)) = object.get_mut("command") {
-                *command = runtime_root.relocate_command(command);
-            }
-            for item in object.values_mut() {
-                relocate_commands(item, runtime_root);
-            }
-        }
+        Value::Array(items) => relocate_each(items.iter_mut(), runtime_root),
+        Value::Object(object) => relocate_object_commands(object, runtime_root),
         _ => {}
+    }
+}
+
+fn relocate_object_commands(object: &mut Map<String, Value>, runtime_root: &RuntimeRoot) {
+    if let Some(Value::String(command)) = object.get_mut("command") {
+        *command = runtime_root.relocate_command(command);
+    }
+    relocate_each(object.values_mut(), runtime_root);
+}
+
+fn relocate_each<'a>(items: impl Iterator<Item = &'a mut Value>, runtime_root: &RuntimeRoot) {
+    for item in items {
+        relocate_commands(item, runtime_root);
     }
 }
 
@@ -250,27 +209,35 @@ pub(crate) fn built_in_hook_metadata(source: &Path) -> Result<Vec<HookMetadata>>
             .context("hook config devin section must contain hooks")?;
         metadata.extend(hook_metadata(HookProvider::Devin, devin)?);
     }
-    for (provider, section) in [
+    let optional_sections = [
         (HookProvider::Hermes, &config.hermes),
         (HookProvider::Pi, &config.pi),
-    ] {
-        if let Some(section) = section {
-            let hooks = section.get("hooks").with_context(|| {
-                format!(
-                    "hook config {} section must contain hooks",
-                    provider.display_name().to_lowercase()
-                )
-            })?;
-            metadata.extend(hook_metadata(provider, hooks)?);
-        }
+    ]
+    .into_iter()
+    .filter_map(|(provider, section)| Some((provider, section.as_ref()?)));
+    for (provider, section) in optional_sections {
+        metadata.extend(optional_section_hook_metadata(provider, section)?);
     }
-    metadata.sort_by(|left, right| {
-        left.provider
-            .cmp(&right.provider)
-            .then_with(|| hook_event_rank(&left.event).cmp(&hook_event_rank(&right.event)))
-            .then_with(|| left.event.cmp(&right.event))
-    });
+    metadata.sort_by(compare_hook_metadata);
     Ok(metadata)
+}
+
+fn compare_hook_metadata(left: &HookMetadata, right: &HookMetadata) -> Ordering {
+    left.provider
+        .cmp(&right.provider)
+        .then_with(|| hook_event_rank(&left.event).cmp(&hook_event_rank(&right.event)))
+        .then_with(|| left.event.cmp(&right.event))
+}
+
+fn optional_section_hook_metadata(
+    provider: HookProvider,
+    section: &Value,
+) -> Result<Vec<HookMetadata>> {
+    let section_name = provider.display_name().to_lowercase();
+    let hooks = section
+        .get("hooks")
+        .with_context(|| format!("hook config {section_name} section must contain hooks"))?;
+    hook_metadata(provider, hooks)
 }
 
 fn hook_event_rank(event: &str) -> usize {
@@ -281,8 +248,7 @@ fn hook_event_rank(event: &str) -> usize {
         "PostToolUse" => 3,
         "PermissionDenied" => 4,
         "Notification" => 5,
-        "SubagentStop" => 6,
-        "PermissionRequest" => 6,
+        "SubagentStop" | "PermissionRequest" => 6,
         "Stop" => 7,
         "PreCompact" => 8,
         "PostCompaction" => 9,
@@ -311,19 +277,21 @@ fn validate_hooks(config: &HookConfig) -> Result<()> {
     if !config.codex.is_object() {
         bail!("hook config codex section must be a JSON object");
     }
-    if config
-        .devin
-        .as_ref()
-        .is_some_and(|devin| !devin.is_object())
-    {
-        bail!("hook config devin section must be a JSON object");
-    }
-    for (name, section) in [("hermes", &config.hermes), ("pi", &config.pi)] {
-        if section.as_ref().is_some_and(|value| !value.is_object()) {
-            bail!("hook config {name} section must be a JSON object");
-        }
+    let invalid_optional_section = [
+        ("devin", &config.devin),
+        ("hermes", &config.hermes),
+        ("pi", &config.pi),
+    ]
+    .into_iter()
+    .find(|(_name, section)| section.as_ref().is_some_and(is_not_object));
+    if let Some((name, _section)) = invalid_optional_section {
+        bail!("hook config {name} section must be a JSON object");
     }
     Ok(())
+}
+
+fn is_not_object(value: &Value) -> bool {
+    !value.is_object()
 }
 
 fn hook_metadata(provider: HookProvider, value: &Value) -> Result<Vec<HookMetadata>> {
@@ -333,12 +301,22 @@ fn hook_metadata(provider: HookProvider, value: &Value) -> Result<Vec<HookMetada
     let mut metadata = Vec::new();
 
     for (event, groups) in events {
-        let groups = groups
-            .as_array()
-            .with_context(|| format!("hook event {event} must be a JSON array"))?;
-        for group in groups {
-            metadata.extend(group_hook_metadata(provider, event, group)?);
-        }
+        metadata.extend(event_hook_metadata(provider, event, groups)?);
+    }
+    Ok(metadata)
+}
+
+fn event_hook_metadata(
+    provider: HookProvider,
+    event: &str,
+    groups: &Value,
+) -> Result<Vec<HookMetadata>> {
+    let groups = groups
+        .as_array()
+        .with_context(|| format!("hook event {event} must be a JSON array"))?;
+    let mut metadata = Vec::new();
+    for group in groups {
+        metadata.extend(group_hook_metadata(provider, event, group)?);
     }
     Ok(metadata)
 }
@@ -361,18 +339,25 @@ fn group_hook_metadata(
         .and_then(Value::as_array)
         .with_context(|| format!("hook group for {event} must contain a hooks array"))?;
 
+    let location = HookLocation {
+        provider,
+        event,
+        matcher: &matcher,
+    };
     hooks
         .iter()
-        .map(|hook| hook_metadata_entry(provider, event, &matcher, hook))
+        .map(|hook| hook_metadata_entry(&location, hook))
         .collect()
 }
 
-fn hook_metadata_entry(
+struct HookLocation<'a> {
     provider: HookProvider,
-    event: &str,
-    matcher: &str,
-    hook: &Value,
-) -> Result<HookMetadata> {
+    event: &'a str,
+    matcher: &'a str,
+}
+
+fn hook_metadata_entry(location: &HookLocation<'_>, hook: &Value) -> Result<HookMetadata> {
+    let event = location.event;
     let hook = hook
         .as_object()
         .with_context(|| format!("hook entry for {event} must be a JSON object"))?;
@@ -382,232 +367,13 @@ fn hook_metadata_entry(
         .with_context(|| format!("hook entry for {event} must contain a command"))?;
     let condition = hook.get("if").and_then(Value::as_str).map(str::to_owned);
     Ok(HookMetadata {
-        provider,
+        provider: location.provider,
         event: event.to_owned(),
-        matcher: matcher.to_owned(),
+        matcher: location.matcher.to_owned(),
         condition,
         command: command.to_owned(),
     })
 }
 
 #[cfg(test)]
-mod tests {
-    use std::path::PathBuf;
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    use super::*;
-
-    #[test]
-    fn write_claude_hooks_reads_shared_hook_config() -> Result<()> {
-        let root = test_root("write_claude_hooks_reads_shared_hook_config")?;
-        write_hook_config(&root)?;
-        let output = root.join("claude-hooks.json");
-
-        write_claude_hooks(&root, &output, &[])?;
-
-        let hooks: Value = serde_json::from_str(&std::fs::read_to_string(&output)?)?;
-        assert_eq!(
-            hooks["PreToolUse"][0]["hooks"][0]["command"].as_str(),
-            Some("$HOME/.claude/hooks/guard_forbidden_commands.sh"),
-        );
-
-        std::fs::remove_dir_all(root)?;
-        Ok(())
-    }
-
-    #[test]
-    fn write_codex_hooks_reads_shared_hook_config() -> Result<()> {
-        let root = test_root("write_codex_hooks_reads_shared_hook_config")?;
-        write_hook_config(&root)?;
-        let output = root.join("codex-hooks.json");
-
-        write_codex_hooks(&root, &output, &[])?;
-
-        let hooks: Value = serde_json::from_str(&std::fs::read_to_string(&output)?)?;
-        assert_eq!(
-            hooks["hooks"]["PreToolUse"][0]["matcher"].as_str(),
-            Some("^(Bash|exec_command|functions\\.exec_command)$"),
-        );
-
-        std::fs::remove_dir_all(root)?;
-        Ok(())
-    }
-
-    #[test]
-    fn write_devin_hooks_renders_the_devin_section_as_a_config_fragment() -> Result<()> {
-        let root = test_root("write_devin_hooks_renders_the_devin_section_as_a_config_fragment")?;
-        write_hook_config(&root)?;
-        write_command_policy(&root)?;
-        let output = root.join("devin-hooks.json");
-
-        write_devin_hooks(&root, &output, &[])?;
-
-        let hooks: Value = serde_json::from_str(&std::fs::read_to_string(&output)?)?;
-        assert_eq!(
-            hooks["hooks"]["PreToolUse"][0]["matcher"].as_str(),
-            Some("exec"),
-        );
-        assert_eq!(
-            hooks["hooks"]["PreToolUse"][0]["hooks"][0]["command"].as_str(),
-            Some("$HOME/.devin/hooks/hook_adapter.py shell forbidden"),
-        );
-
-        std::fs::remove_dir_all(root)?;
-        Ok(())
-    }
-
-    #[test]
-    fn write_devin_hooks_includes_command_permissions() -> Result<()> {
-        let root = test_root("write_devin_hooks_includes_command_permissions")?;
-        write_hook_config(&root)?;
-        write_command_policy(&root)?;
-        let output = root.join("devin-hooks.json");
-
-        write_devin_hooks(&root, &output, &[])?;
-
-        let config: Value = serde_json::from_str(&std::fs::read_to_string(&output)?)?;
-        assert_eq!(
-            config["permissions"],
-            serde_json::json!({
-                "allow": ["Exec(cargo)"],
-                "ask": ["Exec(git push)"],
-                "deny": ["Exec(curl)"]
-            })
-        );
-
-        std::fs::remove_dir_all(root)?;
-        Ok(())
-    }
-
-    #[test]
-    fn write_devin_hooks_emits_empty_hooks_when_the_section_is_missing() -> Result<()> {
-        let root = test_root("write_devin_hooks_emits_empty_hooks_when_the_section_is_missing")?;
-        write_file(
-            &root.join("hooks.json"),
-            r#"{"version":1,"claude":{},"codex":{"hooks":{}}}"#,
-        )?;
-        write_command_policy(&root)?;
-        let output = root.join("devin-hooks.json");
-
-        write_devin_hooks(&root, &output, &[])?;
-
-        let hooks: Value = serde_json::from_str(&std::fs::read_to_string(&output)?)?;
-        assert_eq!(hooks["hooks"], serde_json::json!({}));
-
-        std::fs::remove_dir_all(root)?;
-        Ok(())
-    }
-
-    #[test]
-    fn read_hooks_rejects_unsupported_version() -> Result<()> {
-        let root = test_root("read_hooks_rejects_unsupported_version")?;
-        write_file(
-            &root.join("hooks.json"),
-            r#"{"version":2,"claude":{},"codex":{}}"#,
-        )?;
-
-        let error = read_hooks(&root).unwrap_err().to_string();
-
-        assert!(error.contains("unsupported hook config version"));
-
-        std::fs::remove_dir_all(root)?;
-        Ok(())
-    }
-
-    fn test_root(name: &str) -> Result<PathBuf> {
-        let nanos = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
-        let root = std::env::temp_dir().join(format!("agent-harness-{name}-{nanos}"));
-        std::fs::create_dir_all(&root)?;
-        Ok(root)
-    }
-
-    fn write_command_policy(root: &Path) -> Result<()> {
-        write_file(
-            &root.join("command_permissions.json"),
-            r#"{
-  "version": 1,
-  "rules": [
-    {
-      "decision": "allow",
-      "prefix": ["cargo"],
-      "justification": "Allowed by the shared agent command permissions."
-    },
-    {
-      "decision": "ask",
-      "prefix": ["git", "push"],
-      "justification": "Publishing changes requires confirmation."
-    },
-    {
-      "decision": "deny",
-      "prefix": ["curl"],
-      "justification": "Do not fetch remote scripts or content."
-    }
-  ]
-}
-"#,
-        )
-    }
-
-    fn write_hook_config(root: &Path) -> Result<()> {
-        write_file(
-            &root.join("hooks.json"),
-            r#"{
-  "version": 1,
-  "claude": {
-    "PreToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "command": "$HOME/.claude/hooks/guard_forbidden_commands.sh",
-            "type": "command"
-          }
-        ]
-      }
-    ]
-  },
-  "codex": {
-    "hooks": {
-      "PreToolUse": [
-        {
-          "matcher": "^(Bash|exec_command|functions\\.exec_command)$",
-          "hooks": [
-            {
-              "command": "$HOME/.codex/hooks/adapt_shell_command.sh",
-              "statusMessage": "Checking command permissions",
-              "timeout": 30,
-              "type": "command"
-            }
-          ]
-        }
-      ]
-    }
-  },
-  "devin": {
-    "hooks": {
-      "PreToolUse": [
-        {
-          "matcher": "exec",
-          "hooks": [
-            {
-              "command": "$HOME/.devin/hooks/hook_adapter.py shell forbidden",
-              "type": "command"
-            }
-          ]
-        }
-      ]
-    }
-  }
-}
-"#,
-        )
-    }
-
-    fn write_file(path: &Path, content: &str) -> Result<()> {
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        std::fs::write(path, content)?;
-        Ok(())
-    }
-}
+mod tests;

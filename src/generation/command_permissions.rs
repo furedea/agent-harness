@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, bail, ensure};
 use serde::{Deserialize, Serialize};
 
 use crate::{generation::io, layout::SourceLayout};
@@ -131,12 +131,14 @@ fn validate_regex_policy(policy: &RegexPolicy) -> Result<()> {
         );
     }
     for (index, rule) in policy.rules.iter().enumerate() {
-        if rule.patterns.is_empty() || rule.patterns.iter().any(|pattern| pattern.is_empty()) {
-            bail!("command regex policy rule {index} must contain non-empty patterns");
-        }
-        if rule.justification.trim().is_empty() {
-            bail!("command regex policy rule {index} must have a non-empty justification");
-        }
+        ensure!(
+            !rule.patterns.is_empty() && !rule.patterns.iter().any(String::is_empty),
+            "command regex policy rule {index} must contain non-empty patterns"
+        );
+        ensure!(
+            !rule.justification.trim().is_empty(),
+            "command regex policy rule {index} must have a non-empty justification"
+        );
     }
     Ok(())
 }
@@ -256,19 +258,19 @@ mod tests {
         let value = serde_json::to_value(&policy)?;
 
         assert_eq!(value["version"], 1);
-        assert!(value["rules"].as_array().is_some_and(|rules| {
-            rules.iter().any(|rule| {
-                rule["decision"] == "allow" && rule["prefix"] == serde_json::json!(["cargo"])
-            })
-        }));
-        assert!(value["rules"].as_array().is_some_and(|rules| {
-            rules.iter().any(|rule| {
-                rule["decision"] == "deny" && rule["prefix"] == serde_json::json!(["curl"])
-            })
-        }));
+        assert!(has_rule(&value, "allow", &serde_json::json!(["cargo"])));
+        assert!(has_rule(&value, "deny", &serde_json::json!(["curl"])));
 
         std::fs::remove_dir_all(root)?;
         Ok(())
+    }
+
+    fn has_rule(policy: &serde_json::Value, decision: &str, prefix: &serde_json::Value) -> bool {
+        let matches =
+            |rule: &serde_json::Value| rule["decision"] == decision && rule["prefix"] == *prefix;
+        policy["rules"]
+            .as_array()
+            .is_some_and(|rules| rules.iter().any(matches))
     }
 
     #[test]
@@ -416,9 +418,7 @@ mod tests {
     }
 
     fn write_file(path: &Path, content: &str) -> Result<()> {
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
+        path.parent().map(std::fs::create_dir_all).transpose()?;
         std::fs::write(path, content)?;
         Ok(())
     }
