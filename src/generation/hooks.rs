@@ -339,40 +339,30 @@ fn group_hook_metadata(
         .and_then(Value::as_array)
         .with_context(|| format!("hook group for {event} must contain a hooks array"))?;
 
-    let location = HookLocation {
-        provider,
-        event,
-        matcher: &matcher,
-    };
     hooks
         .iter()
-        .map(|hook| hook_metadata_entry(&location, hook))
+        .map(|hook| {
+            let hook = hook_entry(event, hook)?;
+            Ok(HookMetadata {
+                provider,
+                event: event.to_owned(),
+                matcher: matcher.clone(),
+                condition: hook.get("if").and_then(Value::as_str).map(str::to_owned),
+                command: hook_command(event, hook)?.to_owned(),
+            })
+        })
         .collect()
 }
 
-struct HookLocation<'a> {
-    provider: HookProvider,
-    event: &'a str,
-    matcher: &'a str,
+fn hook_entry<'a>(event: &str, hook: &'a Value) -> Result<&'a Map<String, Value>> {
+    hook.as_object()
+        .with_context(|| format!("hook entry for {event} must be a JSON object"))
 }
 
-fn hook_metadata_entry(location: &HookLocation<'_>, hook: &Value) -> Result<HookMetadata> {
-    let event = location.event;
-    let hook = hook
-        .as_object()
-        .with_context(|| format!("hook entry for {event} must be a JSON object"))?;
-    let command = hook
-        .get("command")
+fn hook_command<'a>(event: &str, hook: &'a Map<String, Value>) -> Result<&'a str> {
+    hook.get("command")
         .and_then(Value::as_str)
-        .with_context(|| format!("hook entry for {event} must contain a command"))?;
-    let condition = hook.get("if").and_then(Value::as_str).map(str::to_owned);
-    Ok(HookMetadata {
-        provider: location.provider,
-        event: event.to_owned(),
-        matcher: location.matcher.to_owned(),
-        condition,
-        command: command.to_owned(),
-    })
+        .with_context(|| format!("hook entry for {event} must contain a command"))
 }
 
 #[cfg(test)]

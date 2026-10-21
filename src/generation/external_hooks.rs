@@ -5,7 +5,7 @@ use std::str::FromStr;
 
 use anyhow::{Context, Result, ensure};
 use serde::Deserialize;
-use serde_json::{Map, Value};
+use serde_json::{Map, Value, map::Entry};
 
 use crate::fs_ops;
 
@@ -73,7 +73,9 @@ impl ExternalHookBundle {
             assets: &self.assets()?,
             source: &self.source,
         };
-        merge_events(target, events, &relocation).with_context(|| self.merge_failure())
+        relocation
+            .merge_events(target, events)
+            .with_context(|| self.merge_failure())
     }
 
     fn merge_failure(&self) -> String {
@@ -207,15 +209,118 @@ impl HookFile {
     }
 }
 
+/// Rewrites bundle hook commands so they point at the installed asset copies.
 struct CommandRelocation<'a> {
     assets: &'a [HookAsset],
     source: &'a Path,
+}
+
+impl CommandRelocation<'_> {
+    fn merge_events(&self, target: &mut Value, generated: &Value) -> Result<()> {
+        let target = target
+            .as_object_mut()
+            .context("hook root must be a JSON object")?;
+        let generated = generated
+            .as_object()
+            .context("external hooks must be a JSON object")?;
+        generated
+            .iter()
+            .try_for_each(|(event, groups)| self.merge_event(target.entry(event), groups))
+    }
+
+    fn merge_event(&self, target: Entry<'_>, groups: &Value) -> Result<()> {
+        let event = target.key().clone();
+        let groups = groups
+            .as_array()
+            .with_context(|| format!("external hook event {event} must be an array"))?;
+        let target_groups = target
+            .or_insert_with(|| Value::Array(Vec::new()))
+            .as_array_mut()
+            .with_context(|| format!("hook event {event} must be an array"))?;
+        self.merge_groups(target_groups, groups)
+    }
+
+    fn merge_groups(&self, target_groups: &mut Vec<Value>, groups: &[Value]) -> Result<()> {
+        groups
+            .iter()
+            .try_for_each(|group| self.merge_group(target_groups, group))
+    }
+
+    fn merge_group(&self, target_groups: &mut Vec<Value>, group: &Value) -> Result<()> {
+        let mut group = group.clone();
+        self.replace_command_paths(&mut group)?;
+        push_unique(target_groups, group);
+        Ok(())
+    }
+
+    fn replace_command_paths(&self, value: &mut Value) -> Result<()> {
+        match value {
+            Value::Array(items) => items
+                .iter_mut()
+                .try_for_each(|item| self.replace_command_paths(item)),
+            Value::Object(object) => self.replace_object_command_paths(object),
+            _ => Ok(()),
+        }
+    }
+
+    fn replace_object_command_paths(&self, object: &mut Map<String, Value>) -> Result<()> {
+        object
+            .get_mut("command")
+            .and_then(string_mut)
+            .map_or(Ok(()), |command| self.relocate_command(command))?;
+        object
+            .values_mut()
+            .try_for_each(|item| self.replace_command_paths(item))
+    }
+
+    fn relocate_command(&self, command: &mut String) -> Result<()> {
+        *command = self.normalize_command(command);
+        let source_prefix = format!("{}/", self.source.display());
+        ensure!(
+            !command.contains(&source_prefix),
+            "command contains uncaptured external hook bundle path: {command}"
+        );
+        Ok(())
+    }
+
+    fn normalize_command(&self, command: &str) -> String {
+        let mut relocated = command.to_owned();
+        self.assets
+            .iter()
+            .for_each(|asset| relocated = asset.relocate(&relocated));
+        relocated
+    }
+}
+
+fn string_mut(value: &mut Value) -> Option<&mut String> {
+    match value {
+        Value::String(string) => Some(string),
+        _ => None,
+    }
+}
+
+fn push_unique(values: &mut Vec<Value>, value: Value) {
+    if !values.contains(&value) {
+        values.push(value);
+    }
 }
 
 #[derive(Debug)]
 struct HookAsset {
     source: PathBuf,
     target: PathBuf,
+}
+
+impl HookAsset {
+    fn relocate(&self, command: &str) -> String {
+        let source = self.source.to_string_lossy();
+        let target = format!("$HOME/{}", self.target.display());
+        let quoted_target = format!("\"{target}\"");
+        command
+            .replace(&format!("'{source}'"), &quoted_target)
+            .replace(&format!("\"{source}\""), &quoted_target)
+            .replace(source.as_ref(), &target)
+    }
 }
 
 impl FromStr for ExternalHookBundle {
@@ -266,94 +371,6 @@ impl HookBundleName {
 #[serde(deny_unknown_fields)]
 struct HookBundleManifest {
     version: u64,
-}
-
-fn merge_events(
-    target: &mut Value,
-    generated: &Value,
-    relocation: &CommandRelocation,
-) -> Result<()> {
-    let target = target
-        .as_object_mut()
-        .context("hook root must be a JSON object")?;
-    let generated = generated
-        .as_object()
-        .context("external hooks must be a JSON object")?;
-
-    for (event, groups) in generated {
-        let groups = groups
-            .as_array()
-            .with_context(|| format!("external hook event {event} must be an array"))?;
-        let target_groups = target
-            .entry(event.clone())
-            .or_insert_with(|| Value::Array(Vec::new()))
-            .as_array_mut()
-            .with_context(|| format!("hook event {event} must be an array"))?;
-        merge_groups(target_groups, groups, relocation)?;
-    }
-    Ok(())
-}
-
-fn merge_groups(
-    target_groups: &mut Vec<Value>,
-    groups: &[Value],
-    relocation: &CommandRelocation,
-) -> Result<()> {
-    for group in groups {
-        let mut group = group.clone();
-        replace_command_paths(&mut group, relocation)?;
-        push_unique(target_groups, group);
-    }
-    Ok(())
-}
-
-fn push_unique(values: &mut Vec<Value>, value: Value) {
-    if !values.contains(&value) {
-        values.push(value);
-    }
-}
-
-fn replace_command_paths(value: &mut Value, relocation: &CommandRelocation) -> Result<()> {
-    match value {
-        Value::Array(items) => items
-            .iter_mut()
-            .try_for_each(|item| replace_command_paths(item, relocation)),
-        Value::Object(object) => replace_object_command_paths(object, relocation),
-        _ => Ok(()),
-    }
-}
-
-fn replace_object_command_paths(
-    object: &mut Map<String, Value>,
-    relocation: &CommandRelocation,
-) -> Result<()> {
-    if let Some(Value::String(command)) = object.get_mut("command") {
-        *command = normalize_command(command, relocation.assets);
-        let source_prefix = format!("{}/", relocation.source.display());
-        ensure!(
-            !command.contains(&source_prefix),
-            "command contains uncaptured external hook bundle path: {command}"
-        );
-    }
-    object
-        .values_mut()
-        .try_for_each(|item| replace_command_paths(item, relocation))
-}
-
-fn normalize_command(command: &str, assets: &[HookAsset]) -> String {
-    assets.iter().fold(command.to_string(), |command, asset| {
-        relocate_asset_command(&command, asset)
-    })
-}
-
-fn relocate_asset_command(command: &str, asset: &HookAsset) -> String {
-    let source = asset.source.to_string_lossy();
-    let target = format!("$HOME/{}", asset.target.display());
-    let quoted_target = format!("\"{target}\"");
-    command
-        .replace(&format!("'{source}'"), &quoted_target)
-        .replace(&format!("\"{source}\""), &quoted_target)
-        .replace(source.as_ref(), &target)
 }
 
 fn tree_asset(file: PathBuf, source: &Path, target_root: &Path) -> Result<HookAsset> {

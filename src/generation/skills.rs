@@ -250,10 +250,7 @@ fn render_skill_dir(
     let content = std::fs::read_to_string(&source_skill)
         .with_context(|| format!("failed to read {}", source_skill.display()))?;
     let (frontmatter, body) = split_frontmatter(&content)?;
-    let document = SkillDocument {
-        common_entries: common_frontmatter_entries(&source_skill, frontmatter)?,
-        body,
-    };
+    let mut frontmatter = common_frontmatter_entries(&source_skill, frontmatter)?;
     let skill_name = source
         .file_name()
         .and_then(|name| name.to_str())
@@ -266,7 +263,8 @@ fn render_skill_dir(
         .unwrap_or(&empty_rendering);
 
     copy_support_files(source, target.path)?;
-    write_skill(target, rendering, &document)?;
+    frontmatter.extend(provider_frontmatter_entries(rendering, target.provider)?);
+    write_skill(target.path, &frontmatter, body)?;
     write_extra_files(target, rendering)
 }
 
@@ -412,27 +410,19 @@ fn copy_support_entry(entry: &std::fs::DirEntry, out: &Path) -> Result<()> {
     Ok(())
 }
 
-struct SkillDocument<'a> {
-    common_entries: Vec<String>,
-    body: &'a str,
+fn write_skill(out: &Path, frontmatter: &[String], body: &str) -> Result<()> {
+    let content = format!("---\n{}\n---\n{body}", frontmatter.join("\n").trim_end());
+    io::write_file(&out.join("SKILL.md"), &content)
 }
 
-fn write_skill(
-    target: SkillTarget<'_>,
+fn provider_frontmatter_entries(
     skill_rendering: &SkillRenderingEntry,
-    document: &SkillDocument<'_>,
-) -> Result<()> {
-    let mut frontmatter = document.common_entries.clone();
-    for (key, value) in frontmatter_overrides(skill_rendering, target.provider) {
-        frontmatter.push(frontmatter_entry(key, value)?);
-    }
-
-    let content = format!(
-        "---\n{}\n---\n{}",
-        frontmatter.join("\n").trim_end(),
-        document.body
-    );
-    io::write_file(&target.path.join("SKILL.md"), &content)
+    provider: Provider,
+) -> Result<Vec<String>> {
+    frontmatter_overrides(skill_rendering, provider)
+        .iter()
+        .map(|(key, value)| frontmatter_entry(key, value))
+        .collect()
 }
 
 fn frontmatter_overrides(
