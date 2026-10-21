@@ -96,6 +96,10 @@ struct CommandReplacement {
 }
 
 impl CommandReplacement {
+    fn apply(&self, command: &str) -> String {
+        command.replace(&self.from, &self.to)
+    }
+
     fn validate(&self) -> Result<()> {
         ensure!(
             !self.from.is_empty() && !self.to.is_empty(),
@@ -172,13 +176,6 @@ fn run_installer(installer: &Installer, staging: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Rewrites staged hook commands so they point at the bundle output.
-struct CommandNormalization<'a> {
-    staging: &'a Path,
-    output: &'a Path,
-    replacements: &'a [CommandReplacement],
-}
-
 fn capture_supported_files(
     staging: &Path,
     output: &Path,
@@ -191,7 +188,7 @@ fn capture_supported_files(
     };
     let mut captured = false;
     for relative in SUPPORTED_FILES {
-        captured |= capture_file(relative, &normalization)?;
+        captured |= normalization.capture_file(relative)?;
     }
     for relative in SUPPORTED_HOOK_DIRS {
         captured |= capture_dir(relative, staging, output)?;
@@ -204,18 +201,71 @@ fn capture_supported_files(
     Ok(())
 }
 
-fn capture_file(relative: &str, normalization: &CommandNormalization) -> Result<bool> {
-    let source = normalization.staging.join(relative);
-    if !source.is_file() {
-        return Ok(false);
+/// Rewrites staged hook commands so they point at the bundle output.
+struct CommandNormalization<'a> {
+    staging: &'a Path,
+    output: &'a Path,
+    replacements: &'a [CommandReplacement],
+}
+
+impl CommandNormalization<'_> {
+    fn capture_file(&self, relative: &str) -> Result<bool> {
+        let source = self.staging.join(relative);
+        let target = self.output.join(relative);
+        match (source.is_file(), is_json(&source)) {
+            (false, _) => return Ok(false),
+            (true, true) => self.copy_normalized_json(&source, &target)?,
+            (true, false) => fs_ops::copy_file(&source, &target)?,
+        }
+        Ok(true)
     }
-    let target = normalization.output.join(relative);
-    if source.extension().and_then(|extension| extension.to_str()) == Some("json") {
-        copy_normalized_json(&source, &target, normalization)?;
-    } else {
-        fs_ops::copy_file(&source, &target)?;
+
+    fn copy_normalized_json(&self, source: &Path, target: &Path) -> Result<()> {
+        let mut value: Value = serde_json::from_str(
+            &std::fs::read_to_string(source)
+                .with_context(|| format!("failed to read {}", source.display()))?,
+        )
+        .with_context(|| format!("failed to parse {}", source.display()))?;
+        self.normalize_commands(&mut value);
+        io::write_json(target, &value)
     }
-    Ok(true)
+
+    fn normalize_commands(&self, value: &mut Value) {
+        match value {
+            Value::Array(items) => items
+                .iter_mut()
+                .for_each(|item| self.normalize_commands(item)),
+            Value::Object(object) => self.normalize_object_commands(object),
+            _ => (),
+        }
+    }
+
+    fn normalize_object_commands(&self, object: &mut Map<String, Value>) {
+        rewrite_command(object, |command| self.normalize_command(command));
+        object
+            .values_mut()
+            .for_each(|item| self.normalize_commands(item));
+    }
+
+    fn normalize_command(&self, command: &str) -> String {
+        let command = command.replace(
+            self.staging.to_string_lossy().as_ref(),
+            self.output.to_string_lossy().as_ref(),
+        );
+        self.replacements
+            .iter()
+            .fold(command, |command, rule| rule.apply(&command))
+    }
+}
+
+fn is_json(path: &Path) -> bool {
+    path.extension().and_then(|extension| extension.to_str()) == Some("json")
+}
+
+fn rewrite_command(object: &mut Map<String, Value>, rewrite: impl FnOnce(&str) -> String) {
+    if let Some(Value::String(command)) = object.get_mut("command") {
+        *command = rewrite(command);
+    }
 }
 
 fn capture_dir(relative: &str, staging: &Path, output: &Path) -> Result<bool> {
@@ -256,55 +306,6 @@ fn copy_shell_script(entry: &DirEntry, output: &Path) -> Result<bool> {
     }
     fs_ops::copy_file(&path, &output.join(".codex").join(entry.file_name()))?;
     Ok(true)
-}
-
-fn copy_normalized_json(
-    source: &Path,
-    target: &Path,
-    normalization: &CommandNormalization,
-) -> Result<()> {
-    let mut value: Value = serde_json::from_str(
-        &std::fs::read_to_string(source)
-            .with_context(|| format!("failed to read {}", source.display()))?,
-    )
-    .with_context(|| format!("failed to parse {}", source.display()))?;
-    normalize_commands(&mut value, normalization);
-    io::write_json(target, &value)
-}
-
-fn normalize_commands(value: &mut Value, normalization: &CommandNormalization) {
-    match value {
-        Value::Array(items) => items
-            .iter_mut()
-            .for_each(|item| normalize_commands(item, normalization)),
-        Value::Object(object) => normalize_object_commands(object, normalization),
-        _ => {}
-    }
-}
-
-fn normalize_object_commands(
-    object: &mut Map<String, Value>,
-    normalization: &CommandNormalization,
-) {
-    if let Some(Value::String(command)) = object.get_mut("command") {
-        *command = normalize_command(command, normalization);
-    }
-    object
-        .values_mut()
-        .for_each(|item| normalize_commands(item, normalization));
-}
-
-fn normalize_command(command: &str, normalization: &CommandNormalization) -> String {
-    let command = command.replace(
-        normalization.staging.to_string_lossy().as_ref(),
-        normalization.output.to_string_lossy().as_ref(),
-    );
-    normalization
-        .replacements
-        .iter()
-        .fold(command, |command, replacement| {
-            command.replace(&replacement.from, &replacement.to)
-        })
 }
 
 fn write_manifest(output: &Path) -> Result<()> {
