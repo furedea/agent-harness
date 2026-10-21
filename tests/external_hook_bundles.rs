@@ -2,8 +2,13 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use serde_json::Value;
+use serde_json::{Map, Value};
 use toml_edit::DocumentMut;
+
+#[path = "external-hook-bundles/bundle_generation.rs"]
+mod bundle_generation;
+#[path = "external-hook-bundles/provider_composition.rs"]
+mod provider_composition;
 
 #[test]
 fn external_claude_hooks_are_composed_with_built_in_hooks() {
@@ -95,136 +100,6 @@ fn external_codex_hooks_are_composed_with_built_in_hooks() {
     assert!(hook_command_exists(
         &hooks,
         "$HOME/.codex/hooks/adapt.sh $HOME/.codex/hooks/guard.sh",
-    ));
-
-    remove_dir(root);
-}
-
-#[test]
-fn external_devin_hooks_are_composed_with_built_in_hooks() {
-    let root = test_root("external-devin-hooks");
-    let bundle = root.join("moshi");
-    let config_path = root.join("config.json");
-    std::fs::create_dir_all(bundle.join(".devin/hooks")).unwrap();
-    std::fs::write(bundle.join("hook_bundle.json"), r#"{"version":1}"#).unwrap();
-    std::fs::write(bundle.join(".devin/hooks/moshi-devin.sh"), "#!/bin/bash\n").unwrap();
-    let command = format!(
-        "bash '{}/.devin/hooks/moshi-devin.sh' notify",
-        bundle.display(),
-    );
-    std::fs::write(
-        bundle.join(".devin/hooks.v1.json"),
-        format!(
-            r#"{{"SessionStart":[{{"hooks":[{{"type":"command","command":"{command}"}}]}}]}}"#,
-        ),
-    )
-    .unwrap();
-
-    run_harness([
-        "generate-devin-hooks",
-        "--source",
-        complete_source_root().to_str().unwrap(),
-        "--extra-hook",
-        &format!("moshi={}", bundle.display()),
-        "--output",
-        config_path.to_str().unwrap(),
-    ]);
-
-    let config = read_json(&config_path);
-    assert!(hook_command_exists(
-        &config,
-        "bash \"$HOME/.devin/hooks/external/moshi/moshi-devin.sh\" notify",
-    ));
-    assert!(hook_command_exists(
-        &config,
-        "$HOME/.devin/hooks/hook_adapter.py shell forbidden",
-    ));
-
-    remove_dir(root);
-}
-
-#[test]
-fn external_hermes_hooks_are_composed_with_built_in_hooks() {
-    let root = test_root("external-hermes-hooks");
-    let bundle = root.join("moshi");
-    let manifest_path = root.join("hooks.json");
-    std::fs::create_dir_all(bundle.join(".hermes/hooks")).unwrap();
-    std::fs::write(bundle.join("hook_bundle.json"), r#"{"version":1}"#).unwrap();
-    std::fs::write(
-        bundle.join(".hermes/hooks/moshi-hermes.sh"),
-        "#!/bin/bash\n",
-    )
-    .unwrap();
-    let command = format!(
-        "bash '{}/.hermes/hooks/moshi-hermes.sh' notify",
-        bundle.display(),
-    );
-    std::fs::write(
-        bundle.join(".hermes/hooks.json"),
-        format!(
-            r#"{{"on_session_start":[{{"hooks":[{{"type":"command","command":"{command}"}}]}}]}}"#,
-        ),
-    )
-    .unwrap();
-
-    run_harness([
-        "generate-hermes-hooks",
-        "--source",
-        complete_source_root().to_str().unwrap(),
-        "--extra-hook",
-        &format!("moshi={}", bundle.display()),
-        "--output",
-        manifest_path.to_str().unwrap(),
-    ]);
-
-    let manifest = read_json(&manifest_path);
-    assert!(hook_command_exists(
-        &manifest,
-        "bash \"$HOME/.hermes/hooks/external/moshi/moshi-hermes.sh\" notify",
-    ));
-    assert!(hook_command_exists(
-        &manifest,
-        "$HOME/.hermes/hooks/hook_adapter.py shell forbidden",
-    ));
-
-    remove_dir(root);
-}
-
-#[test]
-fn external_pi_hooks_are_composed_with_built_in_hooks() {
-    let root = test_root("external-pi-hooks");
-    let bundle = root.join("moshi");
-    let manifest_path = root.join("hooks.json");
-    std::fs::create_dir_all(bundle.join(".pi/hooks")).unwrap();
-    std::fs::write(bundle.join("hook_bundle.json"), r#"{"version":1}"#).unwrap();
-    std::fs::write(bundle.join(".pi/hooks/moshi-pi.sh"), "#!/bin/bash\n").unwrap();
-    let command = format!("bash '{}/.pi/hooks/moshi-pi.sh' notify", bundle.display(),);
-    std::fs::write(
-        bundle.join(".pi/hooks.json"),
-        format!(
-            r#"{{"session_start":[{{"hooks":[{{"type":"command","command":"{command}"}}]}}]}}"#,
-        ),
-    )
-    .unwrap();
-
-    run_harness([
-        "generate-pi-hooks",
-        "--source",
-        complete_source_root().to_str().unwrap(),
-        "--extra-hook",
-        &format!("moshi={}", bundle.display()),
-        "--output",
-        manifest_path.to_str().unwrap(),
-    ]);
-
-    let manifest = read_json(&manifest_path);
-    assert!(hook_command_exists(
-        &manifest,
-        "bash \"$HOME/.pi/hooks/external/moshi/moshi-pi.sh\" notify",
-    ));
-    assert!(hook_command_exists(
-        &manifest,
-        "$HOME/.pi/hooks/hook_adapter.py shell forbidden",
     ));
 
     remove_dir(root);
@@ -448,110 +323,6 @@ fn external_hook_rejects_commands_for_uncaptured_files() {
     remove_dir(root);
 }
 
-#[test]
-fn generate_hook_bundle_captures_isolated_installer_output() {
-    let root = test_root("generated-hook-bundle");
-    let installer = write_fake_hook_installer(&root);
-    let spec_path = root.join("spec.json");
-    let bundle = root.join("bundle");
-    let installer_path = installer.to_str().unwrap();
-    let spec = serde_json::json!({
-        "version": 1,
-        "installers": [
-            {"executable": installer_path, "arguments": ["claude"]},
-            {"executable": installer_path, "arguments": ["codex"]}
-        ],
-        "command_replacements": [
-            {"from": installer_path, "to": "/opt/homebrew/bin/moshi-hook"}
-        ]
-    });
-    std::fs::write(&spec_path, serde_json::to_vec_pretty(&spec).unwrap()).unwrap();
-
-    run_harness([
-        "generate-hook-bundle",
-        "--spec",
-        spec_path.to_str().unwrap(),
-        "--output",
-        bundle.to_str().unwrap(),
-    ]);
-
-    assert_eq!(read_json(&bundle.join("hook_bundle.json"))["version"], 1);
-    assert!(bundle.join(".claude/hooks/captured.sh").is_file());
-    assert!(bundle.join(".codex/captured.sh").is_file());
-    assert!(!bundle.join(".config/moshi-hook/token").exists());
-    let hooks = read_json(&bundle.join(".codex/hooks.json"));
-    let mut commands = Vec::new();
-    collect_commands(&hooks, &mut commands);
-    assert!(commands.iter().any(|command| {
-        command
-            == &format!(
-                "/opt/homebrew/bin/moshi-hook codex {}/.codex/captured.sh",
-                bundle.display(),
-            )
-    }));
-
-    remove_dir(root);
-}
-
-fn write_fake_hook_installer(root: &Path) -> PathBuf {
-    use std::os::unix::fs::PermissionsExt;
-
-    let path = root.join("fake-hook-installer");
-    std::fs::write(
-        &path,
-        r##"#!/bin/bash
-set -euxCo pipefail
-cd "$(dirname "$0")"
-
-usage() {
-  cat <<'EOF'
-Usage: fake-hook-installer <claude|codex>
-EOF
-}
-
-if (( $# != 1 )); then
-  usage >&2
-  exit 2
-fi
-
-readonly provider="$1"
-
-if [[ ! -d "$HOME/.claude" || ! -d "$HOME/.codex" ]]; then
-  printf 'provider directories are missing\n' >&2
-  exit 3
-fi
-
-case "$provider" in
-  claude)
-    mkdir -p "$HOME/.claude/hooks"
-    printf '#!/bin/bash\n' > "$HOME/.claude/hooks/captured.sh"
-    printf '{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"%s claude %s/.claude/hooks/captured.sh"}]}]}}\n' \
-      "$0" "$HOME" > "$HOME/.claude/settings.json"
-    ;;
-  codex)
-    mkdir -p "$HOME/.codex"
-    printf '#!/bin/bash\n' > "$HOME/.codex/captured.sh"
-    printf '{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"%s codex %s/.codex/captured.sh"}]}]}}\n' \
-      "$0" "$HOME" > "$HOME/.codex/hooks.json"
-    printf '[features]\nhooks = true\n' > "$HOME/.codex/config.toml"
-    ;;
-  *)
-    usage >&2
-    exit 2
-    ;;
-esac
-
-mkdir -p "$HOME/.config/moshi-hook"
-printf 'fixture-token\n' >| "$HOME/.config/moshi-hook/token"
-"##,
-    )
-    .unwrap();
-    let mut permissions = std::fs::metadata(&path).unwrap().permissions();
-    permissions.set_mode(0o755);
-    std::fs::set_permissions(&path, permissions).unwrap();
-    path
-}
-
 fn write_external_hook_asset_bundle(root: &Path) -> PathBuf {
     let bundle = root.join("herdr");
     std::fs::create_dir_all(bundle.join(".claude/hooks")).unwrap();
@@ -629,21 +400,21 @@ fn json_array_contains(value: &Value, expected: &str) -> bool {
 
 fn collect_commands(value: &Value, commands: &mut Vec<String>) {
     match value {
-        Value::Array(items) => {
-            for item in items {
-                collect_commands(item, commands);
-            }
-        }
-        Value::Object(object) => {
-            if let Some(command) = object.get("command").and_then(Value::as_str) {
-                commands.push(command.to_owned());
-            }
-            for item in object.values() {
-                collect_commands(item, commands);
-            }
-        }
+        Value::Array(items) => items
+            .iter()
+            .for_each(|item| collect_commands(item, commands)),
+        Value::Object(object) => collect_object_commands(object, commands),
         _ => {}
     }
+}
+
+fn collect_object_commands(object: &Map<String, Value>, commands: &mut Vec<String>) {
+    if let Some(command) = object.get("command").and_then(Value::as_str) {
+        commands.push(command.to_owned());
+    }
+    object
+        .values()
+        .for_each(|item| collect_commands(item, commands));
 }
 
 fn hook_command_exists(value: &Value, expected: &str) -> bool {

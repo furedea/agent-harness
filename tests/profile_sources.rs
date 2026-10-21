@@ -45,13 +45,16 @@ fn automatically_discovered_source_rejects_an_unsupported_manifest_version() {
 fn copy_source(source: &std::path::Path, target: &std::path::Path) {
     std::fs::create_dir_all(target).unwrap();
     for entry in std::fs::read_dir(source).unwrap() {
-        let entry = entry.unwrap();
-        let destination = target.join(entry.file_name());
-        if entry.file_type().unwrap().is_dir() {
-            copy_source(&entry.path(), &destination);
-        } else {
-            std::fs::copy(entry.path(), destination).unwrap();
-        }
+        copy_entry(&entry.unwrap(), target);
+    }
+}
+
+fn copy_entry(entry: &std::fs::DirEntry, target: &std::path::Path) {
+    let destination = target.join(entry.file_name());
+    if entry.file_type().unwrap().is_dir() {
+        copy_source(&entry.path(), &destination);
+    } else {
+        std::fs::copy(entry.path(), destination).unwrap();
     }
 }
 
