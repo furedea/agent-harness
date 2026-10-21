@@ -107,6 +107,7 @@
           [
             cargo
             cargo-deny
+            cargo-dist
             cargo-machete
             clippy
             commitlint
@@ -118,6 +119,7 @@
             rustc
             rustfmt
             statix
+            zizmor
           ]
           # lefthook before 2.1.6 runs hooks under a pty, which agent sandboxes deny.
           ++ [ nixpkgs-unstable.legacyPackages.${system}.lefthook ];
