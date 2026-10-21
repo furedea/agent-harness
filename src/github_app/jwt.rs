@@ -40,18 +40,8 @@ impl AppPrivateKey {
             .with_context(|| format!("invalid GitHub App private key {}", path.display()))
     }
 
-    /// Parses a PKCS#1 (`RSA PRIVATE KEY`, as GitHub issues) or PKCS#8 PEM key.
     pub(crate) fn from_pem(pem: &str) -> Result<Self> {
-        let key_pair = if let Some(der) = pem_body(pem, PKCS1_LABEL)? {
-            RsaKeyPair::from_der(&der)
-        } else if let Some(der) = pem_body(pem, PKCS8_LABEL)? {
-            RsaKeyPair::from_pkcs8(&der)
-        } else {
-            bail!("expected a PEM RSA private key");
-        };
-        key_pair
-            .map(Self)
-            .map_err(|error| anyhow::anyhow!("unusable RSA private key: {error}"))
+        rsa_key_pair(pem).map(Self)
     }
 
     #[cfg(test)]
@@ -93,6 +83,18 @@ pub(crate) fn app_jwt(app_id: u64, key: &AppPrivateKey, now_unix: u64) -> Result
 
 fn encode_json(value: &impl Serialize) -> Result<String> {
     Ok(URL_SAFE_NO_PAD.encode(serde_json::to_vec(value)?))
+}
+
+/// Parses a PKCS#1 (`RSA PRIVATE KEY`, as GitHub issues) or PKCS#8 PEM key.
+fn rsa_key_pair(pem: &str) -> Result<RsaKeyPair> {
+    let key_pair = if let Some(der) = pem_body(pem, PKCS1_LABEL)? {
+        RsaKeyPair::from_der(&der)
+    } else if let Some(der) = pem_body(pem, PKCS8_LABEL)? {
+        RsaKeyPair::from_pkcs8(&der)
+    } else {
+        bail!("expected a PEM RSA private key");
+    };
+    key_pair.map_err(|error| anyhow::anyhow!("unusable RSA private key: {error}"))
 }
 
 fn pem_body(pem: &str, label: &str) -> Result<Option<Vec<u8>>> {

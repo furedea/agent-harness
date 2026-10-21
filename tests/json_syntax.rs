@@ -45,12 +45,15 @@ fn collect_json_files(directory: &Path, paths: &mut Vec<PathBuf>) {
     for entry in std::fs::read_dir(directory)
         .unwrap_or_else(|error| panic!("failed to read directory {}: {error}", directory.display()))
     {
-        let path = path_from_entry(entry, directory);
-        if path.is_dir() {
-            collect_json_files(&path, paths);
-        } else if is_json_file(&path) {
-            paths.push(path);
-        }
+        collect_json_path(path_from_entry(entry, directory), paths);
+    }
+}
+
+fn collect_json_path(path: PathBuf, paths: &mut Vec<PathBuf>) {
+    if path.is_dir() {
+        collect_json_files(&path, paths);
+    } else if is_json_file(&path) {
+        paths.push(path);
     }
 }
 

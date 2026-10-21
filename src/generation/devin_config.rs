@@ -37,13 +37,22 @@ fn merge_permissions(existing: &mut Map<String, Value>, generated: Value) -> Res
     let permissions = object_mut(permissions, "existing Devin permissions")?;
 
     for (key, value) in generated {
-        let Value::Array(generated_entries) = value else {
-            bail!("generated Devin permissions.{key} must be a JSON array");
-        };
-        let mut entries = user_owned_entries(permissions.get(&key))?;
-        entries.extend(generated_entries);
-        permissions.insert(key, Value::Array(entries));
+        merge_permission_entries(permissions, key, value)?;
     }
+    Ok(())
+}
+
+fn merge_permission_entries(
+    permissions: &mut Map<String, Value>,
+    key: String,
+    value: Value,
+) -> Result<()> {
+    let Value::Array(generated_entries) = value else {
+        bail!("generated Devin permissions.{key} must be a JSON array");
+    };
+    let mut entries = user_owned_entries(permissions.get(&key))?;
+    entries.extend(generated_entries);
+    permissions.insert(key, Value::Array(entries));
     Ok(())
 }
 
@@ -244,9 +253,7 @@ mod tests {
     }
 
     fn write_file(path: &Path, content: &str) -> Result<()> {
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
+        path.parent().map(std::fs::create_dir_all).transpose()?;
         std::fs::write(path, content)?;
         Ok(())
     }

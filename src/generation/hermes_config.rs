@@ -25,16 +25,20 @@ fn merge_managed_config(existing: &mut Value, generated: Value) -> Result<()> {
         bail!("generated Hermes config root must be a mapping");
     };
     for (key, value) in generated {
-        if key.as_str() == Some("plugins") {
-            let entry = existing
-                .entry(key)
-                .or_insert_with(|| Value::Mapping(Mapping::new()));
-            merge_plugins(entry, value)?;
-        } else {
-            existing.insert(key, value);
-        }
+        merge_root_entry(existing, key, value)?;
     }
     Ok(())
+}
+
+fn merge_root_entry(existing: &mut Mapping, key: Value, value: Value) -> Result<()> {
+    if key.as_str() != Some("plugins") {
+        existing.insert(key, value);
+        return Ok(());
+    }
+    let entry = existing
+        .entry(key)
+        .or_insert_with(|| Value::Mapping(Mapping::new()));
+    merge_plugins(entry, value)
 }
 
 fn merge_plugins(existing: &mut Value, generated: Value) -> Result<()> {
@@ -43,16 +47,20 @@ fn merge_plugins(existing: &mut Value, generated: Value) -> Result<()> {
         bail!("generated plugins section must be a mapping");
     };
     for (key, value) in generated {
-        if key.as_str() == Some("enabled") {
-            let entry = existing
-                .entry(key)
-                .or_insert_with(|| Value::Sequence(Vec::new()));
-            merge_enabled(entry, value)?;
-        } else {
-            existing.insert(key, value);
-        }
+        merge_plugin_entry(existing, key, value)?;
     }
     Ok(())
+}
+
+fn merge_plugin_entry(existing: &mut Mapping, key: Value, value: Value) -> Result<()> {
+    if key.as_str() != Some("enabled") {
+        existing.insert(key, value);
+        return Ok(());
+    }
+    let entry = existing
+        .entry(key)
+        .or_insert_with(|| Value::Sequence(Vec::new()));
+    merge_enabled(entry, value)
 }
 
 fn merge_enabled(existing: &mut Value, generated: Value) -> Result<()> {
@@ -63,11 +71,15 @@ fn merge_enabled(existing: &mut Value, generated: Value) -> Result<()> {
         bail!("generated plugins.enabled must be a sequence");
     };
     for item in generated {
-        if !existing.contains(&item) {
-            existing.push(item);
-        }
+        push_unique(existing, item);
     }
     Ok(())
+}
+
+fn push_unique(items: &mut Vec<Value>, item: Value) {
+    if !items.contains(&item) {
+        items.push(item);
+    }
 }
 
 fn mapping_mut<'a>(value: &'a mut Value, name: &str) -> Result<&'a mut Mapping> {
@@ -161,9 +173,7 @@ mod tests {
     }
 
     fn write_file(path: &Path, content: &str) -> Result<()> {
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
+        path.parent().map(std::fs::create_dir_all).transpose()?;
         std::fs::write(path, content)?;
         Ok(())
     }

@@ -1,5 +1,7 @@
 use std::fs::{File, OpenOptions};
 use std::io::Write;
+#[cfg(unix)]
+use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -17,18 +19,7 @@ pub(crate) fn copy_dir(source: &Path, target: &Path) -> Result<()> {
         let relative = file
             .strip_prefix(source)
             .with_context(|| format!("failed to strip prefix {}", source.display()))?;
-        let destination = target.join(relative);
-        if let Some(parent) = destination.parent() {
-            std::fs::create_dir_all(parent)
-                .with_context(|| format!("failed to create directory {}", parent.display()))?;
-        }
-        std::fs::copy(&file, &destination).with_context(|| {
-            format!(
-                "failed to copy {} to {}",
-                file.display(),
-                destination.display(),
-            )
-        })?;
+        copy_file(&file, &target.join(relative))?;
     }
 
     Ok(())
@@ -71,36 +62,12 @@ struct TemporaryFile {
 
 impl TemporaryFile {
     fn create(target: &Path) -> Result<Self> {
-        static NEXT_ID: AtomicU64 = AtomicU64::new(0);
-        let name = target.file_name().context("output path must name a file")?;
-        loop {
-            let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-            let mut temporary_name = name.to_os_string();
-            temporary_name.push(format!(".{}.{id}.tmp", std::process::id()));
-            let path = target.with_file_name(temporary_name);
-            let mut options = OpenOptions::new();
-            options.write(true).create_new(true);
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::OpenOptionsExt;
-                options.mode(0o600);
-            }
-            match options.open(&path) {
-                Ok(file) => {
-                    return Ok(Self {
-                        path,
-                        file,
-                        replaced: false,
-                    });
-                }
-                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
-                Err(error) => {
-                    return Err(error).with_context(|| {
-                        format!("failed to create temporary file for {}", target.display())
-                    });
-                }
-            }
-        }
+        let (path, file) = create_temporary_file(target)?;
+        Ok(Self {
+            path,
+            file,
+            replaced: false,
+        })
     }
 
     fn replace(mut self, target: &Path) -> Result<()> {
@@ -113,9 +80,34 @@ impl TemporaryFile {
 
 impl Drop for TemporaryFile {
     fn drop(&mut self) {
-        if !self.replaced {
-            let _ = std::fs::remove_file(&self.path);
+        remove_unreplaced_temporary_file(self);
+    }
+}
+
+fn create_temporary_file(target: &Path) -> Result<(PathBuf, File)> {
+    static NEXT_ID: AtomicU64 = AtomicU64::new(0);
+    let name = target.file_name().context("output path must name a file")?;
+    let mut options = OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    options.mode(0o600);
+    let failure = format!("failed to create temporary file for {}", target.display());
+    loop {
+        let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
+        let mut temporary_name = name.to_os_string();
+        temporary_name.push(format!(".{}.{id}.tmp", std::process::id()));
+        let path = target.with_file_name(temporary_name);
+        match options.open(&path) {
+            Ok(file) => return Ok((path, file)),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => (),
+            Err(error) => return Err(error).context(failure),
         }
+    }
+}
+
+fn remove_unreplaced_temporary_file(temporary: &TemporaryFile) {
+    if !temporary.replaced {
+        let _ = std::fs::remove_file(&temporary.path);
     }
 }
 
@@ -125,27 +117,7 @@ pub(crate) struct TemporaryDirectory {
 
 impl TemporaryDirectory {
     pub(crate) fn create() -> Result<Self> {
-        static NEXT_ID: AtomicU64 = AtomicU64::new(0);
-        loop {
-            let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-            let path = std::env::temp_dir()
-                .join(format!("agent-harness-staging-{}-{id}", std::process::id(),));
-            let mut builder = std::fs::DirBuilder::new();
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::DirBuilderExt;
-                builder.mode(0o700);
-            }
-            match builder.create(&path) {
-                Ok(()) => return Ok(Self { path }),
-                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
-                Err(error) => {
-                    return Err(error).with_context(|| {
-                        format!("failed to create staging directory {}", path.display())
-                    });
-                }
-            }
-        }
+        create_staging_directory().map(|path| Self { path })
     }
 
     pub(crate) fn path(&self) -> &Path {
@@ -156,6 +128,24 @@ impl TemporaryDirectory {
 impl Drop for TemporaryDirectory {
     fn drop(&mut self) {
         let _ = std::fs::remove_dir_all(&self.path);
+    }
+}
+
+fn create_staging_directory() -> Result<PathBuf> {
+    static NEXT_ID: AtomicU64 = AtomicU64::new(0);
+    let mut builder = std::fs::DirBuilder::new();
+    #[cfg(unix)]
+    builder.mode(0o700);
+    loop {
+        let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
+        let path =
+            std::env::temp_dir().join(format!("agent-harness-staging-{}-{id}", std::process::id()));
+        let failure = format!("failed to create staging directory {}", path.display());
+        match builder.create(&path) {
+            Ok(()) => return Ok(path),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => (),
+            Err(error) => return Err(error).context(failure),
+        }
     }
 }
 
@@ -178,18 +168,26 @@ fn collect_regular_files(dir: &Path, files: &mut Vec<PathBuf>) -> Result<()> {
         let file_type = entry
             .file_type()
             .with_context(|| format!("failed to inspect {}", entry.path().display()))?;
-        let path = entry.path();
-
-        if file_type.is_symlink() {
-            continue;
-        }
-        if file_type.is_dir() {
-            collect_regular_files(&path, files)?;
-        } else if file_type.is_file() {
-            files.push(path);
-        }
+        collect_entry(entry.path(), file_type, files)?;
     }
 
+    Ok(())
+}
+
+fn collect_entry(
+    path: PathBuf,
+    file_type: std::fs::FileType,
+    files: &mut Vec<PathBuf>,
+) -> Result<()> {
+    if file_type.is_symlink() {
+        return Ok(());
+    }
+    if file_type.is_dir() {
+        return collect_regular_files(&path, files);
+    }
+    if file_type.is_file() {
+        files.push(path);
+    }
     Ok(())
 }
 

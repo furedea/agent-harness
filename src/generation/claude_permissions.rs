@@ -41,9 +41,9 @@ impl PermissionRules {
     /// declared in more than one list is kept only in its most restrictive
     /// list so merging never widens a permission. Other keys are untouched.
     pub(crate) fn write_into(self, permissions: &mut Map<String, Value>) {
-        let deny = unique_rules(self.deny, &[]);
-        let ask = unique_rules(self.ask, &[&deny]);
-        let allow = unique_rules(self.allow, &[&deny, &ask]);
+        let deny = unique_rules(&self.deny, &[]);
+        let ask = unique_rules(&self.ask, &[&deny]);
+        let allow = unique_rules(&self.allow, &[&deny, &ask]);
 
         permissions.insert("allow".to_owned(), rule_array(allow));
         permissions.insert("ask".to_owned(), rule_array(ask));
@@ -68,18 +68,16 @@ fn rule_list(permissions: &Map<String, Value>, key: &str) -> Result<Vec<String>>
         .collect()
 }
 
-fn unique_rules(rules: Vec<String>, stricter_lists: &[&[String]]) -> Vec<String> {
+fn unique_rules<'a>(rules: &'a [String], stricter_lists: &[&'a [String]]) -> Vec<String> {
     let mut seen: HashSet<&str> = stricter_lists
         .iter()
         .flat_map(|list| list.iter().map(String::as_str))
         .collect();
-    let mut unique = Vec::new();
-    for rule in &rules {
-        if seen.insert(rule.as_str()) {
-            unique.push(rule.clone());
-        }
-    }
-    unique
+    rules
+        .iter()
+        .filter(|rule| seen.insert(rule.as_str()))
+        .cloned()
+        .collect()
 }
 
 fn rule_array(rules: Vec<String>) -> Value {

@@ -14,10 +14,7 @@ impl RuntimeRoot {
     }
 
     pub(crate) fn directory(path: PathBuf) -> Result<Self> {
-        if !path.is_absolute() {
-            bail!("runtime root must be an absolute path: {}", path.display());
-        }
-        Ok(Self::Directory(path))
+        Ok(Self::Directory(absolute_path(path)?))
     }
 
     pub(crate) fn path(&self, relative: &Path) -> String {
@@ -32,20 +29,31 @@ impl RuntimeRoot {
     }
 
     pub(crate) fn relocate_command(&self, command: &str) -> String {
-        let Self::Directory(root) = self else {
-            return command.to_owned();
-        };
-        if !command.contains("$HOME/.claude/") && !command.contains("$HOME/.codex/") {
-            return command.to_owned();
+        match self {
+            Self::Home => command.to_owned(),
+            Self::Directory(root) => relocate_command_under(root, command),
         }
-
-        let root = root.to_string_lossy();
-        let relocated = replace_home_references(command, &root);
-        format!(
-            "export AGENT_HARNESS_ROOT={}; {relocated}",
-            shell_quote(&root)
-        )
     }
+}
+
+fn absolute_path(path: PathBuf) -> Result<PathBuf> {
+    if !path.is_absolute() {
+        bail!("runtime root must be an absolute path: {}", path.display());
+    }
+    Ok(path)
+}
+
+fn relocate_command_under(root: &Path, command: &str) -> String {
+    if !command.contains("$HOME/.claude/") && !command.contains("$HOME/.codex/") {
+        return command.to_owned();
+    }
+
+    let root = root.to_string_lossy();
+    let relocated = replace_home_references(command, &root);
+    format!(
+        "export AGENT_HARNESS_ROOT={}; {relocated}",
+        shell_quote(&root)
+    )
 }
 
 fn replace_home_references(command: &str, root: &str) -> String {

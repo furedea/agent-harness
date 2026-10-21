@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, ensure};
 use serde::Deserialize;
 
 use crate::layout::SourceLayout;
@@ -24,20 +24,26 @@ enum SecretPathAccess {
     Write,
 }
 
-pub(crate) fn claude_deny_permissions(source: &Path) -> Result<Vec<String>> {
-    let policy = read_policy(source)?;
-    let mut permissions = Vec::new();
-
-    for rule in policy.rules {
-        for access in rule.access {
-            permissions.push(match access {
-                SecretPathAccess::Read => format!("Read({})", rule.pattern),
-                SecretPathAccess::Write => format!("Edit({})", rule.pattern),
-            });
+impl SecretPathAccess {
+    fn claude_permission(self, pattern: &str) -> String {
+        match self {
+            Self::Read => format!("Read({pattern})"),
+            Self::Write => format!("Edit({pattern})"),
         }
     }
+}
 
-    Ok(permissions)
+pub(crate) fn claude_deny_permissions(source: &Path) -> Result<Vec<String>> {
+    let policy = read_policy(source)?;
+    Ok(policy
+        .rules
+        .iter()
+        .flat_map(|rule| {
+            rule.access
+                .iter()
+                .map(|access| access.claude_permission(&rule.pattern))
+        })
+        .collect())
 }
 
 fn read_policy(source: &Path) -> Result<SecretPathPolicy> {
@@ -51,17 +57,21 @@ fn read_policy(source: &Path) -> Result<SecretPathPolicy> {
 }
 
 fn validate_policy(policy: &SecretPathPolicy) -> Result<()> {
-    if policy.version != 1 {
-        bail!("unsupported secret path policy version: {}", policy.version);
-    }
+    ensure!(
+        policy.version == 1,
+        "unsupported secret path policy version: {}",
+        policy.version
+    );
 
     for rule in &policy.rules {
-        if rule.pattern.trim().is_empty() {
-            bail!("secret path policy patterns must not be empty");
-        }
-        if rule.access.is_empty() {
-            bail!("secret path policy access list must not be empty");
-        }
+        ensure!(
+            !rule.pattern.trim().is_empty(),
+            "secret path policy patterns must not be empty"
+        );
+        ensure!(
+            !rule.access.is_empty(),
+            "secret path policy access list must not be empty"
+        );
     }
 
     Ok(())
@@ -126,9 +136,7 @@ mod tests {
 
     fn write_policy(source: &Path, content: &str) -> Result<()> {
         let path = SourceLayout::new(source).secret_path_policy();
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
+        path.parent().map(std::fs::create_dir_all).transpose()?;
         std::fs::write(path, content)?;
         Ok(())
     }

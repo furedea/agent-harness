@@ -76,6 +76,12 @@ struct HostEntry {
     oauth_token: String,
 }
 
+/// An installation token together with the App installation that issued it.
+pub(crate) struct MintedToken {
+    pub(crate) token: InstallationToken,
+    pub(crate) issuer: TokenIssuer,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct RefreshFailure {
     pub(crate) failed_at_unix: u64,
@@ -91,17 +97,13 @@ impl TokenFiles {
 
     /// Writes the token where gh and `gh auth git-credential` read it and records its expiry,
     /// issuer, and fingerprint.
-    pub(crate) fn write_token(
-        &self,
-        token: &InstallationToken,
-        issuer: TokenIssuer,
-        now_unix: u64,
-    ) -> Result<()> {
+    pub(crate) fn write_token(&self, minted: &MintedToken, now_unix: u64) -> Result<()> {
+        let MintedToken { token, issuer } = minted;
         let expiry = TokenExpiry {
             refreshed_at_unix: now_unix,
             expires_at: token.expires_at.clone(),
             expires_at_unix: timestamp::parse_utc(&token.expires_at)?,
-            issuer: Some(issuer),
+            issuer: Some(*issuer),
             token_sha256: Some(token_sha256(&token.token)),
         };
         self.create_config_dir()?;
@@ -126,37 +128,16 @@ impl TokenFiles {
 
     pub(crate) fn status(&self) -> Result<Option<RefreshStatus>> {
         let path = self.path(STATUS_FILE);
-        match std::fs::read_to_string(&path) {
-            Ok(content) => serde_json::from_str(&content)
-                .map(Some)
-                .with_context(|| format!("failed to parse {}", path.display())),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
-            Err(error) => Err(error).with_context(|| format!("failed to read {}", path.display())),
-        }
+        read_if_exists(&path)?
+            .map(|content| serde_json::from_str(&content))
+            .transpose()
+            .with_context(|| format!("failed to parse {}", path.display()))
     }
 
     /// Compares the token in `hosts.yml` with the recorded fingerprint, failing when the file
     /// cannot be read or parsed.
     pub(crate) fn hosts_token(&self, recorded: &TokenExpiry) -> Result<HostsToken> {
-        let path = self.hosts_path();
-        let content = match std::fs::read_to_string(&path) {
-            Ok(content) => content,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                return Ok(HostsToken::Missing);
-            }
-            Err(error) => {
-                return Err(error).with_context(|| format!("failed to read {}", path.display()));
-            }
-        };
-        let hosts: Hosts = serde_norway::from_str(&content)
-            .with_context(|| format!("failed to parse {}", path.display()))?;
-        Ok(match &recorded.token_sha256 {
-            None => HostsToken::Unverifiable,
-            Some(sha256) if *sha256 == token_sha256(&hosts.github.oauth_token) => {
-                HostsToken::Recorded
-            }
-            Some(_) => HostsToken::Different,
-        })
+        read_hosts_token(&self.hosts_path(), recorded.token_sha256.as_deref())
     }
 
     pub(crate) fn hosts_path(&self) -> PathBuf {
@@ -169,22 +150,11 @@ impl TokenFiles {
     }
 
     fn write_config_once(&self) -> Result<()> {
-        let path = self.path(CONFIG_FILE);
-        if path.exists() {
-            return Ok(());
-        }
-        fs_ops::write_file_atomically(&path, CONFIG_CONTENT.as_bytes())
+        write_file_once(&self.path(CONFIG_FILE), CONFIG_CONTENT.as_bytes())
     }
 
     fn create_config_dir(&self) -> Result<()> {
-        let mut builder = std::fs::DirBuilder::new();
-        builder.recursive(true);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::DirBuilderExt;
-            builder.mode(0o700);
-        }
-        builder
+        private_dir_builder()
             .create(&self.config_dir)
             .with_context(|| format!("failed to create directory {}", self.config_dir.display()))
     }
@@ -194,12 +164,56 @@ impl TokenFiles {
     }
 }
 
+fn read_if_exists(path: &Path) -> Result<Option<String>> {
+    match std::fs::read_to_string(path) {
+        Ok(content) => Ok(Some(content)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error).with_context(|| format!("failed to read {}", path.display())),
+    }
+}
+
+fn write_file_once(path: &Path, content: &[u8]) -> Result<()> {
+    if path.exists() {
+        return Ok(());
+    }
+    fs_ops::write_file_atomically(path, content)
+}
+
+fn private_dir_builder() -> std::fs::DirBuilder {
+    let mut builder = std::fs::DirBuilder::new();
+    builder.recursive(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        builder.mode(0o700);
+    }
+    builder
+}
+
+fn read_hosts_token(path: &Path, recorded_sha256: Option<&str>) -> Result<HostsToken> {
+    let Some(content) = read_if_exists(path)? else {
+        return Ok(HostsToken::Missing);
+    };
+    let hosts: Hosts = serde_norway::from_str(&content)
+        .with_context(|| format!("failed to parse {}", path.display()))?;
+    let hosts_sha256 = token_sha256(&hosts.github.oauth_token);
+    Ok(match recorded_sha256 {
+        None => HostsToken::Unverifiable,
+        Some(sha256) if sha256 == hosts_sha256 => HostsToken::Recorded,
+        Some(_) => HostsToken::Different,
+    })
+}
+
 fn token_sha256(token: &str) -> String {
+    use std::fmt::Write;
+
     ring::digest::digest(&ring::digest::SHA256, token.as_bytes())
         .as_ref()
         .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
+        .fold(String::new(), |mut hex, byte| {
+            let _ = write!(hex, "{byte:02x}");
+            hex
+        })
 }
 
 fn hosts_yaml(token: &str) -> String {
@@ -222,11 +236,7 @@ mod tests {
         let config_dir = dir.path().join("gh");
         let files = TokenFiles::new(&config_dir);
 
-        files.write_token(
-            &token("ghs_first", "2026-10-15T13:00:00Z"),
-            ISSUER,
-            1_792_069_000,
-        )?;
+        files.write_token(&minted("ghs_first", "2026-10-15T13:00:00Z"), 1_792_069_000)?;
 
         let hosts: Value =
             serde_norway::from_str(&std::fs::read_to_string(config_dir.join("hosts.yml"))?)?;
@@ -260,19 +270,14 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn write_token_keeps_the_token_private() -> Result<()> {
-        use std::os::unix::fs::PermissionsExt;
-
         let dir = TestDir::new("token-mode")?;
         let config_dir = dir.path().join("gh");
         let files = TokenFiles::new(&config_dir);
 
-        files.write_token(&token("ghs_first", "2026-10-15T13:00:00Z"), ISSUER, 0)?;
+        files.write_token(&minted("ghs_first", "2026-10-15T13:00:00Z"), 0)?;
 
-        let mode = |path: &Path| -> Result<u32> {
-            Ok(std::fs::metadata(path)?.permissions().mode() & 0o777)
-        };
-        assert_eq!(mode(&config_dir.join("hosts.yml"))?, 0o600);
-        assert_eq!(mode(&config_dir)?, 0o700);
+        assert_eq!(permission_bits(&config_dir.join("hosts.yml"))?, 0o600);
+        assert_eq!(permission_bits(&config_dir)?, 0o700);
         Ok(())
     }
 
@@ -286,9 +291,9 @@ mod tests {
             "version: \"1\"\neditor: vim\n",
         )?;
         let files = TokenFiles::new(&config_dir);
-        files.write_token(&token("ghs_first", "2026-10-15T13:00:00Z"), ISSUER, 0)?;
+        files.write_token(&minted("ghs_first", "2026-10-15T13:00:00Z"), 0)?;
 
-        files.write_token(&token("ghs_second", "2026-10-15T14:00:00Z"), ISSUER, 0)?;
+        files.write_token(&minted("ghs_second", "2026-10-15T14:00:00Z"), 0)?;
 
         let hosts = std::fs::read_to_string(config_dir.join("hosts.yml"))?;
         assert!(hosts.contains("ghs_second"));
@@ -305,7 +310,7 @@ mod tests {
         let dir = TestDir::new("record-failure")?;
         let config_dir = dir.path().join("gh");
         let files = TokenFiles::new(&config_dir);
-        files.write_token(&token("ghs_first", "2026-10-15T13:00:00Z"), ISSUER, 10)?;
+        files.write_token(&minted("ghs_first", "2026-10-15T13:00:00Z"), 10)?;
 
         files.record_failure("network down", 20)?;
 
@@ -327,7 +332,7 @@ mod tests {
         let dir = TestDir::new("hosts-token")?;
         let config_dir = dir.path().join("gh");
         let files = TokenFiles::new(&config_dir);
-        files.write_token(&token("ghs_first", "2026-10-15T13:00:00Z"), ISSUER, 0)?;
+        files.write_token(&minted("ghs_first", "2026-10-15T13:00:00Z"), 0)?;
         let recorded = files.status()?.and_then(|status| status.token).unwrap();
 
         assert_eq!(files.hosts_token(&recorded)?, HostsToken::Recorded);
@@ -359,10 +364,20 @@ mod tests {
         selection: InstallationSelection::Configured,
     };
 
-    fn token(token: &str, expires_at: &str) -> InstallationToken {
-        InstallationToken {
-            token: token.to_owned(),
-            expires_at: expires_at.to_owned(),
+    fn minted(token: &str, expires_at: &str) -> MintedToken {
+        MintedToken {
+            token: InstallationToken {
+                token: token.to_owned(),
+                expires_at: expires_at.to_owned(),
+            },
+            issuer: ISSUER,
         }
+    }
+
+    #[cfg(unix)]
+    fn permission_bits(path: &Path) -> Result<u32> {
+        use std::os::unix::fs::PermissionsExt;
+
+        Ok(std::fs::metadata(path)?.permissions().mode() & 0o777)
     }
 }

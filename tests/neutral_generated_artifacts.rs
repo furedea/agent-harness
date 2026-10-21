@@ -6,6 +6,15 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde_json::Value;
 use toml_edit::DocumentMut;
 
+#[path = "neutral-generated-artifacts/config_sync.rs"]
+mod config_sync;
+#[path = "neutral-generated-artifacts/protection.rs"]
+mod protection;
+#[path = "neutral-generated-artifacts/provider_hooks.rs"]
+mod provider_hooks;
+#[path = "neutral-generated-artifacts/skills.rs"]
+mod skills;
+
 #[test]
 fn packaged_source_defaults_to_minimal() {
     let root = test_root("packaged-minimal");
@@ -57,34 +66,7 @@ fn complete_source_installs_provider_outputs() {
     assert!(prefix.join(".codex/hooks/adapt.sh").is_file());
     assert!(prefix.join(".codex/hooks/guard.sh").is_file());
     assert!(prefix.join(".devin/hooks/hook_adapter.py").is_file());
-    let devin_config = read_json(&prefix.join(".config/devin/config.json"));
-    assert_eq!(
-        devin_config["hooks"]["PreToolUse"][0]["matcher"].as_str(),
-        Some("exec"),
-    );
-    assert!(prefix.join(".hermes/hooks/hook_adapter.py").is_file());
-    assert!(
-        prefix
-            .join(".hermes/plugins/agent-harness-hooks/plugin.yaml")
-            .is_file()
-    );
-    assert!(
-        prefix
-            .join(".hermes/plugins/agent-harness-hooks/__init__.py")
-            .is_file()
-    );
-    let hermes_manifest = read_json(&prefix.join(".hermes/hooks.json"));
-    assert_eq!(
-        hermes_manifest["hooks"]["pre_tool_call"][0]["matcher"].as_str(),
-        Some("^(terminal|exec_command)$"),
-    );
-    assert!(prefix.join(".pi/hooks/hook_adapter.py").is_file());
-    assert!(prefix.join(".pi/agent/extensions/hook_bridge.ts").is_file());
-    let pi_manifest = read_json(&prefix.join(".pi/agent/hooks.json"));
-    assert_eq!(
-        pi_manifest["hooks"]["tool_call"][0]["matcher"].as_str(),
-        Some("^bash$"),
-    );
+    assert_runtime_hook_outputs(&prefix);
     assert_contains(
         &prefix.join(".claude/skills/example-skill/SKILL.md"),
         "disable-model-invocation: true",
@@ -280,286 +262,6 @@ fn installed_claude_settings_keep_source_ask_rules_after_sync() {
 }
 
 #[test]
-fn complete_source_generates_devin_hooks() {
-    let root = test_root("devin-hooks");
-    let config_path = root.join("config.json");
-
-    run_harness([
-        "generate-devin-hooks",
-        "--source",
-        complete_source_root().to_str().unwrap(),
-        "--output",
-        config_path.to_str().unwrap(),
-    ]);
-
-    let config = read_json(&config_path);
-    assert_eq!(
-        config["hooks"]["PreToolUse"][0]["hooks"][0]["command"].as_str(),
-        Some("$HOME/.devin/hooks/hook_adapter.py shell forbidden"),
-    );
-
-    remove_dir(root);
-}
-
-#[test]
-fn complete_source_generates_hermes_hooks() {
-    let root = test_root("hermes-hooks");
-    let manifest_path = root.join("hooks.json");
-
-    run_harness([
-        "generate-hermes-hooks",
-        "--source",
-        complete_source_root().to_str().unwrap(),
-        "--output",
-        manifest_path.to_str().unwrap(),
-    ]);
-
-    let manifest = read_json(&manifest_path);
-    assert_eq!(
-        manifest["hooks"]["pre_tool_call"][0]["hooks"][0]["command"].as_str(),
-        Some("$HOME/.hermes/hooks/hook_adapter.py shell forbidden"),
-    );
-
-    remove_dir(root);
-}
-
-#[test]
-fn complete_source_generates_pi_hooks() {
-    let root = test_root("pi-hooks");
-    let manifest_path = root.join("hooks.json");
-
-    run_harness([
-        "generate-pi-hooks",
-        "--source",
-        complete_source_root().to_str().unwrap(),
-        "--output",
-        manifest_path.to_str().unwrap(),
-    ]);
-
-    let manifest = read_json(&manifest_path);
-    assert_eq!(
-        manifest["hooks"]["tool_call"][0]["hooks"][0]["command"].as_str(),
-        Some("$HOME/.pi/hooks/hook_adapter.py shell forbidden"),
-    );
-
-    remove_dir(root);
-}
-
-#[test]
-fn hermes_config_sync_unions_plugins_enabled() {
-    let root = test_root("hermes-sync");
-    let source_path = root.join("managed.yaml");
-    let target_path = root.join("config.yaml");
-
-    std::fs::write(
-        &source_path,
-        "plugins:\n  enabled:\n    - agent-harness-hooks\n",
-    )
-    .unwrap();
-    std::fs::write(
-        &target_path,
-        "model:\n  provider: openai-codex\nplugins:\n  enabled:\n    - moshi-hooks\n",
-    )
-    .unwrap();
-
-    run_harness([
-        "sync-hermes-config",
-        "--source",
-        source_path.to_str().unwrap(),
-        "--target",
-        target_path.to_str().unwrap(),
-    ]);
-
-    let content = std::fs::read_to_string(&target_path).unwrap();
-    assert!(content.contains("model:"));
-    assert!(content.contains("provider: openai-codex"));
-    assert!(content.contains("- moshi-hooks"));
-    assert!(content.contains("- agent-harness-hooks"));
-
-    remove_dir(root);
-}
-
-#[test]
-fn hermes_config_sync_dedupes_and_creates_target() {
-    let root = test_root("hermes-sync-create");
-    let source_path = root.join("managed.yaml");
-    let target_path = root.join("nested/config.yaml");
-
-    std::fs::write(
-        &source_path,
-        "plugins:\n  enabled:\n    - agent-harness-hooks\n",
-    )
-    .unwrap();
-
-    run_harness([
-        "sync-hermes-config",
-        "--source",
-        source_path.to_str().unwrap(),
-        "--target",
-        target_path.to_str().unwrap(),
-    ]);
-
-    let content = std::fs::read_to_string(&target_path).unwrap();
-    assert!(content.contains("- agent-harness-hooks"));
-
-    std::fs::write(
-        &target_path,
-        "plugins:\n  enabled:\n    - agent-harness-hooks\n",
-    )
-    .unwrap();
-    run_harness([
-        "sync-hermes-config",
-        "--source",
-        source_path.to_str().unwrap(),
-        "--target",
-        target_path.to_str().unwrap(),
-    ]);
-    let content = std::fs::read_to_string(&target_path).unwrap();
-    assert_eq!(content.matches("agent-harness-hooks").count(), 1);
-
-    remove_dir(root);
-}
-
-#[test]
-fn devin_config_sync_preserves_user_owned_state() {
-    let root = test_root("devin-sync");
-    let source_path = root.join("source.json");
-    let target_path = root.join("target.json");
-
-    std::fs::write(
-        &source_path,
-        r#"{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"generated"}]}]}}"#,
-    )
-    .unwrap();
-    std::fs::write(
-        &target_path,
-        r#"{
-  "version": 1,
-  "devin": {"org_id": "org-123"},
-  "agent": {"model": "swe-2-max"},
-  "hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": "stale"}]}]}
-}
-"#,
-    )
-    .unwrap();
-
-    run_harness([
-        "sync-devin-config",
-        "--source",
-        source_path.to_str().unwrap(),
-        "--target",
-        target_path.to_str().unwrap(),
-    ]);
-
-    let target = read_json(&target_path);
-    assert_eq!(target["version"], 1);
-    assert_eq!(target["devin"]["org_id"], "org-123");
-    assert_eq!(target["agent"]["model"], "swe-2-max");
-    assert_eq!(
-        target["hooks"]["SessionStart"][0]["hooks"][0]["command"].as_str(),
-        Some("generated"),
-    );
-
-    remove_dir(root);
-}
-
-#[test]
-fn complete_source_keeps_protection_layers_aligned() {
-    let root = test_root("protected-paths");
-    let prefix = root.join("home");
-
-    run_harness([
-        "install",
-        "--source",
-        complete_source_root().to_str().unwrap(),
-        "--prefix",
-        prefix.to_str().unwrap(),
-    ]);
-
-    let policy = read_json(&prefix.join(".claude/hooks/rules/protected_paths.json"));
-    let settings = read_json(&prefix.join(".claude/settings.json"));
-    let policy_paths = string_set(&policy["paths"]);
-    let deny_write = string_set(&settings["sandbox"]["filesystem"]["denyWrite"]);
-
-    assert_eq!(policy["version"], 1);
-    assert_eq!(policy_paths, deny_write);
-    assert!(policy_paths.contains("~/.claude/hooks/guard.sh"));
-    assert!(policy_paths.contains("~/.codex/hooks/adapt.sh"));
-    assert!(!policy_paths.iter().any(|path| path.starts_with('/')));
-
-    remove_dir(root);
-}
-
-#[test]
-fn complete_source_protects_every_rendered_provider_file_and_sync_target() {
-    let root = test_root("protected-rendered-files");
-    let prefix = root.join("home");
-
-    run_harness([
-        "install",
-        "--source",
-        complete_source_root().to_str().unwrap(),
-        "--prefix",
-        prefix.to_str().unwrap(),
-    ]);
-
-    let policy_paths =
-        string_set(&read_json(&prefix.join(".claude/hooks/rules/protected_paths.json"))["paths"]);
-    let settings = read_json(&prefix.join(".claude/settings.json"));
-    let deny_edit = string_set(&settings["permissions"]["deny"]);
-    let codex_config = read_toml(&prefix.join(".codex/config.toml"));
-    let guarded = &codex_config["permissions"]["guarded"]["filesystem"];
-    let mut expected = rendered_harness_files(&prefix);
-    expected.extend(
-        [
-            "~/.claude/settings.json",
-            "~/.codex/config.toml",
-            "~/.config/devin/config.json",
-            "~/.hermes/config.yaml",
-        ]
-        .map(str::to_owned),
-    );
-
-    assert!(expected.contains("~/.claude/hooks/lib/provider_adapter.py"));
-    assert!(expected.contains("~/.pi/agent/extensions/hook_bridge.ts"));
-    for path in &expected {
-        assert!(policy_paths.contains(path), "{path} is not protected");
-        assert!(
-            deny_edit.contains(&format!("Edit({path})")),
-            "{path} is not denied"
-        );
-        assert_eq!(
-            guarded[path.as_str()].as_str(),
-            Some("read"),
-            "{path} is not guarded"
-        );
-    }
-
-    remove_dir(root);
-}
-
-fn rendered_harness_files(prefix: &Path) -> BTreeSet<String> {
-    let skills = [prefix.join(".claude/skills"), prefix.join(".codex/skills")];
-    let mut pending = vec![prefix.to_path_buf()];
-    let mut files = BTreeSet::new();
-    while let Some(dir) = pending.pop() {
-        for entry in std::fs::read_dir(dir).unwrap() {
-            let path = entry.unwrap().path();
-            if skills.contains(&path) {
-                continue;
-            }
-            if path.is_dir() {
-                pending.push(path);
-            } else {
-                let relative = path.strip_prefix(prefix).unwrap().to_str().unwrap();
-                files.insert(format!("~/{relative}"));
-            }
-        }
-    }
-    files
-}
-
-#[test]
 fn complete_source_verify_checks_declared_runtime_commands() {
     let root = test_root("runtime-commands");
     let prefix = root.join("home");
@@ -589,153 +291,35 @@ fn complete_source_verify_checks_declared_runtime_commands() {
     remove_dir(root);
 }
 
-#[test]
-fn complete_source_inventory_reports_skills_and_hooks() {
-    let skills = run_harness_stdout([
-        "list",
-        "skills",
-        "--source",
-        complete_source_root().to_str().unwrap(),
-    ]);
-    assert!(skills.starts_with("Skills (1)\n"));
-    assert!(skills.contains("example-skill"));
-    assert!(skills.contains("explicit"));
-
-    let hooks = run_harness_stdout([
-        "list",
-        "hooks",
-        "--source",
-        complete_source_root().to_str().unwrap(),
-    ]);
-    assert!(hooks.contains("\nClaude\n"));
-    assert!(hooks.contains("\nCodex\n"));
-    assert!(hooks.contains("\nDevin\n"));
-    assert!(hooks.contains("guard.sh"));
-    assert!(hooks.contains("adapt.sh guard.sh"));
-    assert!(hooks.contains("hook_adapter.py shell forbidden"));
-}
-
-#[test]
-fn codex_config_sync_preserves_codex_owned_state() {
-    let root = test_root("codex-sync");
-    let source_path = root.join("source.toml");
-    let target_path = root.join("target.toml");
-
-    std::fs::write(&source_path, "model = \"source-model\"\n").unwrap();
-    std::fs::write(
-        &target_path,
-        r#"
-model = "target-model"
-sandbox_mode = "read-only"
-
-[projects."/tmp/project"]
-trust_level = "trusted"
-"#,
-    )
-    .unwrap();
-
-    run_harness([
-        "sync-codex-config",
-        "--source",
-        source_path.to_str().unwrap(),
-        "--target",
-        target_path.to_str().unwrap(),
-    ]);
-
-    let target = read_toml(&target_path);
-    assert_eq!(target["model"].as_str(), Some("source-model"));
-    assert!(target.get("sandbox_mode").is_none());
+fn assert_runtime_hook_outputs(prefix: &Path) {
+    let devin_config = read_json(&prefix.join(".config/devin/config.json"));
     assert_eq!(
-        target["projects"]["/tmp/project"]["trust_level"].as_str(),
-        Some("trusted"),
+        devin_config["hooks"]["PreToolUse"][0]["matcher"].as_str(),
+        Some("exec"),
     );
-
-    remove_dir(root);
-}
-
-#[test]
-fn codex_config_sync_manages_only_the_agent_gh_config_dir_in_the_shell_environment() {
-    let root = test_root("codex-sync-shell-environment");
-    let source_path = root.join("source.toml");
-    let target_path = root.join("target.toml");
-
-    std::fs::write(
-        &source_path,
-        "[shell_environment_policy.set]\nGH_CONFIG_DIR = \"/agent/gh\"\n",
-    )
-    .unwrap();
-    std::fs::write(
-        &target_path,
-        "[shell_environment_policy]\ninherit = \"core\"\n\n[shell_environment_policy.set]\nCODEX_OWNED = \"1\"\n",
-    )
-    .unwrap();
-    let sync = || {
-        run_harness([
-            "sync-codex-config",
-            "--source",
-            source_path.to_str().unwrap(),
-            "--target",
-            target_path.to_str().unwrap(),
-        ])
-    };
-
-    sync();
-    let target = read_toml(&target_path);
-    let policy = &target["shell_environment_policy"];
-    assert_eq!(policy["set"]["GH_CONFIG_DIR"].as_str(), Some("/agent/gh"));
-    assert_eq!(policy["set"]["CODEX_OWNED"].as_str(), Some("1"));
-    assert_eq!(policy["inherit"].as_str(), Some("core"));
-
-    std::fs::write(&source_path, "").unwrap();
-    sync();
-    let target = read_toml(&target_path);
-    let set = &target["shell_environment_policy"]["set"];
-    assert!(set.get("GH_CONFIG_DIR").is_none());
-    assert_eq!(set["CODEX_OWNED"].as_str(), Some("1"));
-
-    remove_dir(root);
-}
-
-#[test]
-fn generate_skills_accepts_an_external_skill_directory() {
-    let root = test_root("external-skill");
-    let external_skill = root.join("upstream/external-tool");
-    let output = root.join("output");
-    std::fs::create_dir_all(external_skill.join("references")).unwrap();
-    std::fs::write(
-        external_skill.join("SKILL.md"),
-        "---\nname: external-tool\ndescription: upstream skill\n---\n\n# External tool\n",
-    )
-    .unwrap();
-    std::fs::write(
-        external_skill.join("references/commands.md"),
-        "Upstream commands\n",
-    )
-    .unwrap();
-    let external_skill_arg = format!("external-tool={}", external_skill.display());
-
-    run_harness([
-        "generate-skills",
-        "--source",
-        complete_source_root().to_str().unwrap(),
-        "--provider",
-        "codex",
-        "--extra-skill",
-        &external_skill_arg,
-        "--output",
-        output.to_str().unwrap(),
-    ]);
-
-    assert_contains(
-        &output.join("external-tool/SKILL.md"),
-        "description: upstream skill",
+    assert!(prefix.join(".hermes/hooks/hook_adapter.py").is_file());
+    assert!(
+        prefix
+            .join(".hermes/plugins/agent-harness-hooks/plugin.yaml")
+            .is_file()
     );
-    assert_contains(
-        &output.join("external-tool/references/commands.md"),
-        "Upstream commands",
+    assert!(
+        prefix
+            .join(".hermes/plugins/agent-harness-hooks/__init__.py")
+            .is_file()
     );
-
-    remove_dir(root);
+    let hermes_manifest = read_json(&prefix.join(".hermes/hooks.json"));
+    assert_eq!(
+        hermes_manifest["hooks"]["pre_tool_call"][0]["matcher"].as_str(),
+        Some("^(terminal|exec_command)$"),
+    );
+    assert!(prefix.join(".pi/hooks/hook_adapter.py").is_file());
+    assert!(prefix.join(".pi/agent/extensions/hook_bridge.ts").is_file());
+    let pi_manifest = read_json(&prefix.join(".pi/agent/hooks.json"));
+    assert_eq!(
+        pi_manifest["hooks"]["tool_call"][0]["matcher"].as_str(),
+        Some("^bash$"),
+    );
 }
 
 fn repo_root() -> PathBuf {
