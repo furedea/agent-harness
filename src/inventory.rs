@@ -44,9 +44,13 @@ impl Inventory {
         let mut lines = vec![
             format!("Skills ({})", self.skills.len()),
             String::new(),
-            skill_line(["NAME", "TITLE", "CLAUDE", "CODEX"]),
+            SKILL_HEADER.to_string(),
         ];
-        lines.extend(self.skills.iter().map(skill_row));
+        lines.extend(
+            self.skills
+                .iter()
+                .map(|skill| SkillRow::from(skill).to_string()),
+        );
         finish_lines(&lines)
     }
 
@@ -78,17 +82,42 @@ impl Inventory {
     }
 }
 
-fn skill_row(skill: &SkillMetadata) -> String {
-    skill_line([
-        &skill.name,
-        &skill.title,
-        skill.claude_invocation.as_str(),
-        skill.codex_invocation.as_str(),
-    ])
+const SKILL_HEADER: SkillRow<'static> = SkillRow {
+    name: "NAME",
+    title: "TITLE",
+    claude: "CLAUDE",
+    codex: "CODEX",
+};
+
+/// One row of the skill inventory table.
+struct SkillRow<'a> {
+    name: &'a str,
+    title: &'a str,
+    claude: &'a str,
+    codex: &'a str,
 }
 
-fn skill_line([name, title, claude, codex]: [&str; 4]) -> String {
-    format!("{name:<18}{title:<44}{claude:<10}{codex}")
+impl<'a> From<&'a SkillMetadata> for SkillRow<'a> {
+    fn from(skill: &'a SkillMetadata) -> Self {
+        Self {
+            name: &skill.name,
+            title: &skill.title,
+            claude: skill.claude_invocation.as_str(),
+            codex: skill.codex_invocation.as_str(),
+        }
+    }
+}
+
+impl std::fmt::Display for SkillRow<'_> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self {
+            name,
+            title,
+            claude,
+            codex,
+        } = self;
+        write!(formatter, "{name:<18}{title:<44}{claude:<10}{codex}")
+    }
 }
 
 fn provider_hook_lines(hooks: &[HookMetadata], provider: HookProvider) -> Vec<String> {
@@ -214,6 +243,7 @@ fn finish_lines(lines: &[String]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::generation::skills::SkillInvocation;
 
     fn hook(provider: HookProvider, event: &str, matcher: &str) -> HookMetadata {
         HookMetadata {
@@ -273,5 +303,24 @@ mod tests {
             "Hooks\n\nPi\n\ntool_call\n  matcher: any\n    tool_call_*.sh\n"
         );
         assert_eq!(inventory().hooks(Some(HookProvider::Codex)), "Hooks\n");
+    }
+
+    #[test]
+    fn skills_aligns_rows_under_the_header() {
+        let inventory = Inventory {
+            skills: vec![SkillMetadata {
+                name: "git-workflow".to_owned(),
+                title: "Git Workflow".to_owned(),
+                claude_invocation: SkillInvocation::Implicit,
+                codex_invocation: SkillInvocation::Explicit,
+            }],
+            hooks: Vec::new(),
+        };
+        assert_eq!(
+            inventory.skills(),
+            "Skills (1)\n\n\
+             NAME              TITLE                                       CLAUDE    CODEX\n\
+             git-workflow      Git Workflow                                implicit  explicit\n"
+        );
     }
 }
