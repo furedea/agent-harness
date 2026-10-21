@@ -55,16 +55,16 @@ mod tests {
 
     #[test]
     fn parse_utc_rejects_offsets_and_malformed_values() {
-        for timestamp in [
+        let malformed = [
             "2026-10-15T12:34:56+09:00",
             "2026-10-15 12:34:56Z",
             "2026-13-15T12:34:56Z",
             "2026-10-15T12:34Z",
-        ] {
-            assert!(
-                parse_utc(timestamp).is_err(),
-                "{timestamp} should be rejected"
-            );
-        }
+        ];
+        let accepted: Vec<_> = malformed
+            .into_iter()
+            .filter(|timestamp| parse_utc(timestamp).is_ok())
+            .collect();
+        assert!(accepted.is_empty(), "{accepted:?} should be rejected");
     }
 }

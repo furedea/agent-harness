@@ -37,9 +37,7 @@ impl SourceRoot {
 
 impl Drop for SourceRoot {
     fn drop(&mut self) {
-        if let Some(path) = &self.cleanup {
-            let _ = std::fs::remove_dir_all(path);
-        }
+        let _ = self.cleanup.as_deref().map(std::fs::remove_dir_all);
     }
 }
 
@@ -48,18 +46,19 @@ pub(crate) fn resolve_source(
     profile: Profile,
 ) -> Result<SourceRoot> {
     if let Some(source) = explicit_source {
-        return required_source(source, "--source", profile);
+        return required_source(&source, "--source", profile);
     }
 
     if let Some(source) = std::env::var_os(ENV_SOURCE).map(PathBuf::from) {
-        return required_source(source, ENV_SOURCE, profile);
+        return required_source(&source, ENV_SOURCE, profile);
     }
 
-    for source in installed_source_dirs()? {
-        if let Some(profile_source) = profile_source(&source, profile) {
-            validate_source_tree(&profile_source)?;
-            return Ok(SourceRoot::external(profile_source));
-        }
+    let installed_source = installed_source_dirs()?
+        .iter()
+        .find_map(|source| profile_source(source, profile));
+    if let Some(profile_source) = installed_source {
+        validate_source_tree(&profile_source)?;
+        return Ok(SourceRoot::external(profile_source));
     }
 
     let cwd = std::env::current_dir().context("failed to read current directory")?;
@@ -71,8 +70,8 @@ pub(crate) fn resolve_source(
     materialize_packaged_source(profile)
 }
 
-fn required_source(path: PathBuf, label: &str, profile: Profile) -> Result<SourceRoot> {
-    let profile_source = profile_source(&path, profile).ok_or_else(|| {
+fn required_source(path: &Path, label: &str, profile: Profile) -> Result<SourceRoot> {
+    let profile_source = profile_source(path, profile).ok_or_else(|| {
         anyhow::anyhow!(
             "{label} does not contain the {} agent-harness profile: {}",
             profile.directory_name(),
@@ -94,12 +93,12 @@ fn installed_source_dirs() -> Result<Vec<PathBuf>> {
 }
 
 fn installed_source_dirs_for_executable(executable: &Path) -> Vec<PathBuf> {
-    let mut candidates = Vec::new();
-    if let Some(binary_dir) = executable.parent() {
-        candidates.push(binary_dir.join("share/agent-harness"));
-        if let Some(prefix) = binary_dir.parent() {
-            candidates.push(prefix.join("share/agent-harness"));
-        }
+    let Some(binary_dir) = executable.parent() else {
+        return Vec::new();
+    };
+    let mut candidates = vec![binary_dir.join("share/agent-harness")];
+    if let Some(prefix) = binary_dir.parent() {
+        candidates.push(prefix.join("share/agent-harness"));
     }
     candidates.sort();
     candidates.dedup();
@@ -190,85 +189,4 @@ fn validate_source_tree(path: &Path) -> Result<()> {
 }
 
 #[cfg(test)]
-mod tests {
-    use std::path::Path;
-
-    use super::*;
-
-    #[test]
-    fn profile_source_accepts_a_complete_flat_source() {
-        let root = flat_source_root("complete");
-        write_flat_source(&root, r#"{"version":1,"runtime_commands":[]}"#);
-
-        assert_eq!(profile_source(&root, Profile::Minimal), Some(root.clone()));
-
-        std::fs::remove_dir_all(root).unwrap();
-    }
-
-    #[test]
-    fn required_source_rejects_an_unsupported_manifest_version() {
-        let root = flat_source_root("unsupported-manifest");
-        write_flat_source(&root, r#"{"version":2,"runtime_commands":[]}"#);
-
-        let error = required_source(root.clone(), "--source", Profile::Minimal)
-            .err()
-            .unwrap();
-
-        assert!(format!("{error:#}").contains("unsupported source manifest version 2"));
-        std::fs::remove_dir_all(root).unwrap();
-    }
-
-    #[test]
-    fn installed_source_dirs_include_release_tarball_layout_next_to_binary() {
-        let candidates = installed_source_dirs_for_executable(Path::new(
-            "/home/user/.local/agent-harness/agent-harness",
-        ));
-
-        assert_eq!(
-            candidates,
-            vec![
-                PathBuf::from("/home/user/.local/agent-harness/share/agent-harness"),
-                PathBuf::from("/home/user/.local/share/agent-harness"),
-            ],
-        );
-    }
-
-    #[test]
-    fn installed_source_dirs_include_nix_style_prefix_layout() {
-        let candidates = installed_source_dirs_for_executable(Path::new(
-            "/nix/store/hash-agent-harness/bin/agent-harness",
-        ));
-
-        assert!(candidates.contains(&PathBuf::from(
-            "/nix/store/hash-agent-harness/share/agent-harness"
-        )));
-    }
-
-    fn flat_source_root(name: &str) -> PathBuf {
-        std::env::temp_dir().join(format!(
-            "agent-harness-flat-source-{name}-{}-{}",
-            std::process::id(),
-            unique_suffix(),
-        ))
-    }
-
-    fn write_flat_source(root: &Path, manifest: &str) {
-        for relative in [
-            "AGENTS.md",
-            "command_permissions.json",
-            "hooks.json",
-            "hooks/rules/allowed_commands.json",
-            "hooks/rules/forbidden_commands.json",
-            "hooks/rules/secret_commit_policy.json",
-            "hooks/rules/secret_path_policy.json",
-            "skill_rendering.json",
-            "claude/settings.json",
-            "codex/config.toml",
-        ] {
-            let path = root.join(relative);
-            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-            std::fs::write(path, "fixture\n").unwrap();
-        }
-        std::fs::write(root.join("manifest.json"), manifest).unwrap();
-    }
-}
+mod tests;

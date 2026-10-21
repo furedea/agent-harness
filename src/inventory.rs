@@ -44,44 +44,28 @@ impl Inventory {
         let mut lines = vec![
             format!("Skills ({})", self.skills.len()),
             String::new(),
-            skill_line("NAME", "TITLE", "CLAUDE", "CODEX"),
+            skill_line(["NAME", "TITLE", "CLAUDE", "CODEX"]),
         ];
-        lines.extend(self.skills.iter().map(|skill| {
-            skill_line(
-                &skill.name,
-                &skill.title,
-                skill.claude_invocation.as_str(),
-                skill.codex_invocation.as_str(),
-            )
-        }));
-        finish_lines(lines)
+        lines.extend(self.skills.iter().map(skill_row));
+        finish_lines(&lines)
     }
 
     pub(crate) fn hooks(&self, provider: Option<HookProvider>) -> String {
         let mut lines = vec!["Hooks".to_owned()];
-        for current_provider in [
+        let providers = [
             HookProvider::Claude,
             HookProvider::Codex,
             HookProvider::Devin,
             HookProvider::Hermes,
             HookProvider::Pi,
-        ] {
-            if provider.is_some_and(|provider| provider != current_provider) {
-                continue;
-            }
-            let hooks = self
-                .hooks
-                .iter()
-                .filter(|hook| hook.provider == current_provider)
-                .collect::<Vec<_>>();
-            if hooks.is_empty() {
-                continue;
-            }
-            lines.push(String::new());
-            lines.push(current_provider.display_name().to_owned());
-            append_hook_lines(&mut lines, &hooks);
-        }
-        finish_lines(lines)
+        ];
+        lines.extend(
+            providers
+                .into_iter()
+                .filter(|current| provider.is_none_or(|provider| provider == *current))
+                .flat_map(|current| provider_hook_lines(&self.hooks, current)),
+        );
+        finish_lines(&lines)
     }
 
     fn hook_event_count(&self, provider: HookProvider) -> usize {
@@ -94,27 +78,54 @@ impl Inventory {
     }
 }
 
-fn skill_line(name: &str, title: &str, claude: &str, codex: &str) -> String {
+fn skill_row(skill: &SkillMetadata) -> String {
+    skill_line([
+        &skill.name,
+        &skill.title,
+        skill.claude_invocation.as_str(),
+        skill.codex_invocation.as_str(),
+    ])
+}
+
+fn skill_line([name, title, claude, codex]: [&str; 4]) -> String {
     format!("{name:<18}{title:<44}{claude:<10}{codex}")
 }
 
-fn append_hook_lines(lines: &mut Vec<String>, hooks: &[&HookMetadata]) {
-    let mut previous_event = None;
-    let mut previous_matcher = None;
-
-    for hook in hooks {
-        if previous_event != Some(hook.event.as_str()) {
-            lines.push(String::new());
-            lines.push(hook.event.clone());
-            previous_event = Some(&hook.event);
-            previous_matcher = None;
-        }
-        if previous_matcher != Some(hook.matcher.as_str()) {
-            lines.push(format!("  matcher: {}", display_matcher(&hook.matcher)));
-            previous_matcher = Some(&hook.matcher);
-        }
-        lines.push(display_hook_command(hook));
+fn provider_hook_lines(hooks: &[HookMetadata], provider: HookProvider) -> Vec<String> {
+    let hooks = hooks
+        .iter()
+        .filter(|hook| hook.provider == provider)
+        .collect::<Vec<_>>();
+    if hooks.is_empty() {
+        return Vec::new();
     }
+    let mut lines = vec![String::new(), provider.display_name().to_owned()];
+    append_hook_lines(&mut lines, &hooks);
+    lines
+}
+
+fn append_hook_lines(lines: &mut Vec<String>, hooks: &[&HookMetadata]) {
+    let previous_hooks = std::iter::once(None).chain(hooks.iter().copied().map(Some));
+    for (previous, hook) in previous_hooks.zip(hooks) {
+        lines.extend(hook_lines(previous, hook));
+    }
+}
+
+/// Lists a hook under event and matcher headings, repeating a heading only when it changes.
+fn hook_lines(previous: Option<&HookMetadata>, hook: &HookMetadata) -> Vec<String> {
+    let is_new_event = previous.is_none_or(|previous| previous.event != hook.event);
+    let is_new_matcher =
+        is_new_event || previous.is_some_and(|previous| previous.matcher != hook.matcher);
+    let mut lines = Vec::new();
+    if is_new_event {
+        lines.push(String::new());
+        lines.push(hook.event.clone());
+    }
+    if is_new_matcher {
+        lines.push(format!("  matcher: {}", display_matcher(&hook.matcher)));
+    }
+    lines.push(display_hook_command(hook));
+    lines
 }
 
 fn display_matcher(matcher: &str) -> String {
@@ -175,21 +186,92 @@ fn shorten_hook_path(part: &str) -> String {
 }
 
 fn display_condition(condition: &str) -> String {
-    let mut patterns = Vec::new();
-    for entry in condition.split('|') {
-        let Some((_tool, pattern)) = entry.split_once('(') else {
-            return condition.to_owned();
-        };
-        let Some(pattern) = pattern.strip_suffix(')') else {
-            return condition.to_owned();
-        };
-        if !patterns.contains(&pattern) {
-            patterns.push(pattern);
-        }
-    }
-    patterns.join(", ")
+    let Some(patterns) = condition
+        .split('|')
+        .map(condition_pattern)
+        .collect::<Option<Vec<_>>>()
+    else {
+        return condition.to_owned();
+    };
+    patterns
+        .iter()
+        .enumerate()
+        .filter(|(index, pattern)| !patterns[..*index].contains(pattern))
+        .map(|(_, pattern)| *pattern)
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
-fn finish_lines(lines: Vec<String>) -> String {
+fn condition_pattern(entry: &str) -> Option<&str> {
+    let (_tool, pattern) = entry.split_once('(')?;
+    pattern.strip_suffix(')')
+}
+
+fn finish_lines(lines: &[String]) -> String {
     format!("{}\n", lines.join("\n"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn hook(provider: HookProvider, event: &str, matcher: &str) -> HookMetadata {
+        HookMetadata {
+            provider,
+            event: event.to_owned(),
+            matcher: matcher.to_owned(),
+            condition: None,
+            command: format!("$HOME/.claude/hooks/{event}_{matcher}.sh"),
+        }
+    }
+
+    fn conditional(hook: HookMetadata, condition: &str) -> HookMetadata {
+        HookMetadata {
+            condition: Some(condition.to_owned()),
+            ..hook
+        }
+    }
+
+    fn inventory() -> Inventory {
+        Inventory {
+            skills: Vec::new(),
+            hooks: vec![
+                conditional(
+                    hook(HookProvider::Claude, "PreToolUse", "Bash"),
+                    "Bash(git *)|Bash(gh *)|Bash(git *)",
+                ),
+                conditional(
+                    hook(HookProvider::Claude, "PreToolUse", "Bash"),
+                    "malformed",
+                ),
+                conditional(
+                    hook(HookProvider::Claude, "PreToolUse", "^(Edit|Write)$"),
+                    "Edit(x",
+                ),
+                hook(HookProvider::Claude, "Stop", ""),
+                hook(HookProvider::Pi, "tool_call", "*"),
+            ],
+        }
+    }
+
+    #[test]
+    fn hooks_groups_by_provider_event_and_matcher() {
+        assert_eq!(
+            inventory().hooks(None),
+            "Hooks\n\nClaude\n\nPreToolUse\n  matcher: Bash\n    \
+             PreToolUse_Bash.sh           when: git *, gh *\n    \
+             PreToolUse_Bash.sh           when: malformed\n  matcher: Edit | Write\n    \
+             PreToolUse_^(Edit|Write)$.sh when: Edit(x\n\nStop\n  matcher: any\n    \
+             Stop_.sh\n\nPi\n\ntool_call\n  matcher: any\n    tool_call_*.sh\n"
+        );
+    }
+
+    #[test]
+    fn hooks_shows_only_the_requested_provider() {
+        assert_eq!(
+            inventory().hooks(Some(HookProvider::Pi)),
+            "Hooks\n\nPi\n\ntool_call\n  matcher: any\n    tool_call_*.sh\n"
+        );
+        assert_eq!(inventory().hooks(Some(HookProvider::Codex)), "Hooks\n");
+    }
 }
