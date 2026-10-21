@@ -45,25 +45,25 @@ impl ExternalHookBundle {
     }
 
     pub(crate) fn merge_codex_hooks(&self, hooks: &mut Value) -> Result<()> {
-        self.merge_hooks(&mut hooks["hooks"], &CODEX_HOOK_FILE)
+        self.merge_hooks(hooks, &CODEX_HOOK_FILE)
     }
 
     pub(crate) fn merge_devin_hooks(&self, hooks: &mut Value) -> Result<()> {
-        self.merge_hooks(&mut hooks["hooks"], &DEVIN_HOOK_FILE)
+        self.merge_hooks(hooks, &DEVIN_HOOK_FILE)
     }
 
     pub(crate) fn merge_hermes_hooks(&self, hooks: &mut Value) -> Result<()> {
-        self.merge_hooks(&mut hooks["hooks"], &HERMES_HOOK_FILE)
+        self.merge_hooks(hooks, &HERMES_HOOK_FILE)
     }
 
     pub(crate) fn merge_pi_hooks(&self, hooks: &mut Value) -> Result<()> {
-        self.merge_hooks(&mut hooks["hooks"], &PI_HOOK_FILE)
+        self.merge_hooks(hooks, &PI_HOOK_FILE)
     }
 
-    fn merge_hooks(&self, target: &mut Value, file: &HookFile) -> Result<()> {
+    fn merge_hooks(&self, hooks: &mut Value, file: &HookFile) -> Result<()> {
         self.validate()?;
         match read_optional_json(&self.source.join(file.path))? {
-            Some(generated) => self.merge_generated(target, file.events(&generated)),
+            Some(generated) => self.merge_generated(file.target(hooks), file.events(&generated)),
             None => Ok(()),
         }
     }
@@ -157,32 +157,48 @@ const PROVIDER_HOOK_DIRS: [&str; 5] = [
 
 const CLAUDE_HOOK_FILE: HookFile = HookFile {
     path: ".claude/settings.json",
+    target_key: None,
     events_key: Some("hooks"),
 };
 const CODEX_HOOK_FILE: HookFile = HookFile {
     path: ".codex/hooks.json",
+    target_key: Some("hooks"),
     events_key: Some("hooks"),
 };
 const DEVIN_HOOK_FILE: HookFile = HookFile {
     path: ".devin/hooks.v1.json",
+    target_key: Some("hooks"),
     events_key: None,
 };
 const HERMES_HOOK_FILE: HookFile = HookFile {
     path: ".hermes/hooks.json",
+    target_key: Some("hooks"),
     events_key: None,
 };
 const PI_HOOK_FILE: HookFile = HookFile {
     path: ".pi/hooks.json",
+    target_key: Some("hooks"),
     events_key: None,
 };
 
-/// A provider hook file inside a bundle and where its events live in that file.
+/// A provider hook file inside a bundle, where its events live in that file, and
+/// where they merge into the generated provider config.
 struct HookFile {
     path: &'static str,
+    target_key: Option<&'static str>,
     events_key: Option<&'static str>,
 }
 
 impl HookFile {
+    // Index only after the bundle file is known to exist: indexing a missing key
+    // inserts null, which would later overwrite user-owned hooks on sync.
+    fn target<'a>(&self, hooks: &'a mut Value) -> &'a mut Value {
+        match self.target_key {
+            Some(key) => &mut hooks[key],
+            None => hooks,
+        }
+    }
+
     fn events<'a>(&self, generated: &'a Value) -> &'a Value {
         match self.events_key {
             Some(key) => &generated[key],

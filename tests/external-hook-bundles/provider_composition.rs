@@ -1,5 +1,10 @@
+use std::path::Path;
+
+use serde_json::json;
+
 use super::{
     complete_source_root, hook_command_exists, read_json, remove_dir, run_harness, test_root,
+    write_external_hook_asset_bundle,
 };
 
 #[test]
@@ -130,4 +135,60 @@ fn external_pi_hooks_are_composed_with_built_in_hooks() {
     ));
 
     remove_dir(root);
+}
+
+#[test]
+fn bundle_without_devin_hooks_keeps_existing_devin_hooks() {
+    let root = test_root("bundle-without-devin-hooks");
+    let source = root.join("source");
+    let generated_path = root.join("generated.json");
+    let target_path = root.join("config.json");
+    copy_dir(&complete_source_root(), &source);
+    let hooks_path = source.join("hooks.json");
+    let mut hooks = read_json(&hooks_path);
+    hooks["devin"] = json!({});
+    std::fs::write(&hooks_path, hooks.to_string()).unwrap();
+    let bundle = write_external_hook_asset_bundle(&root);
+    let existing_hooks = json!({
+        "SessionStart": [{"hooks": [{"type": "command", "command": "user-hook"}]}],
+    });
+    std::fs::write(&target_path, json!({ "hooks": existing_hooks }).to_string()).unwrap();
+
+    run_harness([
+        "generate-devin-hooks",
+        "--source",
+        source.to_str().unwrap(),
+        "--extra-hook",
+        &format!("herdr={}", bundle.display()),
+        "--output",
+        generated_path.to_str().unwrap(),
+    ]);
+    run_harness([
+        "sync-devin-config",
+        "--source",
+        generated_path.to_str().unwrap(),
+        "--target",
+        target_path.to_str().unwrap(),
+    ]);
+
+    assert_eq!(read_json(&generated_path).get("hooks"), None);
+    assert_eq!(read_json(&target_path)["hooks"], existing_hooks);
+
+    remove_dir(root);
+}
+
+fn copy_dir(source: &Path, target: &Path) {
+    std::fs::create_dir_all(target).unwrap();
+    for entry in std::fs::read_dir(source).unwrap() {
+        copy_entry(&entry.unwrap(), target);
+    }
+}
+
+fn copy_entry(entry: &std::fs::DirEntry, target: &Path) {
+    let destination = target.join(entry.file_name());
+    if entry.file_type().unwrap().is_dir() {
+        copy_dir(&entry.path(), &destination);
+    } else {
+        std::fs::copy(entry.path(), destination).unwrap();
+    }
 }
