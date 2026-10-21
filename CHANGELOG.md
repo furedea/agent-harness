@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.6](https://github.com/furedea/agent-harness/compare/agent-harness-v0.9.5...agent-harness-v0.9.6) (2026-10-21)
+
+
+### Bug Fixes
+
+* **deps:** update rustls-webpki and webpki-roots for security advisories ([#167](https://github.com/furedea/agent-harness/issues/167)) ([70c9a22](https://github.com/furedea/agent-harness/commit/70c9a223dfbf6239f1c24fcbb2ca9948b5acfa2d))
+
 ## [0.9.5](https://github.com/furedea/agent-harness/compare/agent-harness-v0.9.4...agent-harness-v0.9.5) (2026-10-20)
 
 
