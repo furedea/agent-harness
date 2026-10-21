@@ -21,6 +21,23 @@
     let
       system = "aarch64-darwin";
       pkgs = import nixpkgs { inherit system; };
+      # Must match cargo-dist-version in Cargo.toml and CARGO_DIST_VERSION in release_artifacts.yml.
+      cargoDist = pkgs.cargo-dist.overrideAttrs (
+        finalAttrs: _: {
+          version = "0.30.2";
+          src = pkgs.fetchFromGitHub {
+            owner = "axodotdev";
+            repo = "cargo-dist";
+            tag = "v${finalAttrs.version}";
+            hash = "sha256-1stUmm7rtNB2z2srOzDvQ9QaGsS0CySBOHt118vmJoM=";
+          };
+          cargoHash = "sha256-Il5PVJHoNdifqUcXxKR+j+Lgga0kIsl7IJp9oGanZ+c=";
+          cargoDeps = pkgs.rustPlatform.fetchCargoVendor {
+            inherit (finalAttrs) src;
+            hash = finalAttrs.cargoHash;
+          };
+        }
+      );
     in
     {
       packages.${system}.default = pkgs.rustPlatform.buildRustPackage {
@@ -107,7 +124,7 @@
           [
             cargo
             cargo-deny
-            cargo-dist
+            cargoDist
             cargo-machete
             clippy
             commitlint
