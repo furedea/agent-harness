@@ -243,7 +243,7 @@ pub fn run() -> Result<()> {
             codex_config::sync_managed_config(&args.source, &args.target)
         }
         Command::SyncClaudeSettings(args) => {
-            claude_config::sync_settings(&args.source, &args.target)
+            claude_config::sync_settings(&args.source, &args.target, &default_home_dir())
         }
         Command::SyncDevinConfig(args) => devin_config::sync_config(&args.source, &args.target),
         Command::SyncHermesConfig(args) => hermes_config::sync_config(&args.source, &args.target),
