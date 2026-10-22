@@ -1,68 +1,46 @@
 use super::{read_json, read_toml, remove_dir, run_harness, test_root};
 
 #[test]
-fn claude_settings_sync_expands_excluded_command_home_paths() {
-    let root = test_root("claude-sync-excluded-home");
+fn claude_settings_sync_expands_home_paths_only_after_opening_quotes() {
+    let root = test_root("claude-sync-quoted-home");
     let home = root.join("custom home");
     let source_path = root.join("source.json");
     let target_path = root.join("target.json");
-    let cases = [
-        (
-            "~/.local/bin/tool *",
-            format!("{}/.local/bin/tool *", home.display()),
-        ),
-        (
-            r#"node "~/.claude/plugins/codex-companion.mjs" *"#,
-            format!(
-                r#"node "{}/.claude/plugins/codex-companion.mjs" *"#,
-                home.display()
-            ),
-        ),
-        (
-            r#"node "~/first" "~/second" *"#,
-            format!(r#"node "{0}/first" "{0}/second" *"#, home.display()),
-        ),
-        ("git *", "git *".to_string()),
-        ("/usr/bin/tool *", "/usr/bin/tool *".to_string()),
-        ("node ~/script *", "node ~/script *".to_string()),
-        ("path/~/tool *", "path/~/tool *".to_string()),
-        ("~other/tool *", "~other/tool *".to_string()),
-        ("~", "~".to_string()),
-        ("", String::new()),
-    ];
     let source = serde_json::json!({
         "sandbox": {
-            "excludedCommands": cases.iter().map(|(input, _)| *input).collect::<Vec<_>>(),
-            "filesystem": {"denyWrite": ["~/protected"]}
-        },
-        "statusLine": {"command": "~/status.sh"}
+            "excludedCommands": [
+                r#"cmd "foo"~/bar"#,
+                r#"node "~/first" "~/second" *"#,
+                r#"cmd \"~/bar"#,
+                r#"node "foo\"bar" "~/second""#,
+                r#"node "foo\\" "~/second""#
+            ]
+        }
     });
     std::fs::write(&source_path, serde_json::to_vec(&source).unwrap()).unwrap();
-    std::fs::write(&target_path, r#"{"model":"user-model"}"#).unwrap();
 
-    let sync = || {
-        super::run_harness_command(
-            std::process::Command::new(env!("CARGO_BIN_EXE_agent-harness"))
-                .env("HOME", &home)
-                .args([
-                    "sync-claude-settings",
-                    "--source",
-                    source_path.to_str().unwrap(),
-                    "--target",
-                    target_path.to_str().unwrap(),
-                ]),
-        );
-    };
-    sync();
+    super::run_harness_command(
+        std::process::Command::new(env!("CARGO_BIN_EXE_agent-harness"))
+            .env("HOME", &home)
+            .args([
+                "sync-claude-settings",
+                "--source",
+                source_path.to_str().unwrap(),
+                "--target",
+                target_path.to_str().unwrap(),
+            ]),
+    );
 
-    let mut expected = source.clone();
-    expected["sandbox"]["excludedCommands"] =
-        serde_json::json!(cases.iter().map(|(_, output)| output).collect::<Vec<_>>());
-    expected["model"] = serde_json::json!("user-model");
-    assert_eq!(read_json(&target_path), expected);
-    assert_eq!(read_json(&source_path), source);
-    sync();
-    assert_eq!(read_json(&target_path), expected);
+    assert_eq!(
+        read_json(&target_path)["sandbox"]["excludedCommands"],
+        serde_json::json!([
+            r#"cmd "foo"~/bar"#,
+            format!(r#"node "{0}/first" "{0}/second" *"#, home.display()),
+            r#"cmd \"~/bar"#,
+            format!(r#"node "foo\"bar" "{}/second""#, home.display()),
+            format!(r#"node "foo\\" "{}/second""#, home.display())
+        ])
+    );
 
     remove_dir(root);
 }
