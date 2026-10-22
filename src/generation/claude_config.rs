@@ -23,12 +23,53 @@ pub(crate) fn write_settings_for_runtime(context: GenerationContext<'_>, out: &P
     io::write_json(out, &settings)
 }
 
-pub(crate) fn sync_settings(source_path: &Path, target_path: &Path) -> Result<()> {
+pub(crate) fn sync_settings(source_path: &Path, target_path: &Path, home: &Path) -> Result<()> {
     let generated = read_json(source_path)?;
     let mut existing = read_json_or_empty(target_path)?;
     merge_managed_settings(&mut existing, generated)?;
+    expand_excluded_command_home_paths(&mut existing, home);
     let content = serde_json::to_string_pretty(&existing)? + "\n";
     fs_ops::write_file_atomically(target_path, content.as_bytes())
+}
+
+fn expand_excluded_command_home_paths(settings: &mut Value, home: &Path) {
+    let Some(commands) = settings
+        .get_mut("sandbox")
+        .and_then(|sandbox| sandbox.get_mut("excludedCommands"))
+        .and_then(Value::as_array_mut)
+    else {
+        return;
+    };
+    let home = home.to_string_lossy();
+    for command in commands {
+        expand_command_home_path(command, &home);
+    }
+}
+
+fn expand_command_home_path(command: &mut Value, home: &str) {
+    let Value::String(command) = command else {
+        return;
+    };
+    let mut quote_count = 0;
+    let mut escaped = false;
+    let mut expand_next = true;
+    let mut expanded = String::new();
+    for (index, character) in command.char_indices() {
+        let expand_home = expand_next && command[index..].starts_with("~/");
+        push_command_character(&mut expanded, character, expand_home.then_some(home));
+        quote_count += usize::from(character == '"' && !escaped);
+        expand_next = character == '"' && !escaped && quote_count % 2 == 1;
+        escaped = character == '\\' && !escaped;
+    }
+    *command = expanded;
+}
+
+fn push_command_character(expanded: &mut String, character: char, home: Option<&str>) {
+    if let Some(home) = home {
+        expanded.push_str(home);
+    } else {
+        expanded.push(character);
+    }
 }
 
 fn build_settings(context: GenerationContext<'_>, mut settings: Value) -> Result<Value> {
@@ -254,7 +295,7 @@ mod tests {
         write_file(&source, &serde_json::to_string(&generated)?)?;
         write_file(&target, &serde_json::to_string(&existing)?)?;
 
-        sync_settings(&source, &target)?;
+        sync_settings(&source, &target, &root)?;
 
         assert_eq!(
             read_json(&target)?,
@@ -276,7 +317,7 @@ mod tests {
         let generated = json!({"hooks": {}, "permissions": {"allow": []}});
         write_file(&source, &serde_json::to_string(&generated)?)?;
 
-        sync_settings(&source, &target)?;
+        sync_settings(&source, &target, &root)?;
 
         assert_eq!(read_json(&target)?, generated);
         std::fs::remove_dir_all(root)?;

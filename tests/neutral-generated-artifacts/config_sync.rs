@@ -1,6 +1,51 @@
 use super::{read_json, read_toml, remove_dir, run_harness, test_root};
 
 #[test]
+fn claude_settings_sync_expands_home_paths_only_after_opening_quotes() {
+    let root = test_root("claude-sync-quoted-home");
+    let home = root.join("custom home");
+    let source_path = root.join("source.json");
+    let target_path = root.join("target.json");
+    let source = serde_json::json!({
+        "sandbox": {
+            "excludedCommands": [
+                r#"cmd "foo"~/bar"#,
+                r#"node "~/first" "~/second" *"#,
+                r#"cmd \"~/bar"#,
+                r#"node "foo\"bar" "~/second""#,
+                r#"node "foo\\" "~/second""#
+            ]
+        }
+    });
+    std::fs::write(&source_path, serde_json::to_vec(&source).unwrap()).unwrap();
+
+    super::run_harness_command(
+        std::process::Command::new(env!("CARGO_BIN_EXE_agent-harness"))
+            .env("HOME", &home)
+            .args([
+                "sync-claude-settings",
+                "--source",
+                source_path.to_str().unwrap(),
+                "--target",
+                target_path.to_str().unwrap(),
+            ]),
+    );
+
+    assert_eq!(
+        read_json(&target_path)["sandbox"]["excludedCommands"],
+        serde_json::json!([
+            r#"cmd "foo"~/bar"#,
+            format!(r#"node "{0}/first" "{0}/second" *"#, home.display()),
+            r#"cmd \"~/bar"#,
+            format!(r#"node "foo\"bar" "{}/second""#, home.display()),
+            format!(r#"node "foo\\" "{}/second""#, home.display())
+        ])
+    );
+
+    remove_dir(root);
+}
+
+#[test]
 fn hermes_config_sync_unions_plugins_enabled() {
     let root = test_root("hermes-sync");
     let source_path = root.join("managed.yaml");
