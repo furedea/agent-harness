@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.7](https://github.com/furedea/agent-harness/compare/agent-harness-v0.9.6...agent-harness-v0.9.7) (2026-10-22)
+
+
+### Features
+
+* expand ~/ in sandbox.excludedCommands when syncing Claude settings ([#175](https://github.com/furedea/agent-harness/issues/175)) ([2e90ec1](https://github.com/furedea/agent-harness/commit/2e90ec145301254fc338e441c28ac00ad331c65d))
+
 ## [0.9.6](https://github.com/furedea/agent-harness/compare/agent-harness-v0.9.5...agent-harness-v0.9.6) (2026-10-21)
 
 
