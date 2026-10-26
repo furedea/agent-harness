@@ -125,13 +125,13 @@ moshiHooks = agent-harness.lib.${pkgs.system}.buildHookBundleFromCommands {
 既定では，ユーザーの GitHub トークンはサンドボックスの外でしか読めない．そのため Claude のソース設定は `gh *` を `sandbox.excludedCommands` に列挙する．gh を他のコマンドと連結した呼び出しはサンドボックス内で実行され，認証に失敗して承認プロンプトで止まる．オプトインの `github.agentToken` オプションは，サンドボックス内で読めるエージェント専用のトークンを Claude Code に与える．
 
 1. エージェントが変更してよいリポジトリに限定した [fine-grained personal access token](https://github.com/settings/personal-access-tokens/new) を作成する．Contents，Pull requests，Issues を read and write，Actions と Metadata を read にし，有効期限は 90 日などにする．
-2. エージェント用の設定ディレクトリに保存する．`--insecure-storage` を付けると，トークンはシステムのキーリングではなくそのディレクトリの `hosts.yml` に書き込まれる．キーリングはサンドボックスから届かず，ユーザー自身のトークンも保持している:
+2. エージェント用の設定ディレクトリに保存する．`--insecure-storage` を付けると，トークンはシステムのキーリングではなくそのディレクトリの `hosts.yml` に書き込まれる．キーリングはサンドボックスから届かず，ユーザー自身のトークンも保持している：
 
     ```bash
     GH_CONFIG_DIR="$HOME/.config/agent-harness/gh" gh auth login --with-token --insecure-storage < token.txt
     ```
 
-3. オプションを有効にし，Home Manager の設定を switch する:
+3. オプションを有効にし，Home Manager の設定を switch する：
 
     ```nix
     programs.agent-harness.github.agentToken.enable = true;
@@ -140,13 +140,13 @@ moshiHooks = agent-harness.lib.${pkgs.system}.buildHookBundleFromCommands {
 
 生成される Claude の設定は，`env.GH_CONFIG_DIR` に絶対パスの `configDir` を設定し，`github.com` と `api.github.com` を `sandbox.network.allowedDomains` に加え，gh が TLS を検証できるよう `sandbox.enableWeakerNetworkIsolation` を有効にし，ソース設定が列挙していても `gh *` を `sandbox.excludedCommands` から除く．この除去は，ソース設定を正とする原則の唯一の例外である（[ADR-0020](docs/adr/0020_keep_git_push_outside_the_claude_sandbox.md)）．`git push *` を含む他の除外は，ソースの列挙どおりに残る．そのため git をどこで実行するかはソース設定が決める（[エージェントのコミット](#エージェントのコミット)を参照）．`configDir` が相対パスの場合や，`Read(...)` の拒否，`sandbox.filesystem.denyRead` の項目，シークレットパスポリシーのルールがそれを隠す場合は評価が失敗する．ユーザー自身の `~/.config/gh/hosts.yml` の拒否はそのまま残る．オプションが無効なら，生成物は変わらない．
 
-生成される Codex の設定は，`shell_environment_policy.set.GH_CONFIG_DIR` に同じ `configDir` を設定し，`guarded` 権限プロファイルを既定にする（`default_permissions = "guarded"` は `sandbox_mode` より優先される）．このプロファイルは `~/.config/gh/hosts.yml` を除くすべてを読め（`":root" = "read"`），作業ディレクトリ（`:workspace_roots`），`:tmpdir`，`:slash_tmp`，Claude の `sandbox.filesystem.allowWrite` のうち絶対パスと `~/` のパスに書け，ネットワークを使える．Codex 設定の同期が管理するのは `shell_environment_policy` の中の `GH_CONFIG_DIR` だけなので，Codex やユーザーがそこに置く他の項目は残る．
+生成される Codex の設定は，`shell_environment_policy.set.GH_CONFIG_DIR` に同じ `configDir` を設定し，`guarded` 権限プロファイルを既定にする（`default_permissions = "guarded"` は `sandbox_mode` より優先される）．このプロファイルは `~/.config/gh/hosts.yml` を除くすべてを読め（`":root" = "read"`），作業ディレクトリ（`:workspace_roots`），`:tmpdir`，`:slash_tmp`，Claude の `sandbox.filesystem.allowWrite` のうち絶対パスと `~/` のパスに書け，ネットワークを使える．Codex 設定の同期は，生成した `shell_environment_policy.set` のキーをすべて書き込み，前回書いたキーのうちソースから消えたものだけを消す（記録は `config.toml` の隣の `.agent-harness-managed.json`．[ADR-0024](docs/adr/0024_track_managed_codex_env_keys_in_a_sidecar.md)）．そのため Codex やユーザーがそこに置く他の項目は残る．
 
 Codex は，リンクされた worktree の git ディレクトリ（`<repo>/.git/worktrees/<name>`）を，そのパスちょうどをプロファイルに書かない限り読み取り専用にする．そのため Codex では worktree からのコミットは承認が必要なままで，本体のチェックアウトでのコミットはサンドボックスの中で動く（[ADR-0023](docs/adr/0023_default_codex_to_the_guarded_profile_with_the_agent_token.md)）．
 
 #### エージェントのコミット
 
-コミット署名はサンドボックスの外でしか動かないため，ソース設定はエージェントの git について次の 2 つの構成のどちらかを選ぶ:
+コミット署名はサンドボックスの外でしか動かないため，ソース設定はエージェントの git について次の 2 つの構成のどちらかを選ぶ：
 
 - **(a) エージェントのコミットに署名する．** `git add *`，`git status *`，`git commit *`，`git push *` を `sandbox.excludedCommands` に列挙し，`git add x && git commit -m y && git push` のような連結を，署名が動くサンドボックスの外で実行する．除外された `git push` も `GH_CONFIG_DIR` を引き継ぐので，エージェント用トークンで認証する．このときリポジトリの git フックもサンドボックスの外で動くため，エージェントは `lefthook.yml` のようなフックの設定，フックが呼ぶスクリプト，フックのツールが読むビルド設定を編集して，サンドボックスの外でコードを実行できる．
 - **(b) エージェントのコミットに署名しない（フックやフックが実行するツールがリポジトリのファイルを読む場合に推奨）．** Claude Code に限って署名を無効にし，git コマンドを何も除外しない．git，そのフック，push はすべてサンドボックス内で動き，push はどちらの供給元のエージェント用トークンでも認証する．squash マージでデフォルトブランチに入るコミットは，GitHub が署名するので引き続き署名付きである（[ADR-0022](docs/adr/0022_leave_agent_commits_unsigned_inside_the_claude_sandbox.md)）．
@@ -155,17 +155,17 @@ Codex は，リンクされた worktree の git ディレクトリ（`<repo>/.gi
 
 ```json
 {
-  "env": {
-    "GIT_CONFIG_COUNT": "2",
-    "GIT_CONFIG_KEY_0": "commit.gpgsign",
-    "GIT_CONFIG_VALUE_0": "false",
-    "GIT_CONFIG_KEY_1": "tag.gpgsign",
-    "GIT_CONFIG_VALUE_1": "false"
-  }
+    "env": {
+        "GIT_CONFIG_COUNT": "2",
+        "GIT_CONFIG_KEY_0": "commit.gpgsign",
+        "GIT_CONFIG_VALUE_0": "false",
+        "GIT_CONFIG_KEY_1": "tag.gpgsign",
+        "GIT_CONFIG_VALUE_1": "false"
+    }
 }
 ```
 
-脅威モデル:
+脅威モデル：
 
 - サンドボックス内で動くものはすべて，API の直接呼び出しを含め，権限の範囲内でトークンを使える．安全境界はコマンドルールではなく，トークンの fine-grained な権限である．
 - gh は意図してサンドボックス内で実行する．外で実行すると，`gh gist create`，`gh release upload`，`gh api --input` などで読めるローカルファイルを何でもアップロードできてしまう．構成 (a) でサンドボックスの外の git push が送れるのはリポジトリのコミットだけである．
@@ -176,15 +176,15 @@ Codex は，リンクされた worktree の git ディレクトリ（`<repo>/.gi
 
 personal access token は期限が切れるたびに作り直す必要がある．`source = "app"` にすると，GitHub App がエージェント用トークンを供給する．ユーザーごとの定期ジョブが，ログイン時と 5 分ごとにトークンを確認し，残りが 20 分未満なら有効期間 1 時間のインストールアクセストークンを発行して，`configDir` の `hosts.yml` へ mode 0600 でアトミックに書き込む．ジョブは macOS では launchd エージェントで，スリープ復帰後に逃した実行を 1 回行う．Linux では systemd のユーザーサービスと永続タイマーである．このオプションが Claude の設定に加える変更は，どちらの供給元でも同じである．
 
-1. Webhook を無効にして [GitHub App を登録](https://github.com/settings/apps/new)し，リポジトリ権限を次のようにする: Contents，Pull requests，Issues は read and write，Actions と Metadata は read．Workflows は付与しない．付与すると，サンドボックス内のコードがリポジトリのシークレット付きで動くワークフローを書き換えられてしまう．
+1. Webhook を無効にして [GitHub App を登録](https://github.com/settings/apps/new)し，リポジトリ権限を次のようにする：Contents，Pull requests，Issues は read and write，Actions と Metadata は read．Workflows は付与しない．付与すると，サンドボックス内のコードがリポジトリのシークレット付きで動くワークフローを書き換えられてしまう．
 2. エージェントが変更してよいリポジトリに App をインストールする．
-3. 秘密鍵を生成し，`configDir` の外に mode 0600 で保存する:
+3. 秘密鍵を生成し，`configDir` の外に mode 0600 で保存する：
 
     ```bash
     install -m 0600 ~/Downloads/my-agent-app.*.private-key.pem ~/.config/agent-harness/github_app.pem
     ```
 
-4. 供給元を設定して switch する:
+4. 供給元を設定して switch する：
 
     ```nix
     programs.agent-harness.github.agentToken = {
@@ -200,7 +200,7 @@ personal access token は期限が切れるたびに作り直す必要がある�
 
 秘密鍵のパスは絶対パスでなければならない．生成される Claude の設定は `permissions.deny` に `Read(//<path>)` を，`sandbox.filesystem.denyRead` にそのパスを加えるので，Claude Code のツールからもサンドボックス内のコマンドからも鍵は読めない．`installationId` を指定しない場合，ジョブは App の唯一のインストールを使い，インストールが複数あると失敗する．
 
-ジョブは更新のたびに，トークンの隣の `agent_harness_token.json` に結果を記録する．ジョブが止まると 1 時間以内に push が失敗し始めるので，次のコマンドで確認する:
+ジョブは更新のたびに，トークンの隣の `agent_harness_token.json` に結果を記録する．ジョブが止まると 1 時間以内に push が失敗し始めるので，次のコマンドで確認する：
 
 ```bash
 agent-harness github-app-token status --config-dir ~/.config/agent-harness/gh
@@ -208,7 +208,7 @@ agent-harness github-app-token status --config-dir ~/.config/agent-harness/gh
 
 このコマンドは有効期限を表示し，トークンがない場合，最後の更新が失敗した場合，`hosts.yml` がないか最後の更新で記録したものと違うトークンを持つ場合，残りが 5 分以下の場合は終了ステータス 1 で終わる．ジョブの出力は macOS では `~/Library/Logs/agent-harness-github-app-token.log` に，Linux ではユーザージャーナルに出る．`agent-harness github-app-token refresh --force` を同じ引数で実行すれば，任意のタイミングでトークンを発行できる．`--force` を付けない場合，残りが 20 分以上で，`hosts.yml` に残っており，設定した App とインストールで発行されたトークンはそのまま使う．
 
-App を使う場合に追加される脅威モデル:
+App を使う場合に追加される脅威モデル：
 
 - 秘密鍵は SSH 鍵に相当する長期間有効なシークレットで，持っていればすべてのインストールに対してトークンを発行できる．mode 0600 を保ち，他人が読めるバックアップに含めない．
 - インストールトークンは 1 時間以内に失効するので，漏れても有効な期間は短い．

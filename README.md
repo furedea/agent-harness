@@ -190,8 +190,10 @@ and makes the `guarded` permissions profile the default (`default_permissions = 
 takes precedence over `sandbox_mode`). The profile reads everything (`":root" = "read"`) except
 `~/.config/gh/hosts.yml`, writes the workspace (`:workspace_roots`), `:tmpdir`, `:slash_tmp`, and
 the absolute and `~/` paths in Claude's `sandbox.filesystem.allowWrite`, and enables network. Codex
-config synchronization manages only the `GH_CONFIG_DIR` key inside `shell_environment_policy`, so
-other entries Codex or the user keep there survive.
+config synchronization writes every generated `shell_environment_policy.set` key and removes only
+keys it wrote earlier (tracked in `.agent-harness-managed.json` next to `config.toml`,
+[ADR-0024](docs/adr/0024_track_managed_codex_env_keys_in_a_sidecar.md)), so other entries Codex or
+the user keep there survive.
 
 Codex keeps the git directory of a linked worktree (`<repo>/.git/worktrees/<name>`) read-only unless
 the profile names that exact path, so commits from a worktree still need approval in Codex; commits
@@ -220,13 +222,13 @@ for Claude Code processes only, while the user's own commits stay signed (git 2.
 
 ```json
 {
-  "env": {
-    "GIT_CONFIG_COUNT": "2",
-    "GIT_CONFIG_KEY_0": "commit.gpgsign",
-    "GIT_CONFIG_VALUE_0": "false",
-    "GIT_CONFIG_KEY_1": "tag.gpgsign",
-    "GIT_CONFIG_VALUE_1": "false"
-  }
+    "env": {
+        "GIT_CONFIG_COUNT": "2",
+        "GIT_CONFIG_KEY_0": "commit.gpgsign",
+        "GIT_CONFIG_VALUE_0": "false",
+        "GIT_CONFIG_KEY_1": "tag.gpgsign",
+        "GIT_CONFIG_VALUE_1": "false"
+    }
 }
 ```
 
@@ -518,8 +520,10 @@ approvals_reviewer, notice, tui, plugins, features, default_permissions,
 permissions
 ```
 
-It also manages the single key `shell_environment_policy.set.GH_CONFIG_DIR`, set or removed to
-match the source, and leaves the rest of `shell_environment_policy` alone.
+It also writes every key under the source's `shell_environment_policy.set` and removes keys a
+previous sync wrote that the source dropped, tracked in `.agent-harness-managed.json` next to the
+target. Keys Codex or the user added there stay. Without a sidecar, only `GH_CONFIG_DIR` is removed
+when the source lacks it.
 
 Generated Claude settings keep every `permissions.allow`, `permissions.ask`, and
 `permissions.deny` entry declared by the source `claude/settings.json`, followed by the generated

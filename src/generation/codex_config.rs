@@ -32,10 +32,21 @@ const MANAGED_STATE_FILE: &str = ".agent-harness-managed.json";
 /// Managed before the sidecar existed, so it is removed from the source's absence alone.
 const LEGACY_MANAGED_ENV_KEYS: &[&str] = &["GH_CONFIG_DIR"];
 
-#[derive(Default, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 struct ManagedState {
     #[serde(default)]
     shell_environment_policy_set: BTreeSet<String>,
+}
+
+impl ManagedState {
+    fn legacy() -> Self {
+        Self {
+            shell_environment_policy_set: LEGACY_MANAGED_ENV_KEYS
+                .iter()
+                .map(ToString::to_string)
+                .collect(),
+        }
+    }
 }
 
 pub(crate) fn write_config_source(
@@ -170,7 +181,6 @@ fn sync_env_keys(
         .shell_environment_policy_set
         .iter()
         .map(String::as_str)
-        .chain(LEGACY_MANAGED_ENV_KEYS.iter().copied())
         .filter(|key| !generated.iter().any(|(name, _)| name == key));
     remove_env_keys(target, stale);
     for (key, item) in &generated {
@@ -207,12 +217,13 @@ fn managed_state_path(target_path: &Path) -> PathBuf {
     target_path.with_file_name(MANAGED_STATE_FILE)
 }
 
-// A missing or unreadable sidecar must not block the sync; it only forgoes removals.
+// A missing or unreadable sidecar must not block the sync; it only forgoes removals, apart from
+// the keys managed before the sidecar existed.
 fn read_managed_state(path: &Path) -> ManagedState {
     std::fs::read_to_string(path)
         .ok()
         .and_then(|content| serde_json::from_str(&content).ok())
-        .unwrap_or_default()
+        .unwrap_or_else(ManagedState::legacy)
 }
 
 fn write_managed_state(path: &Path, state: &ManagedState) -> Result<()> {
@@ -340,6 +351,26 @@ trust_level = "trusted"
         let env = env_keys(&target)?;
         assert!(!env.contains_key("GH_CONFIG_DIR"));
         assert_eq!(env.get("NVIM_LOG_FILE").map(String::as_str), Some("/old"));
+
+        std::fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn sync_managed_document_keeps_a_user_owned_gh_config_dir_once_a_sidecar_exists() -> Result<()>
+    {
+        let root = test_root("sync_keeps_user_gh_config_dir")?;
+        let target = root.join("config.toml");
+
+        sync_managed_document(&env_source(&[])?, &target)?;
+        write_file(
+            &target,
+            "[shell_environment_policy.set]\nGH_CONFIG_DIR = \"/mine\"\n",
+        )?;
+        sync_managed_document(&env_source(&[])?, &target)?;
+
+        let env = env_keys(&target)?;
+        assert_eq!(env.get("GH_CONFIG_DIR").map(String::as_str), Some("/mine"));
 
         std::fs::remove_dir_all(root)?;
         Ok(())
