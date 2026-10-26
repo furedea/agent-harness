@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.8](https://github.com/furedea/agent-harness/compare/agent-harness-v0.9.7...agent-harness-v0.9.8) (2026-10-26)
+
+
+### Bug Fixes
+
+* **codex:** sync every shell_environment_policy.set key ([#180](https://github.com/furedea/agent-harness/issues/180)) ([20bc864](https://github.com/furedea/agent-harness/commit/20bc86496583d69217168c9743916bf32e4d8369))
+
 ## [0.9.7](https://github.com/furedea/agent-harness/compare/agent-harness-v0.9.6...agent-harness-v0.9.7) (2026-10-22)
 
 
