@@ -1,6 +1,8 @@
-use std::path::Path;
+use std::collections::BTreeSet;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
+use serde::{Deserialize, Serialize};
 use toml_edit::{DocumentMut, Item, Table};
 
 use crate::{
@@ -24,8 +26,28 @@ const MANAGED_KEYS: &[&str] = &[
     "default_permissions",
     "permissions",
 ];
-/// Single keys inside Codex-owned tables, so syncing them leaves sibling keys untouched.
-const MANAGED_NESTED_KEYS: &[&[&str]] = &[&["shell_environment_policy", "set", "GH_CONFIG_DIR"]];
+/// Sidecar next to the Codex config recording the `shell_environment_policy.set` keys last
+/// written, so a key dropped from the source is removed while keys Codex or the user added stay.
+const MANAGED_STATE_FILE: &str = ".agent-harness-managed.json";
+/// Managed before the sidecar existed, so it is removed from the source's absence alone.
+const LEGACY_MANAGED_ENV_KEYS: &[&str] = &["GH_CONFIG_DIR"];
+
+#[derive(Serialize, Deserialize)]
+struct ManagedState {
+    #[serde(default)]
+    shell_environment_policy_set: BTreeSet<String>,
+}
+
+impl ManagedState {
+    fn legacy() -> Self {
+        Self {
+            shell_environment_policy_set: LEGACY_MANAGED_ENV_KEYS
+                .iter()
+                .map(ToString::to_string)
+                .collect(),
+        }
+    }
+}
 
 pub(crate) fn write_config_source(
     source: &Path,
@@ -125,11 +147,11 @@ pub(crate) fn sync_managed_document(source: &DocumentMut, target_path: &Path) ->
     };
 
     sync_managed_keys(source, &mut target);
-    for path in MANAGED_NESTED_KEYS {
-        sync_nested_key(source, &mut target, path);
-    }
+    let state_path = managed_state_path(target_path);
+    let state = sync_env_keys(source, &mut target, &read_managed_state(&state_path));
 
-    write_toml_document(target_path, &target)
+    write_toml_document(target_path, &target)?;
+    write_managed_state(&state_path, &state)
 }
 
 fn sync_managed_keys(source: &DocumentMut, target: &mut DocumentMut) {
@@ -147,34 +169,66 @@ fn sync_key(source: &DocumentMut, target: &mut DocumentMut, key: &str) {
     }
 }
 
-fn sync_nested_key(source: &DocumentMut, target: &mut DocumentMut, path: &[&str]) {
-    let Some((key, tables)) = path.split_last() else {
+/// Writes every generated `shell_environment_policy.set` key and removes the ones the previous
+/// sync wrote that the source no longer has. Returns the keys now managed.
+fn sync_env_keys(
+    source: &DocumentMut,
+    target: &mut DocumentMut,
+    previous: &ManagedState,
+) -> ManagedState {
+    let generated = env_set_items(source);
+    let stale = previous
+        .shell_environment_policy_set
+        .iter()
+        .map(String::as_str)
+        .filter(|key| !generated.iter().any(|(name, _)| name == key));
+    remove_env_keys(target, stale);
+    for (key, item) in &generated {
+        target["shell_environment_policy"]["set"][key] = (*item).clone();
+    }
+    ManagedState {
+        shell_environment_policy_set: generated.iter().map(|(key, _)| key.to_string()).collect(),
+    }
+}
+
+fn env_set_items(source: &DocumentMut) -> Vec<(&str, &Item)> {
+    source
+        .get("shell_environment_policy")
+        .and_then(|policy| policy.get("set"))
+        .and_then(Item::as_table_like)
+        .map(|set| set.iter().collect())
+        .unwrap_or_default()
+}
+
+fn remove_env_keys<'a>(target: &mut DocumentMut, keys: impl Iterator<Item = &'a str>) {
+    let set = target
+        .get_mut("shell_environment_policy")
+        .and_then(|policy| policy.get_mut("set"))
+        .and_then(Item::as_table_like_mut);
+    let Some(set) = set else {
         return;
     };
-    let value = tables
-        .iter()
-        .try_fold(source.as_item(), |item, table| item.get(table))
-        .and_then(|item| item.get(key));
-    if let Some(value) = value {
-        nested_item_mut(target, tables)[key] = value.clone();
-    } else {
-        remove_nested_key(target, tables, key);
-    }
+    keys.for_each(|key| {
+        set.remove(key);
+    });
 }
 
-fn nested_item_mut<'a>(target: &'a mut DocumentMut, tables: &[&str]) -> &'a mut Item {
-    tables
-        .iter()
-        .fold(target.as_item_mut(), |item, table| &mut item[table])
+fn managed_state_path(target_path: &Path) -> PathBuf {
+    target_path.with_file_name(MANAGED_STATE_FILE)
 }
 
-fn remove_nested_key(target: &mut DocumentMut, tables: &[&str], key: &str) {
-    let parent = tables
-        .iter()
-        .try_fold(target.as_item_mut(), |item, table| item.get_mut(table));
-    if let Some(table) = parent.and_then(Item::as_table_like_mut) {
-        table.remove(key);
-    }
+// A missing or unreadable sidecar must not block the sync; it only forgoes removals, apart from
+// the keys managed before the sidecar existed.
+fn read_managed_state(path: &Path) -> ManagedState {
+    std::fs::read_to_string(path)
+        .ok()
+        .and_then(|content| serde_json::from_str(&content).ok())
+        .unwrap_or_else(ManagedState::legacy)
+}
+
+fn write_managed_state(path: &Path, state: &ManagedState) -> Result<()> {
+    let content = serde_json::to_string_pretty(state)? + "\n";
+    fs_ops::write_file_atomically(path, content.as_bytes())
 }
 
 fn read_toml_document(path: &Path) -> Result<DocumentMut> {
@@ -191,6 +245,8 @@ fn write_toml_document(path: &Path, document: &DocumentMut) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use super::*;
 
     #[test]
@@ -220,6 +276,149 @@ trust_level = "trusted"
         );
 
         Ok(())
+    }
+
+    #[test]
+    fn sync_managed_document_writes_every_generated_env_key() -> Result<()> {
+        let root = test_root("sync_writes_every_generated_env_key")?;
+        let target = root.join("config.toml");
+        let source = env_source(&[("GH_CONFIG_DIR", "/gh"), ("NVIM_LOG_FILE", "/nvim.log")])?;
+
+        sync_managed_document(&source, &target)?;
+
+        let env = env_keys(&target)?;
+        assert_eq!(env.get("GH_CONFIG_DIR").map(String::as_str), Some("/gh"));
+        assert_eq!(
+            env.get("NVIM_LOG_FILE").map(String::as_str),
+            Some("/nvim.log")
+        );
+
+        std::fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn sync_managed_document_removes_a_previously_managed_key_that_left_the_source() -> Result<()> {
+        let root = test_root("sync_removes_previously_managed_key")?;
+        let target = root.join("config.toml");
+
+        sync_managed_document(&env_source(&[("NVIM_LOG_FILE", "/nvim.log")])?, &target)?;
+        sync_managed_document(&env_source(&[("OTHER", "1")])?, &target)?;
+
+        let env = env_keys(&target)?;
+        assert!(!env.contains_key("NVIM_LOG_FILE"));
+        assert_eq!(env.get("OTHER").map(String::as_str), Some("1"));
+
+        std::fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn sync_managed_document_keeps_env_keys_added_by_the_user_or_codex() -> Result<()> {
+        let root = test_root("sync_keeps_foreign_env_keys")?;
+        let target = root.join("config.toml");
+        write_file(
+            &target,
+            "[shell_environment_policy.set]\nNODE_REPL_TRUSTED_BROWSER_CLIENT_SHA256S = \"abc\"\n",
+        )?;
+
+        sync_managed_document(&env_source(&[("NVIM_LOG_FILE", "/nvim.log")])?, &target)?;
+        sync_managed_document(&env_source(&[])?, &target)?;
+
+        let env = env_keys(&target)?;
+        assert_eq!(
+            env.get("NODE_REPL_TRUSTED_BROWSER_CLIENT_SHA256S")
+                .map(String::as_str),
+            Some("abc"),
+        );
+        assert!(!env.contains_key("NVIM_LOG_FILE"));
+
+        std::fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn sync_managed_document_without_a_sidecar_removes_only_gh_config_dir() -> Result<()> {
+        let root = test_root("sync_without_sidecar")?;
+        let target = root.join("config.toml");
+        write_file(
+            &target,
+            "[shell_environment_policy.set]\nGH_CONFIG_DIR = \"/gh\"\nNVIM_LOG_FILE = \"/old\"\n",
+        )?;
+
+        sync_managed_document(&env_source(&[])?, &target)?;
+
+        let env = env_keys(&target)?;
+        assert!(!env.contains_key("GH_CONFIG_DIR"));
+        assert_eq!(env.get("NVIM_LOG_FILE").map(String::as_str), Some("/old"));
+
+        std::fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn sync_managed_document_keeps_a_user_owned_gh_config_dir_once_a_sidecar_exists() -> Result<()>
+    {
+        let root = test_root("sync_keeps_user_gh_config_dir")?;
+        let target = root.join("config.toml");
+
+        sync_managed_document(&env_source(&[])?, &target)?;
+        write_file(
+            &target,
+            "[shell_environment_policy.set]\nGH_CONFIG_DIR = \"/mine\"\n",
+        )?;
+        sync_managed_document(&env_source(&[])?, &target)?;
+
+        let env = env_keys(&target)?;
+        assert_eq!(env.get("GH_CONFIG_DIR").map(String::as_str), Some("/mine"));
+
+        std::fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn sync_managed_document_survives_an_unreadable_sidecar() -> Result<()> {
+        let root = test_root("sync_unreadable_sidecar")?;
+        let target = root.join("config.toml");
+        write_file(&root.join(MANAGED_STATE_FILE), "not json")?;
+
+        sync_managed_document(&env_source(&[("NVIM_LOG_FILE", "/nvim.log")])?, &target)?;
+
+        let env = env_keys(&target)?;
+        assert_eq!(
+            env.get("NVIM_LOG_FILE").map(String::as_str),
+            Some("/nvim.log")
+        );
+        let sidecar = std::fs::read_to_string(root.join(MANAGED_STATE_FILE))?;
+        assert!(sidecar.contains("NVIM_LOG_FILE"));
+
+        std::fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    fn env_source(pairs: &[(&str, &str)]) -> Result<DocumentMut> {
+        let header = (!pairs.is_empty()).then_some("[shell_environment_policy.set]\n");
+        let entries = pairs
+            .iter()
+            .map(|(key, value)| format!("{key} = \"{value}\"\n"));
+        let content: String = std::iter::once("model = \"gpt-5.5\"\n".to_string())
+            .chain(header.map(str::to_string))
+            .chain(entries)
+            .collect();
+        Ok(content.parse::<DocumentMut>()?)
+    }
+
+    fn env_keys(target: &Path) -> Result<BTreeMap<String, String>> {
+        let document = read_toml_document(target)?;
+        let set = document
+            .get("shell_environment_policy")
+            .and_then(|policy| policy.get("set"))
+            .and_then(Item::as_table_like);
+        Ok(set
+            .into_iter()
+            .flat_map(|set| set.iter())
+            .filter_map(|(key, item)| Some((key.to_string(), item.as_str()?.to_string())))
+            .collect())
     }
 
     #[test]
