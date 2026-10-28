@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.9](https://github.com/furedea/agent-harness/compare/agent-harness-v0.9.8...agent-harness-v0.9.9) (2026-10-28)
+
+
+### Features
+
+* **codex:** sync cli_auth_credentials_store into the Codex config ([#183](https://github.com/furedea/agent-harness/issues/183)) ([d70066a](https://github.com/furedea/agent-harness/commit/d70066ac75ec2bb5bb89111d8783d3ef63515322))
+
 ## [0.9.8](https://github.com/furedea/agent-harness/compare/agent-harness-v0.9.7...agent-harness-v0.9.8) (2026-10-26)
 
 
