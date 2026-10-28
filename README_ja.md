@@ -398,8 +398,8 @@ sha256sum -c agent-harness-x86_64-unknown-linux-musl.tar.xz.sha256
 
 ```text
 model, model_reasoning_effort, personality, approval_policy, sandbox_mode,
-approvals_reviewer, notice, tui, plugins, features, default_permissions,
-permissions
+approvals_reviewer, cli_auth_credentials_store, notice, tui, plugins, features,
+default_permissions, permissions
 ```
 
 生成される Claude の設定は，ソースの `claude/settings.json` が宣言する `permissions.allow`，`permissions.ask`，`permissions.deny` のエントリをすべて残し，その後に生成した `Bash(...)`，`Read(...)`，`Edit(...)` のエントリを続ける．各ルールは 1 回だけ現れ，複数のリストで宣言されたルールは最も厳しいリスト（`deny` > `ask` > `allow`）にだけ残る．そのため，マージによって権限が広がることはない．`defaultMode` などの他の権限キーはそのまま引き継がれる．Claude の設定の同期は生成された `permissions` キー全体を置き換えるため，Claude Code が対話的に `~/.claude/settings.json` に保存した承認は次の同期で残らない．永続させたいルールは `command_permissions.json` かソースの `claude/settings.json` に書くこと．
