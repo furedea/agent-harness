@@ -516,8 +516,8 @@ other Codex-owned or user-owned state such as project trust and marketplace data
 
 ```text
 model, model_reasoning_effort, personality, approval_policy, sandbox_mode,
-approvals_reviewer, notice, tui, plugins, features, default_permissions,
-permissions
+approvals_reviewer, cli_auth_credentials_store, notice, tui, plugins, features,
+default_permissions, permissions
 ```
 
 It also writes every key under the source's `shell_environment_policy.set` and removes keys a

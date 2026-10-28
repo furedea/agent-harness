@@ -19,6 +19,7 @@ const MANAGED_KEYS: &[&str] = &[
     "approval_policy",
     "sandbox_mode",
     "approvals_reviewer",
+    "cli_auth_credentials_store",
     "notice",
     "tui",
     "plugins",

@@ -243,3 +243,39 @@ fn codex_config_sync_manages_only_the_agent_gh_config_dir_in_the_shell_environme
 
     remove_dir(root);
 }
+
+#[test]
+fn codex_config_sync_follows_the_source_cli_auth_credentials_store() {
+    let root = test_root("codex-sync-auth-credentials-store");
+    let source_path = root.join("source.toml");
+    let target_path = root.join("target.toml");
+    let sync = || {
+        run_harness([
+            "sync-codex-config",
+            "--source",
+            source_path.to_str().unwrap(),
+            "--target",
+            target_path.to_str().unwrap(),
+        ]);
+    };
+
+    std::fs::write(&source_path, "cli_auth_credentials_store = \"keyring\"\n").unwrap();
+    sync();
+    let target = read_toml(&target_path);
+    assert_eq!(
+        target["cli_auth_credentials_store"].as_str(),
+        Some("keyring")
+    );
+
+    std::fs::write(&source_path, "cli_auth_credentials_store = \"auto\"\n").unwrap();
+    sync();
+    let target = read_toml(&target_path);
+    assert_eq!(target["cli_auth_credentials_store"].as_str(), Some("auto"));
+
+    std::fs::write(&source_path, "").unwrap();
+    sync();
+    let target = read_toml(&target_path);
+    assert!(target.get("cli_auth_credentials_store").is_none());
+
+    remove_dir(root);
+}
