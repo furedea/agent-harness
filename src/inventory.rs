@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 
+use crate::provider::spec::PROVIDERS;
 use anyhow::Result;
 
 use crate::generation::{
@@ -23,23 +24,13 @@ impl Inventory {
     }
 
     pub(crate) fn summary(&self) -> String {
-        format!(
-            "Agent Harness inventory\n\n\
-             Skills                  {}\n\
-             Claude hook events      {}\n\
-             Codex hook events       {}\n\
-             Devin hook events       {}\n\
-             Hermes hook events      {}\n\
-             Pi hook events          {}\n\
-             Dsh hook events         {}\n",
-            self.skills.len(),
-            self.hook_event_count(HookProvider::Claude),
-            self.hook_event_count(HookProvider::Codex),
-            self.hook_event_count(HookProvider::Devin),
-            self.hook_event_count(HookProvider::Hermes),
-            self.hook_event_count(HookProvider::Pi),
-            self.hook_event_count(HookProvider::Dsh),
-        )
+        let mut lines = vec![
+            "Agent Harness inventory".to_owned(),
+            String::new(),
+            format!("{:<24}{}", "Skills", self.skills.len()),
+        ];
+        lines.extend(inventory_providers().map(|provider| self.hook_summary(provider)));
+        finish_lines(&lines)
     }
 
     pub(crate) fn skills(&self) -> String {
@@ -58,21 +49,21 @@ impl Inventory {
 
     pub(crate) fn hooks(&self, provider: Option<HookProvider>) -> String {
         let mut lines = vec!["Hooks".to_owned()];
-        let providers = [
-            HookProvider::Claude,
-            HookProvider::Codex,
-            HookProvider::Devin,
-            HookProvider::Hermes,
-            HookProvider::Pi,
-            HookProvider::Dsh,
-        ];
+        let providers = inventory_providers();
         lines.extend(
             providers
-                .into_iter()
                 .filter(|current| provider.is_none_or(|provider| provider == *current))
                 .flat_map(|current| provider_hook_lines(&self.hooks, current)),
         );
         finish_lines(&lines)
+    }
+
+    fn hook_summary(&self, provider: HookProvider) -> String {
+        format!(
+            "{:<24}{}",
+            format!("{} hook events", provider.display_name()),
+            self.hook_event_count(provider)
+        )
     }
 
     fn hook_event_count(&self, provider: HookProvider) -> usize {
@@ -83,6 +74,12 @@ impl Inventory {
             .collect::<BTreeSet<_>>()
             .len()
     }
+}
+
+fn inventory_providers() -> impl Iterator<Item = HookProvider> {
+    [HookProvider::Claude, HookProvider::Codex]
+        .into_iter()
+        .chain(PROVIDERS.iter().map(|spec| hooks::hook_provider(spec.id)))
 }
 
 const SKILL_HEADER: SkillRow<'static> = SkillRow {
@@ -208,12 +205,10 @@ fn shorten_hook_command(command: &str) -> String {
 }
 
 fn shorten_hook_path(part: &str) -> String {
-    part.strip_prefix("$HOME/.claude/hooks/")
-        .or_else(|| part.strip_prefix("$HOME/.codex/hooks/"))
-        .or_else(|| part.strip_prefix("$HOME/.devin/hooks/"))
-        .or_else(|| part.strip_prefix("$HOME/.hermes/hooks/"))
-        .or_else(|| part.strip_prefix("$HOME/.pi/hooks/"))
-        .or_else(|| part.strip_prefix("$HOME/.dsh/hooks/"))
+    [".claude/hooks", ".codex/hooks"]
+        .into_iter()
+        .chain(PROVIDERS.iter().map(|spec| spec.hooks_dir))
+        .find_map(|dir| part.strip_prefix(&format!("$HOME/{dir}/")))
         .unwrap_or(part)
         .to_owned()
 }
@@ -328,6 +323,29 @@ mod tests {
         );
     }
 
+    #[test]
+    fn inventory_lists_every_registry_provider() {
+        let inventory = Inventory {
+            skills: Vec::new(),
+            hooks: PROVIDERS
+                .iter()
+                .map(|spec| hook(hooks::hook_provider(spec.id), "event", "*"))
+                .collect(),
+        };
+        for spec in PROVIDERS {
+            assert!(
+                inventory
+                    .summary()
+                    .contains(&format!("{} hook events", spec.display_name))
+            );
+            assert!(
+                inventory
+                    .hooks(None)
+                    .contains(&format!("\n{}\n", spec.display_name))
+            );
+        }
+    }
+
     fn shortened_adapter_command(provider_dir: &str) -> String {
         shorten_hook_command(&format!(
             "$HOME/{provider_dir}/hooks/hook_adapter.py shell forbidden"
@@ -337,7 +355,8 @@ mod tests {
     #[test]
     fn hook_commands_drop_the_provider_hooks_directory() {
         let expected = "hook_adapter.py shell forbidden";
-        assert_eq!(shortened_adapter_command(".pi"), expected);
-        assert_eq!(shortened_adapter_command(".dsh"), expected);
+        for spec in PROVIDERS {
+            assert_eq!(shortened_adapter_command(spec.home_dir), expected);
+        }
     }
 }

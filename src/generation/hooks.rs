@@ -83,80 +83,12 @@ pub(crate) fn write_codex_hooks_for_runtime(
     io::write_json(path, &hooks)
 }
 
-pub(crate) fn write_devin_hooks(
-    source: &Path,
-    path: &Path,
-    external_hooks: &[ExternalHookBundle],
-) -> Result<()> {
-    write_devin_hooks_for_runtime(GenerationContext::home(source, external_hooks), path)
-}
-
-pub(crate) fn write_devin_hooks_for_runtime(
+pub(crate) fn write_provider_hooks_for_runtime(
     context: GenerationContext<'_>,
     path: &Path,
+    spec: &ProviderSpec,
 ) -> Result<()> {
-    io::write_json(path, &devin_hooks_for_runtime(context)?)
-}
-
-pub(crate) fn devin_hooks_for_runtime(context: GenerationContext<'_>) -> Result<Value> {
-    provider_hooks_for_runtime(context, ProviderId::Devin.spec())
-}
-
-pub(crate) fn write_hermes_hooks(
-    source: &Path,
-    path: &Path,
-    external_hooks: &[ExternalHookBundle],
-) -> Result<()> {
-    write_hermes_hooks_for_runtime(GenerationContext::home(source, external_hooks), path)
-}
-
-pub(crate) fn write_hermes_hooks_for_runtime(
-    context: GenerationContext<'_>,
-    path: &Path,
-) -> Result<()> {
-    io::write_json(path, &hermes_hooks_for_runtime(context)?)
-}
-
-pub(crate) fn hermes_hooks_for_runtime(context: GenerationContext<'_>) -> Result<Value> {
-    provider_hooks_for_runtime(context, ProviderId::Hermes.spec())
-}
-
-pub(crate) fn write_pi_hooks(
-    source: &Path,
-    path: &Path,
-    external_hooks: &[ExternalHookBundle],
-) -> Result<()> {
-    write_pi_hooks_for_runtime(GenerationContext::home(source, external_hooks), path)
-}
-
-pub(crate) fn write_pi_hooks_for_runtime(
-    context: GenerationContext<'_>,
-    path: &Path,
-) -> Result<()> {
-    io::write_json(path, &pi_hooks_for_runtime(context)?)
-}
-
-pub(crate) fn pi_hooks_for_runtime(context: GenerationContext<'_>) -> Result<Value> {
-    provider_hooks_for_runtime(context, ProviderId::Pi.spec())
-}
-
-pub(crate) fn write_dsh_hooks(
-    source: &Path,
-    path: &Path,
-    external_hooks: &[ExternalHookBundle],
-) -> Result<()> {
-    write_dsh_hooks_for_runtime(GenerationContext::home(source, external_hooks), path)
-}
-
-pub(crate) fn write_dsh_hooks_for_runtime(
-    context: GenerationContext<'_>,
-    path: &Path,
-) -> Result<()> {
-    io::write_json(path, &dsh_hooks_for_runtime(context)?)
-}
-
-pub(crate) fn dsh_hooks_for_runtime(context: GenerationContext<'_>) -> Result<Value> {
-    provider_hooks_for_runtime(context, ProviderId::Dsh.spec())
+    io::write_json(path, &provider_hooks_for_runtime(context, spec)?)
 }
 
 fn provider_hooks_for_runtime(
@@ -184,7 +116,7 @@ fn provider_hooks_for_runtime(
     Ok(hooks)
 }
 
-fn hook_provider(id: ProviderId) -> HookProvider {
+pub(crate) fn hook_provider(id: ProviderId) -> HookProvider {
     match id {
         ProviderId::Devin => HookProvider::Devin,
         ProviderId::Hermes => HookProvider::Hermes,

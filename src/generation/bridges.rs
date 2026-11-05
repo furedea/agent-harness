@@ -1,11 +1,14 @@
 use std::path::{Path, PathBuf};
 
+#[cfg(test)]
 use anyhow::Result;
 
+#[cfg(test)]
 use crate::fs_ops;
 
-use crate::provider::spec::{ProviderId, ProviderSpec};
+use crate::provider::spec::ProviderId;
 
+#[cfg(test)]
 pub(crate) fn write_hermes_plugin(dir: &Path) -> Result<()> {
     write_assets(dir, ProviderId::Hermes.spec())
 }
@@ -19,15 +22,13 @@ pub(crate) fn hermes_plugin_files(dir: &Path) -> Vec<PathBuf> {
         .collect()
 }
 
+#[cfg(test)]
 pub(crate) fn write_pi_bridge(path: &Path) -> Result<()> {
     fs_ops::write_file_atomically(path, ProviderId::Pi.spec().assets[0].content.as_bytes())
 }
 
-pub(crate) fn write_dsh_bridge(dir: &Path) -> Result<()> {
-    write_assets(dir, ProviderId::Dsh.spec())
-}
-
-fn write_assets(dir: &Path, spec: &ProviderSpec) -> Result<()> {
+#[cfg(test)]
+fn write_assets(dir: &Path, spec: &crate::provider::spec::ProviderSpec) -> Result<()> {
     for asset in spec.assets {
         fs_ops::write_file_atomically(&dir.join(asset.name), asset.content.as_bytes())?;
     }
