@@ -6,9 +6,9 @@ use clap::{Parser, Subcommand, ValueEnum};
 
 use crate::{
     generation::{
-        GenerationContext, claude_config, codex_config, command_permissions, devin_config,
+        GenerationContext, claude_config, codex_config, command_permissions,
         external_hooks::ExternalHookBundle,
-        hermes_config, hook_bundle, hooks, protection,
+        hook_bundle, hooks, protection,
         skills::{ExternalSkill, SkillTarget},
     },
     github_app::{self, GitHubRestApi, RefreshRequest},
@@ -352,12 +352,7 @@ fn sync_config(provider: hooks::HookProvider, args: &SyncConfigArgs) -> Result<(
             claude_config::sync_settings(&args.source, &args.target, &default_home_dir())
         }
         hooks::HookProvider::Codex => codex_config::sync_managed_config(&args.source, &args.target),
-        hooks::HookProvider::Devin => devin_config::sync_config(&args.source, &args.target),
-        hooks::HookProvider::Hermes => hermes_config::sync_config(&args.source, &args.target),
-        hooks::HookProvider::Dsh => {
-            crate::generation::dsh_config::sync_config(&args.source, &args.target)
-        }
-        hooks::HookProvider::Pi => anyhow::bail!("pi has no managed config to sync"),
+        provider => crate::config_sync::sync(registry_spec(provider), &args.source, &args.target),
     }
 }
 

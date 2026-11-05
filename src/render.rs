@@ -1,15 +1,15 @@
 use std::path::Path;
 
-use anyhow::{Context, Result, ensure};
+use anyhow::{Result, ensure};
 
 use crate::{
-    fs_ops,
+    filesystem::{FileSystem, RealFileSystem, TemporaryDirectory},
     generation::{
         GenerationContext, claude_config, codex_config, command_permissions, hermes_config, hooks,
         protection, skills,
     },
     layout::{InstalledLayout, SourceLayout},
-    provider::spec::{PROVIDERS, ProviderSpec},
+    provider::spec::PROVIDERS,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -37,29 +37,19 @@ pub(crate) fn generate_skills(
 }
 
 pub(crate) fn install(context: GenerationContext<'_>, out: &Path) -> Result<()> {
-    let staging = fs_ops::TemporaryDirectory::create()?;
+    let staging = TemporaryDirectory::create()?;
     let rendered = InstalledLayout::new(staging.path());
     let installed = InstalledLayout::new(out);
     if installed.codex_config().exists() {
-        fs_ops::copy_file(&installed.codex_config(), &rendered.codex_config())?;
+        crate::filesystem::FileSystem::copy_file(
+            &crate::filesystem::RealFileSystem,
+            &installed.codex_config(),
+            &rendered.codex_config(),
+        )?;
     }
     render_installation(context, staging.path())?;
-    for (source, target) in rendered
-        .managed_directories()
-        .into_iter()
-        .zip(installed.managed_directories())
-    {
-        fs_ops::copy_dir(&source, &target)?;
-    }
-    for (source, target) in rendered
-        .managed_files()
-        .into_iter()
-        .zip(installed.managed_files())
-    {
-        let bytes = std::fs::read(&source)
-            .with_context(|| format!("failed to read rendered file {}", source.display()))?;
-        fs_ops::write_file_atomically(&target, &bytes)?;
-    }
+    let plan = crate::install_plan::plan_install(&rendered, &installed);
+    crate::install_executor::execute(&crate::filesystem::RealFileSystem, &plan)?;
     Ok(())
 }
 
@@ -72,25 +62,23 @@ fn render_installation(context: GenerationContext<'_>, out: &Path) -> Result<()>
     let installed = InstalledLayout::new(out);
     let source_layout = SourceLayout::new(source);
     command_permissions::validate_regex_policies(source)?;
-    fs_ops::copy_file(
+    RealFileSystem.copy_file(
         &source_layout.agent_instructions(),
         &installed.codex_agent_instructions(),
     )?;
-    fs_ops::copy_file(
+    RealFileSystem.copy_file(
         &source_layout.agent_instructions(),
         &installed.claude_agent_instructions(),
     )?;
     for (source, target) in installed.synced_directories(source_layout) {
-        fs_ops::copy_dir(&source, &target)?;
+        RealFileSystem.replace_directory(&source, &target)?;
     }
 
-    fs_ops::copy_file(
+    RealFileSystem.copy_file(
         &source_layout.agent_instructions(),
         &installed.dsh_instructions(),
     )?;
-    for spec in PROVIDERS {
-        write_provider_assets(out, spec)?;
-    }
+    crate::install_executor::execute(&RealFileSystem, &crate::install_plan::plan_assets(out))?;
     for bundle in external_hooks {
         bundle.copy_assets(out)?;
     }
@@ -125,32 +113,10 @@ fn render_installation(context: GenerationContext<'_>, out: &Path) -> Result<()>
     for spec in PROVIDERS {
         hooks::write_provider_hooks_for_runtime(context, &out.join(spec.hook_manifest), spec)?;
     }
-    fs_ops::copy_dir(&installed.codex_skills(), &installed.dsh_skills())?;
+    RealFileSystem.replace_directory(&installed.codex_skills(), &installed.dsh_skills())?;
     hermes_config::write_managed_config(&installed.hermes_managed_config())?;
 
     Ok(())
-}
-
-fn write_provider_assets(out: &Path, spec: &ProviderSpec) -> Result<()> {
-    let Some(bridge) = spec.bridge_path else {
-        return Ok(());
-    };
-    for asset in spec.assets {
-        let path = provider_asset_path(out, bridge, asset.name);
-        fs_ops::write_file_atomically(&path, asset.content.as_bytes())?;
-    }
-    Ok(())
-}
-
-fn provider_asset_path(out: &Path, bridge: &str, name: &str) -> std::path::PathBuf {
-    if Path::new(bridge)
-        .file_name()
-        .is_some_and(|file| file == name)
-    {
-        out.join(bridge)
-    } else {
-        out.join(bridge).join(name)
-    }
 }
 
 pub(crate) fn verify(root: &Path) -> Result<()> {
@@ -182,12 +148,7 @@ pub(crate) fn verify(root: &Path) -> Result<()> {
     }
     for path in PROVIDERS
         .iter()
-        .filter_map(|spec| spec.bridge_path.map(|bridge| (spec, bridge)))
-        .flat_map(|(spec, bridge)| {
-            spec.assets
-                .iter()
-                .map(move |asset| provider_asset_path(root, bridge, asset.name))
-        })
+        .flat_map(|spec| spec.assets.iter().map(|asset| root.join(asset.destination)))
     {
         ensure!(
             path.is_file(),

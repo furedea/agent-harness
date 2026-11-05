@@ -173,7 +173,7 @@ impl<'a> InstalledLayout<'a> {
 
     pub(crate) fn hermes_plugin(self) -> PathBuf {
         self.root
-            .join(ProviderId::Hermes.spec().bridge_path.unwrap())
+            .join(ProviderId::Hermes.spec().managed_asset_directory.unwrap())
     }
 
     pub(crate) fn hermes_manifest(self) -> PathBuf {
@@ -196,10 +196,6 @@ impl<'a> InstalledLayout<'a> {
         self.root.join(ProviderId::Pi.spec().hooks_dir)
     }
 
-    pub(crate) fn pi_hook_bridge(self) -> PathBuf {
-        self.root.join(ProviderId::Pi.spec().bridge_path.unwrap())
-    }
-
     pub(crate) fn pi_manifest(self) -> PathBuf {
         self.root.join(ProviderId::Pi.spec().hook_manifest)
     }
@@ -209,7 +205,8 @@ impl<'a> InstalledLayout<'a> {
     }
 
     pub(crate) fn dsh_bridge(self) -> PathBuf {
-        self.root.join(ProviderId::Dsh.spec().bridge_path.unwrap())
+        self.root
+            .join(ProviderId::Dsh.spec().managed_asset_directory.unwrap())
     }
 
     pub(crate) fn dsh_manifest(self) -> PathBuf {
@@ -295,8 +292,8 @@ impl<'a> InstalledLayout<'a> {
         ]
     }
 
-    pub(crate) fn managed_files(self) -> [PathBuf; 13] {
-        [
+    pub(crate) fn managed_files(self) -> Vec<PathBuf> {
+        let mut files = vec![
             self.codex_agent_instructions(),
             self.claude_agent_instructions(),
             self.codex_hook_config(),
@@ -309,8 +306,15 @@ impl<'a> InstalledLayout<'a> {
             self.pi_manifest(),
             self.dsh_manifest(),
             self.dsh_instructions(),
-            self.pi_hook_bridge(),
-        ]
+        ];
+        files.extend(
+            crate::provider::spec::PROVIDERS
+                .iter()
+                .filter(|spec| spec.managed_asset_directory.is_none())
+                .flat_map(|spec| spec.assets.iter())
+                .map(|asset| self.root.join(asset.destination)),
+        );
+        files
     }
 
     pub(crate) fn synced_directories(self, source: SourceLayout) -> [(PathBuf, PathBuf); 7] {
@@ -327,7 +331,7 @@ impl<'a> InstalledLayout<'a> {
 
     /// Generated files plus the mutable provider configs that installation syncs them into.
     pub(crate) fn generated_files(self, dsh_profile: &str) -> Vec<PathBuf> {
-        let mut files = self.managed_files().to_vec();
+        let mut files = self.managed_files();
         files.extend([
             self.claude_command_permissions(),
             self.claude_protected_paths(),

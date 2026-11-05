@@ -1,7 +1,11 @@
 mod cli;
+mod config_sync;
+mod filesystem;
 mod fs_ops;
 mod generation;
 mod github_app;
+mod install_executor;
+mod install_plan;
 mod inventory;
 mod layout;
 mod manifest;

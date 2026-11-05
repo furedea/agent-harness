@@ -1,3 +1,10 @@
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum ConfigSync {
+    MergeTopLevelJson,
+    MergeYaml,
+    RegisterBundle,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ProviderId {
     Devin,
@@ -17,7 +24,7 @@ impl ProviderId {
 
 #[derive(Debug)]
 pub(crate) struct Asset {
-    pub(crate) name: &'static str,
+    pub(crate) destination: &'static str,
     pub(crate) content: &'static str,
 }
 
@@ -31,9 +38,10 @@ pub(crate) struct ProviderSpec {
     pub(crate) hooks_dir: &'static str,
     pub(crate) hook_manifest: &'static str,
     pub(crate) external_hook_file: &'static str,
-    pub(crate) bridge_path: Option<&'static str>,
+    pub(crate) managed_asset_directory: Option<&'static str>,
     pub(crate) assets: &'static [Asset],
     pub(crate) permissions: bool,
+    pub(crate) config_sync: Option<ConfigSync>,
 }
 
 pub(crate) const PROVIDERS: &[ProviderSpec] = &[
@@ -46,9 +54,10 @@ pub(crate) const PROVIDERS: &[ProviderSpec] = &[
         hooks_dir: ".devin/hooks",
         hook_manifest: ".config/devin/config.json",
         external_hook_file: ".devin/hooks.v1.json",
-        bridge_path: None,
+        managed_asset_directory: None,
         assets: &[],
         permissions: true,
+        config_sync: Some(ConfigSync::MergeTopLevelJson),
     },
     ProviderSpec {
         id: ProviderId::Hermes,
@@ -59,18 +68,19 @@ pub(crate) const PROVIDERS: &[ProviderSpec] = &[
         hooks_dir: ".hermes/hooks",
         hook_manifest: ".hermes/hooks.json",
         external_hook_file: ".hermes/hooks.json",
-        bridge_path: Some(".hermes/plugins/agent-harness-hooks"),
+        managed_asset_directory: Some(".hermes/plugins/agent-harness-hooks"),
         assets: &[
             Asset {
-                name: "plugin.yaml",
+                destination: ".hermes/plugins/agent-harness-hooks/plugin.yaml",
                 content: include_str!("../generation/assets/hermes/plugin.yaml"),
             },
             Asset {
-                name: "__init__.py",
+                destination: ".hermes/plugins/agent-harness-hooks/__init__.py",
                 content: include_str!("../generation/assets/hermes/__init__.py"),
             },
         ],
         permissions: false,
+        config_sync: Some(ConfigSync::MergeYaml),
     },
     ProviderSpec {
         id: ProviderId::Pi,
@@ -81,12 +91,13 @@ pub(crate) const PROVIDERS: &[ProviderSpec] = &[
         hooks_dir: ".pi/hooks",
         hook_manifest: ".pi/agent/hooks.json",
         external_hook_file: ".pi/hooks.json",
-        bridge_path: Some(".pi/agent/extensions/hook_bridge.ts"),
+        managed_asset_directory: None,
         assets: &[Asset {
-            name: "hook_bridge.ts",
+            destination: ".pi/agent/extensions/hook_bridge.ts",
             content: include_str!("../generation/assets/pi/hook_bridge.ts"),
         }],
         permissions: false,
+        config_sync: None,
     },
     ProviderSpec {
         id: ProviderId::Dsh,
@@ -97,21 +108,22 @@ pub(crate) const PROVIDERS: &[ProviderSpec] = &[
         hooks_dir: ".dsh/hooks",
         hook_manifest: ".dsh/hooks.json",
         external_hook_file: ".dsh/hooks.json",
-        bridge_path: Some(".dsh/bridge"),
+        managed_asset_directory: Some(".dsh/bridge"),
         assets: &[
             Asset {
-                name: "package.json",
+                destination: ".dsh/bridge/package.json",
                 content: include_str!("../generation/assets/dsh/package.json"),
             },
             Asset {
-                name: "cordis.patch.yml",
+                destination: ".dsh/bridge/cordis.patch.yml",
                 content: include_str!("../generation/assets/dsh/cordis.patch.yml"),
             },
             Asset {
-                name: "hook_bridge.ts",
+                destination: ".dsh/bridge/hook_bridge.ts",
                 content: include_str!("../generation/assets/dsh/hook_bridge.ts"),
             },
         ],
         permissions: false,
+        config_sync: Some(ConfigSync::RegisterBundle),
     },
 ];

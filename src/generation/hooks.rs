@@ -214,8 +214,8 @@ fn hook_event_rank(event: &str) -> usize {
 
 fn read_hooks(source: &Path) -> Result<HookConfig> {
     let path = SourceLayout::new(source).hook_config();
-    let content = std::fs::read_to_string(&path)
-        .with_context(|| format!("failed to read {}", path.display()))?;
+    let content =
+        io::read_file(&path).with_context(|| format!("failed to read {}", path.display()))?;
     let config: HookConfig = serde_json::from_str(&content)
         .with_context(|| format!("failed to parse {}", path.display()))?;
     validate_hooks(&config)?;
