@@ -1,0 +1,80 @@
+[
+  {
+    "id": "devin",
+    "display_name": "Devin",
+    "option_description": "Whether to install Devin CLI harness files.",
+    "home_dir": ".devin",
+    "hook_manifest": ".config/devin/config.json",
+    "linked_paths": {
+      ".devin/hooks": {}
+    },
+    "sync": {
+      "activation": "agentHarnessDevinConfig",
+      "command": "sync-devin-config",
+      "source": ".config/devin/config.json",
+      "target": ".config/devin/config.json"
+    },
+    "extra_options": {}
+  },
+  {
+    "id": "hermes",
+    "display_name": "Hermes",
+    "option_description": "Whether to install Hermes Agent harness files.",
+    "home_dir": ".hermes",
+    "hook_manifest": ".hermes/hooks.json",
+    "linked_paths": {
+      ".hermes/hooks": {},
+      ".hermes/hooks.json": {},
+      ".hermes/plugins/agent-harness-hooks": {}
+    },
+    "sync": {
+      "activation": "agentHarnessHermesConfig",
+      "command": "sync-hermes-config",
+      "source": ".hermes/managed-config.yaml",
+      "target": ".hermes/config.yaml"
+    },
+    "extra_options": {}
+  },
+  {
+    "id": "pi",
+    "display_name": "Pi",
+    "option_description": "Whether to install pi harness files.",
+    "home_dir": ".pi",
+    "hook_manifest": ".pi/agent/hooks.json",
+    "linked_paths": {
+      ".pi/hooks": {},
+      ".pi/agent/hooks.json": {},
+      ".pi/agent/extensions/hook_bridge.ts": {}
+    },
+    "sync": null,
+    "extra_options": {}
+  },
+  {
+    "id": "dsh",
+    "display_name": "Dsh",
+    "option_description": "Whether to install DeepSeek Harness files.",
+    "home_dir": ".dsh",
+    "hook_manifest": ".dsh/hooks.json",
+    "linked_paths": {
+      ".dsh/hooks": {},
+      ".dsh/hooks.json": {},
+      ".dsh/bridge": {},
+      ".dsh/skills": {
+        "skills_provider": "codex"
+      },
+      ".dsh/AGENTS.md": {}
+    },
+    "sync": {
+      "activation": "agentHarnessDshConfig",
+      "command": "sync-dsh-config",
+      "source": ".dsh/bridge",
+      "target": ".dsh/profiles/${profile}/package.json"
+    },
+    "extra_options": {
+      "profile": {
+        "default": "web",
+        "description": "User-owned dsh profile to register the hook bundle in."
+      }
+    }
+  }
+]
