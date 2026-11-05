@@ -6,6 +6,7 @@ mod inventory;
 mod layout;
 mod manifest;
 mod profile;
+mod provider;
 mod render;
 mod runtime;
 mod runtime_root;

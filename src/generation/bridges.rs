@@ -4,40 +4,32 @@ use anyhow::Result;
 
 use crate::fs_ops;
 
-const HERMES_PLUGIN_ASSETS: [(&str, &str); 2] = [
-    ("plugin.yaml", include_str!("assets/hermes/plugin.yaml")),
-    ("__init__.py", include_str!("assets/hermes/__init__.py")),
-];
-const PI_HOOK_BRIDGE: &str = include_str!("assets/pi/hook_bridge.ts");
+use crate::provider::spec::{ProviderId, ProviderSpec};
 
 pub(crate) fn write_hermes_plugin(dir: &Path) -> Result<()> {
-    for (name, content) in HERMES_PLUGIN_ASSETS {
-        fs_ops::write_file_atomically(&dir.join(name), content.as_bytes())?;
-    }
-    Ok(())
+    write_assets(dir, ProviderId::Hermes.spec())
 }
 
 pub(crate) fn hermes_plugin_files(dir: &Path) -> Vec<PathBuf> {
-    HERMES_PLUGIN_ASSETS
+    ProviderId::Hermes
+        .spec()
+        .assets
         .iter()
-        .map(|(name, _)| dir.join(name))
+        .map(|asset| dir.join(asset.name))
         .collect()
 }
 
 pub(crate) fn write_pi_bridge(path: &Path) -> Result<()> {
-    fs_ops::write_file_atomically(path, PI_HOOK_BRIDGE.as_bytes())
+    fs_ops::write_file_atomically(path, ProviderId::Pi.spec().assets[0].content.as_bytes())
 }
 
 pub(crate) fn write_dsh_bridge(dir: &Path) -> Result<()> {
-    for (name, content) in [
-        ("package.json", include_str!("assets/dsh/package.json")),
-        (
-            "cordis.patch.yml",
-            include_str!("assets/dsh/cordis.patch.yml"),
-        ),
-        ("hook_bridge.ts", include_str!("assets/dsh/hook_bridge.ts")),
-    ] {
-        fs_ops::write_file_atomically(&dir.join(name), content.as_bytes())?;
+    write_assets(dir, ProviderId::Dsh.spec())
+}
+
+fn write_assets(dir: &Path, spec: &ProviderSpec) -> Result<()> {
+    for asset in spec.assets {
+        fs_ops::write_file_atomically(&dir.join(asset.name), asset.content.as_bytes())?;
     }
     Ok(())
 }
@@ -81,9 +73,15 @@ mod tests {
     #[test]
     fn pi_bridge_runs_the_adapter_with_an_isolated_interpreter() {
         assert!(
-            PI_HOOK_BRIDGE.contains(r#"spawn("python3", ["-I", "-B", ADAPTER, "dispatch", event]"#)
+            ProviderId::Pi.spec().assets[0]
+                .content
+                .contains(r#"spawn("python3", ["-I", "-B", ADAPTER, "dispatch", event]"#)
         );
-        assert!(!PI_HOOK_BRIDGE.contains(r#"spawn("python3", [ADAPTER"#));
+        assert!(
+            !ProviderId::Pi.spec().assets[0]
+                .content
+                .contains(r#"spawn("python3", [ADAPTER"#)
+        );
     }
 
     fn test_root(name: &str) -> Result<PathBuf> {

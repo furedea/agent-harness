@@ -1,3 +1,4 @@
+use crate::provider::spec::ProviderId;
 use std::path::{Path, PathBuf};
 
 const MANIFEST_PATH: &str = "manifest.json";
@@ -36,11 +37,6 @@ const CLAUDE_SETTINGS_PATH: &str = ".claude/settings.json";
 const CODEX_AGENT_INSTRUCTIONS_PATH: &str = ".codex/AGENTS.md";
 const CODEX_HOOK_CONFIG_PATH: &str = ".codex/hooks.json";
 const CODEX_RULES_PATH: &str = ".codex/rules/default.rules";
-const DEVIN_CONFIG_PATH: &str = ".config/devin/config.json";
-const HERMES_CONFIG_PATH: &str = ".hermes/config.yaml";
-const HERMES_MANIFEST_PATH: &str = ".hermes/hooks.json";
-const HERMES_MANAGED_CONFIG_PATH: &str = ".hermes/managed-config.yaml";
-const PI_MANIFEST_PATH: &str = ".pi/agent/hooks.json";
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct SourceLayout<'a> {
@@ -109,19 +105,19 @@ impl<'a> SourceLayout<'a> {
     }
 
     pub(crate) fn devin_hooks(self) -> PathBuf {
-        self.root.join("devin/hooks")
+        self.root.join(ProviderId::Devin.spec().source_hooks)
     }
 
     pub(crate) fn hermes_hooks(self) -> PathBuf {
-        self.root.join("hermes/hooks")
+        self.root.join(ProviderId::Hermes.spec().source_hooks)
     }
 
     pub(crate) fn pi_hooks(self) -> PathBuf {
-        self.root.join("pi/hooks")
+        self.root.join(ProviderId::Pi.spec().source_hooks)
     }
 
     pub(crate) fn dsh_hooks(self) -> PathBuf {
-        self.root.join("dsh/hooks")
+        self.root.join(ProviderId::Dsh.spec().source_hooks)
     }
 
     pub(crate) fn claude_statusline(self) -> PathBuf {
@@ -164,62 +160,71 @@ impl<'a> InstalledLayout<'a> {
     }
 
     pub(crate) fn devin_hooks(self) -> PathBuf {
-        self.root.join(".devin/hooks")
+        self.root.join(ProviderId::Devin.spec().hooks_dir)
     }
 
     pub(crate) fn devin_config(self) -> PathBuf {
-        self.root.join(DEVIN_CONFIG_PATH)
+        self.root.join(ProviderId::Devin.spec().hook_manifest)
     }
 
     pub(crate) fn hermes_hooks(self) -> PathBuf {
-        self.root.join(".hermes/hooks")
+        self.root.join(ProviderId::Hermes.spec().hooks_dir)
     }
 
     pub(crate) fn hermes_plugin(self) -> PathBuf {
-        self.root.join(".hermes/plugins/agent-harness-hooks")
+        self.root
+            .join(ProviderId::Hermes.spec().bridge_path.unwrap())
     }
 
     pub(crate) fn hermes_manifest(self) -> PathBuf {
-        self.root.join(HERMES_MANIFEST_PATH)
+        self.root.join(ProviderId::Hermes.spec().hook_manifest)
     }
 
     pub(crate) fn hermes_managed_config(self) -> PathBuf {
-        self.root.join(HERMES_MANAGED_CONFIG_PATH)
+        self.root
+            .join(ProviderId::Hermes.spec().home_dir)
+            .join("managed-config.yaml")
     }
 
     pub(crate) fn hermes_config(self) -> PathBuf {
-        self.root.join(HERMES_CONFIG_PATH)
+        self.root
+            .join(ProviderId::Hermes.spec().home_dir)
+            .join("config.yaml")
     }
 
     pub(crate) fn pi_hooks(self) -> PathBuf {
-        self.root.join(".pi/hooks")
+        self.root.join(ProviderId::Pi.spec().hooks_dir)
     }
 
     pub(crate) fn pi_hook_bridge(self) -> PathBuf {
-        self.root.join(".pi/agent/extensions/hook_bridge.ts")
+        self.root.join(ProviderId::Pi.spec().bridge_path.unwrap())
     }
 
     pub(crate) fn pi_manifest(self) -> PathBuf {
-        self.root.join(PI_MANIFEST_PATH)
+        self.root.join(ProviderId::Pi.spec().hook_manifest)
     }
 
     pub(crate) fn dsh_hooks(self) -> PathBuf {
-        self.root.join(".dsh/hooks")
+        self.root.join(ProviderId::Dsh.spec().hooks_dir)
     }
 
     pub(crate) fn dsh_bridge(self) -> PathBuf {
-        self.root.join(".dsh/bridge")
+        self.root.join(ProviderId::Dsh.spec().bridge_path.unwrap())
     }
 
     pub(crate) fn dsh_manifest(self) -> PathBuf {
-        self.root.join(".dsh/hooks.json")
+        self.root.join(ProviderId::Dsh.spec().hook_manifest)
     }
 
     pub(crate) fn dsh_skills(self) -> PathBuf {
-        self.root.join(".dsh/skills")
+        self.root
+            .join(ProviderId::Dsh.spec().home_dir)
+            .join("skills")
     }
     pub(crate) fn dsh_instructions(self) -> PathBuf {
-        self.root.join(".dsh/AGENTS.md")
+        self.root
+            .join(ProviderId::Dsh.spec().home_dir)
+            .join("AGENTS.md")
     }
     pub(crate) fn claude_statusline(self) -> PathBuf {
         self.root.join(".claude/statusline")
@@ -328,7 +333,8 @@ impl<'a> InstalledLayout<'a> {
             self.claude_protected_paths(),
             self.hermes_config(),
             self.root
-                .join(".dsh/profiles")
+                .join(ProviderId::Dsh.spec().home_dir)
+                .join("profiles")
                 .join(dsh_profile)
                 .join("package.json"),
         ]);

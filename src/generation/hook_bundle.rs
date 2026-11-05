@@ -7,29 +7,10 @@ use anyhow::{Context, Result, bail, ensure};
 use serde::Deserialize;
 use serde_json::{Map, Value};
 
-use crate::{fs_ops, generation::io};
+use crate::{fs_ops, generation::io, provider::spec::PROVIDERS};
 
 const SUPPORTED_SPEC_VERSION: u64 = 1;
 const BUNDLE_VERSION: u64 = 1;
-const PROVIDER_DIRS: [&str; 6] = [".claude", ".codex", ".devin", ".hermes", ".pi", ".dsh"];
-const SUPPORTED_FILES: [&str; 7] = [
-    ".claude/settings.json",
-    ".codex/hooks.json",
-    ".codex/config.toml",
-    ".devin/hooks.v1.json",
-    ".hermes/hooks.json",
-    ".pi/hooks.json",
-    ".dsh/hooks.json",
-];
-const SUPPORTED_HOOK_DIRS: [&str; 6] = [
-    ".claude/hooks",
-    ".codex/hooks",
-    ".devin/hooks",
-    ".hermes/hooks",
-    ".pi/hooks",
-    ".dsh/hooks",
-];
-
 pub(crate) fn generate(spec_path: &Path, output: &Path) -> Result<()> {
     let spec = read_spec(spec_path)?;
     spec.validate(spec_path)?;
@@ -140,8 +121,9 @@ impl Drop for TemporaryHome {
 }
 
 fn create_provider_dirs(home: &Path) -> Result<()> {
-    PROVIDER_DIRS
-        .iter()
+    [".claude", ".codex"]
+        .into_iter()
+        .chain(PROVIDERS.iter().map(|spec| spec.home_dir))
         .try_for_each(|provider| create_provider_dir(home, provider))
 }
 
@@ -189,10 +171,20 @@ fn capture_supported_files(
         replacements,
     };
     let mut captured = false;
-    for relative in SUPPORTED_FILES {
+    for relative in [
+        ".claude/settings.json",
+        ".codex/hooks.json",
+        ".codex/config.toml",
+    ]
+    .into_iter()
+    .chain(PROVIDERS.iter().map(|spec| spec.external_hook_file))
+    {
         captured |= normalization.capture_file(relative)?;
     }
-    for relative in SUPPORTED_HOOK_DIRS {
+    for relative in [".claude/hooks", ".codex/hooks"]
+        .into_iter()
+        .chain(PROVIDERS.iter().map(|spec| spec.hooks_dir))
+    {
         captured |= capture_dir(relative, staging, output)?;
     }
     captured |= copy_codex_scripts(staging, output)?;
