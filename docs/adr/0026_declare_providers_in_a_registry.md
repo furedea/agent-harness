@@ -11,10 +11,10 @@ paths consistent, accepting a bounded registry and a separately maintained Nix p
 
 `src/provider/spec.rs` is Data: `PROVIDERS` declares Devin, Hermes, pi, and dsh, including
 hook locations, permission support, embedded asset contents and destinations, managed asset
-directories, and optional config sync. Functions render hooks and bridges and compute installation
-operations from those values. Capabilities perform filesystem access and config synchronization.
+directories, and optional config sync. Functions render hooks and compute installation operations from those values.
+Bridge files are embedded spec assets whose writes are planned by `install_plan`. Capabilities perform filesystem access and config synchronization.
 `tests/provider_spec_layering.rs` checks the spec, install planner, hook renderer, and bridge
-renderer for `fs_ops` and `std::fs` references. This source-text check guards selected modules;
+asset contracts for `fs_ops` and `std::fs` references. This source-text check guards selected modules;
 it is not a transitive dependency analysis of all generation code.
 
 Claude and Codex remain outside the registry because their settings, permissions, rules, and
@@ -58,3 +58,6 @@ The complete-source golden in `tests/complete_source_golden.rs` preserves instal
 contents across the refactor; `tests/provider_cli.rs` checks old/new command equivalence and pi
 sync rejection. Future providers still need assets, protocol-specific behavior where necessary,
 and the Nix projection rather than a promise that one spec alone implements every integration.
+
+The follow-up removed hand-written provider path lists from layout, protection, and rendering.
+Registry-derived paths preserve the existing installation and protection order.

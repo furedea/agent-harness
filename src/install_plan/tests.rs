@@ -43,7 +43,7 @@ fn install_replaces_managed_trees_and_preserves_user_files() -> Result<()> {
     let fs = MemoryFileSystem::default();
     let rendered = InstalledLayout::new(Path::new("staging"));
     let installed = InstalledLayout::new(Path::new("home"));
-    for path in rendered.managed_files() {
+    for path in rendered.managed_files_for(crate::provider::spec::PROVIDERS) {
         fs.write_file(&path, b"generated\n")?;
     }
     fs.write_file(
@@ -100,7 +100,10 @@ fn execution_stops_on_a_missing_rendered_file() {
 #[test]
 fn asset_plan_installs_every_provider_at_its_output_relative_destination() -> Result<()> {
     let fs = MemoryFileSystem::default();
-    execute(&fs, &plan_assets(Path::new("home")))?;
+    execute(
+        &fs,
+        &plan_assets_for(Path::new("home"), crate::provider::spec::PROVIDERS),
+    )?;
     for expected in [
         "home/.hermes/plugins/agent-harness-hooks/plugin.yaml",
         "home/.hermes/plugins/agent-harness-hooks/__init__.py",

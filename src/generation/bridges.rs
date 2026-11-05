@@ -1,19 +1,6 @@
-use std::path::{Path, PathBuf};
-
-use crate::provider::spec::ProviderId;
-
-pub(crate) fn hermes_plugin_files(dir: &Path) -> Vec<PathBuf> {
-    ProviderId::Hermes
-        .spec()
-        .assets
-        .iter()
-        .map(|asset| dir.join(Path::new(asset.destination).file_name().unwrap()))
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::provider::spec::ProviderId;
 
     #[test]
     fn hermes_assets_declare_the_manifest_and_register_entrypoint() {

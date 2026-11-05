@@ -82,7 +82,8 @@
 | `install_plan` | Functions: 生成済み staging の公開と埋め込み資産の配置を計画する． |
 | `filesystem`，`install_executor`，`config_sync` | Capabilities: ファイル操作と設定同期を実行する． |
 | `nix/providers.json`，`nix/home_manager_module.nix` | テストで照合する Nix の一覧と，そこから生成する Home Manager の option，リンク，同期． |
-| `generation/hooks`，`generation/bridges` | フックの配線と Hermes，pi，dsh のブリッジを描画する． |
+| `generation/hooks` | フックの配線を描画する． |
+| `generation/bridges`，`provider/spec`，`install_plan` | ブリッジ asset の契約を検証し，spec の埋め込み asset と出力先から書き込みを計画する． |
 | `generation/command_permissions`                                            | 中立なルールを Claude，Codex，Devin の権限の構文に対応させる．                         |
 | `generation/claude_config`，`codex_config`，`devin_config`，`hermes_config`，`dsh_config` | プロバイダの設定を組み立て，同期する．                                                 |
 | `generation/protection`，`secret_path_policy`                               | 保護パスと，秘密ファイルの deny ルールを計算する．                                     |

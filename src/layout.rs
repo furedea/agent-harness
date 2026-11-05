@@ -1,4 +1,4 @@
-use crate::provider::spec::ProviderId;
+use crate::provider::spec::{ProviderId, ProviderSpec};
 use std::path::{Path, PathBuf};
 
 const MANIFEST_PATH: &str = "manifest.json";
@@ -104,20 +104,15 @@ impl<'a> SourceLayout<'a> {
         self.root.join("codex/hooks")
     }
 
-    pub(crate) fn devin_hooks(self) -> PathBuf {
-        self.root.join(ProviderId::Devin.spec().source_hooks)
-    }
-
-    pub(crate) fn hermes_hooks(self) -> PathBuf {
-        self.root.join(ProviderId::Hermes.spec().source_hooks)
-    }
-
-    pub(crate) fn pi_hooks(self) -> PathBuf {
-        self.root.join(ProviderId::Pi.spec().source_hooks)
-    }
-
-    pub(crate) fn dsh_hooks(self) -> PathBuf {
-        self.root.join(ProviderId::Dsh.spec().source_hooks)
+    fn hook_sync_paths(
+        self,
+        installed: InstalledLayout,
+        spec: &ProviderSpec,
+    ) -> (PathBuf, PathBuf) {
+        (
+            self.root.join(spec.source_hooks),
+            installed.root.join(spec.hooks_dir),
+        )
     }
 
     pub(crate) fn claude_statusline(self) -> PathBuf {
@@ -159,70 +154,12 @@ impl<'a> InstalledLayout<'a> {
         self.root.join(".claude/hooks")
     }
 
-    pub(crate) fn devin_hooks(self) -> PathBuf {
-        self.root.join(ProviderId::Devin.spec().hooks_dir)
-    }
-
-    pub(crate) fn devin_config(self) -> PathBuf {
-        self.root.join(ProviderId::Devin.spec().hook_manifest)
-    }
-
-    pub(crate) fn hermes_hooks(self) -> PathBuf {
-        self.root.join(ProviderId::Hermes.spec().hooks_dir)
-    }
-
-    pub(crate) fn hermes_plugin(self) -> PathBuf {
-        self.root
-            .join(ProviderId::Hermes.spec().managed_asset_directory.unwrap())
-    }
-
-    pub(crate) fn hermes_manifest(self) -> PathBuf {
-        self.root.join(ProviderId::Hermes.spec().hook_manifest)
-    }
-
-    pub(crate) fn hermes_managed_config(self) -> PathBuf {
-        self.root
-            .join(ProviderId::Hermes.spec().home_dir)
-            .join("managed-config.yaml")
-    }
-
     pub(crate) fn hermes_config(self) -> PathBuf {
         self.root
             .join(ProviderId::Hermes.spec().home_dir)
             .join("config.yaml")
     }
 
-    pub(crate) fn pi_hooks(self) -> PathBuf {
-        self.root.join(ProviderId::Pi.spec().hooks_dir)
-    }
-
-    pub(crate) fn pi_manifest(self) -> PathBuf {
-        self.root.join(ProviderId::Pi.spec().hook_manifest)
-    }
-
-    pub(crate) fn dsh_hooks(self) -> PathBuf {
-        self.root.join(ProviderId::Dsh.spec().hooks_dir)
-    }
-
-    pub(crate) fn dsh_bridge(self) -> PathBuf {
-        self.root
-            .join(ProviderId::Dsh.spec().managed_asset_directory.unwrap())
-    }
-
-    pub(crate) fn dsh_manifest(self) -> PathBuf {
-        self.root.join(ProviderId::Dsh.spec().hook_manifest)
-    }
-
-    pub(crate) fn dsh_skills(self) -> PathBuf {
-        self.root
-            .join(ProviderId::Dsh.spec().home_dir)
-            .join("skills")
-    }
-    pub(crate) fn dsh_instructions(self) -> PathBuf {
-        self.root
-            .join(ProviderId::Dsh.spec().home_dir)
-            .join("AGENTS.md")
-    }
     pub(crate) fn claude_statusline(self) -> PathBuf {
         self.root.join(".claude/statusline")
     }
@@ -275,24 +212,23 @@ impl<'a> InstalledLayout<'a> {
         self.root.join(".codex/config.toml")
     }
 
-    pub(crate) fn managed_directories(self) -> [PathBuf; 12] {
-        [
-            self.codex_hooks(),
-            self.claude_hooks(),
-            self.devin_hooks(),
-            self.hermes_hooks(),
-            self.hermes_plugin(),
-            self.pi_hooks(),
-            self.dsh_hooks(),
-            self.dsh_bridge(),
-            self.dsh_skills(),
+    pub(crate) fn managed_directories_for(self, providers: &[ProviderSpec]) -> Vec<PathBuf> {
+        let mut paths = vec![self.codex_hooks(), self.claude_hooks()];
+        paths.extend(
+            providers
+                .iter()
+                .flat_map(provider_directories)
+                .map(|path| self.root.join(path)),
+        );
+        paths.extend([
             self.claude_statusline(),
             self.codex_skills(),
             self.claude_skills(),
-        ]
+        ]);
+        paths
     }
 
-    pub(crate) fn managed_files(self) -> Vec<PathBuf> {
+    pub(crate) fn managed_files_for(self, providers: &[ProviderSpec]) -> Vec<PathBuf> {
         let mut files = vec![
             self.codex_agent_instructions(),
             self.claude_agent_instructions(),
@@ -300,15 +236,15 @@ impl<'a> InstalledLayout<'a> {
             self.claude_settings(),
             self.codex_rules(),
             self.codex_config(),
-            self.devin_config(),
-            self.hermes_manifest(),
-            self.hermes_managed_config(),
-            self.pi_manifest(),
-            self.dsh_manifest(),
-            self.dsh_instructions(),
         ];
         files.extend(
-            crate::provider::spec::PROVIDERS
+            providers
+                .iter()
+                .flat_map(provider_files)
+                .map(|path| self.root.join(path)),
+        );
+        files.extend(
+            providers
                 .iter()
                 .filter(|spec| spec.managed_asset_directory.is_none())
                 .flat_map(|spec| spec.assets.iter())
@@ -317,21 +253,31 @@ impl<'a> InstalledLayout<'a> {
         files
     }
 
-    pub(crate) fn synced_directories(self, source: SourceLayout) -> [(PathBuf, PathBuf); 7] {
-        [
+    pub(crate) fn synced_directories_for(
+        self,
+        source: SourceLayout,
+        providers: &[ProviderSpec],
+    ) -> Vec<(PathBuf, PathBuf)> {
+        let mut paths = vec![
             (source.codex_hooks(), self.codex_hooks()),
             (source.agent_hooks(), self.claude_hooks()),
-            (source.devin_hooks(), self.devin_hooks()),
-            (source.hermes_hooks(), self.hermes_hooks()),
-            (source.pi_hooks(), self.pi_hooks()),
-            (source.dsh_hooks(), self.dsh_hooks()),
-            (source.claude_statusline(), self.claude_statusline()),
-        ]
+        ];
+        paths.extend(
+            providers
+                .iter()
+                .map(|spec| source.hook_sync_paths(self, spec)),
+        );
+        paths.push((source.claude_statusline(), self.claude_statusline()));
+        paths
     }
 
     /// Generated files plus the mutable provider configs that installation syncs them into.
-    pub(crate) fn generated_files(self, dsh_profile: &str) -> Vec<PathBuf> {
-        let mut files = self.managed_files();
+    pub(crate) fn generated_files_for(
+        self,
+        dsh_profile: &str,
+        providers: &[ProviderSpec],
+    ) -> Vec<PathBuf> {
+        let mut files = self.managed_files_for(providers);
         files.extend([
             self.claude_command_permissions(),
             self.claude_protected_paths(),
@@ -344,4 +290,16 @@ impl<'a> InstalledLayout<'a> {
         ]);
         files
     }
+}
+
+fn provider_directories(spec: &ProviderSpec) -> impl Iterator<Item = &str> {
+    std::iter::once(spec.hooks_dir)
+        .chain(spec.managed_asset_directory)
+        .chain(spec.skills)
+}
+
+fn provider_files(spec: &ProviderSpec) -> impl Iterator<Item = &str> {
+    std::iter::once(spec.hook_manifest)
+        .chain(spec.managed_config)
+        .chain(spec.instructions)
 }

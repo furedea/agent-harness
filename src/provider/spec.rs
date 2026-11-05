@@ -28,7 +28,7 @@ pub(crate) struct Asset {
     pub(crate) content: &'static str,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct ProviderSpec {
     pub(crate) id: ProviderId,
     pub(crate) key: &'static str,
@@ -40,6 +40,9 @@ pub(crate) struct ProviderSpec {
     pub(crate) external_hook_file: &'static str,
     pub(crate) managed_asset_directory: Option<&'static str>,
     pub(crate) assets: &'static [Asset],
+    pub(crate) instructions: Option<&'static str>,
+    pub(crate) skills: Option<&'static str>,
+    pub(crate) managed_config: Option<&'static str>,
     pub(crate) permissions: bool,
     pub(crate) config_sync: Option<ConfigSync>,
 }
@@ -56,6 +59,9 @@ pub(crate) const PROVIDERS: &[ProviderSpec] = &[
         external_hook_file: ".devin/hooks.v1.json",
         managed_asset_directory: None,
         assets: &[],
+        instructions: None,
+        skills: None,
+        managed_config: None,
         permissions: true,
         config_sync: Some(ConfigSync::MergeTopLevelJson),
     },
@@ -79,6 +85,9 @@ pub(crate) const PROVIDERS: &[ProviderSpec] = &[
                 content: include_str!("../generation/assets/hermes/__init__.py"),
             },
         ],
+        instructions: None,
+        skills: None,
+        managed_config: Some(".hermes/managed-config.yaml"),
         permissions: false,
         config_sync: Some(ConfigSync::MergeYaml),
     },
@@ -96,6 +105,9 @@ pub(crate) const PROVIDERS: &[ProviderSpec] = &[
             destination: ".pi/agent/extensions/hook_bridge.ts",
             content: include_str!("../generation/assets/pi/hook_bridge.ts"),
         }],
+        instructions: None,
+        skills: None,
+        managed_config: None,
         permissions: false,
         config_sync: None,
     },
@@ -123,6 +135,9 @@ pub(crate) const PROVIDERS: &[ProviderSpec] = &[
                 content: include_str!("../generation/assets/dsh/hook_bridge.ts"),
             },
         ],
+        instructions: Some(".dsh/AGENTS.md"),
+        skills: Some(".dsh/skills"),
+        managed_config: None,
         permissions: false,
         config_sync: Some(ConfigSync::RegisterBundle),
     },

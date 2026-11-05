@@ -112,7 +112,8 @@ directories. `sync-config --provider <id>` commands merge managed keys into conf
 | `install_plan` | Functions: plan publication of rendered staging files and embedded assets. |
 | `filesystem`, `install_executor`, `config_sync` | Capabilities: execute file operations and dispatch config synchronization. |
 | `nix/providers.json`, `nix/home_manager_module.nix` | Checked Nix provider list and generated Home Manager options, links, and sync. |
-| `generation/hooks`, `generation/bridges` | Render hook wiring and Hermes, pi, and dsh bridges. |
+| `generation/hooks` | Render hook wiring. |
+| `generation/bridges`, `provider/spec`, `install_plan` | Verify bridge asset contracts; declare embedded bridge assets and destinations in specs and plan their writes. |
 | `generation/command_permissions`                                            | Maps neutral rules to Claude, Codex, and Devin permission syntax.              |
 | `generation/claude_config`, `codex_config`, `devin_config`, `hermes_config`, `dsh_config` | Build and sync provider configs.                                               |
 | `generation/protection`, `secret_path_policy`                               | Compute protected paths and secret-file deny rules.                            |

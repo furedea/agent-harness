@@ -9,7 +9,7 @@ use crate::{
         protection, skills,
     },
     layout::{InstalledLayout, SourceLayout},
-    provider::spec::PROVIDERS,
+    provider::spec::{PROVIDERS, ProviderSpec},
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -54,6 +54,14 @@ pub(crate) fn install(context: GenerationContext<'_>, out: &Path) -> Result<()> 
 }
 
 fn render_installation(context: GenerationContext<'_>, out: &Path) -> Result<()> {
+    render_installation_for(context, out, PROVIDERS)
+}
+
+pub(crate) fn render_installation_for(
+    context: GenerationContext<'_>,
+    out: &Path,
+    providers: &[ProviderSpec],
+) -> Result<()> {
     let GenerationContext {
         source,
         external_hooks,
@@ -70,15 +78,17 @@ fn render_installation(context: GenerationContext<'_>, out: &Path) -> Result<()>
         &source_layout.agent_instructions(),
         &installed.claude_agent_instructions(),
     )?;
-    for (source, target) in installed.synced_directories(source_layout) {
+    for (source, target) in installed.synced_directories_for(source_layout, providers) {
         RealFileSystem.replace_directory(&source, &target)?;
     }
 
-    RealFileSystem.copy_file(
-        &source_layout.agent_instructions(),
-        &installed.dsh_instructions(),
+    for path in providers.iter().filter_map(|spec| spec.instructions) {
+        RealFileSystem.copy_file(&source_layout.agent_instructions(), &out.join(path))?;
+    }
+    crate::install_executor::execute(
+        &RealFileSystem,
+        &crate::install_plan::plan_assets_for(out, providers),
     )?;
-    crate::install_executor::execute(&RealFileSystem, &crate::install_plan::plan_assets(out))?;
     for bundle in external_hooks {
         bundle.copy_assets(out)?;
     }
@@ -103,18 +113,22 @@ fn render_installation(context: GenerationContext<'_>, out: &Path) -> Result<()>
     command_permissions::write_codex_rules(source, &installed.codex_rules())?;
     command_permissions::write_runtime_policy(source, &installed.claude_command_permissions())?;
     protection::write_runtime_policy(
-        protection::protected_paths_for_runtime(context)?,
+        protection::protected_paths_for_providers(context, providers)?,
         &installed.claude_protected_paths(),
     )?;
     codex_config::sync_managed_document(
         &codex_config::generated_config_source(context)?,
         &installed.codex_config(),
     )?;
-    for spec in PROVIDERS {
+    for spec in providers {
         hooks::write_provider_hooks_for_runtime(context, &out.join(spec.hook_manifest), spec)?;
     }
-    RealFileSystem.replace_directory(&installed.codex_skills(), &installed.dsh_skills())?;
-    hermes_config::write_managed_config(&installed.hermes_managed_config())?;
+    for path in providers.iter().filter_map(|spec| spec.skills) {
+        RealFileSystem.replace_directory(&installed.codex_skills(), &out.join(path))?;
+    }
+    for path in providers.iter().filter_map(|spec| spec.managed_config) {
+        hermes_config::write_managed_config(&out.join(path))?;
+    }
 
     Ok(())
 }
@@ -134,12 +148,18 @@ pub(crate) fn verify(root: &Path) -> Result<()> {
         installed.claude_secret_commit_policy(),
         installed.claude_secret_path_policy(),
         installed.claude_settings(),
-        installed.hermes_managed_config(),
-        installed.dsh_instructions(),
     ]
     .into_iter()
-    .chain(PROVIDERS.iter().map(|spec| root.join(spec.hook_manifest)))
-    {
+    .chain(
+        PROVIDERS
+            .iter()
+            .flat_map(|spec| {
+                std::iter::once(spec.hook_manifest)
+                    .chain(spec.managed_config)
+                    .chain(spec.instructions)
+            })
+            .map(|path| root.join(path)),
+    ) {
         ensure!(
             path.is_file(),
             "missing or invalid harness file: {}",

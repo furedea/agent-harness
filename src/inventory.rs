@@ -205,9 +205,16 @@ fn shorten_hook_command(command: &str) -> String {
 }
 
 fn shorten_hook_path(part: &str) -> String {
+    shorten_hook_path_for(part, PROVIDERS)
+}
+
+pub(crate) fn shorten_hook_path_for(
+    part: &str,
+    providers: &[crate::provider::spec::ProviderSpec],
+) -> String {
     [".claude/hooks", ".codex/hooks"]
         .into_iter()
-        .chain(PROVIDERS.iter().map(|spec| spec.hooks_dir))
+        .chain(providers.iter().map(|spec| spec.hooks_dir))
         .find_map(|dir| part.strip_prefix(&format!("$HOME/{dir}/")))
         .unwrap_or(part)
         .to_owned()
