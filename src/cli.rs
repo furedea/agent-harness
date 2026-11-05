@@ -48,6 +48,8 @@ enum Command {
     GenerateHermesHooks(GenerateFileArgs),
     /// Generate the pi hook manifest consumed by the bridge extension.
     GeneratePiHooks(GenerateFileArgs),
+    /// Generate the `DeepSeek` Harness hook manifest.
+    GenerateDshHooks(GenerateFileArgs),
     /// Generate Codex execpolicy rules.
     GenerateCodexRules(GenerateFileArgs),
     /// Generate the shared runtime command permissions.
@@ -73,6 +75,8 @@ enum Command {
     SyncDevinConfig(SyncConfigArgs),
     /// Merge managed keys into an existing Hermes Agent config.
     SyncHermesConfig(SyncConfigArgs),
+    /// Register an embedded bridge bundle in a dsh profile package.json.
+    SyncDshConfig(SyncConfigArgs),
     /// Verify managed files and source-declared runtime commands.
     Verify(VerifyArgs),
 }
@@ -231,6 +235,7 @@ pub fn run() -> Result<()> {
         Command::GenerateDevinHooks(args) => write_devin_hooks(args, profile),
         Command::GenerateHermesHooks(args) => write_hermes_hooks(args, profile),
         Command::GeneratePiHooks(args) => write_pi_hooks(args, profile),
+        Command::GenerateDshHooks(args) => write_dsh_hooks(args, profile),
         Command::GenerateCodexRules(args) => write_codex_rules(args, profile),
         Command::GenerateCommandPermissions(args) => write_command_permissions(args, profile),
         Command::GenerateForbiddenCommands(args) => write_forbidden_commands(args, profile),
@@ -247,6 +252,9 @@ pub fn run() -> Result<()> {
         }
         Command::SyncDevinConfig(args) => devin_config::sync_config(&args.source, &args.target),
         Command::SyncHermesConfig(args) => hermes_config::sync_config(&args.source, &args.target),
+        Command::SyncDshConfig(args) => {
+            crate::generation::dsh_config::sync_config(&args.source, &args.target)
+        }
         Command::Verify(args) => {
             let source = source::resolve_source(args.source, profile)?;
             let prefix = args.prefix.unwrap_or_else(default_home_dir);
@@ -298,6 +306,10 @@ fn write_hermes_hooks(args: GenerateFileArgs, profile: Profile) -> Result<()> {
 fn write_pi_hooks(args: GenerateFileArgs, profile: Profile) -> Result<()> {
     let source = source::resolve_source(args.source, profile)?;
     hooks::write_pi_hooks(source.as_path(), &args.output, &args.extra_hook)
+}
+fn write_dsh_hooks(args: GenerateFileArgs, profile: Profile) -> Result<()> {
+    let source = source::resolve_source(args.source, profile)?;
+    hooks::write_dsh_hooks(source.as_path(), &args.output, &args.extra_hook)
 }
 
 fn write_codex_rules(args: GenerateFileArgs, profile: Profile) -> Result<()> {

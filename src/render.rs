@@ -83,6 +83,11 @@ fn render_installation(context: GenerationContext<'_>, out: &Path) -> Result<()>
         fs_ops::copy_dir(&source, &target)?;
     }
     bridges::write_hermes_plugin(&installed.hermes_plugin())?;
+    fs_ops::copy_file(
+        &source_layout.agent_instructions(),
+        &installed.dsh_instructions(),
+    )?;
+    bridges::write_dsh_bridge(&installed.dsh_bridge())?;
     bridges::write_pi_bridge(&installed.pi_hook_bridge())?;
     for bundle in external_hooks {
         bundle.copy_assets(out)?;
@@ -118,6 +123,8 @@ fn render_installation(context: GenerationContext<'_>, out: &Path) -> Result<()>
     hooks::write_devin_hooks_for_runtime(context, &installed.devin_config())?;
     hooks::write_hermes_hooks_for_runtime(context, &installed.hermes_manifest())?;
     hooks::write_pi_hooks_for_runtime(context, &installed.pi_manifest())?;
+    hooks::write_dsh_hooks_for_runtime(context, &installed.dsh_manifest())?;
+    fs_ops::copy_dir(&installed.codex_skills(), &installed.dsh_skills())?;
     hermes_config::write_managed_config(&installed.hermes_managed_config())?;
 
     Ok(())
@@ -142,6 +149,11 @@ pub(crate) fn verify(root: &Path) -> Result<()> {
         installed.hermes_manifest(),
         installed.hermes_managed_config(),
         installed.pi_manifest(),
+        installed.dsh_manifest(),
+        installed.dsh_instructions(),
+        installed.dsh_bridge().join("package.json"),
+        installed.dsh_bridge().join("cordis.patch.yml"),
+        installed.dsh_bridge().join("hook_bridge.ts"),
     ] {
         ensure!(
             path.is_file(),

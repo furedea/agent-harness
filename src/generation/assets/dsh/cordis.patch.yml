@@ -1,0 +1,3 @@
+- insert:
+    - id: agent-harness-hooks
+      name: agent-harness-dsh-hooks

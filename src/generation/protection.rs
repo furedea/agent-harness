@@ -113,6 +113,10 @@ fn harness_owned_files(
                 .map(|path| target_dir.join(path)),
         );
     }
+    paths.extend(
+        ["package.json", "cordis.patch.yml", "hook_bridge.ts"]
+            .map(|name| installed.dsh_bridge().join(name)),
+    );
     paths.extend(bridges::hermes_plugin_files(&installed.hermes_plugin()));
     for bundle in external_hooks {
         paths.extend(bundle.asset_install_paths()?);

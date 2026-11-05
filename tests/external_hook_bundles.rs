@@ -422,3 +422,64 @@ fn hook_command_exists(value: &Value, expected: &str) -> bool {
     collect_commands(value, &mut commands);
     commands.iter().any(|command| command == expected)
 }
+
+#[test]
+fn external_dsh_hooks_are_composed_with_built_in_hooks() {
+    let root = test_root("external-dsh-hooks");
+    let bundle = root.join("moshi");
+    let manifest_path = root.join("hooks.json");
+    std::fs::create_dir_all(bundle.join(".dsh/hooks")).unwrap();
+    std::fs::write(bundle.join("hook_bundle.json"), r#"{"version":1}"#).unwrap();
+    std::fs::write(bundle.join(".dsh/hooks/moshi-dsh.sh"), "#!/bin/bash\n").unwrap();
+    let command = format!("bash '{}/.dsh/hooks/moshi-dsh.sh' notify", bundle.display());
+    std::fs::write(
+        bundle.join(".dsh/hooks.json"),
+        format!(
+            r#"{{"session_start":[{{"hooks":[{{"type":"command","command":"{command}"}}]}}]}}"#,
+        ),
+    )
+    .unwrap();
+
+    run_harness([
+        "generate-dsh-hooks",
+        "--source",
+        complete_source_root().to_str().unwrap(),
+        "--extra-hook",
+        &format!("moshi={}", bundle.display()),
+        "--output",
+        manifest_path.to_str().unwrap(),
+    ]);
+
+    let manifest = read_json(&manifest_path);
+    assert!(hook_command_exists(
+        &manifest,
+        "bash \"$HOME/.dsh/hooks/external/moshi/moshi-dsh.sh\" notify",
+    ));
+    assert!(hook_command_exists(
+        &manifest,
+        "$HOME/.dsh/hooks/hook_adapter.py shell forbidden",
+    ));
+
+    remove_dir(root);
+}
+
+#[test]
+fn captures_dsh_hook_bundle_assets() {
+    let root = test_root("capture-dsh");
+    let spec = root.join("spec.json");
+    let output = root.join("bundle");
+    std::fs::write(&spec, serde_json::json!({
+        "version": 1,
+        "installers": [{"executable": "/bin/sh", "arguments": ["-c", "mkdir -p \"$HOME/.dsh/hooks\"; echo '{}' > \"$HOME/.dsh/hooks.json\"; echo fixture > \"$HOME/.dsh/hooks/test.sh\""]}]
+    }).to_string()).unwrap();
+    run_harness([
+        "generate-hook-bundle",
+        "--spec",
+        spec.to_str().unwrap(),
+        "--output",
+        output.to_str().unwrap(),
+    ]);
+    assert!(output.join(".dsh/hooks.json").is_file());
+    assert!(output.join(".dsh/hooks/test.sh").is_file());
+    remove_dir(root);
+}

@@ -30,13 +30,15 @@ impl Inventory {
              Codex hook events       {}\n\
              Devin hook events       {}\n\
              Hermes hook events      {}\n\
-             Pi hook events          {}\n",
+             Pi hook events          {}\n\
+             Dsh hook events         {}\n",
             self.skills.len(),
             self.hook_event_count(HookProvider::Claude),
             self.hook_event_count(HookProvider::Codex),
             self.hook_event_count(HookProvider::Devin),
             self.hook_event_count(HookProvider::Hermes),
             self.hook_event_count(HookProvider::Pi),
+            self.hook_event_count(HookProvider::Dsh),
         )
     }
 
@@ -62,6 +64,7 @@ impl Inventory {
             HookProvider::Devin,
             HookProvider::Hermes,
             HookProvider::Pi,
+            HookProvider::Dsh,
         ];
         lines.extend(
             providers

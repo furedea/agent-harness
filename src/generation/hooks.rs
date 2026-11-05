@@ -19,6 +19,7 @@ struct HookConfig {
     devin: Option<Value>,
     hermes: Option<Value>,
     pi: Option<Value>,
+    dsh: Option<Value>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, clap::ValueEnum)]
@@ -28,6 +29,7 @@ pub(crate) enum HookProvider {
     Devin,
     Hermes,
     Pi,
+    Dsh,
 }
 
 impl HookProvider {
@@ -38,6 +40,7 @@ impl HookProvider {
             Self::Devin => "Devin",
             Self::Hermes => "Hermes",
             Self::Pi => "Pi",
+            Self::Dsh => "Dsh",
         }
     }
 }
@@ -165,6 +168,32 @@ pub(crate) fn pi_hooks_for_runtime(context: GenerationContext<'_>) -> Result<Val
     Ok(hooks)
 }
 
+pub(crate) fn write_dsh_hooks(
+    source: &Path,
+    path: &Path,
+    external_hooks: &[ExternalHookBundle],
+) -> Result<()> {
+    write_dsh_hooks_for_runtime(GenerationContext::home(source, external_hooks), path)
+}
+
+pub(crate) fn write_dsh_hooks_for_runtime(
+    context: GenerationContext<'_>,
+    path: &Path,
+) -> Result<()> {
+    io::write_json(path, &dsh_hooks_for_runtime(context)?)
+}
+
+pub(crate) fn dsh_hooks_for_runtime(context: GenerationContext<'_>) -> Result<Value> {
+    let mut hooks = read_hooks(context.source)?
+        .dsh
+        .unwrap_or_else(|| serde_json::json!({ "hooks": {} }));
+    for bundle in context.external_hooks {
+        bundle.merge_dsh_hooks(&mut hooks)?;
+    }
+    relocate_commands(&mut hooks, context.runtime_root);
+    Ok(hooks)
+}
+
 pub(crate) fn claude_hooks_for_runtime(context: GenerationContext<'_>) -> Result<Value> {
     let mut hooks = read_hooks(context.source)?.claude;
     for bundle in context.external_hooks {
@@ -212,6 +241,7 @@ pub(crate) fn built_in_hook_metadata(source: &Path) -> Result<Vec<HookMetadata>>
     let optional_sections = [
         (HookProvider::Hermes, &config.hermes),
         (HookProvider::Pi, &config.pi),
+        (HookProvider::Dsh, &config.dsh),
     ]
     .into_iter()
     .filter_map(|(provider, section)| Some((provider, section.as_ref()?)));
@@ -281,6 +311,7 @@ fn validate_hooks(config: &HookConfig) -> Result<()> {
         ("devin", &config.devin),
         ("hermes", &config.hermes),
         ("pi", &config.pi),
+        ("dsh", &config.dsh),
     ]
     .into_iter()
     .find(|(_name, section)| section.as_ref().is_some_and(is_not_object));

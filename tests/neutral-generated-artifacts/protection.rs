@@ -81,7 +81,11 @@ fn complete_source_protects_every_rendered_provider_file_and_sync_target() {
 }
 
 fn rendered_harness_files(prefix: &Path) -> BTreeSet<String> {
-    let skills = [prefix.join(".claude/skills"), prefix.join(".codex/skills")];
+    let skills = [
+        prefix.join(".claude/skills"),
+        prefix.join(".codex/skills"),
+        prefix.join(".dsh/skills"),
+    ];
     let mut pending = vec![prefix.to_path_buf()];
     let mut files = BTreeSet::new();
     while let Some(dir) = pending.pop() {

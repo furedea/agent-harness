@@ -120,6 +120,10 @@ impl<'a> SourceLayout<'a> {
         self.root.join("pi/hooks")
     }
 
+    pub(crate) fn dsh_hooks(self) -> PathBuf {
+        self.root.join("dsh/hooks")
+    }
+
     pub(crate) fn claude_statusline(self) -> PathBuf {
         self.root.join("claude/statusline")
     }
@@ -199,6 +203,24 @@ impl<'a> InstalledLayout<'a> {
         self.root.join(PI_MANIFEST_PATH)
     }
 
+    pub(crate) fn dsh_hooks(self) -> PathBuf {
+        self.root.join(".dsh/hooks")
+    }
+
+    pub(crate) fn dsh_bridge(self) -> PathBuf {
+        self.root.join(".dsh/bridge")
+    }
+
+    pub(crate) fn dsh_manifest(self) -> PathBuf {
+        self.root.join(".dsh/hooks.json")
+    }
+
+    pub(crate) fn dsh_skills(self) -> PathBuf {
+        self.root.join(".dsh/skills")
+    }
+    pub(crate) fn dsh_instructions(self) -> PathBuf {
+        self.root.join(".dsh/AGENTS.md")
+    }
     pub(crate) fn claude_statusline(self) -> PathBuf {
         self.root.join(".claude/statusline")
     }
@@ -251,7 +273,7 @@ impl<'a> InstalledLayout<'a> {
         self.root.join(".codex/config.toml")
     }
 
-    pub(crate) fn managed_directories(self) -> [PathBuf; 9] {
+    pub(crate) fn managed_directories(self) -> [PathBuf; 12] {
         [
             self.codex_hooks(),
             self.claude_hooks(),
@@ -259,13 +281,16 @@ impl<'a> InstalledLayout<'a> {
             self.hermes_hooks(),
             self.hermes_plugin(),
             self.pi_hooks(),
+            self.dsh_hooks(),
+            self.dsh_bridge(),
+            self.dsh_skills(),
             self.claude_statusline(),
             self.codex_skills(),
             self.claude_skills(),
         ]
     }
 
-    pub(crate) fn managed_files(self) -> [PathBuf; 11] {
+    pub(crate) fn managed_files(self) -> [PathBuf; 13] {
         [
             self.codex_agent_instructions(),
             self.claude_agent_instructions(),
@@ -277,17 +302,20 @@ impl<'a> InstalledLayout<'a> {
             self.hermes_manifest(),
             self.hermes_managed_config(),
             self.pi_manifest(),
+            self.dsh_manifest(),
+            self.dsh_instructions(),
             self.pi_hook_bridge(),
         ]
     }
 
-    pub(crate) fn synced_directories(self, source: SourceLayout) -> [(PathBuf, PathBuf); 6] {
+    pub(crate) fn synced_directories(self, source: SourceLayout) -> [(PathBuf, PathBuf); 7] {
         [
             (source.codex_hooks(), self.codex_hooks()),
             (source.agent_hooks(), self.claude_hooks()),
             (source.devin_hooks(), self.devin_hooks()),
             (source.hermes_hooks(), self.hermes_hooks()),
             (source.pi_hooks(), self.pi_hooks()),
+            (source.dsh_hooks(), self.dsh_hooks()),
             (source.claude_statusline(), self.claude_statusline()),
         ]
     }
@@ -299,6 +327,7 @@ impl<'a> InstalledLayout<'a> {
             self.claude_command_permissions(),
             self.claude_protected_paths(),
             self.hermes_config(),
+            self.root.join(".dsh/profiles/web/package.json"),
         ]);
         files
     }
