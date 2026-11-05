@@ -321,13 +321,16 @@ impl<'a> InstalledLayout<'a> {
     }
 
     /// Generated files plus the mutable provider configs that installation syncs them into.
-    pub(crate) fn generated_files(self) -> Vec<PathBuf> {
+    pub(crate) fn generated_files(self, dsh_profile: &str) -> Vec<PathBuf> {
         let mut files = self.managed_files().to_vec();
         files.extend([
             self.claude_command_permissions(),
             self.claude_protected_paths(),
             self.hermes_config(),
-            self.root.join(".dsh/profiles/web/package.json"),
+            self.root
+                .join(".dsh/profiles")
+                .join(dsh_profile)
+                .join("package.json"),
         ]);
         files
     }

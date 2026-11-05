@@ -66,7 +66,7 @@ fn render_installation(context: GenerationContext<'_>, out: &Path) -> Result<()>
     let GenerationContext {
         source,
         external_hooks,
-        runtime_root,
+        ..
     } = context;
     let installed = InstalledLayout::new(out);
     let source_layout = SourceLayout::new(source);
@@ -113,11 +113,11 @@ fn render_installation(context: GenerationContext<'_>, out: &Path) -> Result<()>
     command_permissions::write_codex_rules(source, &installed.codex_rules())?;
     command_permissions::write_runtime_policy(source, &installed.claude_command_permissions())?;
     protection::write_runtime_policy(
-        protection::protected_paths_for_runtime(source, external_hooks, runtime_root)?,
+        protection::protected_paths_for_runtime(context)?,
         &installed.claude_protected_paths(),
     )?;
     codex_config::sync_managed_document(
-        &codex_config::generated_config_source(source, external_hooks, runtime_root)?,
+        &codex_config::generated_config_source(context)?,
         &installed.codex_config(),
     )?;
     hooks::write_devin_hooks_for_runtime(context, &installed.devin_config())?;

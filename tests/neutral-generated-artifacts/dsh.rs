@@ -65,3 +65,44 @@ fn dsh_sync_preserves_user_profile_and_is_idempotent() {
     );
     remove_dir(root);
 }
+
+#[test]
+fn dsh_sync_skips_uninitialized_profile() {
+    let root = test_root("dsh-uninitialized");
+    let target = root.join("profiles/custom/package.json");
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_agent-harness"))
+        .args([
+            "sync-dsh-config",
+            "--source",
+            root.to_str().unwrap(),
+            "--target",
+            target.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    assert!(!target.exists());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("run dsh once"));
+    remove_dir(root);
+}
+
+#[test]
+fn dsh_custom_profile_is_protected() {
+    let root = test_root("dsh-custom-profile");
+    run_harness([
+        "install",
+        "--prefix",
+        root.to_str().unwrap(),
+        "--dsh-profile",
+        "custom",
+    ]);
+    let policy =
+        std::fs::read_to_string(root.join(".claude/hooks/rules/protected_paths.json")).unwrap();
+    let codex = std::fs::read_to_string(root.join(".codex/config.toml")).unwrap();
+    let claude = std::fs::read_to_string(root.join(".claude/settings.json")).unwrap();
+    for content in [policy, codex, claude] {
+        assert!(content.contains(".dsh/profiles/custom/package.json"));
+        assert!(!content.contains(".dsh/profiles/web/package.json"));
+    }
+    remove_dir(root);
+}

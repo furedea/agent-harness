@@ -13,7 +13,13 @@ pub(crate) fn sync_config(bundle: &Path, target: &Path) -> Result<()> {
         .context("failed to resolve dsh bridge bundle")?;
     let mut config: Value = match std::fs::read_to_string(target) {
         Ok(content) => serde_json::from_str(&content).context("invalid dsh profile JSON")?,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => json!({"private": true}),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            eprintln!(
+                "Skipping dsh profile {}: run dsh once to initialize it, then reactivate.",
+                target.display()
+            );
+            return Ok(());
+        }
         Err(error) => return Err(error.into()),
     };
     let root = config

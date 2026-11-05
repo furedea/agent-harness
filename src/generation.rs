@@ -20,6 +20,7 @@ pub(crate) mod skills;
 /// Inputs shared by generators that render runtime-specific artifacts.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct GenerationContext<'a> {
+    pub(crate) dsh_profile: &'a str,
     pub(crate) source: &'a Path,
     pub(crate) external_hooks: &'a [external_hooks::ExternalHookBundle],
     pub(crate) runtime_root: &'a RuntimeRoot,
@@ -32,6 +33,7 @@ impl<'a> GenerationContext<'a> {
     ) -> Self {
         static HOME: RuntimeRoot = RuntimeRoot::Home;
         Self {
+            dsh_profile: "web",
             source,
             external_hooks,
             runtime_root: &HOME,

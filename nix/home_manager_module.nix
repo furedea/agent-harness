@@ -66,6 +66,7 @@ let
     ${lib.getExe cfg.package} --profile ${cfg.profile} install \
       --source ${composedSource} \
       --prefix "$out" \
+      --dsh-profile ${lib.escapeShellArg cfg.dsh.profile} \
       ${hookArgs}
   '';
 

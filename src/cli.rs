@@ -178,6 +178,9 @@ struct GenerateSkillsArgs {
 
 #[derive(Debug, clap::Args)]
 struct InstallArgs {
+    #[arg(long, default_value = "web")]
+    dsh_profile: String,
+
     #[arg(long)]
     source: Option<PathBuf>,
 
@@ -356,6 +359,7 @@ fn install(args: InstallArgs, profile: Profile) -> Result<()> {
         .transpose()?
         .unwrap_or_else(RuntimeRoot::home);
     let context = GenerationContext {
+        dsh_profile: &args.dsh_profile,
         source: source.as_path(),
         external_hooks: &args.extra_hook,
         runtime_root: &runtime_root,
