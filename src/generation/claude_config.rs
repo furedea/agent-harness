@@ -119,11 +119,7 @@ fn merge_sandbox(root: &mut Map<String, Value>, context: GenerationContext<'_>) 
 }
 
 fn protected_paths(context: GenerationContext<'_>) -> Result<Vec<String>> {
-    protection::protected_paths_for_runtime(
-        context.source,
-        context.external_hooks,
-        context.runtime_root,
-    )
+    protection::protected_paths_for_runtime(context)
 }
 
 fn relocate_status_line(root: &mut Map<String, Value>, runtime_root: &RuntimeRoot) -> Result<()> {

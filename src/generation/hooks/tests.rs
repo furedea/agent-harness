@@ -126,6 +126,7 @@ fn claude_hooks_for_runtime_relocates_nested_commands_under_a_directory_root() -
     write_hook_config(&root)?;
     let runtime_root = RuntimeRoot::directory(PathBuf::from("/opt/agents"))?;
     let context = GenerationContext {
+        dsh_profile: "web",
         source: &root,
         external_hooks: &[],
         runtime_root: &runtime_root,

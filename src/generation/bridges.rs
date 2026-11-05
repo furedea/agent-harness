@@ -28,6 +28,20 @@ pub(crate) fn write_pi_bridge(path: &Path) -> Result<()> {
     fs_ops::write_file_atomically(path, PI_HOOK_BRIDGE.as_bytes())
 }
 
+pub(crate) fn write_dsh_bridge(dir: &Path) -> Result<()> {
+    for (name, content) in [
+        ("package.json", include_str!("assets/dsh/package.json")),
+        (
+            "cordis.patch.yml",
+            include_str!("assets/dsh/cordis.patch.yml"),
+        ),
+        ("hook_bridge.ts", include_str!("assets/dsh/hook_bridge.ts")),
+    ] {
+        fs_ops::write_file_atomically(&dir.join(name), content.as_bytes())?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;

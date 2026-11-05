@@ -64,24 +64,30 @@ pub(crate) fn sync_managed_config(source_path: &Path, target_path: &Path) -> Res
 }
 
 pub(crate) fn generated_config_source(
-    source: &Path,
-    external_hooks: &[ExternalHookBundle],
-    runtime_root: &RuntimeRoot,
+    context: crate::generation::GenerationContext<'_>,
 ) -> Result<DocumentMut> {
-    config_source_content_for_runtime(source, external_hooks, runtime_root)?
+    config_source_content_for_runtime(context)?
         .parse::<DocumentMut>()
         .context("failed to parse generated Codex config source")
 }
 
 fn config_source_content(source: &Path, external_hooks: &[ExternalHookBundle]) -> Result<String> {
-    config_source_content_for_runtime(source, external_hooks, &RuntimeRoot::home())
+    config_source_content_for_runtime(crate::generation::GenerationContext {
+        source,
+        external_hooks,
+        runtime_root: &RuntimeRoot::home(),
+        dsh_profile: "web",
+    })
 }
 
 fn config_source_content_for_runtime(
-    source: &Path,
-    external_hooks: &[ExternalHookBundle],
-    runtime_root: &RuntimeRoot,
+    context: crate::generation::GenerationContext<'_>,
 ) -> Result<String> {
+    let crate::generation::GenerationContext {
+        source,
+        external_hooks,
+        ..
+    } = context;
     let base_path = SourceLayout::new(source).codex_config();
     let base = std::fs::read_to_string(&base_path)
         .with_context(|| format!("failed to read TOML file {}", base_path.display()))?;
@@ -90,10 +96,9 @@ fn config_source_content_for_runtime(
         .with_context(|| format!("failed to parse TOML file {}", base_path.display()))?;
     // Merge rather than concatenate: the source may already declare guarded entries, such as
     // the agent GitHub token's read denials.
-    let protection =
-        protection::codex_config_fragment_for_runtime(source, external_hooks, runtime_root)?
-            .parse::<DocumentMut>()
-            .context("failed to parse generated Codex config")?;
+    let protection = protection::codex_config_fragment_for_runtime(context)?
+        .parse::<DocumentMut>()
+        .context("failed to parse generated Codex config")?;
     for (key, item) in protection.iter() {
         merge_item(&mut document[key], item);
     }

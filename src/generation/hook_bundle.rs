@@ -11,21 +11,23 @@ use crate::{fs_ops, generation::io};
 
 const SUPPORTED_SPEC_VERSION: u64 = 1;
 const BUNDLE_VERSION: u64 = 1;
-const PROVIDER_DIRS: [&str; 5] = [".claude", ".codex", ".devin", ".hermes", ".pi"];
-const SUPPORTED_FILES: [&str; 6] = [
+const PROVIDER_DIRS: [&str; 6] = [".claude", ".codex", ".devin", ".hermes", ".pi", ".dsh"];
+const SUPPORTED_FILES: [&str; 7] = [
     ".claude/settings.json",
     ".codex/hooks.json",
     ".codex/config.toml",
     ".devin/hooks.v1.json",
     ".hermes/hooks.json",
     ".pi/hooks.json",
+    ".dsh/hooks.json",
 ];
-const SUPPORTED_HOOK_DIRS: [&str; 5] = [
+const SUPPORTED_HOOK_DIRS: [&str; 6] = [
     ".claude/hooks",
     ".codex/hooks",
     ".devin/hooks",
     ".hermes/hooks",
     ".pi/hooks",
+    ".dsh/hooks",
 ];
 
 pub(crate) fn generate(spec_path: &Path, output: &Path) -> Result<()> {

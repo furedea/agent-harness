@@ -60,6 +60,10 @@ impl ExternalHookBundle {
         self.merge_hooks(hooks, &PI_HOOK_FILE)
     }
 
+    pub(crate) fn merge_dsh_hooks(&self, hooks: &mut Value) -> Result<()> {
+        self.merge_hooks(hooks, &DSH_HOOK_FILE)
+    }
+
     fn merge_hooks(&self, hooks: &mut Value, file: &HookFile) -> Result<()> {
         self.validate()?;
         match read_optional_json(&self.source.join(file.path))? {
@@ -149,12 +153,13 @@ impl ExternalHookBundle {
     }
 }
 
-const PROVIDER_HOOK_DIRS: [&str; 5] = [
+const PROVIDER_HOOK_DIRS: [&str; 6] = [
     ".claude/hooks",
     ".codex/hooks",
     ".devin/hooks",
     ".hermes/hooks",
     ".pi/hooks",
+    ".dsh/hooks",
 ];
 
 const CLAUDE_HOOK_FILE: HookFile = HookFile {
@@ -179,6 +184,11 @@ const HERMES_HOOK_FILE: HookFile = HookFile {
 };
 const PI_HOOK_FILE: HookFile = HookFile {
     path: ".pi/hooks.json",
+    target_key: Some("hooks"),
+    events_key: None,
+};
+const DSH_HOOK_FILE: HookFile = HookFile {
+    path: ".dsh/hooks.json",
     target_key: Some("hooks"),
     events_key: None,
 };

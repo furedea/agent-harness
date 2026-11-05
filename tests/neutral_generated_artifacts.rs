@@ -8,6 +8,8 @@ use toml_edit::DocumentMut;
 
 #[path = "neutral-generated-artifacts/config_sync.rs"]
 mod config_sync;
+#[path = "neutral-generated-artifacts/dsh.rs"]
+mod dsh;
 #[path = "neutral-generated-artifacts/protection.rs"]
 mod protection;
 #[path = "neutral-generated-artifacts/provider_hooks.rs"]

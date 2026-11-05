@@ -30,13 +30,15 @@ impl Inventory {
              Codex hook events       {}\n\
              Devin hook events       {}\n\
              Hermes hook events      {}\n\
-             Pi hook events          {}\n",
+             Pi hook events          {}\n\
+             Dsh hook events         {}\n",
             self.skills.len(),
             self.hook_event_count(HookProvider::Claude),
             self.hook_event_count(HookProvider::Codex),
             self.hook_event_count(HookProvider::Devin),
             self.hook_event_count(HookProvider::Hermes),
             self.hook_event_count(HookProvider::Pi),
+            self.hook_event_count(HookProvider::Dsh),
         )
     }
 
@@ -62,6 +64,7 @@ impl Inventory {
             HookProvider::Devin,
             HookProvider::Hermes,
             HookProvider::Pi,
+            HookProvider::Dsh,
         ];
         lines.extend(
             providers
@@ -210,6 +213,7 @@ fn shorten_hook_path(part: &str) -> String {
         .or_else(|| part.strip_prefix("$HOME/.devin/hooks/"))
         .or_else(|| part.strip_prefix("$HOME/.hermes/hooks/"))
         .or_else(|| part.strip_prefix("$HOME/.pi/hooks/"))
+        .or_else(|| part.strip_prefix("$HOME/.dsh/hooks/"))
         .unwrap_or(part)
         .to_owned()
 }
@@ -322,5 +326,18 @@ mod tests {
              NAME              TITLE                                       CLAUDE    CODEX\n\
              git-workflow      Git Workflow                                implicit  explicit\n"
         );
+    }
+
+    fn shortened_adapter_command(provider_dir: &str) -> String {
+        shorten_hook_command(&format!(
+            "$HOME/{provider_dir}/hooks/hook_adapter.py shell forbidden"
+        ))
+    }
+
+    #[test]
+    fn hook_commands_drop_the_provider_hooks_directory() {
+        let expected = "hook_adapter.py shell forbidden";
+        assert_eq!(shortened_adapter_command(".pi"), expected);
+        assert_eq!(shortened_adapter_command(".dsh"), expected);
     }
 }

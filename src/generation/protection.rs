@@ -40,22 +40,25 @@ pub(crate) fn codex_config_fragment(
     source: &Path,
     external_hooks: &[ExternalHookBundle],
 ) -> Result<String> {
-    codex_config_fragment_for_runtime(source, external_hooks, &RuntimeRoot::home())
+    codex_config_fragment_for_runtime(crate::generation::GenerationContext {
+        source,
+        external_hooks,
+        runtime_root: &RuntimeRoot::home(),
+        dsh_profile: "web",
+    })
 }
 
 pub(crate) fn codex_config_fragment_for_runtime(
-    source: &Path,
-    external_hooks: &[ExternalHookBundle],
-    runtime_root: &RuntimeRoot,
+    context: crate::generation::GenerationContext<'_>,
 ) -> Result<String> {
-    let mut content = String::from("[permissions.guarded.filesystem]\n");
+    let mut fragment = String::from("[permissions.guarded.filesystem]\n");
 
-    for path in protected_paths_for_runtime(source, external_hooks, runtime_root)? {
-        writeln!(content, "{} = \"read\"", toml_edit::Key::new(path))?;
+    for path in protected_paths_for_runtime(context)? {
+        writeln!(fragment, "{} = \"read\"", toml_edit::Key::new(path))?;
     }
-    writeln!(content, "glob_scan_max_depth = {GLOB_SCAN_MAX_DEPTH}")?;
+    writeln!(fragment, "glob_scan_max_depth = {GLOB_SCAN_MAX_DEPTH}")?;
 
-    Ok(content)
+    Ok(fragment)
 }
 
 #[cfg(test)]
@@ -74,16 +77,25 @@ pub(crate) fn protected_paths(
     source: &Path,
     external_hooks: &[ExternalHookBundle],
 ) -> Result<Vec<String>> {
-    protected_paths_for_runtime(source, external_hooks, &RuntimeRoot::home())
+    protected_paths_for_runtime(crate::generation::GenerationContext {
+        source,
+        external_hooks,
+        runtime_root: &RuntimeRoot::home(),
+        dsh_profile: "web",
+    })
 }
 
 pub(crate) fn protected_paths_for_runtime(
-    source: &Path,
-    external_hooks: &[ExternalHookBundle],
-    runtime_root: &RuntimeRoot,
+    context: crate::generation::GenerationContext<'_>,
 ) -> Result<Vec<String>> {
+    let crate::generation::GenerationContext {
+        source,
+        external_hooks,
+        runtime_root,
+        dsh_profile,
+    } = context;
     let mut paths = Vec::new();
-    for path in harness_owned_files(source, external_hooks)? {
+    for path in harness_owned_files(source, external_hooks, dsh_profile)? {
         push_unique(&mut paths, runtime_root.path(&path));
     }
     Ok(paths)
@@ -102,6 +114,7 @@ fn push_unique(paths: &mut Vec<String>, path: String) {
 fn harness_owned_files(
     source: &Path,
     external_hooks: &[ExternalHookBundle],
+    dsh_profile: &str,
 ) -> Result<Vec<PathBuf>> {
     let installed = InstalledLayout::relative();
     let mut paths = Vec::new();
@@ -113,11 +126,15 @@ fn harness_owned_files(
                 .map(|path| target_dir.join(path)),
         );
     }
+    paths.extend(
+        ["package.json", "cordis.patch.yml", "hook_bridge.ts"]
+            .map(|name| installed.dsh_bridge().join(name)),
+    );
     paths.extend(bridges::hermes_plugin_files(&installed.hermes_plugin()));
     for bundle in external_hooks {
         paths.extend(bundle.asset_install_paths()?);
     }
-    paths.extend(installed.generated_files());
+    paths.extend(installed.generated_files(dsh_profile));
     Ok(paths)
 }
 
@@ -219,7 +236,12 @@ mod tests {
         let expected = runtime_path.join(".claude/hooks/guard.sh");
         let expected = expected.to_str().unwrap();
 
-        let content = codex_config_fragment_for_runtime(&root, &[], &runtime_root)?;
+        let content = codex_config_fragment_for_runtime(crate::generation::GenerationContext {
+            source: &root,
+            external_hooks: &[],
+            runtime_root: &runtime_root,
+            dsh_profile: "web",
+        })?;
         let document = content.parse::<toml_edit::DocumentMut>()?;
 
         assert_eq!(
@@ -227,7 +249,13 @@ mod tests {
             Some("read"),
         );
         assert!(
-            protected_paths_for_runtime(&root, &[], &runtime_root)?.contains(&expected.to_owned())
+            protected_paths_for_runtime(crate::generation::GenerationContext {
+                source: &root,
+                external_hooks: &[],
+                runtime_root: &runtime_root,
+                dsh_profile: "web"
+            })?
+            .contains(&expected.to_owned())
         );
         std::fs::remove_dir_all(root)?;
         Ok(())

@@ -71,5 +71,20 @@
         }
       ]
     }
+  },
+  "dsh": {
+    "hooks": {
+      "tools/pre-execute": [
+        {
+          "matcher": "bash",
+          "hooks": [
+            {
+              "type": "command",
+              "command": "$HOME/.dsh/hooks/hook_adapter.py shell forbidden"
+            }
+          ]
+        }
+      ]
+    }
   }
 }

@@ -66,6 +66,7 @@ let
     ${lib.getExe cfg.package} --profile ${cfg.profile} install \
       --source ${composedSource} \
       --prefix "$out" \
+      --dsh-profile ${lib.escapeShellArg cfg.dsh.profile} \
       ${hookArgs}
   '';
 
@@ -205,6 +206,18 @@ in
       };
     };
 
+    dsh.profile = lib.mkOption {
+      type = lib.types.str;
+      default = "web";
+      description = "User-owned dsh profile to register the hook bundle in.";
+    };
+
+    dsh.enable = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = "Whether to install DeepSeek Harness files.";
+    };
+
     pi = {
       enable = lib.mkOption {
         type = lib.types.bool;
@@ -291,6 +304,13 @@ in
           ".hermes/plugins/agent-harness-hooks".source =
             "${renderedHarness}/.hermes/plugins/agent-harness-hooks";
         })
+        (lib.mkIf cfg.dsh.enable {
+          ".dsh/hooks".source = "${renderedHarness}/.dsh/hooks";
+          ".dsh/hooks.json".source = "${renderedHarness}/.dsh/hooks.json";
+          ".dsh/bridge".source = "${renderedHarness}/.dsh/bridge";
+          ".dsh/skills".source = providerSkills "codex";
+          ".dsh/AGENTS.md".source = "${renderedHarness}/.dsh/AGENTS.md";
+        })
         (lib.mkIf cfg.pi.enable {
           ".pi/hooks".source = "${renderedHarness}/.pi/hooks";
           ".pi/agent/hooks.json".source = "${renderedHarness}/.pi/agent/hooks.json";
@@ -321,6 +341,14 @@ in
             ${lib.getExe cfg.package} sync-devin-config \
               --source ${renderedHarness}/.config/devin/config.json \
               --target "$HOME/.config/devin/config.json"
+          ''
+        );
+
+        agentHarnessDshConfig = lib.mkIf cfg.dsh.enable (
+          lib.hm.dag.entryAfter [ "linkGeneration" ] ''
+            ${lib.getExe cfg.package} sync-dsh-config \
+              --source ${renderedHarness}/.dsh/bridge \
+              --target "$HOME/.dsh/profiles/${cfg.dsh.profile}/package.json"
           ''
         );
 
