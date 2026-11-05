@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "command": "$HOME/.codex/hooks/adapt.sh $HOME/.codex/hooks/guard.sh",
+            "type": "command"
+          }
+        ]
+      }
+    ]
+  }
+}

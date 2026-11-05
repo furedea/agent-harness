@@ -1,0 +1,1 @@
+{"name":"agent-harness-dsh-hooks","version":"1.0.0","type":"module","main":"hook_bridge.ts","dsh":{"bundle":{"patch":"./cordis.patch.yml"}}}

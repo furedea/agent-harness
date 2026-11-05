@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "tools/pre-execute": [
+      {
+        "hooks": [
+          {
+            "command": "$HOME/.dsh/hooks/hook_adapter.py shell forbidden",
+            "type": "command"
+          }
+        ],
+        "matcher": "bash"
+      }
+    ]
+  }
+}
