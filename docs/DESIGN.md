@@ -74,6 +74,15 @@ agent breaks in predictable ways:
   generated enforcement.
 - ADRs: [0016], [0018], [0020].
 
+**6. Separate provider declarations, functions, and I/O capabilities.**
+
+- Decision: declare Devin, Hermes, pi, and dsh in `ProviderSpec`, with Data / Functions /
+  Capabilities boundaries. Claude and Codex remain outside; stage 5 for their hooks is deferred.
+- Reason: shared paths, asset destinations, and optional `ConfigSync` strategies prevent parallel
+  lists from drifting. Tests check the Nix list against Rust, and Home Manager links explicit
+  managed files and subdirectories to coexist with user-owned state.
+- ADRs: [0026].
+
 ## Alternatives considered
 
 | Question                                              | Rejected alternative                                                              | Why it was rejected                                                                                            |
@@ -91,17 +100,21 @@ agent breaks in predictable ways:
 ![agent-harness architecture](architecture.svg)
 
 `install` renders into a staging directory first, then replaces only the managed files and
-directories. `sync-*` commands merge managed keys into configs that agents also write.
+directories. `sync-config --provider <id>` commands merge managed keys into configs that agents also write.
 
 | Module                                                                      | Responsibility                                                                 |
 | --------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
 | `cli`                                                                       | Parses subcommands and dispatches to rendering, sync, list, and verify.        |
 | `source`, `layout`, `manifest`                                              | Resolve the source tree and validate its layout and required runtime commands. |
 | `profile`                                                                   | Names the packaged built-in source (`minimal`).                                |
-| `render`                                                                    | Stages a full installation, then replaces managed files and directories.       |
-| `generation/hooks`, `generation/bridges`                                    | Render hook wiring and the Hermes plugin and pi bridge.                        |
+| `render` | Generates the staging tree and passes its publication plan to the executor. |
+| `provider/spec` | Data: provider metadata, asset destinations, and optional `ConfigSync`. |
+| `install_plan` | Functions: plan publication of rendered staging files and embedded assets. |
+| `filesystem`, `install_executor`, `config_sync` | Capabilities: execute file operations and dispatch config synchronization. |
+| `nix/providers.json`, `nix/home_manager_module.nix` | Checked Nix provider list and generated Home Manager options, links, and sync. |
+| `generation/hooks`, `generation/bridges` | Render hook wiring and Hermes, pi, and dsh bridges. |
 | `generation/command_permissions`                                            | Maps neutral rules to Claude, Codex, and Devin permission syntax.              |
-| `generation/claude_config`, `codex_config`, `devin_config`, `hermes_config` | Build and sync provider configs.                                               |
+| `generation/claude_config`, `codex_config`, `devin_config`, `hermes_config`, `dsh_config` | Build and sync provider configs.                                               |
 | `generation/protection`, `secret_path_policy`                               | Compute protected paths and secret-file deny rules.                            |
 | `generation/skills`, `external_hooks`, `hook_bundle`                        | Render skills and compose external bundles.                                    |
 | `inventory`                                                                 | Lists the skills and hooks a source provides.                                  |
@@ -166,3 +179,4 @@ workflows:
 [0018]: adr/0018_preserve_source_claude_permission_rules.md
 [0020]: adr/0020_keep_git_push_outside_the_claude_sandbox.md
 [0021]: adr/0021_refresh_the_agent_token_from_a_github_app.md
+[0026]: adr/0026_declare_providers_in_a_registry.md

@@ -48,6 +48,12 @@
 - 理由：エージェントは自分の状態を書き込み続けるが，設定のオーバーレイが生成した強制力を弱めたり取り除いたりしてはならない．
 - ADR: [0016]，[0018]，[0020]．
 
+**6. プロバイダの宣言と処理，I/O を分離する．**
+
+- 判断: Devin，Hermes，pi，dsh を `ProviderSpec` に宣言し，Data / Functions / Capabilities に分ける．Claude と Codex は対象外とし，hooks を移す段階 5 は意図的に延期する．
+- 理由: パス，資産の出力先，同期方式を共有し，プロバイダ一覧のずれを防ぐ．`ConfigSync` は spec の任意の機能として宣言する．Nix の一覧は Rust との一致をテストし，Home Manager は管理対象のファイルとサブディレクトリを明示してリンクする．
+- ADR: [0026]．
+
 ## 検討した代替案
 
 | 問い                                                                     | 退けた案                                                                                  | 退けた理由                                                                                                                 |
@@ -64,17 +70,21 @@
 
 ![agent-harness architecture](architecture.svg)
 
-`install` は，まずステージング用のディレクトリに生成し，その後で管理対象のファイルとディレクトリだけを置き換える．`sync-*` コマンドは，エージェントも書き込む設定ファイルに管理対象のキーをマージする．
+`install` は，まずステージング用のディレクトリに生成し，その後で管理対象のファイルとディレクトリだけを置き換える．`sync-config --provider <id>` コマンドは，エージェントも書き込む設定ファイルに管理対象のキーをマージする．
 
 | モジュール                                                                  | 責務                                                                                   |
 | --------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
 | `cli`                                                                       | サブコマンドを解析し，生成，同期，一覧，検証に振り分ける．                             |
 | `source`，`layout`，`manifest`                                              | ソースツリーを解決し，そのレイアウトと必要な実行時コマンドを検証する．                 |
 | `profile`                                                                   | 同梱の組み込みソース（`minimal`）の名前を定める．                                      |
-| `render`                                                                    | インストール全体をステージングしてから，管理対象のファイルとディレクトリを置き換える． |
-| `generation/hooks`，`generation/bridges`                                    | フックの配線と，Hermes のプラグインと pi のブリッジを生成する．                        |
+| `render` | ステージング生成を実行し，公開計画を executor に渡す． |
+| `provider/spec` | Data: プロバイダのメタデータ，資産の出力先，任意の `ConfigSync` を宣言する． |
+| `install_plan` | Functions: 生成済み staging の公開と埋め込み資産の配置を計画する． |
+| `filesystem`，`install_executor`，`config_sync` | Capabilities: ファイル操作と設定同期を実行する． |
+| `nix/providers.json`，`nix/home_manager_module.nix` | テストで照合する Nix の一覧と，そこから生成する Home Manager の option，リンク，同期． |
+| `generation/hooks`，`generation/bridges` | フックの配線と Hermes，pi，dsh のブリッジを描画する． |
 | `generation/command_permissions`                                            | 中立なルールを Claude，Codex，Devin の権限の構文に対応させる．                         |
-| `generation/claude_config`，`codex_config`，`devin_config`，`hermes_config` | プロバイダの設定を組み立て，同期する．                                                 |
+| `generation/claude_config`，`codex_config`，`devin_config`，`hermes_config`，`dsh_config` | プロバイダの設定を組み立て，同期する．                                                 |
 | `generation/protection`，`secret_path_policy`                               | 保護パスと，秘密ファイルの deny ルールを計算する．                                     |
 | `generation/skills`，`external_hooks`，`hook_bundle`                        | スキルを生成し，外部のバンドルを合成する．                                             |
 | `inventory`                                                                 | ソースが提供するスキルとフックを一覧にする．                                           |
@@ -129,3 +139,4 @@ flake は，スキルとフックバンドルのビルダーもチェックと�
 [0018]: adr/0018_preserve_source_claude_permission_rules.md
 [0020]: adr/0020_keep_git_push_outside_the_claude_sandbox.md
 [0021]: adr/0021_refresh_the_agent_token_from_a_github_app.md
+[0026]: adr/0026_declare_providers_in_a_registry.md
