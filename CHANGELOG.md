@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.10](https://github.com/furedea/agent-harness/compare/agent-harness-v0.9.9...agent-harness-v0.9.10) (2026-11-06)
+
+
+### Features
+
+* **dsh:** add DeepSeek Harness hook provider ([#188](https://github.com/furedea/agent-harness/issues/188)) ([7f0bbec](https://github.com/furedea/agent-harness/commit/7f0bbec2893f66792affe1f532b6fee310a61d9b))
+
 ## [0.9.9](https://github.com/furedea/agent-harness/compare/agent-harness-v0.9.8...agent-harness-v0.9.9) (2026-10-28)
 
 
