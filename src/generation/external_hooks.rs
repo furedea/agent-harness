@@ -7,7 +7,10 @@ use anyhow::{Context, Result, ensure};
 use serde::Deserialize;
 use serde_json::{Map, Value, map::Entry};
 
-use crate::fs_ops;
+use crate::{
+    fs_ops,
+    provider::spec::{PROVIDERS, ProviderSpec},
+};
 
 const SUPPORTED_BUNDLE_VERSION: u64 = 1;
 
@@ -48,20 +51,19 @@ impl ExternalHookBundle {
         self.merge_hooks(hooks, &CODEX_HOOK_FILE)
     }
 
-    pub(crate) fn merge_devin_hooks(&self, hooks: &mut Value) -> Result<()> {
-        self.merge_hooks(hooks, &DEVIN_HOOK_FILE)
-    }
-
-    pub(crate) fn merge_hermes_hooks(&self, hooks: &mut Value) -> Result<()> {
-        self.merge_hooks(hooks, &HERMES_HOOK_FILE)
-    }
-
-    pub(crate) fn merge_pi_hooks(&self, hooks: &mut Value) -> Result<()> {
-        self.merge_hooks(hooks, &PI_HOOK_FILE)
-    }
-
-    pub(crate) fn merge_dsh_hooks(&self, hooks: &mut Value) -> Result<()> {
-        self.merge_hooks(hooks, &DSH_HOOK_FILE)
+    pub(crate) fn merge_provider_hooks(
+        &self,
+        hooks: &mut Value,
+        spec: &ProviderSpec,
+    ) -> Result<()> {
+        self.merge_hooks(
+            hooks,
+            &HookFile {
+                path: spec.external_hook_file,
+                target_key: Some("hooks"),
+                events_key: None,
+            },
+        )
     }
 
     fn merge_hooks(&self, hooks: &mut Value, file: &HookFile) -> Result<()> {
@@ -106,8 +108,9 @@ impl ExternalHookBundle {
     }
 
     fn assets(&self) -> Result<Vec<HookAsset>> {
-        let mut assets = PROVIDER_HOOK_DIRS
-            .iter()
+        let mut assets = [".claude/hooks", ".codex/hooks"]
+            .into_iter()
+            .chain(PROVIDERS.iter().map(|spec| spec.hooks_dir))
             .map(|relative| self.asset_tree(Path::new(relative)))
             .collect::<Result<Vec<_>>>()?
             .into_iter()
@@ -153,15 +156,6 @@ impl ExternalHookBundle {
     }
 }
 
-const PROVIDER_HOOK_DIRS: [&str; 6] = [
-    ".claude/hooks",
-    ".codex/hooks",
-    ".devin/hooks",
-    ".hermes/hooks",
-    ".pi/hooks",
-    ".dsh/hooks",
-];
-
 const CLAUDE_HOOK_FILE: HookFile = HookFile {
     path: ".claude/settings.json",
     target_key: None,
@@ -172,27 +166,6 @@ const CODEX_HOOK_FILE: HookFile = HookFile {
     target_key: Some("hooks"),
     events_key: Some("hooks"),
 };
-const DEVIN_HOOK_FILE: HookFile = HookFile {
-    path: ".devin/hooks.v1.json",
-    target_key: Some("hooks"),
-    events_key: None,
-};
-const HERMES_HOOK_FILE: HookFile = HookFile {
-    path: ".hermes/hooks.json",
-    target_key: Some("hooks"),
-    events_key: None,
-};
-const PI_HOOK_FILE: HookFile = HookFile {
-    path: ".pi/hooks.json",
-    target_key: Some("hooks"),
-    events_key: None,
-};
-const DSH_HOOK_FILE: HookFile = HookFile {
-    path: ".dsh/hooks.json",
-    target_key: Some("hooks"),
-    events_key: None,
-};
-
 /// A provider hook file inside a bundle, where its events live in that file, and
 /// where they merge into the generated provider config.
 struct HookFile {

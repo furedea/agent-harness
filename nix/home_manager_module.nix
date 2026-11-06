@@ -7,6 +7,57 @@
 }:
 let
   cfg = config.programs.agent-harness;
+  providers = builtins.fromJSON (builtins.readFile ./providers.json);
+  providerOptions = lib.genAttrs (map (provider: provider.id) providers) (
+    id:
+    let
+      provider = lib.findFirst (provider: provider.id == id) null providers;
+    in
+    {
+      enable = lib.mkOption {
+        type = lib.types.bool;
+        default = true;
+        description = provider.option_description;
+      };
+    }
+    // lib.mapAttrs (
+      _: option:
+      lib.mkOption {
+        type = lib.types.str;
+        inherit (option) default description;
+      }
+    ) provider.extra_options
+  );
+  providerFiles = map (
+    provider:
+    lib.mkIf cfg.${provider.id}.enable (
+      lib.mapAttrs (path: link: {
+        source =
+          if link ? skills_provider then
+            providerSkills link.skills_provider
+          else
+            "${renderedHarness}/${path}";
+      }) provider.linked_paths
+    )
+  ) providers;
+  providerActivations = lib.listToAttrs (
+    map (
+      provider:
+      let
+        inherit (provider) sync;
+        target = lib.replaceStrings [ "\${profile}" ] [ (cfg.${provider.id}.profile or "") ] sync.target;
+      in
+      lib.nameValuePair sync.activation (
+        lib.mkIf cfg.${provider.id}.enable (
+          lib.hm.dag.entryAfter [ "linkGeneration" ] ''
+            ${lib.getExe cfg.package} ${sync.command} \
+              --source ${renderedHarness}/${sync.source} \
+              --target "$HOME/${target}"
+          ''
+        )
+      )
+    ) (builtins.filter (provider: provider.sync != null) providers)
+  );
   sourceHasProfiles = builtins.pathExists "${cfg.source}/profiles/${cfg.profile}";
   profileSource = if sourceHasProfiles then "${cfg.source}/profiles/${cfg.profile}" else cfg.source;
 
@@ -190,42 +241,8 @@ in
       };
     };
 
-    devin = {
-      enable = lib.mkOption {
-        type = lib.types.bool;
-        default = true;
-        description = "Whether to install Devin CLI harness files.";
-      };
-    };
-
-    hermes = {
-      enable = lib.mkOption {
-        type = lib.types.bool;
-        default = true;
-        description = "Whether to install Hermes Agent harness files.";
-      };
-    };
-
-    dsh.profile = lib.mkOption {
-      type = lib.types.str;
-      default = "web";
-      description = "User-owned dsh profile to register the hook bundle in.";
-    };
-
-    dsh.enable = lib.mkOption {
-      type = lib.types.bool;
-      default = true;
-      description = "Whether to install DeepSeek Harness files.";
-    };
-
-    pi = {
-      enable = lib.mkOption {
-        type = lib.types.bool;
-        default = true;
-        description = "Whether to install pi harness files.";
-      };
-    };
-  };
+  }
+  // providerOptions;
 
   config = lib.mkIf cfg.enable {
     programs.agent-harness.claude.composedSettings = lib.pipe claudeSourceSettings [
@@ -281,43 +298,24 @@ in
     home = {
       packages = [ cfg.package ];
 
-      file = lib.mkMerge [
-        (lib.mkIf cfg.codex.enable {
-          ".codex/AGENTS.md".source = "${renderedHarness}/.codex/AGENTS.md";
-          ".codex/hooks".source = "${renderedHarness}/.codex/hooks";
-          ".codex/hooks.json".source = "${renderedHarness}/.codex/hooks.json";
-          ".codex/rules/default.rules".source = codexRules;
-          ".codex/skills".source = providerSkills "codex";
-        })
-        (lib.mkIf cfg.claude.enable {
-          ".claude/CLAUDE.md".source = "${renderedHarness}/.claude/CLAUDE.md";
-          ".claude/hooks".source = "${renderedHarness}/.claude/hooks";
-          ".claude/skills".source = providerSkills "claude";
-          ".claude/statusline".source = "${renderedHarness}/.claude/statusline";
-        })
-        (lib.mkIf cfg.devin.enable {
-          ".devin/hooks".source = "${renderedHarness}/.devin/hooks";
-        })
-        (lib.mkIf cfg.hermes.enable {
-          ".hermes/hooks".source = "${renderedHarness}/.hermes/hooks";
-          ".hermes/hooks.json".source = "${renderedHarness}/.hermes/hooks.json";
-          ".hermes/plugins/agent-harness-hooks".source =
-            "${renderedHarness}/.hermes/plugins/agent-harness-hooks";
-        })
-        (lib.mkIf cfg.dsh.enable {
-          ".dsh/hooks".source = "${renderedHarness}/.dsh/hooks";
-          ".dsh/hooks.json".source = "${renderedHarness}/.dsh/hooks.json";
-          ".dsh/bridge".source = "${renderedHarness}/.dsh/bridge";
-          ".dsh/skills".source = providerSkills "codex";
-          ".dsh/AGENTS.md".source = "${renderedHarness}/.dsh/AGENTS.md";
-        })
-        (lib.mkIf cfg.pi.enable {
-          ".pi/hooks".source = "${renderedHarness}/.pi/hooks";
-          ".pi/agent/hooks.json".source = "${renderedHarness}/.pi/agent/hooks.json";
-          ".pi/agent/extensions/hook_bridge.ts".source =
-            "${renderedHarness}/.pi/agent/extensions/hook_bridge.ts";
-        })
-      ];
+      file = lib.mkMerge (
+        [
+          (lib.mkIf cfg.codex.enable {
+            ".codex/AGENTS.md".source = "${renderedHarness}/.codex/AGENTS.md";
+            ".codex/hooks".source = "${renderedHarness}/.codex/hooks";
+            ".codex/hooks.json".source = "${renderedHarness}/.codex/hooks.json";
+            ".codex/rules/default.rules".source = codexRules;
+            ".codex/skills".source = providerSkills "codex";
+          })
+          (lib.mkIf cfg.claude.enable {
+            ".claude/CLAUDE.md".source = "${renderedHarness}/.claude/CLAUDE.md";
+            ".claude/hooks".source = "${renderedHarness}/.claude/hooks";
+            ".claude/skills".source = providerSkills "claude";
+            ".claude/statusline".source = "${renderedHarness}/.claude/statusline";
+          })
+        ]
+        ++ providerFiles
+      );
 
       activation = {
         agentHarnessCodexConfig = lib.mkIf cfg.codex.enable (
@@ -336,30 +334,8 @@ in
           ''
         );
 
-        agentHarnessDevinConfig = lib.mkIf cfg.devin.enable (
-          lib.hm.dag.entryAfter [ "linkGeneration" ] ''
-            ${lib.getExe cfg.package} sync-devin-config \
-              --source ${renderedHarness}/.config/devin/config.json \
-              --target "$HOME/.config/devin/config.json"
-          ''
-        );
-
-        agentHarnessDshConfig = lib.mkIf cfg.dsh.enable (
-          lib.hm.dag.entryAfter [ "linkGeneration" ] ''
-            ${lib.getExe cfg.package} sync-dsh-config \
-              --source ${renderedHarness}/.dsh/bridge \
-              --target "$HOME/.dsh/profiles/${cfg.dsh.profile}/package.json"
-          ''
-        );
-
-        agentHarnessHermesConfig = lib.mkIf cfg.hermes.enable (
-          lib.hm.dag.entryAfter [ "linkGeneration" ] ''
-            ${lib.getExe cfg.package} sync-hermes-config \
-              --source ${renderedHarness}/.hermes/managed-config.yaml \
-              --target "$HOME/.hermes/config.yaml"
-          ''
-        );
-      };
+      }
+      // providerActivations;
     };
   };
 }

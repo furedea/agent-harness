@@ -406,7 +406,7 @@ default_permissions, permissions
 
 Devin の設定の同期は管理対象のトップレベルキーを置き換え，`permissions` の中では `Exec(...)` のエントリだけを置き換える．`Read(...)`，`Write(...)`，`Fetch(...)`，`mcp__*` などの Exec 以外のルールはユーザーの所有のままである．対話的に `Exec(...)` として保存した承認は次の同期で置き換わるので，永続させたいコマンドルールは `command_permissions.json` に書くこと．
 
-`install` は `~/.hermes/config.yaml` を編集しない．`sync-hermes-config` が `~/.hermes/managed-config.yaml` をそこへマージする．生成された `plugins.enabled` のエントリは重複なく追加され，Hermes Agent の他の状態は残る．Home Manager モジュールは activation でこの同期を実行する．
+`install` は `~/.hermes/config.yaml` を編集しない．`sync-config --provider hermes` が `~/.hermes/managed-config.yaml` をそこへマージする．生成された `plugins.enabled` のエントリは重複なく追加され，Hermes Agent の他の状態は残る．Home Manager モジュールは activation でこの同期を実行する．
 
 `verify` は，解決したソースの manifest が宣言する必要なパスと実行時コマンドを確認する．インストールされたファイルの内容を選んだソースと比較はしない．
 
@@ -445,23 +445,18 @@ CLI は，個々の出力を確認したり合成したりするための低レ�
 
 | コマンド                         | 出力                                             |
 | -------------------------------- | ------------------------------------------------ |
+| `generate-hooks --provider <id>` | プロバイダのフック JSON または設定断片 |
+| `sync-config --provider <id>` | 既存の設定へ管理対象を同期 |
 | `generate-claude-settings`       | Claude Code の設定 JSON 全体                     |
-| `generate-claude-hooks`          | Claude Code のフック JSON                        |
 | `generate-codex-config-source`   | 管理対象の Codex 設定ソース全体                  |
 | `generate-codex-config-fragment` | ガード付きファイルシステムの TOML 断片           |
-| `generate-codex-hooks`           | Codex のフック JSON                              |
 | `generate-codex-rules`           | Codex の execpolicy ルール                       |
 | `generate-command-permissions`   | 共有の実行時コマンド権限                         |
-| `generate-devin-hooks`           | Devin の設定断片（フックと権限）                 |
 | `generate-forbidden-commands`    | グローバルで厳密な禁止コマンドの正規表現ルール   |
-| `generate-hermes-hooks`          | Hermes Agent のフックマニフェスト                |
 | `generate-hook-bundle`           | 隔離して作るバージョン付きの外部フックバンドル   |
-| `generate-pi-hooks`              | pi のフックマニフェスト                          |
 | `generate-skills`                | プロバイダ別の組み込みスキルと外部スキルのツリー |
-| `sync-claude-settings`           | 既存の Claude 設定へのトップレベルのマージ       |
-| `sync-codex-config`              | 既存の Codex 設定への管理対象キーのマージ        |
-| `sync-devin-config`              | 既存の Devin 設定への管理対象のマージ            |
-| `sync-hermes-config`             | 既存の Hermes 設定への管理対象キーのマージ       |
+
+`generate-hooks` は `claude`，`codex`，`devin`，`hermes`，`pi`，`dsh` に対応する．`sync-config` も同じ指定を受け付けるが，pi は管理対象の設定がないためエラーになる．従来の `generate-<provider>-hooks`，`sync-claude-settings`，`sync-{codex,devin,hermes,dsh}-config` は非推奨の別名として動作し，ヘルプには表示しない．
 
 ```bash
 agent-harness generate-skills \
@@ -477,7 +472,7 @@ agent-harness generate-hook-bundle \
   --spec /path/to/hook-bundle-spec.json \
   --output /path/to/hook-bundle
 
-agent-harness generate-codex-hooks \
+agent-harness generate-hooks --provider codex \
   --output "$HOME/.codex/hooks.json"
 
 agent-harness generate-codex-rules \
@@ -492,7 +487,7 @@ agent-harness generate-forbidden-commands \
 agent-harness generate-codex-config-source \
   --output /tmp/codex-config-source.toml
 
-agent-harness sync-codex-config \
+agent-harness sync-config --provider codex \
   --source /tmp/codex-config-source.toml \
   --target "$HOME/.codex/config.toml"
 

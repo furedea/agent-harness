@@ -6,7 +6,7 @@ use serde::Serialize;
 
 use crate::{
     fs_ops,
-    generation::{bridges, external_hooks::ExternalHookBundle, io},
+    generation::{external_hooks::ExternalHookBundle, io},
     layout::{InstalledLayout, SourceLayout},
     runtime_root::RuntimeRoot,
 };
@@ -88,15 +88,16 @@ pub(crate) fn protected_paths(
 pub(crate) fn protected_paths_for_runtime(
     context: crate::generation::GenerationContext<'_>,
 ) -> Result<Vec<String>> {
-    let crate::generation::GenerationContext {
-        source,
-        external_hooks,
-        runtime_root,
-        dsh_profile,
-    } = context;
+    protected_paths_for_providers(context, crate::provider::spec::PROVIDERS)
+}
+
+pub(crate) fn protected_paths_for_providers(
+    context: crate::generation::GenerationContext<'_>,
+    providers: &[crate::provider::spec::ProviderSpec],
+) -> Result<Vec<String>> {
     let mut paths = Vec::new();
-    for path in harness_owned_files(source, external_hooks, dsh_profile)? {
-        push_unique(&mut paths, runtime_root.path(&path));
+    for path in harness_owned_files(context, providers)? {
+        push_unique(&mut paths, context.runtime_root.path(&path));
     }
     Ok(paths)
 }
@@ -112,29 +113,41 @@ fn push_unique(paths: &mut Vec<String>, path: String) {
 /// Derived from the same tables the installer uses, so a new provider output is protected
 /// as soon as it is rendered.
 fn harness_owned_files(
-    source: &Path,
-    external_hooks: &[ExternalHookBundle],
-    dsh_profile: &str,
+    context: crate::generation::GenerationContext<'_>,
+    providers: &[crate::provider::spec::ProviderSpec],
 ) -> Result<Vec<PathBuf>> {
+    let crate::generation::GenerationContext {
+        source,
+        external_hooks,
+        dsh_profile,
+        ..
+    } = context;
     let installed = InstalledLayout::relative();
     let mut paths = Vec::new();
 
-    for (source_dir, target_dir) in installed.synced_directories(SourceLayout::new(source)) {
+    for (source_dir, target_dir) in
+        installed.synced_directories_for(SourceLayout::new(source), providers)
+    {
         paths.extend(
             relative_files(&source_dir)?
                 .into_iter()
                 .map(|path| target_dir.join(path)),
         );
     }
+    // Preserve the legacy protection order: directory assets precede generated files,
+    // with later-registered provider directories first.
     paths.extend(
-        ["package.json", "cordis.patch.yml", "hook_bridge.ts"]
-            .map(|name| installed.dsh_bridge().join(name)),
+        providers
+            .iter()
+            .rev()
+            .filter(|spec| spec.managed_asset_directory.is_some())
+            .flat_map(|spec| spec.assets.iter())
+            .map(|asset| PathBuf::from(asset.destination)),
     );
-    paths.extend(bridges::hermes_plugin_files(&installed.hermes_plugin()));
     for bundle in external_hooks {
         paths.extend(bundle.asset_install_paths()?);
     }
-    paths.extend(installed.generated_files(dsh_profile));
+    paths.extend(installed.generated_files_for(dsh_profile, providers));
     Ok(paths)
 }
 

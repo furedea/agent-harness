@@ -46,7 +46,11 @@ fn write_devin_hooks_renders_the_devin_section_as_a_config_fragment() -> Result<
     write_command_policy(&root)?;
     let output = root.join("devin-hooks.json");
 
-    write_devin_hooks(&root, &output, &[])?;
+    write_provider_hooks_for_runtime(
+        GenerationContext::home(&root, &[]),
+        &output,
+        ProviderId::Devin.spec(),
+    )?;
 
     let hooks: Value = serde_json::from_str(&std::fs::read_to_string(&output)?)?;
     assert_eq!(
@@ -69,7 +73,11 @@ fn write_devin_hooks_includes_command_permissions() -> Result<()> {
     write_command_policy(&root)?;
     let output = root.join("devin-hooks.json");
 
-    write_devin_hooks(&root, &output, &[])?;
+    write_provider_hooks_for_runtime(
+        GenerationContext::home(&root, &[]),
+        &output,
+        ProviderId::Devin.spec(),
+    )?;
 
     let config: Value = serde_json::from_str(&std::fs::read_to_string(&output)?)?;
     assert_eq!(
@@ -95,7 +103,11 @@ fn write_devin_hooks_emits_empty_hooks_when_the_section_is_missing() -> Result<(
     write_command_policy(&root)?;
     let output = root.join("devin-hooks.json");
 
-    write_devin_hooks(&root, &output, &[])?;
+    write_provider_hooks_for_runtime(
+        GenerationContext::home(&root, &[]),
+        &output,
+        ProviderId::Devin.spec(),
+    )?;
 
     let hooks: Value = serde_json::from_str(&std::fs::read_to_string(&output)?)?;
     assert_eq!(hooks["hooks"], serde_json::json!({}));

@@ -540,7 +540,7 @@ replaces only `Exec(...)` entries. Non-Exec entries such as `Read(...)`, `Write(
 and `mcp__*` rules stay user-owned. Approvals saved interactively as `Exec(...)` are replaced on the
 next sync; add persistent command rules to `command_permissions.json` instead.
 
-`install` does not edit `~/.hermes/config.yaml`. `sync-hermes-config` merges
+`install` does not edit `~/.hermes/config.yaml`. `sync-config --provider hermes` merges
 `~/.hermes/managed-config.yaml` into it: generated `plugins.enabled` entries are appended once, and
 all other Hermes Agent state is preserved. The Home Manager module runs this sync on activation.
 
@@ -587,23 +587,21 @@ The CLI also exposes lower-level generation commands for inspecting or composing
 
 | Command                          | Output                                             |
 | -------------------------------- | -------------------------------------------------- |
+| `generate-hooks --provider <id>` | Provider hook JSON or config fragment |
+| `sync-config --provider <id>` | Sync managed configuration into existing state |
 | `generate-claude-settings`       | Complete Claude Code settings JSON                 |
-| `generate-claude-hooks`          | Claude Code hook JSON                              |
 | `generate-codex-config-source`   | Complete managed Codex config source               |
 | `generate-codex-config-fragment` | Guarded-filesystem TOML fragment                   |
-| `generate-codex-hooks`           | Codex hook JSON                                    |
 | `generate-codex-rules`           | Codex execpolicy rules                             |
 | `generate-command-permissions`   | Shared runtime command permissions                 |
-| `generate-devin-hooks`           | Devin config fragment (hooks and permissions)      |
 | `generate-forbidden-commands`    | Global precise forbidden-command regex rules       |
-| `generate-hermes-hooks`          | Hermes Agent hook manifest                         |
 | `generate-hook-bundle`           | Isolated, versioned external hook bundle           |
-| `generate-pi-hooks`              | pi hook manifest                                   |
 | `generate-skills`                | Provider-specific built-in and external skill tree |
-| `sync-claude-settings`           | Top-level merge into existing Claude settings      |
-| `sync-codex-config`              | Managed-key merge into an existing Codex config    |
-| `sync-devin-config`              | Managed merge into an existing Devin config        |
-| `sync-hermes-config`             | Managed-key merge into an existing Hermes config   |
+
+`generate-hooks` supports `claude`, `codex`, `devin`, `hermes`, `pi`, and `dsh`.
+`sync-config` accepts the same provider IDs but rejects pi because it has no managed config.
+The old `generate-<provider>-hooks`, `sync-claude-settings`, and
+`sync-{codex,devin,hermes,dsh}-config` commands still work as deprecated aliases hidden from help.
 
 ```bash
 agent-harness generate-skills \
@@ -619,7 +617,7 @@ agent-harness generate-hook-bundle \
   --spec /path/to/hook-bundle-spec.json \
   --output /path/to/hook-bundle
 
-agent-harness generate-codex-hooks \
+agent-harness generate-hooks --provider codex \
   --output "$HOME/.codex/hooks.json"
 
 agent-harness generate-codex-rules \
@@ -634,7 +632,7 @@ agent-harness generate-forbidden-commands \
 agent-harness generate-codex-config-source \
   --output /tmp/codex-config-source.toml
 
-agent-harness sync-codex-config \
+agent-harness sync-config --provider codex \
   --source /tmp/codex-config-source.toml \
   --target "$HOME/.codex/config.toml"
 

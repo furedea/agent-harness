@@ -74,6 +74,47 @@ agent breaks in predictable ways:
   generated enforcement.
 - ADRs: [0016], [0018], [0020].
 
+**6. Separate provider declarations, functions, and I/O capabilities.**
+
+- Decision: declare Devin, Hermes, pi, and dsh in `ProviderSpec`, with Data / Functions /
+  Capabilities boundaries. Claude and Codex remain outside; stage 5 for their hooks is deferred.
+- Reason: shared paths, asset destinations, and optional `ConfigSync` strategies prevent parallel
+  lists from drifting. Tests check the Nix list against Rust, and Home Manager links explicit
+  managed files and subdirectories to coexist with user-owned state.
+- ADRs: [0026].
+
+```mermaid
+flowchart LR
+  subgraph D["Data (declarations only)"]
+    SPEC["PROVIDERS (list of ProviderSpec)"]
+  end
+  subgraph F["Functions (computation, no I/O)"]
+    RENDER["hook rendering: builds hook and config values"]
+    PLAN["install_plan: what goes where"]
+  end
+  subgraph C["Capabilities (I/O)"]
+    EXEC["install_executor"]
+    FS["FileSystem (trait)"]
+    SYNC["config_sync"]
+  end
+  DISK[("disk")]
+  SPEC -- "ProviderSpec" --> RENDER
+  SPEC -- "ProviderSpec" --> PLAN
+  SPEC -- "ConfigSync kind" --> SYNC
+  PLAN -- "FileOp list" --> EXEC
+  EXEC --> FS
+  FS --> DISK
+  SYNC --> DISK
+```
+
+- Only values cross layers: `ProviderSpec` flows from Data to Functions and Capabilities, and the
+  `FileOp` list flows from `install_plan` to the executor.
+- `tests/provider_spec_layering.rs` checks that the spec, install planner, and hook and bridge
+  rendering modules do not reference `fs_ops` or `std::fs`. It is a source-text check, not a
+  transitive analysis: staging generation still writes through the existing generation path
+  ([0026]).
+- Claude and Codex stay outside the registry for now.
+
 ## Alternatives considered
 
 | Question                                              | Rejected alternative                                                              | Why it was rejected                                                                                            |
@@ -90,24 +131,53 @@ agent breaks in predictable ways:
 
 ![agent-harness architecture](architecture.svg)
 
-`install` renders into a staging directory first, then replaces only the managed files and
-directories. `sync-*` commands merge managed keys into configs that agents also write.
+```mermaid
+sequenceDiagram
+  actor U as User / Home Manager
+  participant A as agent-harness
+  participant S as staging (temporary directory)
+  participant H as install target (~/.claude, ~/.codex, ~/.devin, ...)
+  U->>A: agent-harness install --source <dir>
+  A->>A: read the source tree and choose providers from PROVIDERS
+  A->>S: copy the existing Codex config so its own state is kept
+  A->>S: write each provider's configs, hooks, permission rules and protected paths
+  A->>S: place fixed files (assets) such as bridge scripts
+  A->>A: decide the list of managed files and directories
+  loop each managed path
+    A->>S: read the finished file
+    S-->>A: file contents
+    A->>H: replace the same path
+  end
+  A-->>U: done
+```
 
-| Module                                                                      | Responsibility                                                                 |
-| --------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| `cli`                                                                       | Parses subcommands and dispatches to rendering, sync, list, and verify.        |
-| `source`, `layout`, `manifest`                                              | Resolve the source tree and validate its layout and required runtime commands. |
-| `profile`                                                                   | Names the packaged built-in source (`minimal`).                                |
-| `render`                                                                    | Stages a full installation, then replaces managed files and directories.       |
-| `generation/hooks`, `generation/bridges`                                    | Render hook wiring and the Hermes plugin and pi bridge.                        |
-| `generation/command_permissions`                                            | Maps neutral rules to Claude, Codex, and Devin permission syntax.              |
-| `generation/claude_config`, `codex_config`, `devin_config`, `hermes_config` | Build and sync provider configs.                                               |
-| `generation/protection`, `secret_path_policy`                               | Compute protected paths and secret-file deny rules.                            |
-| `generation/skills`, `external_hooks`, `hook_bundle`                        | Render skills and compose external bundles.                                    |
-| `inventory`                                                                 | Lists the skills and hooks a source provides.                                  |
-| `runtime_root`                                                              | Relocates hook commands for project-local installs.                            |
-| `github_app`                                                                | Mints GitHub App installation tokens for the agent token option ([0021]).      |
-| `runtime`                                                                   | Checks that the manifest's runtime commands are on `PATH`.                     |
+- The staging directory is the assembly area, so a failure while rendering leaves the install
+  target untouched.
+- The loop replaces each managed path by reading the finished file from staging.
+- Files that are not managed, such as state an agent wrote itself, are left as they are.
+
+`sync-config --provider <id>` commands merge managed keys into configs that agents also write.
+
+| Module                                                                                    | Responsibility                                                                                                 |
+| ----------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `cli`                                                                                     | Parses subcommands and dispatches to rendering, sync, list, and verify.                                        |
+| `source`, `layout`, `manifest`                                                            | Resolve the source tree and validate its layout and required runtime commands.                                 |
+| `profile`                                                                                 | Names the packaged built-in source (`minimal`).                                                                |
+| `render`                                                                                  | Generates the staging tree and passes its publication plan to the executor.                                    |
+| `provider/spec`                                                                           | Data: provider metadata, asset destinations, and optional `ConfigSync`.                                        |
+| `install_plan`                                                                            | Functions: plan publication of rendered staging files and embedded assets.                                     |
+| `filesystem`, `install_executor`, `config_sync`                                           | Capabilities: execute file operations and dispatch config synchronization.                                     |
+| `nix/providers.json`, `nix/home_manager_module.nix`                                       | Checked Nix provider list and generated Home Manager options, links, and sync.                                 |
+| `generation/hooks`                                                                        | Render hook wiring.                                                                                            |
+| `generation/bridges`, `provider/spec`, `install_plan`                                     | Verify bridge asset contracts; declare embedded bridge assets and destinations in specs and plan their writes. |
+| `generation/command_permissions`                                                          | Maps neutral rules to Claude, Codex, and Devin permission syntax.                                              |
+| `generation/claude_config`, `codex_config`, `devin_config`, `hermes_config`, `dsh_config` | Build and sync provider configs.                                                                               |
+| `generation/protection`, `secret_path_policy`                                             | Compute protected paths and secret-file deny rules.                                                            |
+| `generation/skills`, `external_hooks`, `hook_bundle`                                      | Render skills and compose external bundles.                                                                    |
+| `inventory`                                                                               | Lists the skills and hooks a source provides.                                                                  |
+| `runtime_root`                                                                            | Relocates hook commands for project-local installs.                                                            |
+| `github_app`                                                                              | Mints GitHub App installation tokens for the agent token option ([0021]).                                      |
+| `runtime`                                                                                 | Checks that the manifest's runtime commands are on `PATH`.                                                     |
 
 ## Verification
 
@@ -166,3 +236,4 @@ workflows:
 [0018]: adr/0018_preserve_source_claude_permission_rules.md
 [0020]: adr/0020_keep_git_push_outside_the_claude_sandbox.md
 [0021]: adr/0021_refresh_the_agent_token_from_a_github_app.md
+[0026]: adr/0026_declare_providers_in_a_registry.md

@@ -24,3 +24,5 @@ ignore:
   - docs/logs
   - "**/docs/logs"
   - "**/__init__.py"
+  # Golden snapshots mirror generated file names verbatim.
+  - tests/golden

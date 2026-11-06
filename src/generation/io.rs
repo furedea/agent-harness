@@ -18,3 +18,7 @@ where
     let content = serde_json::to_string_pretty(value)? + "\n";
     write_file(path, &content)
 }
+
+pub(super) fn read_file(path: &Path) -> Result<String> {
+    std::fs::read_to_string(path).with_context(|| format!("failed to read {}", path.display()))
+}

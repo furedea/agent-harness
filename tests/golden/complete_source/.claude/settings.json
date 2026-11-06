@@ -1,0 +1,116 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "$HOME/.claude/hooks/guard.sh",
+            "type": "command"
+          }
+        ],
+        "matcher": "Bash"
+      }
+    ]
+  },
+  "language": "English",
+  "model": "fixture-claude",
+  "permissions": {
+    "allow": [
+      "Read",
+      "Bash(fixture check:*)"
+    ],
+    "ask": [
+      "Bash(dangerouslyDisableSandbox:true)",
+      "Bash(fixture publish:*)"
+    ],
+    "defaultMode": "acceptEdits",
+    "deny": [
+      "Read(**/secrets/**)",
+      "Edit(**/secrets/**)",
+      "Bash(fixture destroy:*)",
+      "Edit(~/.codex/hooks/adapt.sh)",
+      "Edit(~/.codex/hooks/guard.sh)",
+      "Edit(~/.claude/hooks/guard.sh)",
+      "Edit(~/.claude/hooks/lib/provider_adapter.py)",
+      "Edit(~/.claude/hooks/rules/allowed_commands.json)",
+      "Edit(~/.claude/hooks/rules/forbidden_commands.json)",
+      "Edit(~/.claude/hooks/rules/secret_commit_policy.json)",
+      "Edit(~/.claude/hooks/rules/secret_path_policy.json)",
+      "Edit(~/.devin/hooks/hook_adapter.py)",
+      "Edit(~/.hermes/hooks/hook_adapter.py)",
+      "Edit(~/.pi/hooks/hook_adapter.py)",
+      "Edit(~/.dsh/hooks/hook_adapter.py)",
+      "Edit(~/.claude/statusline/statusline.py)",
+      "Edit(~/.dsh/bridge/package.json)",
+      "Edit(~/.dsh/bridge/cordis.patch.yml)",
+      "Edit(~/.dsh/bridge/hook_bridge.ts)",
+      "Edit(~/.hermes/plugins/agent-harness-hooks/plugin.yaml)",
+      "Edit(~/.hermes/plugins/agent-harness-hooks/__init__.py)",
+      "Edit(~/.codex/AGENTS.md)",
+      "Edit(~/.claude/CLAUDE.md)",
+      "Edit(~/.codex/hooks.json)",
+      "Edit(~/.claude/settings.json)",
+      "Edit(~/.codex/rules/default.rules)",
+      "Edit(~/.codex/config.toml)",
+      "Edit(~/.config/devin/config.json)",
+      "Edit(~/.hermes/hooks.json)",
+      "Edit(~/.hermes/managed-config.yaml)",
+      "Edit(~/.pi/agent/hooks.json)",
+      "Edit(~/.dsh/hooks.json)",
+      "Edit(~/.dsh/AGENTS.md)",
+      "Edit(~/.pi/agent/extensions/hook_bridge.ts)",
+      "Edit(~/.claude/hooks/rules/command_permissions.json)",
+      "Edit(~/.claude/hooks/rules/protected_paths.json)",
+      "Edit(~/.hermes/config.yaml)",
+      "Edit(~/.dsh/profiles/web/package.json)"
+    ]
+  },
+  "sandbox": {
+    "filesystem": {
+      "allowWrite": [
+        "."
+      ],
+      "denyWrite": [
+        "~/.codex/hooks/adapt.sh",
+        "~/.codex/hooks/guard.sh",
+        "~/.claude/hooks/guard.sh",
+        "~/.claude/hooks/lib/provider_adapter.py",
+        "~/.claude/hooks/rules/allowed_commands.json",
+        "~/.claude/hooks/rules/forbidden_commands.json",
+        "~/.claude/hooks/rules/secret_commit_policy.json",
+        "~/.claude/hooks/rules/secret_path_policy.json",
+        "~/.devin/hooks/hook_adapter.py",
+        "~/.hermes/hooks/hook_adapter.py",
+        "~/.pi/hooks/hook_adapter.py",
+        "~/.dsh/hooks/hook_adapter.py",
+        "~/.claude/statusline/statusline.py",
+        "~/.dsh/bridge/package.json",
+        "~/.dsh/bridge/cordis.patch.yml",
+        "~/.dsh/bridge/hook_bridge.ts",
+        "~/.hermes/plugins/agent-harness-hooks/plugin.yaml",
+        "~/.hermes/plugins/agent-harness-hooks/__init__.py",
+        "~/.codex/AGENTS.md",
+        "~/.claude/CLAUDE.md",
+        "~/.codex/hooks.json",
+        "~/.claude/settings.json",
+        "~/.codex/rules/default.rules",
+        "~/.codex/config.toml",
+        "~/.config/devin/config.json",
+        "~/.hermes/hooks.json",
+        "~/.hermes/managed-config.yaml",
+        "~/.pi/agent/hooks.json",
+        "~/.dsh/hooks.json",
+        "~/.dsh/AGENTS.md",
+        "~/.pi/agent/extensions/hook_bridge.ts",
+        "~/.claude/hooks/rules/command_permissions.json",
+        "~/.claude/hooks/rules/protected_paths.json",
+        "~/.hermes/config.yaml",
+        "~/.dsh/profiles/web/package.json"
+      ]
+    }
+  },
+  "statusLine": {
+    "command": "$HOME/.claude/statusline/statusline.sh",
+    "type": "command"
+  }
+}
