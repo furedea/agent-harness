@@ -1,0 +1,173 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 790" width="980" height="790" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" fill="#000">
+  <title>agent-harness architecture</title>
+  <desc>Inputs are a user's source tree and external tools such as Herdr and Moshi, whose skills and hooks are captured by Nix builders in an isolated home. The Home Manager module composes them and renders a table of outputs. Rows are instructions, permissions, hooks, skills, and provider settings, each with its source file. Columns are Claude Code, Codex, Devin, Hermes Agent, and pi, with the native file each one receives. Below the table, two guarantees: protected paths come from one list, and configs that agents also write are merged by managed key only.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#000"/>
+    </marker>
+  </defs>
+  <rect width="980" height="790" fill="#fff"/>
+
+  <!-- Inputs -->
+  <text x="20" y="32" font-size="16" font-weight="600">Inputs, composed with Nix</text>
+
+  <rect x="20" y="48" width="290" height="112" fill="none" stroke="#000" stroke-width="1.5"/>
+  <text x="36" y="72" font-weight="600">Your source tree</text>
+  <text x="36" y="90" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#555">dotfiles/agents/</text>
+  <text x="36" y="116">AGENTS.md, command permissions,</text>
+  <text x="36" y="134">hooks, skills, and base settings</text>
+
+  <rect x="330" y="48" width="630" height="112" fill="none" stroke="#000" stroke-width="1.5" stroke-dasharray="6 4"/>
+  <text x="346" y="72" font-weight="600">External tools, captured at Nix build time</text>
+  <g font-weight="600">
+    <text x="346" y="98">Herdr</text>
+    <text x="346" y="134">Moshi</text>
+  </g>
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11">
+    <text x="410" y="98">herdr --skill</text>
+    <text x="410" y="116">herdr integration install</text>
+    <text x="410" y="134">moshi-hook install</text>
+    <text x="640" y="98">buildSkillFromCommand</text>
+    <text x="640" y="116">buildHookBundleFromCommands</text>
+    <text x="640" y="134">buildHookBundleFromCommands</text>
+  </g>
+  <g stroke="#000" stroke-width="1">
+    <line x1="590" y1="94" x2="632" y2="94" marker-end="url(#arrow)"/>
+    <line x1="590" y1="112" x2="632" y2="112" marker-end="url(#arrow)"/>
+    <line x1="590" y1="130" x2="632" y2="130" marker-end="url(#arrow)"/>
+  </g>
+  <text x="346" y="152" font-size="11" fill="#555">Installers run in an isolated HOME and become versioned skill and hook bundles.</text>
+
+  <line x1="165" y1="160" x2="165" y2="186" stroke="#000" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="645" y1="160" x2="645" y2="186" stroke="#000" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#arrow)"/>
+
+  <rect x="20" y="190" width="940" height="40" fill="none" stroke="#000" stroke-width="2.5"/>
+  <text x="36" y="215" font-weight="600">Home Manager module</text>
+  <text x="196" y="215" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11.5">programs.agent-harness = { source = ./agents; skills.herdr = ...; hooks.moshi = ...; }</text>
+
+  <line x1="490" y1="230" x2="490" y2="256" stroke="#000" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <g transform="translate(0,230)">
+  <text x="20" y="52" font-size="16" font-weight="600">Rendered into each agent's native files</text>
+  <g transform="translate(0,20)">
+
+  <!-- Table frame -->
+  <rect x="20" y="52" width="940" height="296" fill="none" stroke="#000" stroke-width="1.5"/>
+  <line x1="20" y1="88" x2="960" y2="88" stroke="#000" stroke-width="1.5"/>
+  <g stroke="#000" stroke-width="0.75">
+    <line x1="20" y1="140" x2="960" y2="140"/>
+    <line x1="20" y1="192" x2="960" y2="192"/>
+    <line x1="20" y1="244" x2="960" y2="244"/>
+    <line x1="20" y1="296" x2="960" y2="296"/>
+  </g>
+  <line x1="220" y1="52" x2="220" y2="348" stroke="#000" stroke-width="1.5"/>
+  <g stroke="#000" stroke-width="0.75">
+    <line x1="368" y1="52" x2="368" y2="348"/>
+    <line x1="516" y1="52" x2="516" y2="348"/>
+    <line x1="664" y1="52" x2="664" y2="348"/>
+    <line x1="812" y1="52" x2="812" y2="348"/>
+  </g>
+
+  <!-- Header -->
+  <g font-weight="600">
+    <text x="34" y="75">Shared item / source</text>
+    <text x="234" y="75">Claude Code</text>
+    <text x="382" y="75">Codex</text>
+    <text x="530" y="75">Devin</text>
+    <text x="678" y="75">Hermes Agent</text>
+    <text x="826" y="75">pi</text>
+  </g>
+
+  <!-- Row labels -->
+  <g font-weight="600">
+    <text x="34" y="110">Instructions</text>
+    <text x="34" y="162">Permissions</text>
+    <text x="34" y="214">Hooks</text>
+    <text x="34" y="266">Skills</text>
+    <text x="34" y="318">Provider settings</text>
+  </g>
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="10.5" fill="#555">
+    <text x="34" y="128">AGENTS.md</text>
+    <text x="34" y="180">command_permissions.json</text>
+    <text x="34" y="232">hooks.json, hooks/</text>
+    <text x="34" y="284">skills/</text>
+    <text x="34" y="336">claude/, codex/ base files</text>
+  </g>
+
+  <!-- Cells: primary line -->
+  <g>
+    <text x="234" y="110">CLAUDE.md</text>
+    <text x="382" y="110">AGENTS.md</text>
+
+    <text x="234" y="162">Bash(...) rules</text>
+    <text x="382" y="162">execpolicy rules</text>
+    <text x="530" y="162">Exec(...) rules</text>
+
+    <text x="234" y="214">hook wiring, scripts</text>
+    <text x="382" y="214">hook wiring, scripts</text>
+    <text x="530" y="214">hook wiring, scripts</text>
+    <text x="678" y="214">manifest, plugin</text>
+    <text x="826" y="214">manifest, bridge</text>
+
+    <text x="234" y="266">skills</text>
+    <text x="382" y="266">skills</text>
+
+    <text x="234" y="318">base settings</text>
+    <text x="382" y="318">base config</text>
+  </g>
+
+  <!-- Cells: installed location -->
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="10.5" fill="#555">
+    <text x="234" y="128">~/.claude/</text>
+    <text x="382" y="128">~/.codex/</text>
+
+    <text x="234" y="180">settings.json</text>
+    <text x="382" y="180">rules/default.rules</text>
+    <text x="530" y="180">devin/config.json</text>
+
+    <text x="234" y="232">settings.json</text>
+    <text x="382" y="232">hooks.json</text>
+    <text x="530" y="232">devin/config.json</text>
+    <text x="678" y="232">~/.hermes/</text>
+    <text x="826" y="232">~/.pi/agent/</text>
+
+    <text x="234" y="284">~/.claude/skills/</text>
+    <text x="382" y="284">~/.codex/skills/</text>
+
+    <text x="234" y="336">settings.json</text>
+    <text x="382" y="336">config.toml</text>
+  </g>
+
+  <!-- Not rendered -->
+  <g fill="#999" font-size="14">
+    <text x="530" y="118">-</text>
+    <text x="678" y="118">-</text>
+    <text x="826" y="118">-</text>
+    <text x="678" y="170">-</text>
+    <text x="826" y="170">-</text>
+    <text x="530" y="274">-</text>
+    <text x="678" y="274">-</text>
+    <text x="826" y="274">-</text>
+    <text x="530" y="326">-</text>
+    <text x="678" y="326">-</text>
+    <text x="826" y="326">-</text>
+  </g>
+
+  <text x="20" y="372" font-size="12" fill="#555">External skill directories and hook bundles (for example Herdr or Moshi) join the Skills and Hooks rows. "-" means not rendered.</text>
+
+  <!-- Guarantees -->
+  <text x="20" y="412" font-size="15" font-weight="600">What keeps the rendered files intact</text>
+  <rect x="20" y="426" width="460" height="104" fill="none" stroke="#000" stroke-width="1.5"/>
+  <text x="36" y="452" font-weight="600">Protection from one list</text>
+  <text x="36" y="474">Agents could edit these files to lift their own limits.</text>
+  <text x="36" y="494">One generated list of protected paths feeds Claude deny</text>
+  <text x="36" y="514">rules, the sandbox, Codex guards, and the runtime hook.</text>
+
+  <rect x="500" y="426" width="460" height="104" fill="none" stroke="#000" stroke-width="1.5"/>
+  <text x="516" y="452" font-weight="600">Merge by managed key</text>
+  <text x="516" y="474">Agents also write their settings files, such as trust.</text>
+  <text x="516" y="494">sync-* replaces only harness-owned keys, so agent state</text>
+  <text x="516" y="514">stays and generated enforcement is never dropped.</text>
+  </g>
+  </g>
+</svg>

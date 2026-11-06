@@ -129,6 +129,8 @@ flowchart LR
 
 ## Architecture
 
+![agent-harness architecture](architecture.svg)
+
 ```mermaid
 sequenceDiagram
   actor U as User / Home Manager
