@@ -50,9 +50,37 @@
 
 **6. プロバイダの宣言と処理，I/O を分離する．**
 
-- 判断: Devin，Hermes，pi，dsh を `ProviderSpec` に宣言し，Data / Functions / Capabilities に分ける．Claude と Codex は対象外とし，hooks を移す段階 5 は意図的に延期する．
-- 理由: パス，資産の出力先，同期方式を共有し，プロバイダ一覧のずれを防ぐ．`ConfigSync` は spec の任意の機能として宣言する．Nix の一覧は Rust との一致をテストし，Home Manager は管理対象のファイルとサブディレクトリを明示してリンクする．
+- 判断：Devin，Hermes，pi，dsh を `ProviderSpec` に宣言し，Data / Functions / Capabilities に分ける．Claude と Codex は対象外とし，hooks を移す段階 5 は意図的に延期する．
+- 理由：パス，資産の出力先，同期方式を共有し，プロバイダ一覧のずれを防ぐ．`ConfigSync` は spec の任意の機能として宣言する．Nix の一覧は Rust との一致をテストし，Home Manager は管理対象のファイルとサブディレクトリを明示してリンクする．
 - ADR: [0026]．
+
+```mermaid
+flowchart LR
+  subgraph D["Data (declarations only)"]
+    SPEC["PROVIDERS (list of ProviderSpec)"]
+  end
+  subgraph F["Functions (computation, no I/O)"]
+    RENDER["hook rendering: builds hook and config values"]
+    PLAN["install_plan: what goes where"]
+  end
+  subgraph C["Capabilities (I/O)"]
+    EXEC["install_executor"]
+    FS["FileSystem (trait)"]
+    SYNC["config_sync"]
+  end
+  DISK[("disk")]
+  SPEC -- "ProviderSpec" --> RENDER
+  SPEC -- "ProviderSpec" --> PLAN
+  SPEC -- "ConfigSync kind" --> SYNC
+  PLAN -- "FileOp list" --> EXEC
+  EXEC --> FS
+  FS --> DISK
+  SYNC --> DISK
+```
+
+- 層をまたぐのは値だけである．`ProviderSpec` が Data から Functions と Capabilities へ渡り，`FileOp` の一覧が `install_plan` から executor へ渡る．
+- `tests/provider_spec_layering.rs` が，spec，インストール計画，hook と bridge の生成モジュールが `fs_ops` や `std::fs` を参照しないことを検査する．これはソース文字列の検査であり，推移的な依存解析ではない．ステージング生成は従来の生成経路で書き込む（[0026]）．
+- Claude と Codex は，当面 registry の外に置く．
 
 ## 検討した代替案
 
@@ -68,30 +96,52 @@
 
 ## アーキテクチャ
 
-![agent-harness architecture](architecture.svg)
+```mermaid
+sequenceDiagram
+  actor U as User / Home Manager
+  participant A as agent-harness
+  participant S as staging (temporary directory)
+  participant H as install target (~/.claude, ~/.codex, ~/.devin, ...)
+  U->>A: agent-harness install --source <dir>
+  A->>A: read the source tree and choose providers from PROVIDERS
+  A->>S: copy the existing Codex config so its own state is kept
+  A->>S: write each provider's configs, hooks, permission rules and protected paths
+  A->>S: place fixed files (assets) such as bridge scripts
+  A->>A: decide the list of managed files and directories
+  loop each managed path
+    A->>S: read the finished file
+    S-->>A: file contents
+    A->>H: replace the same path
+  end
+  A-->>U: done
+```
 
-`install` は，まずステージング用のディレクトリに生成し，その後で管理対象のファイルとディレクトリだけを置き換える．`sync-config --provider <id>` コマンドは，エージェントも書き込む設定ファイルに管理対象のキーをマージする．
+- ステージング用のディレクトリは組み立て場所であり，生成中に失敗してもインストール先には触れない．
+- ループでは，管理対象のパスごとに，ステージングで完成したファイルを読んで置き換える．
+- エージェントが自分で書いた状態など，管理対象でないファイルはそのまま残す．
 
-| モジュール                                                                  | 責務                                                                                   |
-| --------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| `cli`                                                                       | サブコマンドを解析し，生成，同期，一覧，検証に振り分ける．                             |
-| `source`，`layout`，`manifest`                                              | ソースツリーを解決し，そのレイアウトと必要な実行時コマンドを検証する．                 |
-| `profile`                                                                   | 同梱の組み込みソース（`minimal`）の名前を定める．                                      |
-| `render` | ステージング生成を実行し，公開計画を executor に渡す． |
-| `provider/spec` | Data: プロバイダのメタデータ，資産の出力先，任意の `ConfigSync` を宣言する． |
-| `install_plan` | Functions: 生成済み staging の公開と埋め込み資産の配置を計画する． |
-| `filesystem`，`install_executor`，`config_sync` | Capabilities: ファイル操作と設定同期を実行する． |
-| `nix/providers.json`，`nix/home_manager_module.nix` | テストで照合する Nix の一覧と，そこから生成する Home Manager の option，リンク，同期． |
-| `generation/hooks` | フックの配線を描画する． |
-| `generation/bridges`，`provider/spec`，`install_plan` | ブリッジ asset の契約を検証し，spec の埋め込み asset と出力先から書き込みを計画する． |
-| `generation/command_permissions`                                            | 中立なルールを Claude，Codex，Devin の権限の構文に対応させる．                         |
+`sync-config --provider <id>` コマンドは，エージェントも書き込む設定ファイルに管理対象のキーをマージする．
+
+| モジュール                                                                                | 責務                                                                                   |
+| ----------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `cli`                                                                                     | サブコマンドを解析し，生成，同期，一覧，検証に振り分ける．                             |
+| `source`，`layout`，`manifest`                                                            | ソースツリーを解決し，そのレイアウトと必要な実行時コマンドを検証する．                 |
+| `profile`                                                                                 | 同梱の組み込みソース（`minimal`）の名前を定める．                                      |
+| `render`                                                                                  | ステージング生成を実行し，公開計画を executor に渡す．                                 |
+| `provider/spec`                                                                           | Data: プロバイダのメタデータ，資産の出力先，任意の `ConfigSync` を宣言する．           |
+| `install_plan`                                                                            | Functions: 生成済み staging の公開と埋め込み資産の配置を計画する．                     |
+| `filesystem`，`install_executor`，`config_sync`                                           | Capabilities: ファイル操作と設定同期を実行する．                                       |
+| `nix/providers.json`，`nix/home_manager_module.nix`                                       | テストで照合する Nix の一覧と，そこから生成する Home Manager の option，リンク，同期． |
+| `generation/hooks`                                                                        | フックの配線を描画する．                                                               |
+| `generation/bridges`，`provider/spec`，`install_plan`                                     | ブリッジ asset の契約を検証し，spec の埋め込み asset と出力先から書き込みを計画する．  |
+| `generation/command_permissions`                                                          | 中立なルールを Claude，Codex，Devin の権限の構文に対応させる．                         |
 | `generation/claude_config`，`codex_config`，`devin_config`，`hermes_config`，`dsh_config` | プロバイダの設定を組み立て，同期する．                                                 |
-| `generation/protection`，`secret_path_policy`                               | 保護パスと，秘密ファイルの deny ルールを計算する．                                     |
-| `generation/skills`，`external_hooks`，`hook_bundle`                        | スキルを生成し，外部のバンドルを合成する．                                             |
-| `inventory`                                                                 | ソースが提供するスキルとフックを一覧にする．                                           |
-| `runtime_root`                                                              | プロジェクトローカルのインストール向けにフックのコマンドを移し替える．                 |
-| `github_app`                                                                | エージェント用トークンのために GitHub App のインストールトークンを発行する（[0021]）． |
-| `runtime`                                                                   | manifest の実行時コマンドが `PATH` にあるかを確認する．                                |
+| `generation/protection`，`secret_path_policy`                                             | 保護パスと，秘密ファイルの deny ルールを計算する．                                     |
+| `generation/skills`，`external_hooks`，`hook_bundle`                                      | スキルを生成し，外部のバンドルを合成する．                                             |
+| `inventory`                                                                               | ソースが提供するスキルとフックを一覧にする．                                           |
+| `runtime_root`                                                                            | プロジェクトローカルのインストール向けにフックのコマンドを移し替える．                 |
+| `github_app`                                                                              | エージェント用トークンのために GitHub App のインストールトークンを発行する（[0021]）． |
+| `runtime`                                                                                 | manifest の実行時コマンドが `PATH` にあるかを確認する．                                |
 
 ## 検証
 
