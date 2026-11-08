@@ -156,12 +156,13 @@ sequenceDiagram
 | Codex への適合          | `tests/codex/execpolicy.bats`                                | 3 ケース   |
 | Home Manager モジュール | `nix flake check` で実行する `tests/home_manager_module.nix` | 1 チェック |
 
-flake は，スキルとフックバンドルのビルダーもチェックとしてビルドする．GitHub Actions では 6 本のワークフローが動く．
+flake は，スキルとフックバンドルのビルダーもチェックとしてビルドする．GitHub Actions では 5 本のワークフローが動く．
 
-- `ci`: Nix の lint，clippy，rustfmt，`cargo test`，依存関係の監査を行い，`all-green` ジョブで集約する．
+- `ci`: clippy，rustfmt，`cargo test`，Rust の依存関係の監査に加え，`furedea/reusable-workflows` の共有ワークフロー（`nix-lint`，`nix-check`，`gha-lint`，`dependency-review`，`claude-review`，`codex-review`）を呼び出し，`all-green` ジョブで集約する．
 - `codex_conformance`: 生成した execpolicy ルールを固定した Codex CLI で確認する．設計上 `ci` から分けている（[0001]）．
-- `codeql`，`dependency_review`，`gha_lint`: セキュリティ解析とワークフローの lint．
-- `release_please`: バージョン管理，変更履歴，cargo-dist によるリリース成果物．
+- `codeql`: セキュリティ解析．
+- `release_please`: バージョン管理と変更履歴．
+- `release_artifacts`: ドラフトリリースのタグに対する cargo-dist のリリース成果物．手動で実行する．
 
 ## 既知の制約
 

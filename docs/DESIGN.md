@@ -190,15 +190,17 @@ Figures below were measured on v0.9.2.
 | Codex conformance   | `tests/codex/execpolicy.bats`                         | 3 cases |
 | Home Manager module | `tests/home_manager_module.nix` via `nix flake check` | 1 check |
 
-The flake also builds the skill and hook-bundle builders as checks. GitHub Actions runs six
+The flake also builds the skill and hook-bundle builders as checks. GitHub Actions runs five
 workflows:
 
-- `ci`: Nix lint, clippy, rustfmt, `cargo test`, and dependency audits, gathered by an `all-green`
-  job.
+- `ci`: clippy, rustfmt, `cargo test`, and Rust dependency audits, plus calls to the shared
+  workflows in `furedea/reusable-workflows` (`nix-lint`, `nix-check`, `gha-lint`,
+  `dependency-review`, `claude-review`, `codex-review`), gathered by an `all-green` job.
 - `codex_conformance`: generated execpolicy rules against the locked Codex CLI, kept separate from
   `ci` by design ([0001]).
-- `codeql`, `dependency_review`, `gha_lint`: security analysis and workflow linting.
-- `release_please`: versioning, changelog, and cargo-dist release artifacts.
+- `codeql`: security analysis.
+- `release_please`: versioning and changelog.
+- `release_artifacts`: cargo-dist release artifacts for a draft release tag, run manually.
 
 ## Known limitations
 
