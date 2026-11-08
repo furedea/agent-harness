@@ -190,17 +190,20 @@ Figures below were measured on v0.9.2.
 | Codex conformance   | `tests/codex/execpolicy.bats`                         | 3 cases |
 | Home Manager module | `tests/home_manager_module.nix` via `nix flake check` | 1 check |
 
-The flake also builds the skill and hook-bundle builders as checks. GitHub Actions runs five
-workflows:
+The flake also builds the skill and hook-bundle builders as checks. CI does not run `nix flake check`
+yet, so the Home Manager module check does not run there until
+[furedea/agent-harness#196](https://github.com/furedea/agent-harness/issues/196) removes
+import-from-derivation and adds the shared `nix-check` call. GitHub Actions runs four workflows:
 
 - `ci`: clippy, rustfmt, `cargo test`, and Rust dependency audits, plus calls to the shared
-  workflows in `furedea/reusable-workflows` (`nix-lint`, `nix-check`, `gha-lint`,
-  `dependency-review`, `claude-review`, `codex-review`), gathered by an `all-green` job.
+  workflows in `furedea/reusable-workflows` (`nix-lint`, `gha-lint`, `dependency-review`,
+  `claude-review`, `codex-review`), gathered by an `all-green` job.
 - `codex_conformance`: generated execpolicy rules against the locked Codex CLI, kept separate from
   `ci` by design ([0001]).
-- `codeql`: security analysis.
 - `release_please`: versioning and changelog.
 - `release_artifacts`: cargo-dist release artifacts for a draft release tag, run manually.
+
+CodeQL analysis is not a workflow file: it runs through GitHub's CodeQL default setup.
 
 ## Known limitations
 
