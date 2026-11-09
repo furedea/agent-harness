@@ -11,6 +11,10 @@ ls:
   src:
     <<: *files
     .dir: regex:[a-z0-9]+(_[a-z0-9]+)*
+  # Workflow file names use kebab-case, the GitHub Actions convention.
+  .github:
+    workflows:
+      .yml: regex:[a-z0-9]+(-[a-z0-9]+)*
 
 ignore:
   - .git
