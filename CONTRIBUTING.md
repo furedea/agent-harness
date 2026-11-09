@@ -72,7 +72,7 @@ To resume a draft release whose run failed, start the same workflow on the tag s
 records the tagged commit:
 
 ```bash
-tag=v0.9.10
+tag=agent-harness-v0.9.10
 gh workflow run release.yml --ref "$tag" -f tag_name="$tag"
 ```
 
