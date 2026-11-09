@@ -103,8 +103,8 @@ let
   composedSource = pkgs.runCommand "agent-harness-${cfg.profile}-source" { } ''
     cp -R ${lib.escapeShellArg "${profileSource}/."} "$out"
     chmod -R u+w "$out"
-    install -m 0644 ${lib.escapeShellArg (toString agentsMd)} "$out/AGENTS.md"
-    install -m 0644 ${lib.escapeShellArg (toString commandPermissions)} \
+    install -m 0644 ${lib.escapeShellArg "${agentsMd}"} "$out/AGENTS.md"
+    install -m 0644 ${lib.escapeShellArg "${commandPermissions}"} \
       "$out/command_permissions.json"
     install -m 0644 ${claudeSettings} "$out/claude/settings.json"
     install -m 0644 ${codexSettings} "$out/codex/config.toml"

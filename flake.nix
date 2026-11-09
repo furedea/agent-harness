@@ -93,6 +93,8 @@
             # The test compares the launchd and systemd renderings, so it needs both hosts.
             pkgs = pkgsFor.aarch64-darwin;
             linuxPkgs = pkgsFor.x86_64-linux;
+            # The check itself is a derivation of the system being checked.
+            checkPkgs = pkgs;
             source = completeSource;
           };
 
