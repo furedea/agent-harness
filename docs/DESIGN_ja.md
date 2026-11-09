@@ -156,12 +156,11 @@ sequenceDiagram
 | Codex への適合          | `tests/codex/execpolicy.bats`                                                                    | 3 ケース   |
 | Home Manager モジュール | `nix flake check` で実行する `tests/home_manager_module.nix`，`tests/home_manager_pure_eval.nix` | 2 チェック |
 
-flake は，スキルとフックバンドルのビルダーもチェックとしてビルドする．モジュールは評価時に読むファイル（`settings.json`，`config.toml`，`secret_path_policy.json`，`profiles/`）をすべて `source.tree` から読み，`tree` がなければ `source` を読む．ビルド済みの `source` はビルド時にコピーするファイルの供給だけに使うので，評価でビルドは起きず，import-from-derivation は使わない（[furedea/agent-harness#196](https://github.com/furedea/agent-harness/issues/196)）．共有の `nix-check` ワークフローは，import-from-derivation を禁止して `nix flake check --all-systems` を実行する．GitHub Actions では 4 本のワークフローが動く．
+flake は，スキルとフックバンドルのビルダーもチェックとしてビルドする．モジュールは評価時に読むファイル（`settings.json`，`config.toml`，`secret_path_policy.json`，`profiles/`）をすべて `source.tree` から読み，`tree` がなければ `source` を読む．ビルド済みの `source` はビルド時にコピーするファイルの供給だけに使うので，評価でビルドは起きず，import-from-derivation は使わない（[furedea/agent-harness#196](https://github.com/furedea/agent-harness/issues/196)）．共有の `nix-check` ワークフローは，import-from-derivation を禁止して `nix flake check --all-systems` を実行する．GitHub Actions では 3 本のワークフローが動く．
 
 - `ci`: clippy，rustfmt，`cargo test`，Rust の依存関係の監査に加え，`furedea/reusable-workflows` の共有ワークフロー（`nix-lint`，`nix-check`，`gha-lint`，`dependency-review`，`claude-review`，`codex-review`）を呼び出し，`all-green` ジョブで集約する．
-- `codex_conformance`: 生成した execpolicy ルールを固定した Codex CLI で確認する．設計上 `ci` から分けている（[0001]）．
-- `release_please`: バージョン管理と変更履歴．
-- `release_artifacts`: ドラフトリリースのタグに対する cargo-dist のリリース成果物．手動で実行する．
+- `codex-conformance`: 生成した execpolicy ルールを固定した Codex CLI で確認する．設計上 `ci` から分けている（[0001]）．
+- `release`: 共有の `release-pr` と `release-publish` ワークフローでバージョン管理と変更履歴を扱い，その間でドラフトリリースのタグに対する cargo-dist のビルドを行う．
 
 CodeQL による解析はワークフローファイルではなく，GitHub の CodeQL default setup で動く．
 

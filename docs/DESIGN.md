@@ -196,15 +196,15 @@ evaluation-time file (`settings.json`, `config.toml`, `secret_path_policy.json`,
 copied at build time, so evaluation never builds it: no import-from-derivation
 ([furedea/agent-harness#196](https://github.com/furedea/agent-harness/issues/196)). The shared
 `nix-check` workflow runs `nix flake check --all-systems` with import-from-derivation disabled.
-GitHub Actions runs four workflows:
+GitHub Actions runs three workflows:
 
 - `ci`: clippy, rustfmt, `cargo test`, and Rust dependency audits, plus calls to the shared
   workflows in `furedea/reusable-workflows` (`nix-lint`, `nix-check`, `gha-lint`,
   `dependency-review`, `claude-review`, `codex-review`), gathered by an `all-green` job.
-- `codex_conformance`: generated execpolicy rules against the locked Codex CLI, kept separate from
+- `codex-conformance`: generated execpolicy rules against the locked Codex CLI, kept separate from
   `ci` by design ([0001]).
-- `release_please`: versioning and changelog.
-- `release_artifacts`: cargo-dist release artifacts for a draft release tag, run manually.
+- `release`: versioning and changelog through the shared `release-pr` and `release-publish`
+  workflows, with the cargo-dist build of the draft release tag in between.
 
 CodeQL analysis is not a workflow file: it runs through GitHub's CodeQL default setup.
 
