@@ -34,7 +34,11 @@ struct RegexPolicy {
 
 #[derive(Debug, Deserialize, Serialize)]
 struct RegexRule {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    programs: Option<Vec<String>>,
     patterns: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    exceptions: Option<Vec<String>>,
     justification: String,
 }
 
@@ -244,6 +248,44 @@ mod tests {
 
         assert_eq!(policy.rules[0].patterns, [r"^git add \.$"]);
         assert_eq!(policy.rules[0].justification, "No bulk staging.");
+
+        std::fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn generated_forbidden_commands_keep_every_source_rule_field() -> Result<()> {
+        let root = test_root("generated_forbidden_commands_keep_every_source_rule_field")?;
+        let source = serde_json::json!({
+            "version": 1,
+            "rules": [
+                {
+                    "patterns": ["^git add \\."],
+                    "justification": "No bulk staging."
+                },
+                {
+                    "patterns": ["^herdr agent start .*--"],
+                    "exceptions": ["^herdr agent start [a-z]+ -- --model sonnet$"],
+                    "justification": "Restrict agent arguments."
+                },
+                {
+                    "programs": ["cargo", "uv"],
+                    "patterns": ["^uv run .*mutmut apply"],
+                    "justification": "Do not write mutants into the working tree."
+                },
+            ],
+        });
+        write_file(
+            &root.join("hooks/rules/forbidden_commands.json"),
+            &serde_json::to_string(&source)?,
+        )?;
+        let generated_path = root.join("generated.json");
+
+        write_forbidden_commands(&root, &generated_path)?;
+
+        let generated: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&generated_path)?)?;
+        assert_eq!(generated, source);
 
         std::fs::remove_dir_all(root)?;
         Ok(())
