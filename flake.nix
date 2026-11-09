@@ -137,7 +137,7 @@
         system:
         let
           pkgs = pkgsFor.${system};
-          # Must match cargo-dist-version in Cargo.toml and CARGO_DIST_VERSION in release_artifacts.yml.
+          # Must match cargo-dist-version in Cargo.toml and CARGO_DIST_VERSION in release.yml.
           cargoDist = pkgs.cargo-dist.overrideAttrs (
             finalAttrs: _: {
               version = "0.30.2";

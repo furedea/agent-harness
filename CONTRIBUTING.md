@@ -62,18 +62,20 @@ CodeQL.
 
 Releases are managed by Release Please. Merging the release PR updates `Cargo.toml`, `Cargo.lock`,
 `.release-please-manifest.json`, and `CHANGELOG.md`, tags the merge commit, and creates a draft
-GitHub Release. The `Release Please` workflow then starts the `Release Artifacts` workflow on that
-tag, which tests and builds the `x86_64-unknown-linux-musl` cargo-dist archive, smoke-tests it,
-attests its provenance, and uploads the archive, its checksum, and a shell installer. The release is
-published only after every step succeeds; if one fails, it stays a draft.
+GitHub Release. In the same `Release` workflow run, the `build` job tests and builds the
+`x86_64-unknown-linux-musl` cargo-dist archive on that tag, smoke-tests it, and uploads the archive,
+its checksum, and a shell installer as one workflow artifact. The shared `release-publish.yml` from
+furedea/reusable-workflows then attests the files, uploads them to the draft, and publishes it. The
+release is published only after every step succeeds; if one fails, it stays a draft.
 
-To resume a draft release whose artifact run failed, start the same workflow on the tag so the
-attestation records the tagged commit:
+To resume a draft release whose run failed, start the same workflow on the tag so the attestation
+records the tagged commit:
 
 ```bash
-tag=agent-harness-v0.9.5
-gh workflow run release_artifacts.yml --ref "$tag" -f tag_name="$tag"
+tag=v0.9.10
+gh workflow run release.yml --ref "$tag" -f tag_name="$tag"
 ```
 
-The workflow fails before building when it is started from any other ref or when the release is
-already published. A published release is never rebuilt in place; ship a fix as a new release.
+The shared workflow fails before publishing when the tag does not point to the commit of the run or
+when the release is already published. A published release is never rebuilt in place; ship a fix as
+a new release.
