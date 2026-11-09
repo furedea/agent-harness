@@ -49,7 +49,7 @@ fn provider_json(spec: &ProviderSpec) -> Value {
     json!({
         "id": spec.key,
         "display_name": spec.display_name,
-        "option_description": format!("Whether to install {} files.", spec.harness_name),
+        "option_description": format!("Whether to install {} harness files.", spec.display_name),
         "home_dir": spec.home_dir,
         "hook_manifest": spec.hook.registration.path(),
         "linked_paths": linked_paths(spec),
@@ -127,7 +127,7 @@ fn sync_json(spec: &ProviderSpec, config: ConfigSpec) -> Value {
         | ConfigSync::RegisterBundle => "Config",
     };
     let mut sync = json!({
-        "activation": format!("agentHarness{}{noun}", spec.display_name),
+        "activation": format!("agentHarness{}{noun}", capitalized(spec.key)),
         "command": format!("sync-{}-{}", spec.key, noun.to_lowercase()),
         "source": config.path,
         "target": sync_target(spec, config),
@@ -137,6 +137,14 @@ fn sync_json(spec: &ProviderSpec, config: ConfigSpec) -> Value {
         sync["after"] = json!("writeBoundary");
     }
     sync
+}
+
+fn capitalized(key: &str) -> String {
+    let mut chars = key.chars();
+    chars
+        .next()
+        .map(|first| first.to_uppercase().chain(chars).collect())
+        .unwrap_or_default()
 }
 
 fn sync_target(spec: &ProviderSpec, config: ConfigSpec) -> String {

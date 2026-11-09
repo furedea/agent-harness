@@ -151,9 +151,6 @@ pub(crate) struct ProviderSpec {
     pub(crate) id: ProviderId,
     pub(crate) key: &'static str,
     pub(crate) display_name: &'static str,
-    /// What the harness installs for the provider. Only the generated `nix/providers.json` reads it.
-    #[allow(dead_code, reason = "read only by tests/nix_provider_registry.rs")]
-    pub(crate) harness_name: &'static str,
     pub(crate) home_dir: &'static str,
     pub(crate) hook: HookSpec,
     pub(crate) skill: Option<&'static SkillSpec>,
@@ -199,7 +196,6 @@ pub(crate) const PROVIDERS: &[ProviderSpec] = &[
         id: ProviderId::Codex,
         key: "codex",
         display_name: "Codex",
-        harness_name: "Codex harness",
         home_dir: ".codex",
         hook: HookSpec {
             source: "codex/hooks",
@@ -229,7 +225,6 @@ pub(crate) const PROVIDERS: &[ProviderSpec] = &[
         id: ProviderId::Claude,
         key: "claude",
         display_name: "Claude",
-        harness_name: "Claude Code harness",
         home_dir: ".claude",
         hook: HookSpec {
             source: "hooks",
@@ -270,7 +265,6 @@ pub(crate) const PROVIDERS: &[ProviderSpec] = &[
         id: ProviderId::Devin,
         key: "devin",
         display_name: "Devin",
-        harness_name: "Devin CLI harness",
         home_dir: ".devin",
         hook: HookSpec {
             source: "devin/hooks",
@@ -296,7 +290,6 @@ pub(crate) const PROVIDERS: &[ProviderSpec] = &[
         id: ProviderId::Hermes,
         key: "hermes",
         display_name: "Hermes",
-        harness_name: "Hermes Agent harness",
         home_dir: ".hermes",
         hook: HookSpec {
             source: "hermes/hooks",
@@ -330,7 +323,6 @@ pub(crate) const PROVIDERS: &[ProviderSpec] = &[
         id: ProviderId::Pi,
         key: "pi",
         display_name: "Pi",
-        harness_name: "pi harness",
         home_dir: ".pi",
         hook: HookSpec {
             source: "pi/hooks",
@@ -353,8 +345,7 @@ pub(crate) const PROVIDERS: &[ProviderSpec] = &[
     ProviderSpec {
         id: ProviderId::Dsh,
         key: "dsh",
-        display_name: "Dsh",
-        harness_name: "DeepSeek Harness",
+        display_name: "DeepSeek",
         home_dir: ".dsh",
         hook: HookSpec {
             source: "dsh/hooks",

@@ -50,5 +50,6 @@ test, as in rust-analyzer: it renders the JSON from `PROVIDERS` and fails when t
 differs, and `UPDATE_PROVIDERS_JSON=1` rewrites it (see `CONTRIBUTING.md`). A hand-written JSON
 checked by an equality test was rejected because every provider change meant editing two files that a
 test then had to reconcile. The projection derives activation names, commands, and sync targets from
-the `ConfigSync` kind, and the option text from `harness_name`. Deprecated per-provider commands
+the `ConfigSync` kind, and the option text from `display_name`, so a name must read well in
+"Whether to install <name> harness files." Deprecated per-provider commands
 stay, per [ADR-0010](0010_use_pre_major_compatibility_versions.md).

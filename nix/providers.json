@@ -37,7 +37,7 @@
       },
       ".claude/statusline": {}
     },
-    "option_description": "Whether to install Claude Code harness files.",
+    "option_description": "Whether to install Claude harness files.",
     "sync": {
       "activation": "agentHarnessClaudeSettings",
       "command": "sync-claude-settings",
@@ -54,7 +54,7 @@
     "linked_paths": {
       ".devin/hooks": {}
     },
-    "option_description": "Whether to install Devin CLI harness files.",
+    "option_description": "Whether to install Devin harness files.",
     "sync": {
       "activation": "agentHarnessDevinConfig",
       "command": "sync-devin-config",
@@ -73,7 +73,7 @@
       ".hermes/hooks.json": {},
       ".hermes/plugins/agent-harness-hooks": {}
     },
-    "option_description": "Whether to install Hermes Agent harness files.",
+    "option_description": "Whether to install Hermes harness files.",
     "sync": {
       "activation": "agentHarnessHermesConfig",
       "command": "sync-hermes-config",
@@ -92,11 +92,11 @@
       ".pi/agent/hooks.json": {},
       ".pi/hooks": {}
     },
-    "option_description": "Whether to install pi harness files.",
+    "option_description": "Whether to install Pi harness files.",
     "sync": null
   },
   {
-    "display_name": "Dsh",
+    "display_name": "DeepSeek",
     "extra_options": {
       "profile": {
         "default": "web",
@@ -115,7 +115,7 @@
         "skills_provider": "codex"
       }
     },
-    "option_description": "Whether to install DeepSeek Harness files.",
+    "option_description": "Whether to install DeepSeek harness files.",
     "sync": {
       "activation": "agentHarnessDshConfig",
       "command": "sync-dsh-config",
