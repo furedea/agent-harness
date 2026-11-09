@@ -7,6 +7,7 @@ use crate::{
     install_executor, install_plan,
     inventory::shorten_hook_path_for,
     layout::{InstalledLayout, SourceLayout},
+    provider::renderer::ProviderRenderer,
     render,
 };
 use anyhow::Result;
@@ -216,4 +217,30 @@ fn claude_and_codex_declare_their_instructions_skills_and_statusline() {
             .map(|directory| (directory.source, directory.destination)),
         Some(("claude/statusline", ".claude/statusline"))
     );
+}
+
+#[test]
+fn rendering_fails_when_a_native_provider_drops_a_declared_generated_file() -> Result<()> {
+    let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/complete-source");
+    let out = crate::filesystem::TemporaryDirectory::create()?;
+    let renderer = ProviderRenderer {
+        context: GenerationContext::home(&source, &[]),
+        providers: PROVIDERS,
+        out: out.path(),
+    };
+    let codex_without_rules = ProviderSpec {
+        managed_files: &[],
+        ..ProviderId::Codex.spec().clone()
+    };
+    let claude_without_policies = ProviderSpec {
+        generated_files: &[],
+        ..ProviderId::Claude.spec().clone()
+    };
+
+    let codex = renderer.render(&codex_without_rules).unwrap_err();
+    let claude = renderer.render(&claude_without_policies).unwrap_err();
+
+    assert!(codex.to_string().contains("exactly one rules file"));
+    assert!(claude.to_string().contains("protected paths"));
+    Ok(())
 }

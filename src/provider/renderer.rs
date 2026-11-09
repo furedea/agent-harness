@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use anyhow::Result;
+use anyhow::{Result, bail};
 
 use crate::{
     filesystem::{FileSystem, RealFileSystem},
@@ -80,21 +80,35 @@ impl ProviderRenderer<'_> {
     }
 
     fn write_generated_files(&self, spec: &ProviderSpec) -> Result<()> {
-        match (spec.id, spec.managed_files, spec.generated_files) {
-            (ProviderId::Codex, [rules], _) => self.write_codex_rules(&self.out.join(rules)),
-            (ProviderId::Claude, _, [permissions, protected_paths]) => self.write_claude_policies(
-                &self.out.join(permissions),
-                &self.out.join(protected_paths),
-            ),
-            _ => Ok(()),
+        match spec.id {
+            ProviderId::Codex => self.write_codex_rules(spec),
+            ProviderId::Claude => self.write_claude_policies(spec),
+            ProviderId::Devin | ProviderId::Hermes | ProviderId::Pi | ProviderId::Dsh => Ok(()),
         }
     }
 
-    fn write_codex_rules(&self, path: &Path) -> Result<()> {
+    fn write_codex_rules(&self, spec: &ProviderSpec) -> Result<()> {
+        match spec.managed_files {
+            [rules] => self.write_rules_file(&self.out.join(rules)),
+            files => bail!("Codex must declare exactly one rules file, found {files:?}"),
+        }
+    }
+
+    fn write_rules_file(&self, path: &Path) -> Result<()> {
         command_permissions::write_codex_rules(self.context.source, path)
     }
 
-    fn write_claude_policies(&self, permissions: &Path, protected_paths: &Path) -> Result<()> {
+    fn write_claude_policies(&self, spec: &ProviderSpec) -> Result<()> {
+        match spec.generated_files {
+            [permissions, protected_paths] => self
+                .write_policy_files(&self.out.join(permissions), &self.out.join(protected_paths)),
+            files => bail!(
+                "Claude must declare command permissions and protected paths, found {files:?}"
+            ),
+        }
+    }
+
+    fn write_policy_files(&self, permissions: &Path, protected_paths: &Path) -> Result<()> {
         command_permissions::write_runtime_policy(self.context.source, permissions)?;
         let paths = protection::protected_paths_for_providers(self.context, self.providers)?;
         protection::write_runtime_policy(paths, protected_paths)
