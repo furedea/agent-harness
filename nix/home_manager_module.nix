@@ -162,7 +162,12 @@ in
     source = lib.mkOption {
       type = lib.types.path;
       default = self;
-      description = "Profile collection or complete flat agent-harness source tree.";
+      description = ''
+        Profile collection or complete flat agent-harness source tree. A built source may
+        carry `passthru.tree`, a path to its unbuilt tree: evaluation then reads settings,
+        profiles, and the secret path policy from `tree` so it never builds the source. `tree`
+        must hold the same content as the built output for every file read at evaluation time.
+      '';
     };
 
     profile = lib.mkOption {
