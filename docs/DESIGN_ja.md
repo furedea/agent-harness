@@ -52,7 +52,7 @@
 
 - 判断：Devin，Hermes，pi，dsh を `ProviderSpec` に宣言し，Data / Functions / Capabilities に分ける．Claude と Codex は対象外とし，hooks を移す段階 5 は意図的に延期する．
 - 理由：パス，資産の出力先，同期方式を共有し，プロバイダ一覧のずれを防ぐ．`ConfigSync` は spec の任意の機能として宣言する．Nix の一覧は Rust との一致をテストし，Home Manager は管理対象のファイルとサブディレクトリを明示してリンクする．
-- ADR: [0026]．
+- ADR: [0026]，[0027]．
 
 ```mermaid
 flowchart LR
@@ -80,7 +80,7 @@ flowchart LR
 
 - 層をまたぐのは値だけである．`ProviderSpec` が Data から Functions と Capabilities へ渡り，`FileOp` の一覧が `install_plan` から executor へ渡る．
 - `tests/provider_spec_layering.rs` が，spec，インストール計画，hook と bridge の生成モジュールが `fs_ops` や `std::fs` を参照しないことを検査する．これはソース文字列の検査であり，推移的な依存解析ではない．ステージング生成は従来の生成経路で書き込む（[0026]）．
-- Claude と Codex は，当面 registry の外に置く．
+- Claude と Codex も他の 4 つと同じく registry に宣言する．registry は各 provider が持つものを宣言し，中身は provider ごとの関数が生成する（[0027]）．
 
 ## 検討した代替案
 
@@ -195,3 +195,4 @@ CodeQL による解析はワークフローファイルではなく，GitHub の
 [0020]: adr/0020_keep_git_push_outside_the_claude_sandbox.md
 [0021]: adr/0021_refresh_the_agent_token_from_a_github_app.md
 [0026]: adr/0026_declare_providers_in_a_registry.md
+[0027]: adr/0027_declare_claude_and_codex_in_the_provider_registry.md

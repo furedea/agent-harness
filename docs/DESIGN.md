@@ -81,7 +81,7 @@ agent breaks in predictable ways:
 - Reason: shared paths, asset destinations, and optional `ConfigSync` strategies prevent parallel
   lists from drifting. Tests check the Nix list against Rust, and Home Manager links explicit
   managed files and subdirectories to coexist with user-owned state.
-- ADRs: [0026].
+- ADRs: [0026], [0027].
 
 ```mermaid
 flowchart LR
@@ -113,7 +113,8 @@ flowchart LR
   rendering modules do not reference `fs_ops` or `std::fs`. It is a source-text check, not a
   transitive analysis: staging generation still writes through the existing generation path
   ([0026]).
-- Claude and Codex stay outside the registry for now.
+- Claude and Codex are declared in the registry like the other four providers; the registry declares
+  what each owns, and provider functions render the content ([0027]).
 
 ## Alternatives considered
 
@@ -245,3 +246,4 @@ CodeQL analysis is not a workflow file: it runs through GitHub's CodeQL default 
 [0020]: adr/0020_keep_git_push_outside_the_claude_sandbox.md
 [0021]: adr/0021_refresh_the_agent_token_from_a_github_app.md
 [0026]: adr/0026_declare_providers_in_a_registry.md
+[0027]: adr/0027_declare_claude_and_codex_in_the_provider_registry.md

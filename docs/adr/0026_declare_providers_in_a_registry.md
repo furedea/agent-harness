@@ -1,6 +1,6 @@
 # ADR-0026: Declare providers in a registry
 
-- Status: Accepted
+- Status: Superseded
 - Date: 2026-11-05
 
 In the context of adding providers across hook generation, installation, inventory, CLI, and
