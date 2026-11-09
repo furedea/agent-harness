@@ -5,8 +5,9 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
 
 use crate::{
+    config_sync::SyncPaths,
     generation::{
-        GenerationContext, claude_config, codex_config, command_permissions,
+        GenerationContext, codex_config, command_permissions,
         external_hooks::ExternalHookBundle,
         hook_bundle, hooks, protection,
         skills::{ExternalSkill, SkillTarget},
@@ -14,7 +15,7 @@ use crate::{
     github_app::{self, GitHubRestApi, RefreshRequest},
     inventory::Inventory,
     profile::Profile,
-    provider::spec::{PROVIDERS, ProviderSpec},
+    provider::spec::ProviderId,
     render, runtime,
     runtime_root::RuntimeRoot,
     source,
@@ -153,7 +154,7 @@ enum ListCommand {
 struct ListHooksArgs {
     /// Show hooks for one provider.
     #[arg(long, value_enum)]
-    provider: Option<hooks::HookProvider>,
+    provider: Option<ProviderId>,
 }
 
 #[derive(Debug, clap::Args)]
@@ -171,7 +172,7 @@ struct GenerateFileArgs {
 #[derive(Debug, clap::Args)]
 struct GenerateHooksArgs {
     #[arg(long, value_enum)]
-    provider: hooks::HookProvider,
+    provider: ProviderId,
     #[command(flatten)]
     file: GenerateFileArgs,
 }
@@ -179,7 +180,7 @@ struct GenerateHooksArgs {
 #[derive(Debug, clap::Args)]
 struct ProviderSyncArgs {
     #[arg(long, value_enum)]
-    provider: hooks::HookProvider,
+    provider: ProviderId,
     #[command(flatten)]
     config: SyncConfigArgs,
 }
@@ -265,18 +266,14 @@ pub fn run() -> Result<()> {
         Command::GenerateHooks(args) => write_hooks(args.provider, args.file, profile),
         Command::SyncConfig(args) => sync_config(args.provider, &args.config),
         Command::GenerateClaudeSettings(args) => generate_claude_settings(args, profile),
-        Command::GenerateClaudeHooks(args) => {
-            write_hooks(hooks::HookProvider::Claude, args, profile)
-        }
+        Command::GenerateClaudeHooks(args) => write_hooks(ProviderId::Claude, args, profile),
         Command::GenerateCodexConfigSource(args) => generate_codex_config_source(args, profile),
         Command::GenerateCodexConfigFragment(args) => write_codex_config_fragment(args, profile),
-        Command::GenerateCodexHooks(args) => write_hooks(hooks::HookProvider::Codex, args, profile),
-        Command::GenerateDevinHooks(args) => write_hooks(hooks::HookProvider::Devin, args, profile),
-        Command::GenerateHermesHooks(args) => {
-            write_hooks(hooks::HookProvider::Hermes, args, profile)
-        }
-        Command::GeneratePiHooks(args) => write_hooks(hooks::HookProvider::Pi, args, profile),
-        Command::GenerateDshHooks(args) => write_hooks(hooks::HookProvider::Dsh, args, profile),
+        Command::GenerateCodexHooks(args) => write_hooks(ProviderId::Codex, args, profile),
+        Command::GenerateDevinHooks(args) => write_hooks(ProviderId::Devin, args, profile),
+        Command::GenerateHermesHooks(args) => write_hooks(ProviderId::Hermes, args, profile),
+        Command::GeneratePiHooks(args) => write_hooks(ProviderId::Pi, args, profile),
+        Command::GenerateDshHooks(args) => write_hooks(ProviderId::Dsh, args, profile),
         Command::GenerateCodexRules(args) => write_codex_rules(args, profile),
         Command::GenerateCommandPermissions(args) => write_command_permissions(args, profile),
         Command::GenerateForbiddenCommands(args) => write_forbidden_commands(args, profile),
@@ -285,11 +282,11 @@ pub fn run() -> Result<()> {
         Command::GithubAppToken(command) => github_app_token(command),
         Command::Install(args) => install(args, profile),
         Command::List(args) => list(args, profile),
-        Command::SyncCodexConfig(args) => sync_config(hooks::HookProvider::Codex, &args),
-        Command::SyncClaudeSettings(args) => sync_config(hooks::HookProvider::Claude, &args),
-        Command::SyncDevinConfig(args) => sync_config(hooks::HookProvider::Devin, &args),
-        Command::SyncHermesConfig(args) => sync_config(hooks::HookProvider::Hermes, &args),
-        Command::SyncDshConfig(args) => sync_config(hooks::HookProvider::Dsh, &args),
+        Command::SyncCodexConfig(args) => sync_config(ProviderId::Codex, &args),
+        Command::SyncClaudeSettings(args) => sync_config(ProviderId::Claude, &args),
+        Command::SyncDevinConfig(args) => sync_config(ProviderId::Devin, &args),
+        Command::SyncHermesConfig(args) => sync_config(ProviderId::Hermes, &args),
+        Command::SyncDshConfig(args) => sync_config(ProviderId::Dsh, &args),
         Command::Verify(args) => {
             let source = source::resolve_source(args.source, profile)?;
             let prefix = args.prefix.unwrap_or_else(default_home_dir);
@@ -318,42 +315,21 @@ fn write_codex_config_fragment(args: GenerateFileArgs, profile: Profile) -> Resu
     protection::write_codex_config_fragment(source.as_path(), &args.extra_hook, &args.output)
 }
 
-fn registry_spec(provider: hooks::HookProvider) -> &'static ProviderSpec {
-    PROVIDERS
-        .iter()
-        .find(|spec| hooks::hook_provider(spec.id) == provider)
-        .expect("registry provider")
-}
-
-fn write_hooks(
-    provider: hooks::HookProvider,
-    args: GenerateFileArgs,
-    profile: Profile,
-) -> Result<()> {
+fn write_hooks(provider: ProviderId, args: GenerateFileArgs, profile: Profile) -> Result<()> {
     let source = source::resolve_source(args.source, profile)?;
-    match provider {
-        hooks::HookProvider::Claude => {
-            hooks::write_claude_hooks(source.as_path(), &args.output, &args.extra_hook)
-        }
-        hooks::HookProvider::Codex => {
-            hooks::write_codex_hooks(source.as_path(), &args.output, &args.extra_hook)
-        }
-        provider => hooks::write_provider_hooks_for_runtime(
-            GenerationContext::home(source.as_path(), &args.extra_hook),
-            &args.output,
-            registry_spec(provider),
-        ),
-    }
+    hooks::write_hooks_for_runtime(
+        GenerationContext::home(source.as_path(), &args.extra_hook),
+        &args.output,
+        provider.spec(),
+    )
 }
 
-fn sync_config(provider: hooks::HookProvider, args: &SyncConfigArgs) -> Result<()> {
-    match provider {
-        hooks::HookProvider::Claude => {
-            claude_config::sync_settings(&args.source, &args.target, &default_home_dir())
-        }
-        hooks::HookProvider::Codex => codex_config::sync_managed_config(&args.source, &args.target),
-        provider => crate::config_sync::sync(registry_spec(provider), &args.source, &args.target),
-    }
+fn sync_config(provider: ProviderId, args: &SyncConfigArgs) -> Result<()> {
+    let paths = SyncPaths {
+        source: &args.source,
+        target: &args.target,
+    };
+    crate::config_sync::sync(provider.spec(), &paths, &default_home_dir())
 }
 
 fn write_codex_rules(args: GenerateFileArgs, profile: Profile) -> Result<()> {

@@ -1,11 +1,11 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 
-use crate::provider::spec::PROVIDERS;
+use crate::provider::spec::{PROVIDERS, ProviderId};
 use anyhow::Result;
 
 use crate::generation::{
-    hooks::{self, HookMetadata, HookProvider},
+    hooks::{self, HookMetadata},
     skills::{self, SkillMetadata},
 };
 
@@ -47,7 +47,7 @@ impl Inventory {
         finish_lines(&lines)
     }
 
-    pub(crate) fn hooks(&self, provider: Option<HookProvider>) -> String {
+    pub(crate) fn hooks(&self, provider: Option<ProviderId>) -> String {
         let mut lines = vec!["Hooks".to_owned()];
         let providers = inventory_providers();
         lines.extend(
@@ -58,15 +58,15 @@ impl Inventory {
         finish_lines(&lines)
     }
 
-    fn hook_summary(&self, provider: HookProvider) -> String {
+    fn hook_summary(&self, provider: ProviderId) -> String {
         format!(
             "{:<24}{}",
-            format!("{} hook events", provider.display_name()),
+            format!("{} hook events", provider.spec().display_name),
             self.hook_event_count(provider)
         )
     }
 
-    fn hook_event_count(&self, provider: HookProvider) -> usize {
+    fn hook_event_count(&self, provider: ProviderId) -> usize {
         self.hooks
             .iter()
             .filter(|hook| hook.provider == provider)
@@ -76,10 +76,11 @@ impl Inventory {
     }
 }
 
-fn inventory_providers() -> impl Iterator<Item = HookProvider> {
-    [HookProvider::Claude, HookProvider::Codex]
-        .into_iter()
-        .chain(PROVIDERS.iter().map(|spec| hooks::hook_provider(spec.id)))
+/// Providers in identifier order, independent of the registry's installation order.
+fn inventory_providers() -> impl Iterator<Item = ProviderId> {
+    let mut providers: Vec<_> = PROVIDERS.iter().map(|spec| spec.id).collect();
+    providers.sort();
+    providers.into_iter()
 }
 
 const SKILL_HEADER: SkillRow<'static> = SkillRow {
@@ -120,7 +121,7 @@ impl std::fmt::Display for SkillRow<'_> {
     }
 }
 
-fn provider_hook_lines(hooks: &[HookMetadata], provider: HookProvider) -> Vec<String> {
+fn provider_hook_lines(hooks: &[HookMetadata], provider: ProviderId) -> Vec<String> {
     let hooks = hooks
         .iter()
         .filter(|hook| hook.provider == provider)
@@ -128,7 +129,7 @@ fn provider_hook_lines(hooks: &[HookMetadata], provider: HookProvider) -> Vec<St
     if hooks.is_empty() {
         return Vec::new();
     }
-    let mut lines = vec![String::new(), provider.display_name().to_owned()];
+    let mut lines = vec![String::new(), provider.spec().display_name.to_owned()];
     append_hook_lines(&mut lines, &hooks);
     lines
 }
@@ -212,9 +213,9 @@ pub(crate) fn shorten_hook_path_for(
     part: &str,
     providers: &[crate::provider::spec::ProviderSpec],
 ) -> String {
-    [".claude/hooks", ".codex/hooks"]
-        .into_iter()
-        .chain(providers.iter().map(|spec| spec.hooks_dir))
+    providers
+        .iter()
+        .map(|spec| spec.hooks_dir)
         .find_map(|dir| part.strip_prefix(&format!("$HOME/{dir}/")))
         .unwrap_or(part)
         .to_owned()
@@ -251,7 +252,7 @@ mod tests {
     use super::*;
     use crate::generation::skills::SkillInvocation;
 
-    fn hook(provider: HookProvider, event: &str, matcher: &str) -> HookMetadata {
+    fn hook(provider: ProviderId, event: &str, matcher: &str) -> HookMetadata {
         HookMetadata {
             provider,
             event: event.to_owned(),
@@ -273,19 +274,16 @@ mod tests {
             skills: Vec::new(),
             hooks: vec![
                 conditional(
-                    hook(HookProvider::Claude, "PreToolUse", "Bash"),
+                    hook(ProviderId::Claude, "PreToolUse", "Bash"),
                     "Bash(git *)|Bash(gh *)|Bash(git *)",
                 ),
+                conditional(hook(ProviderId::Claude, "PreToolUse", "Bash"), "malformed"),
                 conditional(
-                    hook(HookProvider::Claude, "PreToolUse", "Bash"),
-                    "malformed",
-                ),
-                conditional(
-                    hook(HookProvider::Claude, "PreToolUse", "^(Edit|Write)$"),
+                    hook(ProviderId::Claude, "PreToolUse", "^(Edit|Write)$"),
                     "Edit(x",
                 ),
-                hook(HookProvider::Claude, "Stop", ""),
-                hook(HookProvider::Pi, "tool_call", "*"),
+                hook(ProviderId::Claude, "Stop", ""),
+                hook(ProviderId::Pi, "tool_call", "*"),
             ],
         }
     }
@@ -305,10 +303,10 @@ mod tests {
     #[test]
     fn hooks_shows_only_the_requested_provider() {
         assert_eq!(
-            inventory().hooks(Some(HookProvider::Pi)),
+            inventory().hooks(Some(ProviderId::Pi)),
             "Hooks\n\nPi\n\ntool_call\n  matcher: any\n    tool_call_*.sh\n"
         );
-        assert_eq!(inventory().hooks(Some(HookProvider::Codex)), "Hooks\n");
+        assert_eq!(inventory().hooks(Some(ProviderId::Codex)), "Hooks\n");
     }
 
     #[test]
@@ -336,7 +334,7 @@ mod tests {
             skills: Vec::new(),
             hooks: PROVIDERS
                 .iter()
-                .map(|spec| hook(hooks::hook_provider(spec.id), "event", "*"))
+                .map(|spec| hook(spec.id, "event", "*"))
                 .collect(),
         };
         for spec in PROVIDERS {

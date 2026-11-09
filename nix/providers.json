@@ -1,5 +1,51 @@
 [
   {
+    "id": "codex",
+    "display_name": "Codex",
+    "option_description": "Whether to install Codex harness files.",
+    "home_dir": ".codex",
+    "hook_manifest": ".codex/hooks.json",
+    "linked_paths": {
+      ".codex/hooks": {},
+      ".codex/hooks.json": {},
+      ".codex/AGENTS.md": {},
+      ".codex/rules/default.rules": {},
+      ".codex/skills": {
+        "skills_provider": "codex"
+      }
+    },
+    "sync": {
+      "activation": "agentHarnessCodexConfig",
+      "after": "writeBoundary",
+      "command": "sync-codex-config",
+      "source": ".codex/config.toml",
+      "target": ".codex/config.toml"
+    },
+    "extra_options": {}
+  },
+  {
+    "id": "claude",
+    "display_name": "Claude",
+    "option_description": "Whether to install Claude Code harness files.",
+    "home_dir": ".claude",
+    "hook_manifest": ".claude/settings.json",
+    "linked_paths": {
+      ".claude/hooks": {},
+      ".claude/CLAUDE.md": {},
+      ".claude/statusline": {},
+      ".claude/skills": {
+        "skills_provider": "claude"
+      }
+    },
+    "sync": {
+      "activation": "agentHarnessClaudeSettings",
+      "command": "sync-claude-settings",
+      "source": ".claude/settings.json",
+      "target": ".claude/settings.json"
+    },
+    "extra_options": {}
+  },
+  {
     "id": "devin",
     "display_name": "Devin",
     "option_description": "Whether to install Devin CLI harness files.",

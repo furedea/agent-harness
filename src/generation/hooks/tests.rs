@@ -9,7 +9,11 @@ fn write_claude_hooks_reads_shared_hook_config() -> Result<()> {
     write_hook_config(&root)?;
     let output = root.join("claude-hooks.json");
 
-    write_claude_hooks(&root, &output, &[])?;
+    write_hooks_for_runtime(
+        GenerationContext::home(&root, &[]),
+        &output,
+        ProviderId::Claude.spec(),
+    )?;
 
     let hooks: Value = serde_json::from_str(&std::fs::read_to_string(&output)?)?;
     assert_eq!(
@@ -27,7 +31,11 @@ fn write_codex_hooks_reads_shared_hook_config() -> Result<()> {
     write_hook_config(&root)?;
     let output = root.join("codex-hooks.json");
 
-    write_codex_hooks(&root, &output, &[])?;
+    write_hooks_for_runtime(
+        GenerationContext::home(&root, &[]),
+        &output,
+        ProviderId::Codex.spec(),
+    )?;
 
     let hooks: Value = serde_json::from_str(&std::fs::read_to_string(&output)?)?;
     assert_eq!(
@@ -181,7 +189,7 @@ fn built_in_hook_metadata_orders_providers_and_events() -> Result<()> {
         .map(|entry| {
             format!(
                 "{}:{}:{}:{}:{}",
-                entry.provider.display_name(),
+                entry.provider.spec().display_name,
                 entry.event,
                 entry.matcher,
                 entry.condition.as_deref().unwrap_or("-"),

@@ -1,4 +1,6 @@
-use super::spec::{Asset, PROVIDERS, ProviderSpec};
+use super::spec::{
+    Asset, ConfigSync, PROVIDERS, ProviderId, ProviderKind, ProviderSpec, Skills, SkillsSource,
+};
 use crate::{
     filesystem::RealFileSystem,
     generation::{GenerationContext, protection},
@@ -26,9 +28,12 @@ fn extra_spec_flows_through_layout_protection_rendering_and_publication() -> Res
             content: "example bridge\n",
         }],
         instructions: Some(".example/AGENTS.md"),
-        skills: Some(".example/skills"),
+        skills: Some(&Skills {
+            destination: ".example/skills",
+            source: SkillsSource::CopyCodex,
+        }),
         managed_config: Some(".example/managed.yaml"),
-        ..PROVIDERS[0].clone()
+        ..ProviderId::Hermes.spec().clone()
     };
     let mut providers = PROVIDERS.to_vec();
     providers.push(extra);
@@ -145,5 +150,70 @@ fn registry_derivation_preserves_install_order() {
             ".pi/agent/extensions/hook_bridge.ts",
         ]
         .map(PathBuf::from)
+    );
+}
+
+#[test]
+fn registry_declares_all_six_providers_with_native_ones_first() {
+    let declared: Vec<_> = PROVIDERS.iter().map(|spec| (spec.id, spec.kind)).collect();
+    assert_eq!(
+        declared,
+        [
+            (ProviderId::Codex, ProviderKind::Native),
+            (ProviderId::Claude, ProviderKind::Native),
+            (ProviderId::Devin, ProviderKind::Bridged),
+            (ProviderId::Hermes, ProviderKind::Bridged),
+            (ProviderId::Pi, ProviderKind::Bridged),
+            (ProviderId::Dsh, ProviderKind::Bridged),
+        ]
+    );
+}
+
+#[test]
+fn every_provider_declares_the_sync_kind_of_its_mutable_config() {
+    let declared: Vec<_> = PROVIDERS
+        .iter()
+        .map(|spec| (spec.key, spec.config_sync.map(|sync| format!("{sync:?}"))))
+        .collect();
+    assert_eq!(
+        declared,
+        [
+            ("codex", Some("MergeToml".to_owned())),
+            ("claude", Some("MergeClaudeSettings".to_owned())),
+            ("devin", Some("MergeTopLevelJson".to_owned())),
+            ("hermes", Some("MergeYaml".to_owned())),
+            ("pi", None),
+            ("dsh", Some("RegisterBundle".to_owned())),
+        ]
+    );
+    assert!(matches!(
+        ProviderId::Claude.spec().config_sync,
+        Some(ConfigSync::MergeClaudeSettings)
+    ));
+}
+
+#[test]
+fn claude_and_codex_declare_their_instructions_skills_and_statusline() {
+    let claude = ProviderId::Claude.spec();
+    let codex = ProviderId::Codex.spec();
+    assert_eq!(claude.instructions, Some(".claude/CLAUDE.md"));
+    assert_eq!(codex.instructions, Some(".codex/AGENTS.md"));
+    assert_eq!(
+        claude
+            .skills
+            .map(|skills| (skills.destination, skills.source)),
+        Some((".claude/skills", SkillsSource::RenderClaude))
+    );
+    assert_eq!(
+        codex
+            .skills
+            .map(|skills| (skills.destination, skills.source)),
+        Some((".codex/skills", SkillsSource::RenderCodex))
+    );
+    assert_eq!(
+        claude
+            .synced_directory
+            .map(|directory| (directory.source, directory.destination)),
+        Some(("claude/statusline", ".claude/statusline"))
     );
 }
