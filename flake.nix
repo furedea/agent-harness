@@ -154,32 +154,34 @@
               };
             }
           );
+          toolPackages =
+            with pkgs;
+            [
+              bats
+              cargo
+              cargo-deny
+              cargo-machete
+              clippy
+              commitlint
+              deadnix
+              jq
+              ls-lint
+              nixfmt
+              nodejs_22
+              openssl
+              rustc
+              rustfmt
+              statix
+            ]
+            # lefthook before 2.1.6 runs hooks under a pty, which agent sandboxes deny.
+            ++ [ nixpkgs-unstable.legacyPackages.${system}.lefthook ];
         in
         {
-          default = pkgs.mkShell {
-            packages =
-              with pkgs;
-              [
-                bats
-                cargo
-                cargo-deny
-                cargoDist
-                cargo-machete
-                clippy
-                commitlint
-                deadnix
-                jq
-                ls-lint
-                nixfmt
-                nodejs_22
-                openssl
-                rustc
-                rustfmt
-                statix
-              ]
-              # lefthook before 2.1.6 runs hooks under a pty, which agent sandboxes deny.
-              ++ [ nixpkgs-unstable.legacyPackages.${system}.lefthook ];
-          };
+          default = pkgs.mkShell { packages = toolPackages ++ [ cargoDist ]; };
+
+          # CI does not run dist (release.yml installs its own), and building cargoDist from source takes
+          # about seven minutes in every job.
+          ci = pkgs.mkShell { packages = toolPackages; };
         }
       );
     };
