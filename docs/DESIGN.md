@@ -76,8 +76,8 @@ agent breaks in predictable ways:
 
 **6. Separate provider declarations, functions, and I/O capabilities.**
 
-- Decision: declare Devin, Hermes, pi, and dsh in `ProviderSpec`, with Data / Functions /
-  Capabilities boundaries. Claude and Codex remain outside; stage 5 for their hooks is deferred.
+- Decision: declare all six providers (Claude, Codex, Devin, Hermes, pi, and dsh) in
+  `ProviderSpec`, with Data / Functions / Capabilities boundaries.
 - Reason: shared paths, asset destinations, and optional `ConfigSync` strategies prevent parallel
   lists from drifting. Tests check the Nix list against Rust, and Home Manager links explicit
   managed files and subdirectories to coexist with user-owned state.
@@ -86,10 +86,12 @@ agent breaks in predictable ways:
 ```mermaid
 flowchart LR
   subgraph D["Data (declarations only)"]
-    SPEC["PROVIDERS (list of ProviderSpec)"]
+    SPEC["PROVIDERS (six ProviderSpec)"]
+    KINDS["ConfigSync kinds: MergeClaudeSettings, MergeToml, MergeTopLevelJson, MergeYaml, RegisterBundle"]
   end
   subgraph F["Functions (computation, no I/O)"]
     RENDER["hook rendering: builds hook and config values"]
+    RENDERER["ProviderRenderer: renders each provider's declared files"]
     PLAN["install_plan: what goes where"]
   end
   subgraph C["Capabilities (I/O)"]
@@ -99,8 +101,10 @@ flowchart LR
   end
   DISK[("disk")]
   SPEC -- "ProviderSpec" --> RENDER
+  SPEC -- "ProviderSpec" --> RENDERER
   SPEC -- "ProviderSpec" --> PLAN
-  SPEC -- "ConfigSync kind" --> SYNC
+  SPEC --> KINDS
+  KINDS -- "ConfigSync kind" --> SYNC
   PLAN -- "FileOp list" --> EXEC
   EXEC --> FS
   FS --> DISK

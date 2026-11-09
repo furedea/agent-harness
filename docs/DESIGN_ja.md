@@ -50,17 +50,19 @@
 
 **6. プロバイダの宣言と処理，I/O を分離する．**
 
-- 判断：Devin，Hermes，pi，dsh を `ProviderSpec` に宣言し，Data / Functions / Capabilities に分ける．Claude と Codex は対象外とし，hooks を移す段階 5 は意図的に延期する．
+- 判断：Claude，Codex，Devin，Hermes，pi，dsh の 6 つすべてを `ProviderSpec` に宣言し，Data / Functions / Capabilities に分ける．
 - 理由：パス，資産の出力先，同期方式を共有し，プロバイダ一覧のずれを防ぐ．`ConfigSync` は spec の任意の機能として宣言する．Nix の一覧は Rust との一致をテストし，Home Manager は管理対象のファイルとサブディレクトリを明示してリンクする．
 - ADR: [0026]，[0027]．
 
 ```mermaid
 flowchart LR
   subgraph D["Data (declarations only)"]
-    SPEC["PROVIDERS (list of ProviderSpec)"]
+    SPEC["PROVIDERS (six ProviderSpec)"]
+    KINDS["ConfigSync kinds: MergeClaudeSettings, MergeToml, MergeTopLevelJson, MergeYaml, RegisterBundle"]
   end
   subgraph F["Functions (computation, no I/O)"]
     RENDER["hook rendering: builds hook and config values"]
+    RENDERER["ProviderRenderer: renders each provider's declared files"]
     PLAN["install_plan: what goes where"]
   end
   subgraph C["Capabilities (I/O)"]
@@ -70,8 +72,10 @@ flowchart LR
   end
   DISK[("disk")]
   SPEC -- "ProviderSpec" --> RENDER
+  SPEC -- "ProviderSpec" --> RENDERER
   SPEC -- "ProviderSpec" --> PLAN
-  SPEC -- "ConfigSync kind" --> SYNC
+  SPEC --> KINDS
+  KINDS -- "ConfigSync kind" --> SYNC
   PLAN -- "FileOp list" --> EXEC
   EXEC --> FS
   FS --> DISK
