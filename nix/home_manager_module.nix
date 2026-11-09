@@ -49,7 +49,7 @@ let
       in
       lib.nameValuePair sync.activation (
         lib.mkIf cfg.${provider.id}.enable (
-          lib.hm.dag.entryAfter [ "linkGeneration" ] ''
+          lib.hm.dag.entryAfter [ (sync.after or "linkGeneration") ] ''
             ${lib.getExe cfg.package} ${sync.command} \
               --source ${renderedHarness}/${sync.source} \
               --target "$HOME/${target}"
@@ -131,12 +131,6 @@ let
       ${hookArgs}
   '';
 
-  codexRules = pkgs.runCommand "codex-default.rules" { } ''
-    ${lib.getExe cfg.package} --profile ${cfg.profile} generate-codex-rules \
-      --source ${composedSource} \
-      --output "$out"
-  '';
-
   providerSkills =
     provider:
     pkgs.runCommand "${provider}-skills" { } ''
@@ -150,7 +144,9 @@ in
 {
   imports = [ ./agent_github_app_token_module.nix ];
 
-  options.programs.agent-harness = {
+  # Provider options (`enable`, extra options) come from providers.json and merge into
+  # the explicit per-provider settings below.
+  options.programs.agent-harness = lib.recursiveUpdate {
     enable = lib.mkEnableOption "agent harness";
 
     package = lib.mkOption {
@@ -201,12 +197,6 @@ in
     };
 
     codex = {
-      enable = lib.mkOption {
-        type = lib.types.bool;
-        default = true;
-        description = "Whether to install Codex harness files.";
-      };
-
       settings = lib.mkOption {
         type = lib.types.attrsOf lib.types.anything;
         default = { };
@@ -222,12 +212,6 @@ in
     };
 
     claude = {
-      enable = lib.mkOption {
-        type = lib.types.bool;
-        default = true;
-        description = "Whether to install Claude Code harness files.";
-      };
-
       settings = lib.mkOption {
         type = lib.types.attrsOf lib.types.anything;
         default = { };
@@ -256,8 +240,7 @@ in
       };
     };
 
-  }
-  // providerOptions;
+  } providerOptions;
 
   config = lib.mkIf cfg.enable {
     programs.agent-harness.claude.composedSettings = lib.pipe claudeSourceSettings [
@@ -313,44 +296,9 @@ in
     home = {
       packages = [ cfg.package ];
 
-      file = lib.mkMerge (
-        [
-          (lib.mkIf cfg.codex.enable {
-            ".codex/AGENTS.md".source = "${renderedHarness}/.codex/AGENTS.md";
-            ".codex/hooks".source = "${renderedHarness}/.codex/hooks";
-            ".codex/hooks.json".source = "${renderedHarness}/.codex/hooks.json";
-            ".codex/rules/default.rules".source = codexRules;
-            ".codex/skills".source = providerSkills "codex";
-          })
-          (lib.mkIf cfg.claude.enable {
-            ".claude/CLAUDE.md".source = "${renderedHarness}/.claude/CLAUDE.md";
-            ".claude/hooks".source = "${renderedHarness}/.claude/hooks";
-            ".claude/skills".source = providerSkills "claude";
-            ".claude/statusline".source = "${renderedHarness}/.claude/statusline";
-          })
-        ]
-        ++ providerFiles
-      );
+      file = lib.mkMerge providerFiles;
 
-      activation = {
-        agentHarnessCodexConfig = lib.mkIf cfg.codex.enable (
-          lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-            ${lib.getExe cfg.package} sync-codex-config \
-              --source ${renderedHarness}/.codex/config.toml \
-              --target "$HOME/.codex/config.toml"
-          ''
-        );
-
-        agentHarnessClaudeSettings = lib.mkIf cfg.claude.enable (
-          lib.hm.dag.entryAfter [ "linkGeneration" ] ''
-            ${lib.getExe cfg.package} sync-claude-settings \
-              --source ${renderedHarness}/.claude/settings.json \
-              --target "$HOME/.claude/settings.json"
-          ''
-        );
-
-      }
-      // providerActivations;
+      activation = providerActivations;
     };
   };
 }

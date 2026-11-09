@@ -134,14 +134,11 @@ fn harness_owned_files(
                 .map(|path| target_dir.join(path)),
         );
     }
-    // Preserve the legacy protection order: directory assets precede generated files,
-    // with later-registered provider directories first.
     paths.extend(
         providers
             .iter()
-            .rev()
-            .filter(|spec| spec.managed_asset_directory.is_some())
-            .flat_map(|spec| spec.assets.iter())
+            .filter(|spec| spec.hook.bridge.directory.is_some())
+            .flat_map(|spec| spec.hook.bridge.assets.iter())
             .map(|asset| PathBuf::from(asset.destination)),
     );
     for bundle in external_hooks {

@@ -46,6 +46,18 @@ cargo test
 nix flake check
 ```
 
+## Provider registry
+
+`src/provider/spec.rs` is the single source of truth for providers. `nix/providers.json`, which
+drives the Home Manager module, is generated from it and must not be edited by hand. After you
+change `PROVIDERS` or the projection in `tests/nix_provider_registry.rs`, regenerate the file:
+
+```bash
+UPDATE_PROVIDERS_JSON=1 cargo test --test nix_provider_registry
+```
+
+Without the variable the same test fails when the committed file differs from the registry.
+
 Run the Codex policy conformance test after installing Bats and `jq`. It also requires Node.js and
 the Codex CLI from the locked package:
 

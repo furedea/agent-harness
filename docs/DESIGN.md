@@ -76,20 +76,32 @@ agent breaks in predictable ways:
 
 **6. Separate provider declarations, functions, and I/O capabilities.**
 
-- Decision: declare Devin, Hermes, pi, and dsh in `ProviderSpec`, with Data / Functions /
-  Capabilities boundaries. Claude and Codex remain outside; stage 5 for their hooks is deferred.
-- Reason: shared paths, asset destinations, and optional `ConfigSync` strategies prevent parallel
-  lists from drifting. Tests check the Nix list against Rust, and Home Manager links explicit
-  managed files and subdirectories to coexist with user-owned state.
-- ADRs: [0026].
+- Decision: declare all six providers (Claude, Codex, Devin, Hermes, pi, and dsh) in
+  `ProviderSpec`, with Data / Functions / Capabilities boundaries. Every field is one of five
+  concepts most providers share: hook (`HookSpec`: scripts, registration, bridge files), skill,
+  instructions, command rule, and config (`ConfigSpec`: path and `ConfigSync` kind). Every
+  provider has hooks; the other concepts are an `Option`. A provider difference is an enum
+  variant, not a field only that provider has.
+- Reason: shared paths, asset destinations, and `ConfigSync` strategies prevent parallel lists
+  from drifting, and variants such as `HookRegistration` and `CommandRuleSpec` keep the
+  differences visible and exhaustively matched. Lists follow registry order. Rust is the single
+  source: `nix/providers.json` is generated from it by a test that fails when the committed file
+  differs (`UPDATE_PROVIDERS_JSON=1` regenerates it). Home Manager links explicit managed files
+  and subdirectories to coexist with user-owned state.
+- ADRs: [0026], [0027].
 
 ```mermaid
 flowchart LR
   subgraph D["Data (declarations only)"]
-    SPEC["PROVIDERS (list of ProviderSpec)"]
+    SPEC["PROVIDERS (six ProviderSpec)"]
+    CONCEPTS["five concepts: hooks, skills, instructions, command rules, config"]
+    VARIANTS["variants: HookRegistration (InSettings, File), CommandRuleSpec (DevinHookBlock, ClaudeRules, CodexExecpolicy), SkillSource"]
+    JSON["nix/providers.json (generated from PROVIDERS)"]
+    KINDS["ConfigSync kinds: MergeClaudeSettings, MergeToml, MergeTopLevelJson, MergeYaml, RegisterBundle"]
   end
   subgraph F["Functions (computation, no I/O)"]
     RENDER["hook rendering: builds hook and config values"]
+    RENDERER["ProviderRenderer: renders each provider's declared files"]
     PLAN["install_plan: what goes where"]
   end
   subgraph C["Capabilities (I/O)"]
@@ -99,8 +111,13 @@ flowchart LR
   end
   DISK[("disk")]
   SPEC -- "ProviderSpec" --> RENDER
+  SPEC -- "ProviderSpec" --> RENDERER
   SPEC -- "ProviderSpec" --> PLAN
-  SPEC -- "ConfigSync kind" --> SYNC
+  SPEC --> CONCEPTS
+  CONCEPTS --> VARIANTS
+  CONCEPTS -- "config" --> KINDS
+  SPEC -- "sourcegen test" --> JSON
+  KINDS -- "ConfigSync kind" --> SYNC
   PLAN -- "FileOp list" --> EXEC
   EXEC --> FS
   FS --> DISK
@@ -113,7 +130,8 @@ flowchart LR
   rendering modules do not reference `fs_ops` or `std::fs`. It is a source-text check, not a
   transitive analysis: staging generation still writes through the existing generation path
   ([0026]).
-- Claude and Codex stay outside the registry for now.
+- Claude and Codex are declared in the registry like the other four providers; the registry declares
+  what each owns, and provider functions render the content ([0027]).
 
 ## Alternatives considered
 
@@ -167,7 +185,7 @@ sequenceDiagram
 | `provider/spec`                                                                           | Data: provider metadata, asset destinations, and optional `ConfigSync`.                                        |
 | `install_plan`                                                                            | Functions: plan publication of rendered staging files and embedded assets.                                     |
 | `filesystem`, `install_executor`, `config_sync`                                           | Capabilities: execute file operations and dispatch config synchronization.                                     |
-| `nix/providers.json`, `nix/home_manager_module.nix`                                       | Checked Nix provider list and generated Home Manager options, links, and sync.                                 |
+| `nix/providers.json`, `nix/home_manager_module.nix`                                       | Nix provider list generated from the registry, and the Home Manager options, links, and sync built from it.    |
 | `generation/hooks`                                                                        | Render hook wiring.                                                                                            |
 | `generation/bridges`, `provider/spec`, `install_plan`                                     | Verify bridge asset contracts; declare embedded bridge assets and destinations in specs and plan their writes. |
 | `generation/command_permissions`                                                          | Maps neutral rules to Claude, Codex, and Devin permission syntax.                                              |
@@ -245,3 +263,4 @@ CodeQL analysis is not a workflow file: it runs through GitHub's CodeQL default 
 [0020]: adr/0020_keep_git_push_outside_the_claude_sandbox.md
 [0021]: adr/0021_refresh_the_agent_token_from_a_github_app.md
 [0026]: adr/0026_declare_providers_in_a_registry.md
+[0027]: adr/0027_declare_claude_and_codex_in_the_provider_registry.md

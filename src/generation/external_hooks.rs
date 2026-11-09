@@ -59,7 +59,7 @@ impl ExternalHookBundle {
         self.merge_hooks(
             hooks,
             &HookFile {
-                path: spec.external_hook_file,
+                path: spec.hook.external_file,
                 target_key: Some("hooks"),
                 events_key: None,
             },
@@ -108,10 +108,9 @@ impl ExternalHookBundle {
     }
 
     fn assets(&self) -> Result<Vec<HookAsset>> {
-        let mut assets = [".claude/hooks", ".codex/hooks"]
-            .into_iter()
-            .chain(PROVIDERS.iter().map(|spec| spec.hooks_dir))
-            .map(|relative| self.asset_tree(Path::new(relative)))
+        let mut assets = PROVIDERS
+            .iter()
+            .map(|spec| self.asset_tree(Path::new(spec.hook.scripts_dir)))
             .collect::<Result<Vec<_>>>()?
             .into_iter()
             .flatten()

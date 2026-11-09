@@ -1,4 +1,4 @@
-use crate::provider::spec::{PROVIDERS, ProviderId, ProviderSpec};
+use crate::provider::spec::{CommandRuleSpec, PROVIDERS, ProviderId, ProviderSpec};
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -8,7 +8,7 @@ use serde::Deserialize;
 use serde_json::{Map, Value};
 
 use crate::{
-    generation::{GenerationContext, command_permissions, external_hooks::ExternalHookBundle, io},
+    generation::{GenerationContext, command_permissions, io},
     layout::SourceLayout,
     runtime_root::RuntimeRoot,
 };
@@ -22,59 +22,45 @@ struct HookConfig {
     providers: BTreeMap<String, Value>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, clap::ValueEnum)]
-pub(crate) enum HookProvider {
-    Claude,
-    Codex,
-    Devin,
-    Hermes,
-    Pi,
-    Dsh,
-}
-
-impl HookProvider {
-    pub(crate) fn display_name(self) -> &'static str {
-        match self {
-            Self::Claude => "Claude",
-            Self::Codex => "Codex",
-            Self::Devin => ProviderId::Devin.spec().display_name,
-            Self::Hermes => ProviderId::Hermes.spec().display_name,
-            Self::Pi => ProviderId::Pi.spec().display_name,
-            Self::Dsh => ProviderId::Dsh.spec().display_name,
+impl HookConfig {
+    /// The provider's section, or `None` for an optional section that is absent or null.
+    fn section(&self, id: ProviderId) -> Option<&Value> {
+        match id {
+            ProviderId::Claude => Some(&self.claude),
+            ProviderId::Codex => Some(&self.codex),
+            ProviderId::Devin | ProviderId::Hermes | ProviderId::Pi | ProviderId::Dsh => self
+                .providers
+                .get(id.spec().key)
+                .filter(|section| !section.is_null()),
         }
     }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct HookMetadata {
-    pub(crate) provider: HookProvider,
+    pub(crate) provider: ProviderId,
     pub(crate) event: String,
     pub(crate) matcher: String,
     pub(crate) condition: Option<String>,
     pub(crate) command: String,
 }
 
-pub(crate) fn write_claude_hooks(
-    source: &Path,
-    path: &Path,
-    external_hooks: &[ExternalHookBundle],
-) -> Result<()> {
-    let context = GenerationContext::home(source, external_hooks);
-    io::write_json(path, &claude_hooks_for_runtime(context)?)
-}
-
-pub(crate) fn write_codex_hooks(
-    source: &Path,
-    path: &Path,
-    external_hooks: &[ExternalHookBundle],
-) -> Result<()> {
-    write_codex_hooks_for_runtime(GenerationContext::home(source, external_hooks), path)
-}
-
-pub(crate) fn write_codex_hooks_for_runtime(
+/// Writes the hook configuration a provider reads, in the shape that provider expects.
+pub(crate) fn write_hooks_for_runtime(
     context: GenerationContext<'_>,
     path: &Path,
+    spec: &ProviderSpec,
 ) -> Result<()> {
+    match spec.id {
+        ProviderId::Claude => io::write_json(path, &claude_hooks_for_runtime(context)?),
+        ProviderId::Codex => write_codex_hooks_for_runtime(context, path),
+        ProviderId::Devin | ProviderId::Hermes | ProviderId::Pi | ProviderId::Dsh => {
+            write_provider_hooks_for_runtime(context, path, spec)
+        }
+    }
+}
+
+fn write_codex_hooks_for_runtime(context: GenerationContext<'_>, path: &Path) -> Result<()> {
     let mut hooks = read_hooks(context.source)?.codex;
     for bundle in context.external_hooks {
         bundle.merge_codex_hooks(&mut hooks)?;
@@ -83,7 +69,7 @@ pub(crate) fn write_codex_hooks_for_runtime(
     io::write_json(path, &hooks)
 }
 
-pub(crate) fn write_provider_hooks_for_runtime(
+fn write_provider_hooks_for_runtime(
     context: GenerationContext<'_>,
     path: &Path,
     spec: &ProviderSpec,
@@ -104,7 +90,7 @@ fn provider_hooks_for_runtime(
         bundle.merge_provider_hooks(&mut hooks, spec)?;
     }
     relocate_commands(&mut hooks, context.runtime_root);
-    if spec.permissions {
+    if spec.command_rule == Some(CommandRuleSpec::DevinHookBlock) {
         hooks
             .as_object_mut()
             .expect("validated hook section")
@@ -114,15 +100,6 @@ fn provider_hooks_for_runtime(
             );
     }
     Ok(hooks)
-}
-
-pub(crate) fn hook_provider(id: ProviderId) -> HookProvider {
-    match id {
-        ProviderId::Devin => HookProvider::Devin,
-        ProviderId::Hermes => HookProvider::Hermes,
-        ProviderId::Pi => HookProvider::Pi,
-        ProviderId::Dsh => HookProvider::Dsh,
-    }
 }
 
 pub(crate) fn claude_hooks_for_runtime(context: GenerationContext<'_>) -> Result<Value> {
@@ -157,21 +134,12 @@ fn relocate_each<'a>(items: impl Iterator<Item = &'a mut Value>, runtime_root: &
 
 pub(crate) fn built_in_hook_metadata(source: &Path) -> Result<Vec<HookMetadata>> {
     let config = read_hooks(source)?;
-    let codex = config
-        .codex
-        .get("hooks")
-        .context("hook config codex section must contain hooks")?;
-    let mut metadata = hook_metadata(HookProvider::Claude, &config.claude)?;
-    metadata.extend(hook_metadata(HookProvider::Codex, codex)?);
-    let sections = PROVIDERS.iter().filter_map(|spec| {
-        let section = config
-            .providers
-            .get(spec.key)
-            .filter(|section| !section.is_null())?;
-        Some((hook_provider(spec.id), section))
-    });
-    for (provider, section) in sections {
-        metadata.extend(optional_section_hook_metadata(provider, section)?);
+    let sections = PROVIDERS
+        .iter()
+        .filter_map(|spec| Some((spec, config.section(spec.id)?)));
+    let mut metadata = Vec::new();
+    for (spec, section) in sections {
+        metadata.extend(section_hook_metadata(spec, section)?);
     }
     metadata.sort_by(compare_hook_metadata);
     Ok(metadata)
@@ -184,15 +152,15 @@ fn compare_hook_metadata(left: &HookMetadata, right: &HookMetadata) -> Ordering 
         .then_with(|| left.event.cmp(&right.event))
 }
 
-fn optional_section_hook_metadata(
-    provider: HookProvider,
-    section: &Value,
-) -> Result<Vec<HookMetadata>> {
-    let section_name = provider.display_name().to_lowercase();
+/// Claude's section is its event map itself; every other section nests it under `hooks`.
+fn section_hook_metadata(spec: &ProviderSpec, section: &Value) -> Result<Vec<HookMetadata>> {
+    if spec.id == ProviderId::Claude {
+        return hook_metadata(spec.id, section);
+    }
     let hooks = section
         .get("hooks")
-        .with_context(|| format!("hook config {section_name} section must contain hooks"))?;
-    hook_metadata(provider, hooks)
+        .with_context(|| format!("hook config {} section must contain hooks", spec.key))?;
+    hook_metadata(spec.id, hooks)
 }
 
 fn hook_event_rank(event: &str) -> usize {
@@ -248,7 +216,7 @@ fn is_not_object(value: &Value) -> bool {
     !value.is_object()
 }
 
-fn hook_metadata(provider: HookProvider, value: &Value) -> Result<Vec<HookMetadata>> {
+fn hook_metadata(provider: ProviderId, value: &Value) -> Result<Vec<HookMetadata>> {
     let events = value
         .as_object()
         .context("hook provider section must be a JSON object")?;
@@ -261,7 +229,7 @@ fn hook_metadata(provider: HookProvider, value: &Value) -> Result<Vec<HookMetada
 }
 
 fn event_hook_metadata(
-    provider: HookProvider,
+    provider: ProviderId,
     event: &str,
     groups: &Value,
 ) -> Result<Vec<HookMetadata>> {
@@ -276,7 +244,7 @@ fn event_hook_metadata(
 }
 
 fn group_hook_metadata(
-    provider: HookProvider,
+    provider: ProviderId,
     event: &str,
     group: &Value,
 ) -> Result<Vec<HookMetadata>> {

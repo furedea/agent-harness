@@ -4,12 +4,12 @@ use anyhow::{Result, ensure};
 
 use crate::{
     filesystem::{FileSystem, RealFileSystem, TemporaryDirectory},
-    generation::{
-        GenerationContext, claude_config, codex_config, command_permissions, hermes_config, hooks,
-        protection, skills,
-    },
+    generation::{GenerationContext, command_permissions, skills},
     layout::{InstalledLayout, SourceLayout},
-    provider::spec::{PROVIDERS, ProviderSpec},
+    provider::{
+        renderer::ProviderRenderer,
+        spec::{ConfigSync, PROVIDERS, ProviderSpec},
+    },
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -20,12 +20,12 @@ pub(crate) enum Provider {
 
 #[cfg(test)]
 pub(crate) fn generate_claude_settings(source: &Path, out: &Path) -> Result<()> {
-    claude_config::write_settings(source, out, &[])
+    crate::generation::claude_config::write_settings(source, out, &[])
 }
 
 #[cfg(test)]
 pub(crate) fn generate_codex_config_source(source: &Path, out: &Path) -> Result<()> {
-    codex_config::write_config_source(source, out, &[])
+    crate::generation::codex_config::write_config_source(source, out, &[])
 }
 
 pub(crate) fn generate_skills(
@@ -38,19 +38,25 @@ pub(crate) fn generate_skills(
 
 pub(crate) fn install(context: GenerationContext<'_>, out: &Path) -> Result<()> {
     let staging = TemporaryDirectory::create()?;
-    let rendered = InstalledLayout::new(staging.path());
-    let installed = InstalledLayout::new(out);
-    if installed.codex_config().exists() {
-        crate::filesystem::FileSystem::copy_file(
-            &crate::filesystem::RealFileSystem,
-            &installed.codex_config(),
-            &rendered.codex_config(),
-        )?;
-    }
+    carry_over_mutable_toml_configs(out, staging.path())?;
     render_installation(context, staging.path())?;
-    let plan = crate::install_plan::plan_install(&rendered, &installed);
-    crate::install_executor::execute(&crate::filesystem::RealFileSystem, &plan)?;
+    let plan = crate::install_plan::plan_install(
+        &InstalledLayout::new(staging.path()),
+        &InstalledLayout::new(out),
+    );
+    crate::install_executor::execute(&RealFileSystem, &plan)?;
     Ok(())
+}
+
+/// Seeds the staging tree with the installed TOML config, which rendering merges into.
+fn carry_over_mutable_toml_configs(installed: &Path, staging: &Path) -> Result<()> {
+    PROVIDERS
+        .iter()
+        .filter_map(|spec| spec.config)
+        .filter(|config| config.sync == ConfigSync::MergeToml)
+        .map(|config| config.path)
+        .filter(|path| installed.join(path).exists())
+        .try_for_each(|path| RealFileSystem.copy_file(&installed.join(path), &staging.join(path)))
 }
 
 fn render_installation(context: GenerationContext<'_>, out: &Path) -> Result<()> {
@@ -62,121 +68,38 @@ pub(crate) fn render_installation_for(
     out: &Path,
     providers: &[ProviderSpec],
 ) -> Result<()> {
-    let GenerationContext {
-        source,
-        external_hooks,
-        ..
-    } = context;
     let installed = InstalledLayout::new(out);
-    let source_layout = SourceLayout::new(source);
-    command_permissions::validate_regex_policies(source)?;
-    RealFileSystem.copy_file(
-        &source_layout.agent_instructions(),
-        &installed.codex_agent_instructions(),
-    )?;
-    RealFileSystem.copy_file(
-        &source_layout.agent_instructions(),
-        &installed.claude_agent_instructions(),
-    )?;
-    for (source, target) in installed.synced_directories_for(source_layout, providers) {
+    command_permissions::validate_regex_policies(context.source)?;
+    for (source, target) in
+        installed.synced_directories_for(SourceLayout::new(context.source), providers)
+    {
         RealFileSystem.replace_directory(&source, &target)?;
-    }
-
-    for path in providers.iter().filter_map(|spec| spec.instructions) {
-        RealFileSystem.copy_file(&source_layout.agent_instructions(), &out.join(path))?;
     }
     crate::install_executor::execute(
         &RealFileSystem,
         &crate::install_plan::plan_assets_for(out, providers),
     )?;
-    for bundle in external_hooks {
+    for bundle in context.external_hooks {
         bundle.copy_assets(out)?;
     }
-    hooks::write_codex_hooks_for_runtime(context, &installed.codex_hook_config())?;
-    generate_skills(
-        source,
-        &[],
-        skills::SkillTarget {
-            provider: Provider::Codex,
-            path: &installed.codex_skills(),
-        },
-    )?;
-    generate_skills(
-        source,
-        &[],
-        skills::SkillTarget {
-            provider: Provider::Claude,
-            path: &installed.claude_skills(),
-        },
-    )?;
-    claude_config::write_settings_for_runtime(context, &installed.claude_settings())?;
-    command_permissions::write_codex_rules(source, &installed.codex_rules())?;
-    command_permissions::write_runtime_policy(source, &installed.claude_command_permissions())?;
-    protection::write_runtime_policy(
-        protection::protected_paths_for_providers(context, providers)?,
-        &installed.claude_protected_paths(),
-    )?;
-    codex_config::sync_managed_document(
-        &codex_config::generated_config_source(context)?,
-        &installed.codex_config(),
-    )?;
-    for spec in providers {
-        hooks::write_provider_hooks_for_runtime(context, &out.join(spec.hook_manifest), spec)?;
-    }
-    for path in providers.iter().filter_map(|spec| spec.skills) {
-        RealFileSystem.replace_directory(&installed.codex_skills(), &out.join(path))?;
-    }
-    for path in providers.iter().filter_map(|spec| spec.managed_config) {
-        hermes_config::write_managed_config(&out.join(path))?;
-    }
-
-    Ok(())
+    let renderer = ProviderRenderer {
+        context,
+        providers,
+        out,
+    };
+    providers.iter().try_for_each(|spec| renderer.render(spec))
 }
 
 pub(crate) fn verify(root: &Path) -> Result<()> {
     let installed = InstalledLayout::new(root);
-    for path in [
-        installed.codex_agent_instructions(),
-        installed.codex_config(),
-        installed.codex_hook_config(),
-        installed.codex_rules(),
-        installed.claude_agent_instructions(),
-        installed.claude_allowed_command_rules(),
-        installed.claude_command_permissions(),
-        installed.claude_forbidden_command_rules(),
-        installed.claude_protected_paths(),
-        installed.claude_secret_commit_policy(),
-        installed.claude_secret_path_policy(),
-        installed.claude_settings(),
-    ]
-    .into_iter()
-    .chain(
-        PROVIDERS
-            .iter()
-            .flat_map(|spec| {
-                std::iter::once(spec.hook_manifest)
-                    .chain(spec.managed_config)
-                    .chain(spec.instructions)
-            })
-            .map(|path| root.join(path)),
-    ) {
+    for path in installed.verified_files_for(PROVIDERS) {
         ensure!(
             path.is_file(),
             "missing or invalid harness file: {}",
             path.display()
         );
     }
-    for path in PROVIDERS
-        .iter()
-        .flat_map(|spec| spec.assets.iter().map(|asset| root.join(asset.destination)))
-    {
-        ensure!(
-            path.is_file(),
-            "missing or invalid harness file: {}",
-            path.display()
-        );
-    }
-    for path in [installed.codex_skills(), installed.claude_skills()] {
+    for path in installed.verified_directories_for(PROVIDERS) {
         ensure!(
             path.is_dir(),
             "missing or invalid harness directory: {}",

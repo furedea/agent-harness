@@ -1,4 +1,4 @@
-use crate::provider::spec::{ProviderId, ProviderSpec};
+use crate::provider::spec::{ProviderId, ProviderSpec, SkillSource};
 use std::path::{Path, PathBuf};
 
 const MANIFEST_PATH: &str = "manifest.json";
@@ -25,18 +25,6 @@ const REQUIRED_SOURCE_FILES: &[&str] = &[
     CLAUDE_SETTINGS_SOURCE_PATH,
     CODEX_CONFIG_SOURCE_PATH,
 ];
-
-const CLAUDE_AGENT_INSTRUCTIONS_PATH: &str = ".claude/CLAUDE.md";
-const CLAUDE_ALLOWED_COMMAND_RULES_PATH: &str = ".claude/hooks/rules/allowed_commands.json";
-const CLAUDE_COMMAND_PERMISSIONS_PATH: &str = ".claude/hooks/rules/command_permissions.json";
-const CLAUDE_FORBIDDEN_COMMAND_RULES_PATH: &str = ".claude/hooks/rules/forbidden_commands.json";
-const CLAUDE_PROTECTED_PATHS_PATH: &str = ".claude/hooks/rules/protected_paths.json";
-const CLAUDE_SECRET_COMMIT_POLICY_PATH: &str = ".claude/hooks/rules/secret_commit_policy.json";
-const CLAUDE_SECRET_PATH_POLICY_PATH: &str = ".claude/hooks/rules/secret_path_policy.json";
-const CLAUDE_SETTINGS_PATH: &str = ".claude/settings.json";
-const CODEX_AGENT_INSTRUCTIONS_PATH: &str = ".codex/AGENTS.md";
-const CODEX_HOOK_CONFIG_PATH: &str = ".codex/hooks.json";
-const CODEX_RULES_PATH: &str = ".codex/rules/default.rules";
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct SourceLayout<'a> {
@@ -96,29 +84,6 @@ impl<'a> SourceLayout<'a> {
         self.root.join(CODEX_CONFIG_SOURCE_PATH)
     }
 
-    pub(crate) fn agent_hooks(self) -> PathBuf {
-        self.root.join("hooks")
-    }
-
-    pub(crate) fn codex_hooks(self) -> PathBuf {
-        self.root.join("codex/hooks")
-    }
-
-    fn hook_sync_paths(
-        self,
-        installed: InstalledLayout,
-        spec: &ProviderSpec,
-    ) -> (PathBuf, PathBuf) {
-        (
-            self.root.join(spec.source_hooks),
-            installed.root.join(spec.hooks_dir),
-        )
-    }
-
-    pub(crate) fn claude_statusline(self) -> PathBuf {
-        self.root.join("claude/statusline")
-    }
-
     pub(crate) fn skills(self) -> PathBuf {
         self.root.join("skills")
     }
@@ -138,137 +103,47 @@ impl<'a> InstalledLayout<'a> {
         Self::new(Path::new(""))
     }
 
-    pub(crate) fn codex_agent_instructions(self) -> PathBuf {
-        self.root.join(CODEX_AGENT_INSTRUCTIONS_PATH)
-    }
-
-    pub(crate) fn claude_agent_instructions(self) -> PathBuf {
-        self.root.join(CLAUDE_AGENT_INSTRUCTIONS_PATH)
-    }
-
-    pub(crate) fn codex_hooks(self) -> PathBuf {
-        self.root.join(".codex/hooks")
-    }
-
-    pub(crate) fn claude_hooks(self) -> PathBuf {
-        self.root.join(".claude/hooks")
-    }
-
     pub(crate) fn hermes_config(self) -> PathBuf {
         self.root
             .join(ProviderId::Hermes.spec().home_dir)
             .join("config.yaml")
     }
 
-    pub(crate) fn claude_statusline(self) -> PathBuf {
-        self.root.join(".claude/statusline")
-    }
-
-    pub(crate) fn codex_hook_config(self) -> PathBuf {
-        self.root.join(CODEX_HOOK_CONFIG_PATH)
-    }
-
-    pub(crate) fn codex_skills(self) -> PathBuf {
-        self.root.join(".codex/skills")
-    }
-
-    pub(crate) fn claude_skills(self) -> PathBuf {
-        self.root.join(".claude/skills")
-    }
-
-    pub(crate) fn claude_settings(self) -> PathBuf {
-        self.root.join(CLAUDE_SETTINGS_PATH)
-    }
-
-    pub(crate) fn codex_rules(self) -> PathBuf {
-        self.root.join(CODEX_RULES_PATH)
-    }
-
-    pub(crate) fn claude_command_permissions(self) -> PathBuf {
-        self.root.join(CLAUDE_COMMAND_PERMISSIONS_PATH)
-    }
-
-    pub(crate) fn claude_allowed_command_rules(self) -> PathBuf {
-        self.root.join(CLAUDE_ALLOWED_COMMAND_RULES_PATH)
-    }
-
-    pub(crate) fn claude_forbidden_command_rules(self) -> PathBuf {
-        self.root.join(CLAUDE_FORBIDDEN_COMMAND_RULES_PATH)
-    }
-
-    pub(crate) fn claude_protected_paths(self) -> PathBuf {
-        self.root.join(CLAUDE_PROTECTED_PATHS_PATH)
-    }
-
-    pub(crate) fn claude_secret_path_policy(self) -> PathBuf {
-        self.root.join(CLAUDE_SECRET_PATH_POLICY_PATH)
-    }
-
-    pub(crate) fn claude_secret_commit_policy(self) -> PathBuf {
-        self.root.join(CLAUDE_SECRET_COMMIT_POLICY_PATH)
-    }
-
-    pub(crate) fn codex_config(self) -> PathBuf {
-        self.root.join(".codex/config.toml")
-    }
-
+    /// Directories published as a whole, in registry order.
     pub(crate) fn managed_directories_for(self, providers: &[ProviderSpec]) -> Vec<PathBuf> {
-        let mut paths = vec![self.codex_hooks(), self.claude_hooks()];
-        paths.extend(
-            providers
-                .iter()
-                .flat_map(provider_directories)
-                .map(|path| self.root.join(path)),
-        );
-        paths.extend([
-            self.claude_statusline(),
-            self.codex_skills(),
-            self.claude_skills(),
-        ]);
-        paths
+        providers
+            .iter()
+            .flat_map(managed_directories)
+            .map(|path| self.root.join(path))
+            .collect()
     }
 
+    /// Files published individually, in registry order.
     pub(crate) fn managed_files_for(self, providers: &[ProviderSpec]) -> Vec<PathBuf> {
-        let mut files = vec![
-            self.codex_agent_instructions(),
-            self.claude_agent_instructions(),
-            self.codex_hook_config(),
-            self.claude_settings(),
-            self.codex_rules(),
-            self.codex_config(),
-        ];
-        files.extend(
-            providers
-                .iter()
-                .flat_map(provider_files)
-                .map(|path| self.root.join(path)),
-        );
-        files.extend(
-            providers
-                .iter()
-                .filter(|spec| spec.managed_asset_directory.is_none())
-                .flat_map(|spec| spec.assets.iter())
-                .map(|asset| self.root.join(asset.destination)),
-        );
-        files
+        providers
+            .iter()
+            .flat_map(managed_files)
+            .map(|path| self.root.join(path))
+            .collect()
     }
 
+    /// Source and installed directory pairs that installation replaces from the source tree.
     pub(crate) fn synced_directories_for(
         self,
         source: SourceLayout,
         providers: &[ProviderSpec],
     ) -> Vec<(PathBuf, PathBuf)> {
-        let mut paths = vec![
-            (source.codex_hooks(), self.codex_hooks()),
-            (source.agent_hooks(), self.claude_hooks()),
-        ];
-        paths.extend(
-            providers
-                .iter()
-                .map(|spec| source.hook_sync_paths(self, spec)),
-        );
-        paths.push((source.claude_statusline(), self.claude_statusline()));
-        paths
+        let hooks = providers
+            .iter()
+            .map(|spec| (spec.hook.source, spec.hook.scripts_dir));
+        let directories = providers
+            .iter()
+            .flat_map(ProviderSpec::config_directories)
+            .map(|directory| (directory.source, directory.destination));
+        hooks
+            .chain(directories)
+            .map(|(from, to)| (source.root.join(from), self.root.join(to)))
+            .collect()
     }
 
     /// Generated files plus the mutable provider configs that installation syncs them into.
@@ -278,9 +153,13 @@ impl<'a> InstalledLayout<'a> {
         providers: &[ProviderSpec],
     ) -> Vec<PathBuf> {
         let mut files = self.managed_files_for(providers);
+        files.extend(
+            providers
+                .iter()
+                .flat_map(ProviderSpec::generated_rule_files)
+                .map(|path| self.root.join(path)),
+        );
         files.extend([
-            self.claude_command_permissions(),
-            self.claude_protected_paths(),
             self.hermes_config(),
             self.root
                 .join(ProviderId::Dsh.spec().home_dir)
@@ -290,16 +169,64 @@ impl<'a> InstalledLayout<'a> {
         ]);
         files
     }
+
+    /// Files that verification requires to exist.
+    pub(crate) fn verified_files_for(self, providers: &[ProviderSpec]) -> Vec<PathBuf> {
+        providers
+            .iter()
+            .flat_map(verified_files)
+            .map(|path| self.root.join(path))
+            .collect()
+    }
+
+    /// Skill directories that verification requires, which rendering produces itself.
+    pub(crate) fn verified_directories_for(self, providers: &[ProviderSpec]) -> Vec<PathBuf> {
+        providers
+            .iter()
+            .filter_map(|spec| spec.skill)
+            .filter(|skill| skill.source != SkillSource::CopyCodex)
+            .map(|skill| self.root.join(skill.destination))
+            .collect()
+    }
 }
 
-fn provider_directories(spec: &ProviderSpec) -> impl Iterator<Item = &str> {
-    std::iter::once(spec.hooks_dir)
-        .chain(spec.managed_asset_directory)
-        .chain(spec.skills)
+fn managed_directories(spec: &ProviderSpec) -> impl Iterator<Item = &'static str> {
+    let config_directories = spec
+        .config_directories()
+        .iter()
+        .map(|directory| directory.destination);
+    std::iter::once(spec.hook.scripts_dir)
+        .chain(spec.hook.bridge.directory)
+        .chain(config_directories)
+        .chain(spec.skill.map(|skill| skill.destination))
 }
 
-fn provider_files(spec: &ProviderSpec) -> impl Iterator<Item = &str> {
-    std::iter::once(spec.hook_manifest)
-        .chain(spec.managed_config)
-        .chain(spec.instructions)
+/// Files published individually: rendered files first, then bridge assets outside a directory.
+fn managed_files(spec: &ProviderSpec) -> impl Iterator<Item = &'static str> {
+    let loose_assets = spec
+        .hook
+        .bridge
+        .directory
+        .is_none()
+        .then_some(spec.hook.bridge.assets)
+        .into_iter()
+        .flatten()
+        .map(|asset| asset.destination);
+    rendered_files(spec).chain(loose_assets)
+}
+
+fn rendered_files(spec: &ProviderSpec) -> impl Iterator<Item = &'static str> {
+    spec.instructions
+        .into_iter()
+        .chain([spec.hook.registration.path()])
+        .chain(spec.config_file())
+        .chain(spec.published_rule_file())
+}
+
+fn verified_files(spec: &ProviderSpec) -> impl Iterator<Item = &'static str> {
+    let assets = spec.hook.bridge.assets.iter();
+    rendered_files(spec)
+        .chain(spec.generated_rule_files())
+        .chain(spec.source_rule_files().iter().copied())
+        .chain(assets.map(|asset| asset.destination))
 }
