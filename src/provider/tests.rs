@@ -1,5 +1,6 @@
 use super::spec::{
-    Asset, ConfigSync, PROVIDERS, ProviderId, ProviderKind, ProviderSpec, Skills, SkillsSource,
+    Asset, Bridge, CommandRules, Config, ConfigSync, HookRegistration, Hooks, PROVIDERS,
+    ProviderId, ProviderSpec, Skills, SkillsSource,
 };
 use crate::{
     filesystem::RealFileSystem,
@@ -19,21 +20,29 @@ fn extra_spec_flows_through_layout_protection_rendering_and_publication() -> Res
         key: "example",
         display_name: "Example",
         home_dir: ".example",
-        source_hooks: "hooks",
-        hooks_dir: ".example/hooks",
-        hook_manifest: ".example/hooks.json",
-        external_hook_file: ".example/external.json",
-        managed_asset_directory: Some(".example/bridge"),
-        assets: &[Asset {
-            destination: ".example/bridge/nested/entry.txt",
-            content: "example bridge\n",
-        }],
+        hooks: Hooks {
+            source: "hooks",
+            scripts_dir: ".example/hooks",
+            registration: HookRegistration::File(".example/hooks.json"),
+            external_file: ".example/external.json",
+            bridge: Bridge {
+                directory: Some(".example/bridge"),
+                assets: &[Asset {
+                    destination: ".example/bridge/nested/entry.txt",
+                    content: "example bridge\n",
+                }],
+            },
+        },
         instructions: Some(".example/AGENTS.md"),
         skills: Some(&Skills {
             destination: ".example/skills",
             source: SkillsSource::CopyCodex,
         }),
-        managed_config: Some(".example/managed.yaml"),
+        config: Some(Config {
+            path: ".example/managed.yaml",
+            sync: ConfigSync::MergeYaml,
+            directories: &[],
+        }),
         ..ProviderId::Hermes.spec().clone()
     };
     let mut providers = PROVIDERS.to_vec();
@@ -119,7 +128,10 @@ fn registry_derivation_preserves_install_order() {
         layout.managed_directories_for(PROVIDERS),
         [
             ".codex/hooks",
+            ".codex/skills",
             ".claude/hooks",
+            ".claude/statusline",
+            ".claude/skills",
             ".devin/hooks",
             ".hermes/hooks",
             ".hermes/plugins/agent-harness-hooks",
@@ -127,9 +139,6 @@ fn registry_derivation_preserves_install_order() {
             ".dsh/hooks",
             ".dsh/bridge",
             ".dsh/skills",
-            ".claude/statusline",
-            ".codex/skills",
-            ".claude/skills",
         ]
         .map(PathBuf::from)
     );
@@ -137,35 +146,35 @@ fn registry_derivation_preserves_install_order() {
         layout.managed_files_for(PROVIDERS),
         [
             ".codex/AGENTS.md",
-            ".claude/CLAUDE.md",
             ".codex/hooks.json",
-            ".claude/settings.json",
-            ".codex/rules/default.rules",
             ".codex/config.toml",
+            ".codex/rules/default.rules",
+            ".claude/CLAUDE.md",
+            ".claude/settings.json",
             ".config/devin/config.json",
             ".hermes/hooks.json",
             ".hermes/managed-config.yaml",
             ".pi/agent/hooks.json",
-            ".dsh/hooks.json",
-            ".dsh/AGENTS.md",
             ".pi/agent/extensions/hook_bridge.ts",
+            ".dsh/AGENTS.md",
+            ".dsh/hooks.json",
         ]
         .map(PathBuf::from)
     );
 }
 
 #[test]
-fn registry_declares_all_six_providers_with_native_ones_first() {
-    let declared: Vec<_> = PROVIDERS.iter().map(|spec| (spec.id, spec.kind)).collect();
+fn registry_declares_all_six_providers() {
+    let declared: Vec<_> = PROVIDERS.iter().map(|spec| spec.id).collect();
     assert_eq!(
         declared,
         [
-            (ProviderId::Codex, ProviderKind::Native),
-            (ProviderId::Claude, ProviderKind::Native),
-            (ProviderId::Devin, ProviderKind::Bridged),
-            (ProviderId::Hermes, ProviderKind::Bridged),
-            (ProviderId::Pi, ProviderKind::Bridged),
-            (ProviderId::Dsh, ProviderKind::Bridged),
+            ProviderId::Codex,
+            ProviderId::Claude,
+            ProviderId::Devin,
+            ProviderId::Hermes,
+            ProviderId::Pi,
+            ProviderId::Dsh,
         ]
     );
 }
@@ -174,7 +183,12 @@ fn registry_declares_all_six_providers_with_native_ones_first() {
 fn every_provider_declares_the_sync_kind_of_its_mutable_config() {
     let declared: Vec<_> = PROVIDERS
         .iter()
-        .map(|spec| (spec.key, spec.config_sync.map(|sync| format!("{sync:?}"))))
+        .map(|spec| {
+            (
+                spec.key,
+                spec.config.map(|config| format!("{:?}", config.sync)),
+            )
+        })
         .collect();
     assert_eq!(
         declared,
@@ -187,10 +201,68 @@ fn every_provider_declares_the_sync_kind_of_its_mutable_config() {
             ("dsh", Some("RegisterBundle".to_owned())),
         ]
     );
-    assert!(matches!(
-        ProviderId::Claude.spec().config_sync,
-        Some(ConfigSync::MergeClaudeSettings)
-    ));
+}
+
+#[test]
+fn claude_and_devin_keep_hook_registration_and_config_in_one_file() {
+    for (id, registration, path) in [
+        (
+            ProviderId::Claude,
+            HookRegistration::InSettings(".claude/settings.json"),
+            ".claude/settings.json",
+        ),
+        (
+            ProviderId::Devin,
+            HookRegistration::File(".config/devin/config.json"),
+            ".config/devin/config.json",
+        ),
+    ] {
+        let spec = id.spec();
+        assert_eq!(spec.hooks.registration, registration);
+        assert_eq!(spec.config.map(|config| config.path), Some(path));
+        assert_eq!(spec.config_file(), None, "{} is published once", spec.key);
+    }
+    assert_eq!(
+        ProviderId::Codex.spec().config_file(),
+        Some(".codex/config.toml")
+    );
+    assert_eq!(ProviderId::Dsh.spec().config_file(), None);
+}
+
+#[test]
+fn every_provider_declares_how_it_enforces_command_rules() {
+    let declared: Vec<_> = PROVIDERS
+        .iter()
+        .map(|spec| (spec.key, spec.command_rules))
+        .collect();
+    let claude = ProviderId::Claude.spec().command_rules;
+    assert!(matches!(claude, CommandRules::ClaudeRules { .. }));
+    assert_eq!(
+        claude.generated_files(),
+        [
+            ".claude/hooks/rules/command_permissions.json",
+            ".claude/hooks/rules/protected_paths.json"
+        ]
+    );
+    assert_eq!(claude.source_files().len(), 4);
+    assert_eq!(
+        declared
+            .iter()
+            .filter(|(_, rules)| *rules == CommandRules::None)
+            .map(|(key, _)| *key)
+            .collect::<Vec<_>>(),
+        ["hermes", "pi", "dsh"]
+    );
+    assert_eq!(
+        ProviderId::Codex.spec().command_rules,
+        CommandRules::CodexExecpolicy {
+            rules_file: ".codex/rules/default.rules"
+        }
+    );
+    assert_eq!(
+        ProviderId::Devin.spec().command_rules,
+        CommandRules::DevinHookBlock
+    );
 }
 
 #[test]
@@ -213,14 +285,17 @@ fn claude_and_codex_declare_their_instructions_skills_and_statusline() {
     );
     assert_eq!(
         claude
-            .synced_directory
-            .map(|directory| (directory.source, directory.destination)),
-        Some(("claude/statusline", ".claude/statusline"))
+            .config
+            .iter()
+            .flat_map(|config| config.directories)
+            .map(|directory| (directory.source, directory.destination))
+            .collect::<Vec<_>>(),
+        [("claude/statusline", ".claude/statusline")]
     );
 }
 
 #[test]
-fn rendering_fails_when_a_native_provider_drops_a_declared_generated_file() -> Result<()> {
+fn rendering_writes_command_rules_where_the_provider_declares_them() -> Result<()> {
     let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/complete-source");
     let out = crate::filesystem::TemporaryDirectory::create()?;
     let renderer = ProviderRenderer {
@@ -228,19 +303,26 @@ fn rendering_fails_when_a_native_provider_drops_a_declared_generated_file() -> R
         providers: PROVIDERS,
         out: out.path(),
     };
-    let codex_without_rules = ProviderSpec {
-        managed_files: &[],
+    let codex_elsewhere = ProviderSpec {
+        command_rules: CommandRules::CodexExecpolicy {
+            rules_file: ".codex/rules/elsewhere.rules",
+        },
         ..ProviderId::Codex.spec().clone()
     };
-    let claude_without_policies = ProviderSpec {
-        generated_files: &[],
-        ..ProviderId::Claude.spec().clone()
+    let codex_without_rules = ProviderSpec {
+        command_rules: CommandRules::None,
+        ..ProviderId::Codex.spec().clone()
     };
 
-    let codex = renderer.render(&codex_without_rules).unwrap_err();
-    let claude = renderer.render(&claude_without_policies).unwrap_err();
-
-    assert!(codex.to_string().contains("exactly one rules file"));
-    assert!(claude.to_string().contains("protected paths"));
+    renderer.render(&codex_elsewhere)?;
+    assert!(out.path().join(".codex/rules/elsewhere.rules").is_file());
+    assert!(!out.path().join(".codex/rules/default.rules").exists());
+    let rendered = crate::filesystem::TemporaryDirectory::create()?;
+    ProviderRenderer {
+        out: rendered.path(),
+        ..renderer
+    }
+    .render(&codex_without_rules)?;
+    assert!(!rendered.path().join(".codex/rules").exists());
     Ok(())
 }

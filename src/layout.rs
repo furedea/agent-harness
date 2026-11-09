@@ -1,4 +1,4 @@
-use crate::provider::spec::{ProviderId, ProviderKind, ProviderSpec, SkillsSource};
+use crate::provider::spec::{ProviderId, ProviderSpec, SkillsSource};
 use std::path::{Path, PathBuf};
 
 const MANIFEST_PATH: &str = "manifest.json";
@@ -109,46 +109,20 @@ impl<'a> InstalledLayout<'a> {
             .join("config.yaml")
     }
 
-    /// Directories published as a whole, native providers first.
-    ///
-    /// Native and bridged providers are grouped this way to keep the legacy installation
-    /// order: hook directories, then bridged assets, then native statusline and skills.
+    /// Directories published as a whole, in registry order.
     pub(crate) fn managed_directories_for(self, providers: &[ProviderSpec]) -> Vec<PathBuf> {
-        let native = || of_kind(providers, ProviderKind::Native);
-        let bridged = || of_kind(providers, ProviderKind::Bridged);
-        native()
-            .map(|spec| spec.hooks_dir)
-            .chain(bridged().flat_map(bridged_directories))
-            .chain(
-                native()
-                    .filter_map(|spec| spec.synced_directory)
-                    .map(|directory| directory.destination),
-            )
-            .chain(
-                native()
-                    .filter_map(|spec| spec.skills)
-                    .map(|skills| skills.destination),
-            )
+        providers
+            .iter()
+            .flat_map(managed_directories)
             .map(|path| self.root.join(path))
             .collect()
     }
 
+    /// Files published individually, in registry order.
     pub(crate) fn managed_files_for(self, providers: &[ProviderSpec]) -> Vec<PathBuf> {
-        let native = || of_kind(providers, ProviderKind::Native);
-        let bridged = || of_kind(providers, ProviderKind::Bridged);
-        native()
-            .filter_map(|spec| spec.instructions)
-            .chain(native().map(|spec| spec.hook_manifest))
-            .chain(native().flat_map(|spec| spec.managed_files.iter().copied()))
-            .chain(native().filter_map(|spec| spec.managed_config))
-            .chain(bridged().flat_map(bridged_files))
-            .chain(
-                providers
-                    .iter()
-                    .filter(|spec| spec.managed_asset_directory.is_none())
-                    .flat_map(|spec| spec.assets.iter())
-                    .map(|asset| asset.destination),
-            )
+        providers
+            .iter()
+            .flat_map(managed_files)
             .map(|path| self.root.join(path))
             .collect()
     }
@@ -161,10 +135,10 @@ impl<'a> InstalledLayout<'a> {
     ) -> Vec<(PathBuf, PathBuf)> {
         let hooks = providers
             .iter()
-            .map(|spec| (spec.source_hooks, spec.hooks_dir));
+            .map(|spec| (spec.hooks.source, spec.hooks.scripts_dir));
         let directories = providers
             .iter()
-            .filter_map(|spec| spec.synced_directory)
+            .flat_map(ProviderSpec::config_directories)
             .map(|directory| (directory.source, directory.destination));
         hooks
             .chain(directories)
@@ -182,7 +156,7 @@ impl<'a> InstalledLayout<'a> {
         files.extend(
             providers
                 .iter()
-                .flat_map(|spec| spec.generated_files.iter())
+                .flat_map(|spec| spec.command_rules.generated_files())
                 .map(|path| self.root.join(path)),
         );
         files.extend([
@@ -216,32 +190,44 @@ impl<'a> InstalledLayout<'a> {
     }
 }
 
-fn of_kind(
-    providers: &[ProviderSpec],
-    kind: ProviderKind,
-) -> impl Iterator<Item = &ProviderSpec> + Clone {
-    providers.iter().filter(move |spec| spec.kind == kind)
-}
-
-fn bridged_directories(spec: &ProviderSpec) -> impl Iterator<Item = &'static str> {
-    std::iter::once(spec.hooks_dir)
-        .chain(spec.managed_asset_directory)
+fn managed_directories(spec: &ProviderSpec) -> impl Iterator<Item = &'static str> {
+    let config_directories = spec
+        .config_directories()
+        .iter()
+        .map(|directory| directory.destination);
+    std::iter::once(spec.hooks.scripts_dir)
+        .chain(spec.hooks.bridge.directory)
+        .chain(config_directories)
         .chain(spec.skills.map(|skills| skills.destination))
 }
 
-fn verified_files(spec: &ProviderSpec) -> impl Iterator<Item = &'static str> {
-    std::iter::once(spec.hook_manifest)
-        .chain(spec.managed_config)
-        .chain(spec.instructions)
-        .chain(spec.managed_files.iter().copied())
-        .chain(spec.generated_files.iter().copied())
-        .chain(spec.source_files.iter().copied())
-        .chain(spec.assets.iter().map(|asset| asset.destination))
+/// Files published individually: rendered files first, then bridge assets outside a directory.
+fn managed_files(spec: &ProviderSpec) -> impl Iterator<Item = &'static str> {
+    let loose_assets = spec
+        .hooks
+        .bridge
+        .directory
+        .is_none()
+        .then_some(spec.hooks.bridge.assets)
+        .into_iter()
+        .flatten()
+        .map(|asset| asset.destination);
+    rendered_files(spec).chain(loose_assets)
 }
 
-fn bridged_files(spec: &ProviderSpec) -> impl Iterator<Item = &'static str> {
-    std::iter::once(spec.hook_manifest)
-        .chain(spec.managed_config)
-        .chain(spec.instructions)
-        .chain(spec.managed_files.iter().copied())
+fn rendered_files(spec: &ProviderSpec) -> impl Iterator<Item = &'static str> {
+    spec.instructions
+        .into_iter()
+        .chain([spec.hooks.registration.path()])
+        .chain(spec.config_file())
+        .chain(spec.command_rules.published_file())
+}
+
+fn verified_files(spec: &ProviderSpec) -> impl Iterator<Item = &'static str> {
+    let rules = spec.command_rules;
+    let assets = spec.hooks.bridge.assets.iter();
+    rendered_files(spec)
+        .chain(rules.generated_files())
+        .chain(rules.source_files().iter().copied())
+        .chain(assets.map(|asset| asset.destination))
 }

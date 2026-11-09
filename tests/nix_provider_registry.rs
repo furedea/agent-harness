@@ -20,9 +20,12 @@ fn nix_providers_match_rust_registry_and_managed_link_destinations() {
             .find(|p| p.key == provider["id"])
             .unwrap();
         assert_eq!(provider["home_dir"], rust.home_dir);
-        assert_eq!(provider["hook_manifest"], rust.hook_manifest);
+        assert_eq!(provider["hook_manifest"], rust.hooks.registration.path());
         assert_eq!(provider["display_name"], rust.display_name);
-        assert_eq!(provider["sync"].is_null(), rust.config_sync.is_none());
+        assert_eq!(provider["sync"].is_null(), rust.config.is_none());
+        if let Some(config) = rust.config {
+            assert_eq!(provider["sync"]["source"], config.path);
+        }
         let links = provider["linked_paths"].as_object().unwrap();
         assert_eq!(
             links.keys().map(String::as_str).collect::<BTreeSet<_>>(),
@@ -41,22 +44,28 @@ fn expected_links<'a>(
     provider: &serde_json::Value,
     rust: &'a spec::ProviderSpec,
 ) -> BTreeSet<&'a str> {
-    let mut expected = BTreeSet::from([rust.hooks_dir]);
-    if provider["sync"]["source"] == rust.hook_manifest {
-        // The manifest is itself the mutable config, so activation syncs it instead.
-    } else if rust.hook_manifest.starts_with(rust.home_dir) {
-        expected.insert(rust.hook_manifest);
+    let registration = rust.hooks.registration.path();
+    let mut expected = BTreeSet::from([rust.hooks.scripts_dir]);
+    if provider["sync"]["source"] == registration {
+        // The registration is itself the mutable config, so activation syncs it instead.
+    } else if registration.starts_with(rust.home_dir) {
+        expected.insert(registration);
     }
-    for asset in rust.assets {
-        if let Some(directory) = rust.managed_asset_directory {
+    for asset in rust.hooks.bridge.assets {
+        if let Some(directory) = rust.hooks.bridge.directory {
             assert!(asset.destination.starts_with(&format!("{directory}/")));
         }
-        expected.insert(rust.managed_asset_directory.unwrap_or(asset.destination));
+        expected.insert(rust.hooks.bridge.directory.unwrap_or(asset.destination));
     }
     expected.extend(rust.instructions);
     expected.extend(rust.skills.map(|skills| skills.destination));
-    expected.extend(rust.synced_directory.map(|directory| directory.destination));
-    expected.extend(rust.managed_files);
+    expected.extend(
+        rust.config
+            .iter()
+            .flat_map(|config| config.directories)
+            .map(|directory| directory.destination),
+    );
+    expected.extend(rust.command_rules.published_file());
     expected
 }
 

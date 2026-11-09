@@ -215,7 +215,7 @@ pub(crate) fn shorten_hook_path_for(
 ) -> String {
     providers
         .iter()
-        .map(|spec| spec.hooks_dir)
+        .map(|spec| spec.hooks.scripts_dir)
         .find_map(|dir| part.strip_prefix(&format!("$HOME/{dir}/")))
         .unwrap_or(part)
         .to_owned()

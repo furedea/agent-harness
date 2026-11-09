@@ -15,12 +15,14 @@ pub(crate) struct SyncPaths<'a> {
 
 pub(crate) fn sync(spec: &ProviderSpec, paths: &SyncPaths<'_>, home: &Path) -> Result<()> {
     let SyncPaths { source, target } = *paths;
-    match spec.config_sync {
-        Some(ConfigSync::MergeClaudeSettings) => claude_config::sync_settings(source, target, home),
-        Some(ConfigSync::MergeToml) => codex_config::sync_managed_config(source, target),
-        Some(ConfigSync::MergeTopLevelJson) => devin_config::sync_config(source, target),
-        Some(ConfigSync::MergeYaml) => hermes_config::sync_config(source, target),
-        Some(ConfigSync::RegisterBundle) => dsh_config::sync_config(source, target),
-        None => bail!("{} has no managed config to sync", spec.key),
+    let Some(config) = spec.config else {
+        bail!("{} has no managed config to sync", spec.key);
+    };
+    match config.sync {
+        ConfigSync::MergeClaudeSettings => claude_config::sync_settings(source, target, home),
+        ConfigSync::MergeToml => codex_config::sync_managed_config(source, target),
+        ConfigSync::MergeTopLevelJson => devin_config::sync_config(source, target),
+        ConfigSync::MergeYaml => hermes_config::sync_config(source, target),
+        ConfigSync::RegisterBundle => dsh_config::sync_config(source, target),
     }
 }

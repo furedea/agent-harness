@@ -52,8 +52,9 @@ pub(crate) fn install(context: GenerationContext<'_>, out: &Path) -> Result<()> 
 fn carry_over_mutable_toml_configs(installed: &Path, staging: &Path) -> Result<()> {
     PROVIDERS
         .iter()
-        .filter(|spec| matches!(spec.config_sync, Some(ConfigSync::MergeToml)))
-        .filter_map(|spec| spec.managed_config)
+        .filter_map(|spec| spec.config)
+        .filter(|config| config.sync == ConfigSync::MergeToml)
+        .map(|config| config.path)
         .filter(|path| installed.join(path).exists())
         .try_for_each(|path| RealFileSystem.copy_file(&installed.join(path), &staging.join(path)))
 }

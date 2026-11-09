@@ -1,4 +1,4 @@
-use crate::provider::spec::{PROVIDERS, ProviderId, ProviderSpec};
+use crate::provider::spec::{CommandRules, PROVIDERS, ProviderId, ProviderSpec};
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -90,7 +90,7 @@ fn provider_hooks_for_runtime(
         bundle.merge_provider_hooks(&mut hooks, spec)?;
     }
     relocate_commands(&mut hooks, context.runtime_root);
-    if spec.permissions {
+    if spec.command_rules == CommandRules::DevinHookBlock {
         hooks
             .as_object_mut()
             .expect("validated hook section")
