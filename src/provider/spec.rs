@@ -67,7 +67,7 @@ pub(crate) struct Bridge {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct Hooks {
+pub(crate) struct HookSpec {
     /// Directory of the source tree that holds the hook scripts.
     pub(crate) source: &'static str,
     pub(crate) scripts_dir: &'static str,
@@ -78,22 +78,21 @@ pub(crate) struct Hooks {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum SkillsSource {
+pub(crate) enum SkillSource {
     RenderClaude,
     RenderCodex,
     CopyCodex,
 }
 
 #[derive(Debug)]
-pub(crate) struct Skills {
+pub(crate) struct SkillSpec {
     pub(crate) destination: &'static str,
-    pub(crate) source: SkillsSource,
+    pub(crate) source: SkillSource,
 }
 
-/// How a provider enforces the command rules.
+/// How a provider enforces the command rules, for providers that do.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum CommandRules {
-    None,
+pub(crate) enum CommandRuleSpec {
     /// Rules are a `permissions` block inside the hook registration.
     DevinHookBlock,
     /// Rules are files inside the hooks directory.
@@ -104,17 +103,15 @@ pub(crate) enum CommandRules {
         source_files: &'static [&'static str],
     },
     /// Rules are one execpolicy file published on its own.
-    CodexExecpolicy {
-        rules_file: &'static str,
-    },
+    CodexExecpolicy { rules_file: &'static str },
 }
 
-impl CommandRules {
+impl CommandRuleSpec {
     /// The rules file published individually.
     pub(crate) fn published_file(self) -> Option<&'static str> {
         match self {
             Self::CodexExecpolicy { rules_file } => Some(rules_file),
-            Self::None | Self::DevinHookBlock | Self::ClaudeRules { .. } => None,
+            Self::DevinHookBlock | Self::ClaudeRules { .. } => None,
         }
     }
 
@@ -126,21 +123,21 @@ impl CommandRules {
                 protected_paths,
                 ..
             } => vec![permissions, protected_paths],
-            Self::None | Self::DevinHookBlock | Self::CodexExecpolicy { .. } => Vec::new(),
+            Self::DevinHookBlock | Self::CodexExecpolicy { .. } => Vec::new(),
         }
     }
 
     pub(crate) fn source_files(self) -> &'static [&'static str] {
         match self {
             Self::ClaudeRules { source_files, .. } => source_files,
-            Self::None | Self::DevinHookBlock | Self::CodexExecpolicy { .. } => &[],
+            Self::DevinHookBlock | Self::CodexExecpolicy { .. } => &[],
         }
     }
 }
 
 /// The provider's mutable config and how installation syncs the rendered one into it.
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct Config {
+pub(crate) struct ConfigSpec {
     /// The rendered config the sync reads: a file, or the bundle directory for `RegisterBundle`.
     /// It may be the hook registration itself when the provider keeps both in one file.
     pub(crate) path: &'static str,
@@ -154,15 +151,34 @@ pub(crate) struct ProviderSpec {
     pub(crate) id: ProviderId,
     pub(crate) key: &'static str,
     pub(crate) display_name: &'static str,
+    /// What the harness installs for the provider. Only the generated `nix/providers.json` reads it.
+    #[allow(dead_code, reason = "read only by tests/nix_provider_registry.rs")]
+    pub(crate) harness_name: &'static str,
     pub(crate) home_dir: &'static str,
-    pub(crate) hooks: Hooks,
-    pub(crate) skills: Option<&'static Skills>,
+    pub(crate) hook: HookSpec,
+    pub(crate) skill: Option<&'static SkillSpec>,
     pub(crate) instructions: Option<&'static str>,
-    pub(crate) command_rules: CommandRules,
-    pub(crate) config: Option<Config>,
+    pub(crate) command_rule: Option<CommandRuleSpec>,
+    pub(crate) config: Option<ConfigSpec>,
 }
 
 impl ProviderSpec {
+    /// The rules file published individually.
+    pub(crate) fn published_rule_file(&self) -> Option<&'static str> {
+        self.command_rule.and_then(CommandRuleSpec::published_file)
+    }
+
+    /// Rule files rendered inside the hooks directory after it is synced.
+    pub(crate) fn generated_rule_files(&self) -> Vec<&'static str> {
+        self.command_rule
+            .map_or_else(Vec::new, CommandRuleSpec::generated_files)
+    }
+
+    /// Rule files that the hooks directory takes from the source.
+    pub(crate) fn source_rule_files(&self) -> &'static [&'static str] {
+        self.command_rule.map_or(&[], CommandRuleSpec::source_files)
+    }
+
     /// Source directories the provider's config refers to.
     pub(crate) fn config_directories(&self) -> &'static [SyncedDirectory] {
         self.config.map_or(&[], |config| config.directories)
@@ -174,7 +190,7 @@ impl ProviderSpec {
         self.config
             .filter(|config| config.sync != ConfigSync::RegisterBundle)
             .map(|config| config.path)
-            .filter(|path| *path != self.hooks.registration.path())
+            .filter(|path| *path != self.hook.registration.path())
     }
 }
 
@@ -183,8 +199,9 @@ pub(crate) const PROVIDERS: &[ProviderSpec] = &[
         id: ProviderId::Codex,
         key: "codex",
         display_name: "Codex",
+        harness_name: "Codex harness",
         home_dir: ".codex",
-        hooks: Hooks {
+        hook: HookSpec {
             source: "codex/hooks",
             scripts_dir: ".codex/hooks",
             registration: HookRegistration::File(".codex/hooks.json"),
@@ -194,15 +211,15 @@ pub(crate) const PROVIDERS: &[ProviderSpec] = &[
                 assets: &[],
             },
         },
-        skills: Some(&Skills {
+        skill: Some(&SkillSpec {
             destination: ".codex/skills",
-            source: SkillsSource::RenderCodex,
+            source: SkillSource::RenderCodex,
         }),
         instructions: Some(".codex/AGENTS.md"),
-        command_rules: CommandRules::CodexExecpolicy {
+        command_rule: Some(CommandRuleSpec::CodexExecpolicy {
             rules_file: ".codex/rules/default.rules",
-        },
-        config: Some(Config {
+        }),
+        config: Some(ConfigSpec {
             path: ".codex/config.toml",
             sync: ConfigSync::MergeToml,
             directories: &[],
@@ -212,8 +229,9 @@ pub(crate) const PROVIDERS: &[ProviderSpec] = &[
         id: ProviderId::Claude,
         key: "claude",
         display_name: "Claude",
+        harness_name: "Claude Code harness",
         home_dir: ".claude",
-        hooks: Hooks {
+        hook: HookSpec {
             source: "hooks",
             scripts_dir: ".claude/hooks",
             registration: HookRegistration::InSettings(".claude/settings.json"),
@@ -223,12 +241,12 @@ pub(crate) const PROVIDERS: &[ProviderSpec] = &[
                 assets: &[],
             },
         },
-        skills: Some(&Skills {
+        skill: Some(&SkillSpec {
             destination: ".claude/skills",
-            source: SkillsSource::RenderClaude,
+            source: SkillSource::RenderClaude,
         }),
         instructions: Some(".claude/CLAUDE.md"),
-        command_rules: CommandRules::ClaudeRules {
+        command_rule: Some(CommandRuleSpec::ClaudeRules {
             permissions: ".claude/hooks/rules/command_permissions.json",
             protected_paths: ".claude/hooks/rules/protected_paths.json",
             source_files: &[
@@ -237,9 +255,9 @@ pub(crate) const PROVIDERS: &[ProviderSpec] = &[
                 ".claude/hooks/rules/secret_commit_policy.json",
                 ".claude/hooks/rules/secret_path_policy.json",
             ],
-        },
+        }),
         // settings.json is also the hook registration: one file, two roles.
-        config: Some(Config {
+        config: Some(ConfigSpec {
             path: ".claude/settings.json",
             sync: ConfigSync::MergeClaudeSettings,
             directories: &[SyncedDirectory {
@@ -252,8 +270,9 @@ pub(crate) const PROVIDERS: &[ProviderSpec] = &[
         id: ProviderId::Devin,
         key: "devin",
         display_name: "Devin",
+        harness_name: "Devin CLI harness",
         home_dir: ".devin",
-        hooks: Hooks {
+        hook: HookSpec {
             source: "devin/hooks",
             scripts_dir: ".devin/hooks",
             registration: HookRegistration::File(".config/devin/config.json"),
@@ -263,11 +282,11 @@ pub(crate) const PROVIDERS: &[ProviderSpec] = &[
                 assets: &[],
             },
         },
-        skills: None,
+        skill: None,
         instructions: None,
-        command_rules: CommandRules::DevinHookBlock,
+        command_rule: Some(CommandRuleSpec::DevinHookBlock),
         // config.json is also the hook registration: one file, two roles.
-        config: Some(Config {
+        config: Some(ConfigSpec {
             path: ".config/devin/config.json",
             sync: ConfigSync::MergeTopLevelJson,
             directories: &[],
@@ -277,8 +296,9 @@ pub(crate) const PROVIDERS: &[ProviderSpec] = &[
         id: ProviderId::Hermes,
         key: "hermes",
         display_name: "Hermes",
+        harness_name: "Hermes Agent harness",
         home_dir: ".hermes",
-        hooks: Hooks {
+        hook: HookSpec {
             source: "hermes/hooks",
             scripts_dir: ".hermes/hooks",
             registration: HookRegistration::File(".hermes/hooks.json"),
@@ -297,10 +317,10 @@ pub(crate) const PROVIDERS: &[ProviderSpec] = &[
                 ],
             },
         },
-        skills: None,
+        skill: None,
         instructions: None,
-        command_rules: CommandRules::None,
-        config: Some(Config {
+        command_rule: None,
+        config: Some(ConfigSpec {
             path: ".hermes/managed-config.yaml",
             sync: ConfigSync::MergeYaml,
             directories: &[],
@@ -310,8 +330,9 @@ pub(crate) const PROVIDERS: &[ProviderSpec] = &[
         id: ProviderId::Pi,
         key: "pi",
         display_name: "Pi",
+        harness_name: "pi harness",
         home_dir: ".pi",
-        hooks: Hooks {
+        hook: HookSpec {
             source: "pi/hooks",
             scripts_dir: ".pi/hooks",
             registration: HookRegistration::File(".pi/agent/hooks.json"),
@@ -324,17 +345,18 @@ pub(crate) const PROVIDERS: &[ProviderSpec] = &[
                 }],
             },
         },
-        skills: None,
+        skill: None,
         instructions: None,
-        command_rules: CommandRules::None,
+        command_rule: None,
         config: None,
     },
     ProviderSpec {
         id: ProviderId::Dsh,
         key: "dsh",
         display_name: "Dsh",
+        harness_name: "DeepSeek Harness",
         home_dir: ".dsh",
-        hooks: Hooks {
+        hook: HookSpec {
             source: "dsh/hooks",
             scripts_dir: ".dsh/hooks",
             registration: HookRegistration::File(".dsh/hooks.json"),
@@ -357,13 +379,13 @@ pub(crate) const PROVIDERS: &[ProviderSpec] = &[
                 ],
             },
         },
-        skills: Some(&Skills {
+        skill: Some(&SkillSpec {
             destination: ".dsh/skills",
-            source: SkillsSource::CopyCodex,
+            source: SkillSource::CopyCodex,
         }),
         instructions: Some(".dsh/AGENTS.md"),
-        command_rules: CommandRules::None,
-        config: Some(Config {
+        command_rule: None,
+        config: Some(ConfigSpec {
             path: ".dsh/bridge",
             sync: ConfigSync::RegisterBundle,
             directories: &[],

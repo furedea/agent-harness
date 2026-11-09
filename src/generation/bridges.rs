@@ -4,7 +4,7 @@ mod tests {
 
     #[test]
     fn hermes_assets_declare_the_manifest_and_register_entrypoint() {
-        let assets = ProviderId::Hermes.spec().hooks.bridge.assets;
+        let assets = ProviderId::Hermes.spec().hook.bridge.assets;
         assert!(
             assets
                 .iter()
@@ -23,7 +23,7 @@ mod tests {
     fn pi_bridge_runs_the_adapter_with_an_isolated_interpreter() {
         let asset = ProviderId::Pi
             .spec()
-            .hooks
+            .hook
             .bridge
             .assets
             .iter()

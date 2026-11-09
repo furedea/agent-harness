@@ -1,6 +1,6 @@
 use super::spec::{
-    Asset, Bridge, CommandRules, Config, ConfigSync, HookRegistration, Hooks, PROVIDERS,
-    ProviderId, ProviderSpec, Skills, SkillsSource,
+    Asset, Bridge, CommandRuleSpec, ConfigSpec, ConfigSync, HookRegistration, HookSpec, PROVIDERS,
+    ProviderId, ProviderSpec, SkillSource, SkillSpec,
 };
 use crate::{
     filesystem::RealFileSystem,
@@ -20,7 +20,7 @@ fn extra_spec_flows_through_layout_protection_rendering_and_publication() -> Res
         key: "example",
         display_name: "Example",
         home_dir: ".example",
-        hooks: Hooks {
+        hook: HookSpec {
             source: "hooks",
             scripts_dir: ".example/hooks",
             registration: HookRegistration::File(".example/hooks.json"),
@@ -34,11 +34,11 @@ fn extra_spec_flows_through_layout_protection_rendering_and_publication() -> Res
             },
         },
         instructions: Some(".example/AGENTS.md"),
-        skills: Some(&Skills {
+        skill: Some(&SkillSpec {
             destination: ".example/skills",
-            source: SkillsSource::CopyCodex,
+            source: SkillSource::CopyCodex,
         }),
-        config: Some(Config {
+        config: Some(ConfigSpec {
             path: ".example/managed.yaml",
             sync: ConfigSync::MergeYaml,
             directories: &[],
@@ -218,7 +218,7 @@ fn claude_and_devin_keep_hook_registration_and_config_in_one_file() {
         ),
     ] {
         let spec = id.spec();
-        assert_eq!(spec.hooks.registration, registration);
+        assert_eq!(spec.hook.registration, registration);
         assert_eq!(spec.config.map(|config| config.path), Some(path));
         assert_eq!(spec.config_file(), None, "{} is published once", spec.key);
     }
@@ -231,37 +231,34 @@ fn claude_and_devin_keep_hook_registration_and_config_in_one_file() {
 
 #[test]
 fn every_provider_declares_how_it_enforces_command_rules() {
-    let declared: Vec<_> = PROVIDERS
-        .iter()
-        .map(|spec| (spec.key, spec.command_rules))
-        .collect();
-    let claude = ProviderId::Claude.spec().command_rules;
-    assert!(matches!(claude, CommandRules::ClaudeRules { .. }));
+    let claude = ProviderId::Claude.spec();
+    assert!(matches!(
+        claude.command_rule,
+        Some(CommandRuleSpec::ClaudeRules { .. })
+    ));
     assert_eq!(
-        claude.generated_files(),
+        claude.generated_rule_files(),
         [
             ".claude/hooks/rules/command_permissions.json",
             ".claude/hooks/rules/protected_paths.json"
         ]
     );
-    assert_eq!(claude.source_files().len(), 4);
+    assert_eq!(claude.source_rule_files().len(), 4);
+    let without_rules: Vec<_> = PROVIDERS
+        .iter()
+        .filter(|spec| spec.command_rule.is_none())
+        .map(|spec| spec.key)
+        .collect();
+    assert_eq!(without_rules, ["hermes", "pi", "dsh"]);
     assert_eq!(
-        declared
-            .iter()
-            .filter(|(_, rules)| *rules == CommandRules::None)
-            .map(|(key, _)| *key)
-            .collect::<Vec<_>>(),
-        ["hermes", "pi", "dsh"]
-    );
-    assert_eq!(
-        ProviderId::Codex.spec().command_rules,
-        CommandRules::CodexExecpolicy {
+        ProviderId::Codex.spec().command_rule,
+        Some(CommandRuleSpec::CodexExecpolicy {
             rules_file: ".codex/rules/default.rules"
-        }
+        })
     );
     assert_eq!(
-        ProviderId::Devin.spec().command_rules,
-        CommandRules::DevinHookBlock
+        ProviderId::Devin.spec().command_rule,
+        Some(CommandRuleSpec::DevinHookBlock)
     );
 }
 
@@ -272,16 +269,12 @@ fn claude_and_codex_declare_their_instructions_skills_and_statusline() {
     assert_eq!(claude.instructions, Some(".claude/CLAUDE.md"));
     assert_eq!(codex.instructions, Some(".codex/AGENTS.md"));
     assert_eq!(
-        claude
-            .skills
-            .map(|skills| (skills.destination, skills.source)),
-        Some((".claude/skills", SkillsSource::RenderClaude))
+        claude.skill.map(|skill| (skill.destination, skill.source)),
+        Some((".claude/skills", SkillSource::RenderClaude))
     );
     assert_eq!(
-        codex
-            .skills
-            .map(|skills| (skills.destination, skills.source)),
-        Some((".codex/skills", SkillsSource::RenderCodex))
+        codex.skill.map(|skill| (skill.destination, skill.source)),
+        Some((".codex/skills", SkillSource::RenderCodex))
     );
     assert_eq!(
         claude
@@ -304,13 +297,13 @@ fn rendering_writes_command_rules_where_the_provider_declares_them() -> Result<(
         out: out.path(),
     };
     let codex_elsewhere = ProviderSpec {
-        command_rules: CommandRules::CodexExecpolicy {
+        command_rule: Some(CommandRuleSpec::CodexExecpolicy {
             rules_file: ".codex/rules/elsewhere.rules",
-        },
+        }),
         ..ProviderId::Codex.spec().clone()
     };
     let codex_without_rules = ProviderSpec {
-        command_rules: CommandRules::None,
+        command_rule: None,
         ..ProviderId::Codex.spec().clone()
     };
 

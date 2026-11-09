@@ -1,126 +1,126 @@
 [
   {
-    "id": "codex",
     "display_name": "Codex",
-    "option_description": "Whether to install Codex harness files.",
+    "extra_options": {},
     "home_dir": ".codex",
     "hook_manifest": ".codex/hooks.json",
+    "id": "codex",
     "linked_paths": {
+      ".codex/AGENTS.md": {},
       ".codex/hooks": {},
       ".codex/hooks.json": {},
-      ".codex/AGENTS.md": {},
       ".codex/rules/default.rules": {},
       ".codex/skills": {
         "skills_provider": "codex"
       }
     },
+    "option_description": "Whether to install Codex harness files.",
     "sync": {
       "activation": "agentHarnessCodexConfig",
       "after": "writeBoundary",
       "command": "sync-codex-config",
       "source": ".codex/config.toml",
       "target": ".codex/config.toml"
-    },
-    "extra_options": {}
+    }
   },
   {
-    "id": "claude",
     "display_name": "Claude",
-    "option_description": "Whether to install Claude Code harness files.",
+    "extra_options": {},
     "home_dir": ".claude",
     "hook_manifest": ".claude/settings.json",
+    "id": "claude",
     "linked_paths": {
-      ".claude/hooks": {},
       ".claude/CLAUDE.md": {},
-      ".claude/statusline": {},
+      ".claude/hooks": {},
       ".claude/skills": {
         "skills_provider": "claude"
-      }
+      },
+      ".claude/statusline": {}
     },
+    "option_description": "Whether to install Claude Code harness files.",
     "sync": {
       "activation": "agentHarnessClaudeSettings",
       "command": "sync-claude-settings",
       "source": ".claude/settings.json",
       "target": ".claude/settings.json"
-    },
-    "extra_options": {}
+    }
   },
   {
-    "id": "devin",
     "display_name": "Devin",
-    "option_description": "Whether to install Devin CLI harness files.",
+    "extra_options": {},
     "home_dir": ".devin",
     "hook_manifest": ".config/devin/config.json",
+    "id": "devin",
     "linked_paths": {
       ".devin/hooks": {}
     },
+    "option_description": "Whether to install Devin CLI harness files.",
     "sync": {
       "activation": "agentHarnessDevinConfig",
       "command": "sync-devin-config",
       "source": ".config/devin/config.json",
       "target": ".config/devin/config.json"
-    },
-    "extra_options": {}
+    }
   },
   {
-    "id": "hermes",
     "display_name": "Hermes",
-    "option_description": "Whether to install Hermes Agent harness files.",
+    "extra_options": {},
     "home_dir": ".hermes",
     "hook_manifest": ".hermes/hooks.json",
+    "id": "hermes",
     "linked_paths": {
       ".hermes/hooks": {},
       ".hermes/hooks.json": {},
       ".hermes/plugins/agent-harness-hooks": {}
     },
+    "option_description": "Whether to install Hermes Agent harness files.",
     "sync": {
       "activation": "agentHarnessHermesConfig",
       "command": "sync-hermes-config",
       "source": ".hermes/managed-config.yaml",
       "target": ".hermes/config.yaml"
-    },
-    "extra_options": {}
+    }
   },
   {
-    "id": "pi",
     "display_name": "Pi",
-    "option_description": "Whether to install pi harness files.",
+    "extra_options": {},
     "home_dir": ".pi",
     "hook_manifest": ".pi/agent/hooks.json",
+    "id": "pi",
     "linked_paths": {
-      ".pi/hooks": {},
+      ".pi/agent/extensions/hook_bridge.ts": {},
       ".pi/agent/hooks.json": {},
-      ".pi/agent/extensions/hook_bridge.ts": {}
+      ".pi/hooks": {}
     },
-    "sync": null,
-    "extra_options": {}
+    "option_description": "Whether to install pi harness files.",
+    "sync": null
   },
   {
-    "id": "dsh",
     "display_name": "Dsh",
-    "option_description": "Whether to install DeepSeek Harness files.",
-    "home_dir": ".dsh",
-    "hook_manifest": ".dsh/hooks.json",
-    "linked_paths": {
-      ".dsh/hooks": {},
-      ".dsh/hooks.json": {},
-      ".dsh/bridge": {},
-      ".dsh/skills": {
-        "skills_provider": "codex"
-      },
-      ".dsh/AGENTS.md": {}
-    },
-    "sync": {
-      "activation": "agentHarnessDshConfig",
-      "command": "sync-dsh-config",
-      "source": ".dsh/bridge",
-      "target": ".dsh/profiles/${profile}/package.json"
-    },
     "extra_options": {
       "profile": {
         "default": "web",
         "description": "User-owned dsh profile to register the hook bundle in."
       }
+    },
+    "home_dir": ".dsh",
+    "hook_manifest": ".dsh/hooks.json",
+    "id": "dsh",
+    "linked_paths": {
+      ".dsh/AGENTS.md": {},
+      ".dsh/bridge": {},
+      ".dsh/hooks": {},
+      ".dsh/hooks.json": {},
+      ".dsh/skills": {
+        "skills_provider": "codex"
+      }
+    },
+    "option_description": "Whether to install DeepSeek Harness files.",
+    "sync": {
+      "activation": "agentHarnessDshConfig",
+      "command": "sync-dsh-config",
+      "source": ".dsh/bridge",
+      "target": ".dsh/profiles/${profile}/package.json"
     }
   }
 ]

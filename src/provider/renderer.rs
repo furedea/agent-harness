@@ -10,7 +10,7 @@ use crate::{
     },
     layout::SourceLayout,
     provider::spec::{
-        CommandRules, ConfigSync, HookRegistration, ProviderSpec, Skills, SkillsSource,
+        CommandRuleSpec, ConfigSync, HookRegistration, ProviderSpec, SkillSource, SkillSpec,
     },
     render::Provider,
 };
@@ -30,10 +30,12 @@ impl ProviderRenderer<'_> {
     pub(crate) fn render(&self, spec: &ProviderSpec) -> Result<()> {
         self.copy_instructions(spec)?;
         self.write_hook_registration(spec)?;
-        spec.skills
-            .map(|skills| self.render_skills(skills))
+        spec.skill
+            .map(|skill| self.render_skill(skill))
             .transpose()?;
-        self.write_command_rules(spec.command_rules)?;
+        spec.command_rule
+            .map(|rule| self.write_command_rule(rule))
+            .transpose()?;
         self.write_config(spec)
     }
 
@@ -46,8 +48,8 @@ impl ProviderRenderer<'_> {
     }
 
     fn write_hook_registration(&self, spec: &ProviderSpec) -> Result<()> {
-        let path = self.out.join(spec.hooks.registration.path());
-        match spec.hooks.registration {
+        let path = self.out.join(spec.hook.registration.path());
+        match spec.hook.registration {
             HookRegistration::InSettings(_) => self.write_settings(&path),
             HookRegistration::File(_) => hooks::write_hooks_for_runtime(self.context, &path, spec),
         }
@@ -57,12 +59,12 @@ impl ProviderRenderer<'_> {
         claude_config::write_settings_for_runtime(self.context, path)
     }
 
-    fn render_skills(&self, skills: &Skills) -> Result<()> {
-        let target = self.out.join(skills.destination);
-        match skills.source {
-            SkillsSource::RenderClaude => self.generate_skills(Provider::Claude, &target),
-            SkillsSource::RenderCodex => self.generate_skills(Provider::Codex, &target),
-            SkillsSource::CopyCodex => self.copy_codex_skills(&target),
+    fn render_skill(&self, skill: &SkillSpec) -> Result<()> {
+        let target = self.out.join(skill.destination);
+        match skill.source {
+            SkillSource::RenderClaude => self.generate_skills(Provider::Claude, &target),
+            SkillSource::RenderCodex => self.generate_skills(Provider::Codex, &target),
+            SkillSource::CopyCodex => self.copy_codex_skills(&target),
         }
     }
 
@@ -77,26 +79,28 @@ impl ProviderRenderer<'_> {
     fn copy_codex_skills(&self, target: &Path) -> Result<()> {
         let codex = crate::provider::spec::ProviderId::Codex
             .spec()
-            .skills
+            .skill
             .expect("Codex has skills");
         RealFileSystem.replace_directory(&self.out.join(codex.destination), target)
     }
 
-    fn write_command_rules(&self, rules: CommandRules) -> Result<()> {
-        match rules {
+    fn write_command_rule(&self, rule: CommandRuleSpec) -> Result<()> {
+        match rule {
             // Devin's rules are written into its hook registration.
-            CommandRules::None | CommandRules::DevinHookBlock => Ok(()),
-            CommandRules::ClaudeRules {
+            CommandRuleSpec::DevinHookBlock => Ok(()),
+            CommandRuleSpec::ClaudeRules {
                 permissions,
                 protected_paths,
                 ..
             } => self
                 .write_policy_files(&self.out.join(permissions), &self.out.join(protected_paths)),
-            CommandRules::CodexExecpolicy { rules_file } => command_permissions::write_codex_rules(
-                self.context.source,
-                &self.out.join(rules_file),
-            ),
+            CommandRuleSpec::CodexExecpolicy { rules_file } => self.write_rules_file(rules_file),
         }
+    }
+
+    fn write_rules_file(&self, rules_file: &str) -> Result<()> {
+        let path = self.out.join(rules_file);
+        command_permissions::write_codex_rules(self.context.source, &path)
     }
 
     fn write_policy_files(&self, permissions: &Path, protected_paths: &Path) -> Result<()> {

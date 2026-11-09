@@ -1,86 +1,164 @@
+//! `nix/providers.json` is generated from the Rust registry, which is the single source.
+//!
+//! The test renders the JSON from `PROVIDERS` and fails when the committed file differs.
+//! Regenerate it with `UPDATE_PROVIDERS_JSON=1 cargo test --test nix_provider_registry`.
+
 use std::collections::BTreeSet;
+use std::path::PathBuf;
+
+use serde_json::{Map, Value, json};
 
 #[allow(dead_code)]
 #[path = "../src/provider/spec.rs"]
 mod spec;
 
+use spec::{ConfigSpec, ConfigSync, ProviderSpec, SkillSource};
+
+const UPDATE_VARIABLE: &str = "UPDATE_PROVIDERS_JSON";
+
 #[test]
-fn nix_providers_match_rust_registry_and_managed_link_destinations() {
-    let providers: Vec<serde_json::Value> =
-        serde_json::from_str(include_str!("../nix/providers.json")).unwrap();
-    let ids: BTreeSet<_> = providers
-        .iter()
-        .map(|p| p["id"].as_str().unwrap())
-        .collect();
-    assert_eq!(ids.len(), providers.len(), "duplicate Nix provider ids");
-    assert_eq!(ids, spec::PROVIDERS.iter().map(|p| p.key).collect());
-    for provider in &providers {
-        let rust = spec::PROVIDERS
-            .iter()
-            .find(|p| p.key == provider["id"])
-            .unwrap();
-        assert_eq!(provider["home_dir"], rust.home_dir);
-        assert_eq!(provider["hook_manifest"], rust.hooks.registration.path());
-        assert_eq!(provider["display_name"], rust.display_name);
-        assert_eq!(provider["sync"].is_null(), rust.config.is_none());
-        if let Some(config) = rust.config {
-            assert_eq!(provider["sync"]["source"], config.path);
-        }
-        let links = provider["linked_paths"].as_object().unwrap();
-        assert_eq!(
-            links.keys().map(String::as_str).collect::<BTreeSet<_>>(),
-            expected_links(provider, rust)
-        );
-        assert!(
-            !links.contains_key(rust.home_dir),
-            "must not link user-owned home directories"
-        );
-        assert_skills_links(links, rust);
+fn nix_providers_json_is_generated_from_the_registry() {
+    let generated = generated_json();
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("nix/providers.json");
+    if std::env::var_os(UPDATE_VARIABLE).is_some() {
+        std::fs::write(&path, &generated).unwrap();
+        return;
     }
+    let committed = std::fs::read_to_string(&path).unwrap();
+    assert!(
+        committed == generated,
+        "nix/providers.json is stale; regenerate it with \
+         `{UPDATE_VARIABLE}=1 cargo test --test nix_provider_registry`"
+    );
+}
+
+#[test]
+fn every_provider_key_is_unique() {
+    let keys: BTreeSet<_> = spec::PROVIDERS.iter().map(|p| p.key).collect();
+    assert_eq!(keys.len(), spec::PROVIDERS.len(), "duplicate provider keys");
+}
+
+fn generated_json() -> String {
+    let providers: Vec<Value> = spec::PROVIDERS.iter().map(provider_json).collect();
+    let mut text = serde_json::to_string_pretty(&providers).unwrap();
+    text.push('\n');
+    text
+}
+
+fn provider_json(spec: &ProviderSpec) -> Value {
+    json!({
+        "id": spec.key,
+        "display_name": spec.display_name,
+        "option_description": format!("Whether to install {} files.", spec.harness_name),
+        "home_dir": spec.home_dir,
+        "hook_manifest": spec.hook.registration.path(),
+        "linked_paths": linked_paths(spec),
+        "sync": spec.config.map_or(Value::Null, |config| sync_json(spec, config)),
+        "extra_options": extra_options(spec),
+    })
 }
 
 /// Paths Home Manager links: everything rendered except mutable files that sync into user config.
-fn expected_links<'a>(
-    provider: &serde_json::Value,
-    rust: &'a spec::ProviderSpec,
-) -> BTreeSet<&'a str> {
-    let registration = rust.hooks.registration.path();
-    let mut expected = BTreeSet::from([rust.hooks.scripts_dir]);
-    if provider["sync"]["source"] == registration {
-        // The registration is itself the mutable config, so activation syncs it instead.
-    } else if registration.starts_with(rust.home_dir) {
-        expected.insert(registration);
-    }
-    for asset in rust.hooks.bridge.assets {
-        if let Some(directory) = rust.hooks.bridge.directory {
-            assert!(asset.destination.starts_with(&format!("{directory}/")));
-        }
-        expected.insert(rust.hooks.bridge.directory.unwrap_or(asset.destination));
-    }
-    expected.extend(rust.instructions);
-    expected.extend(rust.skills.map(|skills| skills.destination));
-    expected.extend(
-        rust.config
-            .iter()
-            .flat_map(|config| config.directories)
-            .map(|directory| directory.destination),
+fn linked_paths(spec: &ProviderSpec) -> Map<String, Value> {
+    let links = linked_destinations(spec);
+    assert!(
+        !links.contains(spec.home_dir),
+        "must not link the user-owned home directory of {}",
+        spec.key
     );
-    expected.extend(rust.command_rules.published_file());
-    expected
+    links
+        .into_iter()
+        .map(|path| (path.to_owned(), link_json(spec, path)))
+        .collect()
 }
 
-fn assert_skills_links(
-    links: &serde_json::Map<String, serde_json::Value>,
-    rust: &spec::ProviderSpec,
-) {
-    let Some(skills) = rust.skills else { return };
-    let rendered_for = match skills.source {
-        spec::SkillsSource::RenderClaude => "claude",
-        spec::SkillsSource::RenderCodex | spec::SkillsSource::CopyCodex => "codex",
+fn linked_destinations(spec: &ProviderSpec) -> BTreeSet<&'static str> {
+    let registration = spec.hook.registration.path();
+    let mut links = BTreeSet::from([spec.hook.scripts_dir]);
+    let registration_is_config = spec
+        .config
+        .is_some_and(|config| config.path == registration);
+    // When the registration is itself the mutable config, activation syncs it instead.
+    if !registration_is_config && registration.starts_with(spec.home_dir) {
+        links.insert(registration);
+    }
+    links.extend(bridge_destinations(spec));
+    links.extend(spec.instructions);
+    links.extend(spec.skill.map(|skill| skill.destination));
+    links.extend(spec.config_directories().iter().map(|d| d.destination));
+    links.extend(spec.published_rule_file());
+    links
+}
+
+fn bridge_destinations(spec: &ProviderSpec) -> BTreeSet<&'static str> {
+    let bridge = spec.hook.bridge;
+    for asset in bridge.assets {
+        if let Some(directory) = bridge.directory {
+            assert!(asset.destination.starts_with(&format!("{directory}/")));
+        }
+    }
+    bridge
+        .assets
+        .iter()
+        .map(|asset| bridge.directory.unwrap_or(asset.destination))
+        .collect()
+}
+
+fn link_json(spec: &ProviderSpec, path: &str) -> Value {
+    match spec.skill.filter(|skill| skill.destination == path) {
+        Some(skill) => json!({ "skills_provider": skills_provider(skill.source) }),
+        None => json!({}),
+    }
+}
+
+fn skills_provider(source: SkillSource) -> &'static str {
+    match source {
+        SkillSource::RenderClaude => "claude",
+        SkillSource::RenderCodex | SkillSource::CopyCodex => "codex",
+    }
+}
+
+fn sync_json(spec: &ProviderSpec, config: ConfigSpec) -> Value {
+    let noun = match config.sync {
+        ConfigSync::MergeClaudeSettings => "Settings",
+        ConfigSync::MergeToml
+        | ConfigSync::MergeTopLevelJson
+        | ConfigSync::MergeYaml
+        | ConfigSync::RegisterBundle => "Config",
     };
-    assert_eq!(
-        links[skills.destination]["skills_provider"], rendered_for,
-        "{} skills must come from the {rendered_for} skills",
-        rust.key
-    );
+    let mut sync = json!({
+        "activation": format!("agentHarness{}{noun}", spec.display_name),
+        "command": format!("sync-{}-{}", spec.key, noun.to_lowercase()),
+        "source": config.path,
+        "target": sync_target(spec, config),
+    });
+    if config.sync == ConfigSync::MergeToml {
+        // Codex's merge runs at the write boundary; the others run after link generation.
+        sync["after"] = json!("writeBoundary");
+    }
+    sync
+}
+
+fn sync_target(spec: &ProviderSpec, config: ConfigSpec) -> String {
+    match config.sync {
+        ConfigSync::MergeYaml => format!("{}/config.yaml", spec.home_dir),
+        ConfigSync::RegisterBundle => {
+            format!("{}/profiles/${{profile}}/package.json", spec.home_dir)
+        }
+        ConfigSync::MergeClaudeSettings | ConfigSync::MergeToml | ConfigSync::MergeTopLevelJson => {
+            config.path.to_owned()
+        }
+    }
+}
+
+fn extra_options(spec: &ProviderSpec) -> Value {
+    match spec.config.map(|config| config.sync) {
+        Some(ConfigSync::RegisterBundle) => json!({
+            "profile": {
+                "default": "web",
+                "description": "User-owned dsh profile to register the hook bundle in.",
+            }
+        }),
+        _ => json!({}),
+    }
 }

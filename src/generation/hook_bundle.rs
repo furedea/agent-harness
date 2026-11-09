@@ -176,12 +176,12 @@ fn capture_supported_files(
     let mut captured = false;
     for relative in PROVIDERS
         .iter()
-        .map(|spec| spec.hooks.external_file)
+        .map(|spec| spec.hook.external_file)
         .chain(ProviderId::Codex.spec().config_file())
     {
         captured |= normalization.capture_file(relative)?;
     }
-    for relative in PROVIDERS.iter().map(|spec| spec.hooks.scripts_dir) {
+    for relative in PROVIDERS.iter().map(|spec| spec.hook.scripts_dir) {
         captured |= capture_dir(relative, staging, output)?;
     }
     captured |= copy_codex_scripts(staging, output)?;

@@ -44,7 +44,7 @@ pub(crate) fn plan_assets_for(
 ) -> Vec<FileOp> {
     providers
         .iter()
-        .flat_map(|spec| spec.hooks.bridge.assets.iter())
+        .flat_map(|spec| spec.hook.bridge.assets.iter())
         .map(|asset| FileOp::WriteFile {
             target: out.join(asset.destination),
             content: asset.content.as_bytes().to_vec(),

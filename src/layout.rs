@@ -1,4 +1,4 @@
-use crate::provider::spec::{ProviderId, ProviderSpec, SkillsSource};
+use crate::provider::spec::{ProviderId, ProviderSpec, SkillSource};
 use std::path::{Path, PathBuf};
 
 const MANIFEST_PATH: &str = "manifest.json";
@@ -135,7 +135,7 @@ impl<'a> InstalledLayout<'a> {
     ) -> Vec<(PathBuf, PathBuf)> {
         let hooks = providers
             .iter()
-            .map(|spec| (spec.hooks.source, spec.hooks.scripts_dir));
+            .map(|spec| (spec.hook.source, spec.hook.scripts_dir));
         let directories = providers
             .iter()
             .flat_map(ProviderSpec::config_directories)
@@ -156,7 +156,7 @@ impl<'a> InstalledLayout<'a> {
         files.extend(
             providers
                 .iter()
-                .flat_map(|spec| spec.command_rules.generated_files())
+                .flat_map(ProviderSpec::generated_rule_files)
                 .map(|path| self.root.join(path)),
         );
         files.extend([
@@ -183,9 +183,9 @@ impl<'a> InstalledLayout<'a> {
     pub(crate) fn verified_directories_for(self, providers: &[ProviderSpec]) -> Vec<PathBuf> {
         providers
             .iter()
-            .filter_map(|spec| spec.skills)
-            .filter(|skills| skills.source != SkillsSource::CopyCodex)
-            .map(|skills| self.root.join(skills.destination))
+            .filter_map(|spec| spec.skill)
+            .filter(|skill| skill.source != SkillSource::CopyCodex)
+            .map(|skill| self.root.join(skill.destination))
             .collect()
     }
 }
@@ -195,20 +195,20 @@ fn managed_directories(spec: &ProviderSpec) -> impl Iterator<Item = &'static str
         .config_directories()
         .iter()
         .map(|directory| directory.destination);
-    std::iter::once(spec.hooks.scripts_dir)
-        .chain(spec.hooks.bridge.directory)
+    std::iter::once(spec.hook.scripts_dir)
+        .chain(spec.hook.bridge.directory)
         .chain(config_directories)
-        .chain(spec.skills.map(|skills| skills.destination))
+        .chain(spec.skill.map(|skill| skill.destination))
 }
 
 /// Files published individually: rendered files first, then bridge assets outside a directory.
 fn managed_files(spec: &ProviderSpec) -> impl Iterator<Item = &'static str> {
     let loose_assets = spec
-        .hooks
+        .hook
         .bridge
         .directory
         .is_none()
-        .then_some(spec.hooks.bridge.assets)
+        .then_some(spec.hook.bridge.assets)
         .into_iter()
         .flatten()
         .map(|asset| asset.destination);
@@ -218,16 +218,15 @@ fn managed_files(spec: &ProviderSpec) -> impl Iterator<Item = &'static str> {
 fn rendered_files(spec: &ProviderSpec) -> impl Iterator<Item = &'static str> {
     spec.instructions
         .into_iter()
-        .chain([spec.hooks.registration.path()])
+        .chain([spec.hook.registration.path()])
         .chain(spec.config_file())
-        .chain(spec.command_rules.published_file())
+        .chain(spec.published_rule_file())
 }
 
 fn verified_files(spec: &ProviderSpec) -> impl Iterator<Item = &'static str> {
-    let rules = spec.command_rules;
-    let assets = spec.hooks.bridge.assets.iter();
+    let assets = spec.hook.bridge.assets.iter();
     rendered_files(spec)
-        .chain(rules.generated_files())
-        .chain(rules.source_files().iter().copied())
+        .chain(spec.generated_rule_files())
+        .chain(spec.source_rule_files().iter().copied())
         .chain(assets.map(|asset| asset.destination))
 }

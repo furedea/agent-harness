@@ -137,8 +137,8 @@ fn harness_owned_files(
     paths.extend(
         providers
             .iter()
-            .filter(|spec| spec.hooks.bridge.directory.is_some())
-            .flat_map(|spec| spec.hooks.bridge.assets.iter())
+            .filter(|spec| spec.hook.bridge.directory.is_some())
+            .flat_map(|spec| spec.hook.bridge.assets.iter())
             .map(|asset| PathBuf::from(asset.destination)),
     );
     for bundle in external_hooks {
