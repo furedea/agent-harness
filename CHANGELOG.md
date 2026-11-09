@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.11](https://github.com/furedea/agent-harness/compare/agent-harness-v0.9.10...agent-harness-v0.9.11) (2026-11-09)
+
+
+### Bug Fixes
+
+* **generation:** keep exceptions and programs in generate-forbidden-commands ([#204](https://github.com/furedea/agent-harness/issues/204)) ([48c44db](https://github.com/furedea/agent-harness/commit/48c44dbdf5827869774bf704f9786a10ec6b9890))
+
 ## [0.9.10](https://github.com/furedea/agent-harness/compare/agent-harness-v0.9.9...agent-harness-v0.9.10) (2026-11-09)
 
 
