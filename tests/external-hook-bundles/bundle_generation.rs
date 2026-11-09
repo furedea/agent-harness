@@ -51,10 +51,25 @@ fn write_fake_hook_installer(root: &Path) -> PathBuf {
     use std::os::unix::fs::PermissionsExt;
 
     let path = root.join("fake-hook-installer");
-    std::fs::write(
-        &path,
-        r#"#!/usr/bin/env bash
-set -euxCo pipefail
+    let script = format!("#!{}\n{FAKE_INSTALLER_BODY}", find_bash().display());
+    std::fs::write(&path, script).unwrap();
+    let mut permissions = std::fs::metadata(&path).unwrap().permissions();
+    permissions.set_mode(0o755);
+    std::fs::set_permissions(&path, permissions).unwrap();
+    path
+}
+
+// Nix build sandboxes have neither /bin/bash nor /usr/bin/env, so the shebang names the
+// absolute bash found on PATH.
+fn find_bash() -> PathBuf {
+    let path = std::env::var_os("PATH").expect("PATH is set");
+    std::env::split_paths(&path)
+        .map(|directory| directory.join("bash"))
+        .find(|candidate| candidate.is_file())
+        .expect("bash is on PATH")
+}
+
+const FAKE_INSTALLER_BODY: &str = r#"set -euxCo pipefail
 cd "$(dirname "$0")"
 
 usage() {
@@ -96,11 +111,4 @@ esac
 
 mkdir -p "$HOME/.config/moshi-hook"
 printf 'fixture-token\n' >| "$HOME/.config/moshi-hook/token"
-"#,
-    )
-    .unwrap();
-    let mut permissions = std::fs::metadata(&path).unwrap().permissions();
-    permissions.set_mode(0o755);
-    std::fs::set_permissions(&path, permissions).unwrap();
-    path
-}
+"#;
