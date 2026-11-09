@@ -53,7 +53,7 @@ fn write_fake_hook_installer(root: &Path) -> PathBuf {
     let path = root.join("fake-hook-installer");
     std::fs::write(
         &path,
-        r#"#!/bin/bash
+        r#"#!/usr/bin/env bash
 set -euxCo pipefail
 cd "$(dirname "$0")"
 
