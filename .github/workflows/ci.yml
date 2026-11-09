@@ -112,6 +112,11 @@ jobs:
     permissions:
       contents: read
 
+  nix-check:
+    uses: furedea/reusable-workflows/.github/workflows/nix-check.yml@ca7c5f2973a899e209bc60767f434aecbc186bc9 # v1.1.0
+    permissions:
+      contents: read
+
   claude-review:
     uses: furedea/reusable-workflows/.github/workflows/claude-review.yml@ca7c5f2973a899e209bc60767f434aecbc186bc9 # v1.1.0
     permissions:
@@ -136,6 +141,7 @@ jobs:
       - rust-audit
       - gha-lint
       - dependency-review
+      - nix-check
       - claude-review
       - codex-review
     runs-on: ubuntu-latest
