@@ -50,14 +50,16 @@
 
 **6. プロバイダの宣言と処理，I/O を分離する．**
 
-- 判断：Claude，Codex，Devin，Hermes，pi，dsh の 6 つすべてを `ProviderSpec` に宣言し，Data / Functions / Capabilities に分ける．
-- 理由：パス，資産の出力先，同期方式を共有し，プロバイダ一覧のずれを防ぐ．`ConfigSync` は spec の任意の機能として宣言する．Nix の一覧は Rust との一致をテストし，Home Manager は管理対象のファイルとサブディレクトリを明示してリンクする．
+- 判断：Claude，Codex，Devin，Hermes，pi，dsh の 6 つすべてを `ProviderSpec` に宣言し，Data / Functions / Capabilities に分ける．すべてのフィールドは，多くの provider が共有する 5 つの概念のどれかに属する．hooks（スクリプト，登録先，ブリッジファイル），skills，instructions，コマンドルール，config（パスと `ConfigSync` の種類）である．provider ごとの違いは，その provider だけのフィールドではなく enum の variant で表す．
+- 理由：パス，資産の出力先，同期方式を共有して一覧のずれを防ぎ，`HookRegistration` や `CommandRules` などの variant で違いを見える形にして網羅的に match する．一覧の並びは registry の順序に従う．Nix の一覧は Rust との一致をテストし，Home Manager は管理対象のファイルとサブディレクトリを明示してリンクする．
 - ADR: [0026]，[0027]．
 
 ```mermaid
 flowchart LR
   subgraph D["Data (declarations only)"]
     SPEC["PROVIDERS (six ProviderSpec)"]
+    CONCEPTS["five concepts: hooks, skills, instructions, command rules, config"]
+    VARIANTS["variants: HookRegistration (InSettings, File), CommandRules (None, DevinHookBlock, ClaudeRules, CodexExecpolicy), SkillsSource"]
     KINDS["ConfigSync kinds: MergeClaudeSettings, MergeToml, MergeTopLevelJson, MergeYaml, RegisterBundle"]
   end
   subgraph F["Functions (computation, no I/O)"]
@@ -74,7 +76,9 @@ flowchart LR
   SPEC -- "ProviderSpec" --> RENDER
   SPEC -- "ProviderSpec" --> RENDERER
   SPEC -- "ProviderSpec" --> PLAN
-  SPEC --> KINDS
+  SPEC --> CONCEPTS
+  CONCEPTS --> VARIANTS
+  CONCEPTS -- "config" --> KINDS
   KINDS -- "ConfigSync kind" --> SYNC
   PLAN -- "FileOp list" --> EXEC
   EXEC --> FS

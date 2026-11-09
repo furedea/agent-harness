@@ -77,16 +77,23 @@ agent breaks in predictable ways:
 **6. Separate provider declarations, functions, and I/O capabilities.**
 
 - Decision: declare all six providers (Claude, Codex, Devin, Hermes, pi, and dsh) in
-  `ProviderSpec`, with Data / Functions / Capabilities boundaries.
-- Reason: shared paths, asset destinations, and optional `ConfigSync` strategies prevent parallel
-  lists from drifting. Tests check the Nix list against Rust, and Home Manager links explicit
-  managed files and subdirectories to coexist with user-owned state.
+  `ProviderSpec`, with Data / Functions / Capabilities boundaries. Every field is one of five
+  concepts most providers share: hooks (scripts, registration, bridge files), skills,
+  instructions, command rules, and config (path and `ConfigSync` kind). A provider difference is
+  an enum variant, not a field only that provider has.
+- Reason: shared paths, asset destinations, and `ConfigSync` strategies prevent parallel lists
+  from drifting, and variants such as `HookRegistration` and `CommandRules` keep the differences
+  visible and exhaustively matched. Lists follow registry order. Tests check the Nix list against
+  Rust, and Home Manager links explicit managed files and subdirectories to coexist with
+  user-owned state.
 - ADRs: [0026], [0027].
 
 ```mermaid
 flowchart LR
   subgraph D["Data (declarations only)"]
     SPEC["PROVIDERS (six ProviderSpec)"]
+    CONCEPTS["five concepts: hooks, skills, instructions, command rules, config"]
+    VARIANTS["variants: HookRegistration (InSettings, File), CommandRules (None, DevinHookBlock, ClaudeRules, CodexExecpolicy), SkillsSource"]
     KINDS["ConfigSync kinds: MergeClaudeSettings, MergeToml, MergeTopLevelJson, MergeYaml, RegisterBundle"]
   end
   subgraph F["Functions (computation, no I/O)"]
@@ -103,7 +110,9 @@ flowchart LR
   SPEC -- "ProviderSpec" --> RENDER
   SPEC -- "ProviderSpec" --> RENDERER
   SPEC -- "ProviderSpec" --> PLAN
-  SPEC --> KINDS
+  SPEC --> CONCEPTS
+  CONCEPTS --> VARIANTS
+  CONCEPTS -- "config" --> KINDS
   KINDS -- "ConfigSync kind" --> SYNC
   PLAN -- "FileOp list" --> EXEC
   EXEC --> FS
