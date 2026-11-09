@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 use crate::{
     filesystem::{FileSystem, RealFileSystem},
@@ -80,7 +80,7 @@ impl ProviderRenderer<'_> {
         let codex = crate::provider::spec::ProviderId::Codex
             .spec()
             .skill
-            .expect("Codex has skills");
+            .context("the Codex provider spec declares no skills")?;
         RealFileSystem.replace_directory(&self.out.join(codex.destination), target)
     }
 

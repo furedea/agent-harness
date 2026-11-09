@@ -222,20 +222,16 @@ pub(crate) fn shorten_hook_path_for(
 }
 
 fn display_condition(condition: &str) -> String {
-    let Some(patterns) = condition
+    let Some(mut patterns) = condition
         .split('|')
         .map(condition_pattern)
         .collect::<Option<Vec<_>>>()
     else {
         return condition.to_owned();
     };
-    patterns
-        .iter()
-        .enumerate()
-        .filter(|(index, pattern)| !patterns[..*index].contains(pattern))
-        .map(|(_, pattern)| *pattern)
-        .collect::<Vec<_>>()
-        .join(", ")
+    let mut seen = std::collections::HashSet::new();
+    patterns.retain(|pattern| seen.insert(*pattern));
+    patterns.join(", ")
 }
 
 fn condition_pattern(entry: &str) -> Option<&str> {

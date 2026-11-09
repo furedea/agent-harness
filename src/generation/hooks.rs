@@ -93,7 +93,7 @@ fn provider_hooks_for_runtime(
     if spec.command_rule == Some(CommandRuleSpec::DevinHookBlock) {
         hooks
             .as_object_mut()
-            .expect("validated hook section")
+            .with_context(|| format!("hook section for {} is not a JSON object", spec.key))?
             .insert(
                 "permissions".to_owned(),
                 command_permissions::devin_permissions(context.source)?,

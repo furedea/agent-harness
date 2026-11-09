@@ -22,10 +22,14 @@ pub(crate) enum ProviderId {
 
 impl ProviderId {
     pub(crate) fn spec(self) -> &'static ProviderSpec {
-        PROVIDERS
-            .iter()
-            .find(|spec| spec.id == self)
-            .expect("registered provider")
+        match self {
+            Self::Claude => &CLAUDE,
+            Self::Codex => &CODEX,
+            Self::Devin => &DEVIN,
+            Self::Hermes => &HERMES,
+            Self::Pi => &PI,
+            Self::Dsh => &DSH,
+        }
     }
 }
 
@@ -191,195 +195,200 @@ impl ProviderSpec {
     }
 }
 
-pub(crate) const PROVIDERS: &[ProviderSpec] = &[
-    ProviderSpec {
-        id: ProviderId::Codex,
-        key: "codex",
-        display_name: "Codex",
-        home_dir: ".codex",
-        hook: HookSpec {
-            source: "codex/hooks",
-            scripts_dir: ".codex/hooks",
-            registration: HookRegistration::File(".codex/hooks.json"),
-            external_file: ".codex/hooks.json",
-            bridge: Bridge {
-                directory: None,
-                assets: &[],
-            },
+const CODEX: ProviderSpec = ProviderSpec {
+    id: ProviderId::Codex,
+    key: "codex",
+    display_name: "Codex",
+    home_dir: ".codex",
+    hook: HookSpec {
+        source: "codex/hooks",
+        scripts_dir: ".codex/hooks",
+        registration: HookRegistration::File(".codex/hooks.json"),
+        external_file: ".codex/hooks.json",
+        bridge: Bridge {
+            directory: None,
+            assets: &[],
         },
-        skill: Some(&SkillSpec {
-            destination: ".codex/skills",
-            source: SkillSource::RenderCodex,
-        }),
-        instructions: Some(".codex/AGENTS.md"),
-        command_rule: Some(CommandRuleSpec::CodexExecpolicy {
-            rules_file: ".codex/rules/default.rules",
-        }),
-        config: Some(ConfigSpec {
-            path: ".codex/config.toml",
-            sync: ConfigSync::MergeToml,
-            directories: &[],
-        }),
     },
-    ProviderSpec {
-        id: ProviderId::Claude,
-        key: "claude",
-        display_name: "Claude",
-        home_dir: ".claude",
-        hook: HookSpec {
-            source: "hooks",
-            scripts_dir: ".claude/hooks",
-            registration: HookRegistration::InSettings(".claude/settings.json"),
-            external_file: ".claude/settings.json",
-            bridge: Bridge {
-                directory: None,
-                assets: &[],
-            },
+    skill: Some(&SkillSpec {
+        destination: ".codex/skills",
+        source: SkillSource::RenderCodex,
+    }),
+    instructions: Some(".codex/AGENTS.md"),
+    command_rule: Some(CommandRuleSpec::CodexExecpolicy {
+        rules_file: ".codex/rules/default.rules",
+    }),
+    config: Some(ConfigSpec {
+        path: ".codex/config.toml",
+        sync: ConfigSync::MergeToml,
+        directories: &[],
+    }),
+};
+
+const CLAUDE: ProviderSpec = ProviderSpec {
+    id: ProviderId::Claude,
+    key: "claude",
+    display_name: "Claude",
+    home_dir: ".claude",
+    hook: HookSpec {
+        source: "hooks",
+        scripts_dir: ".claude/hooks",
+        registration: HookRegistration::InSettings(".claude/settings.json"),
+        external_file: ".claude/settings.json",
+        bridge: Bridge {
+            directory: None,
+            assets: &[],
         },
-        skill: Some(&SkillSpec {
-            destination: ".claude/skills",
-            source: SkillSource::RenderClaude,
-        }),
-        instructions: Some(".claude/CLAUDE.md"),
-        command_rule: Some(CommandRuleSpec::ClaudeRules {
-            permissions: ".claude/hooks/rules/command_permissions.json",
-            protected_paths: ".claude/hooks/rules/protected_paths.json",
-            source_files: &[
-                ".claude/hooks/rules/allowed_commands.json",
-                ".claude/hooks/rules/forbidden_commands.json",
-                ".claude/hooks/rules/secret_commit_policy.json",
-                ".claude/hooks/rules/secret_path_policy.json",
+    },
+    skill: Some(&SkillSpec {
+        destination: ".claude/skills",
+        source: SkillSource::RenderClaude,
+    }),
+    instructions: Some(".claude/CLAUDE.md"),
+    command_rule: Some(CommandRuleSpec::ClaudeRules {
+        permissions: ".claude/hooks/rules/command_permissions.json",
+        protected_paths: ".claude/hooks/rules/protected_paths.json",
+        source_files: &[
+            ".claude/hooks/rules/allowed_commands.json",
+            ".claude/hooks/rules/forbidden_commands.json",
+            ".claude/hooks/rules/secret_commit_policy.json",
+            ".claude/hooks/rules/secret_path_policy.json",
+        ],
+    }),
+    // settings.json is also the hook registration: one file, two roles.
+    config: Some(ConfigSpec {
+        path: ".claude/settings.json",
+        sync: ConfigSync::MergeClaudeSettings,
+        directories: &[SyncedDirectory {
+            source: "claude/statusline",
+            destination: ".claude/statusline",
+        }],
+    }),
+};
+
+const DEVIN: ProviderSpec = ProviderSpec {
+    id: ProviderId::Devin,
+    key: "devin",
+    display_name: "Devin",
+    home_dir: ".devin",
+    hook: HookSpec {
+        source: "devin/hooks",
+        scripts_dir: ".devin/hooks",
+        registration: HookRegistration::File(".config/devin/config.json"),
+        external_file: ".devin/hooks.v1.json",
+        bridge: Bridge {
+            directory: None,
+            assets: &[],
+        },
+    },
+    skill: None,
+    instructions: None,
+    command_rule: Some(CommandRuleSpec::DevinHookBlock),
+    // config.json is also the hook registration: one file, two roles.
+    config: Some(ConfigSpec {
+        path: ".config/devin/config.json",
+        sync: ConfigSync::MergeTopLevelJson,
+        directories: &[],
+    }),
+};
+
+const HERMES: ProviderSpec = ProviderSpec {
+    id: ProviderId::Hermes,
+    key: "hermes",
+    display_name: "Hermes",
+    home_dir: ".hermes",
+    hook: HookSpec {
+        source: "hermes/hooks",
+        scripts_dir: ".hermes/hooks",
+        registration: HookRegistration::File(".hermes/hooks.json"),
+        external_file: ".hermes/hooks.json",
+        bridge: Bridge {
+            directory: Some(".hermes/plugins/agent-harness-hooks"),
+            assets: &[
+                Asset {
+                    destination: ".hermes/plugins/agent-harness-hooks/plugin.yaml",
+                    content: include_str!("../generation/assets/hermes/plugin.yaml"),
+                },
+                Asset {
+                    destination: ".hermes/plugins/agent-harness-hooks/__init__.py",
+                    content: include_str!("../generation/assets/hermes/__init__.py"),
+                },
             ],
-        }),
-        // settings.json is also the hook registration: one file, two roles.
-        config: Some(ConfigSpec {
-            path: ".claude/settings.json",
-            sync: ConfigSync::MergeClaudeSettings,
-            directories: &[SyncedDirectory {
-                source: "claude/statusline",
-                destination: ".claude/statusline",
+        },
+    },
+    skill: None,
+    instructions: None,
+    command_rule: None,
+    config: Some(ConfigSpec {
+        path: ".hermes/managed-config.yaml",
+        sync: ConfigSync::MergeYaml,
+        directories: &[],
+    }),
+};
+
+const PI: ProviderSpec = ProviderSpec {
+    id: ProviderId::Pi,
+    key: "pi",
+    display_name: "Pi",
+    home_dir: ".pi",
+    hook: HookSpec {
+        source: "pi/hooks",
+        scripts_dir: ".pi/hooks",
+        registration: HookRegistration::File(".pi/agent/hooks.json"),
+        external_file: ".pi/hooks.json",
+        bridge: Bridge {
+            directory: None,
+            assets: &[Asset {
+                destination: ".pi/agent/extensions/hook_bridge.ts",
+                content: include_str!("../generation/assets/pi/hook_bridge.ts"),
             }],
-        }),
-    },
-    ProviderSpec {
-        id: ProviderId::Devin,
-        key: "devin",
-        display_name: "Devin",
-        home_dir: ".devin",
-        hook: HookSpec {
-            source: "devin/hooks",
-            scripts_dir: ".devin/hooks",
-            registration: HookRegistration::File(".config/devin/config.json"),
-            external_file: ".devin/hooks.v1.json",
-            bridge: Bridge {
-                directory: None,
-                assets: &[],
-            },
         },
-        skill: None,
-        instructions: None,
-        command_rule: Some(CommandRuleSpec::DevinHookBlock),
-        // config.json is also the hook registration: one file, two roles.
-        config: Some(ConfigSpec {
-            path: ".config/devin/config.json",
-            sync: ConfigSync::MergeTopLevelJson,
-            directories: &[],
-        }),
     },
-    ProviderSpec {
-        id: ProviderId::Hermes,
-        key: "hermes",
-        display_name: "Hermes",
-        home_dir: ".hermes",
-        hook: HookSpec {
-            source: "hermes/hooks",
-            scripts_dir: ".hermes/hooks",
-            registration: HookRegistration::File(".hermes/hooks.json"),
-            external_file: ".hermes/hooks.json",
-            bridge: Bridge {
-                directory: Some(".hermes/plugins/agent-harness-hooks"),
-                assets: &[
-                    Asset {
-                        destination: ".hermes/plugins/agent-harness-hooks/plugin.yaml",
-                        content: include_str!("../generation/assets/hermes/plugin.yaml"),
-                    },
-                    Asset {
-                        destination: ".hermes/plugins/agent-harness-hooks/__init__.py",
-                        content: include_str!("../generation/assets/hermes/__init__.py"),
-                    },
-                ],
-            },
+    skill: None,
+    instructions: None,
+    command_rule: None,
+    config: None,
+};
+
+const DSH: ProviderSpec = ProviderSpec {
+    id: ProviderId::Dsh,
+    key: "dsh",
+    display_name: "DeepSeek",
+    home_dir: ".dsh",
+    hook: HookSpec {
+        source: "dsh/hooks",
+        scripts_dir: ".dsh/hooks",
+        registration: HookRegistration::File(".dsh/hooks.json"),
+        external_file: ".dsh/hooks.json",
+        bridge: Bridge {
+            directory: Some(".dsh/bridge"),
+            assets: &[
+                Asset {
+                    destination: ".dsh/bridge/package.json",
+                    content: include_str!("../generation/assets/dsh/package.json"),
+                },
+                Asset {
+                    destination: ".dsh/bridge/cordis.patch.yml",
+                    content: include_str!("../generation/assets/dsh/cordis.patch.yml"),
+                },
+                Asset {
+                    destination: ".dsh/bridge/hook_bridge.ts",
+                    content: include_str!("../generation/assets/dsh/hook_bridge.ts"),
+                },
+            ],
         },
-        skill: None,
-        instructions: None,
-        command_rule: None,
-        config: Some(ConfigSpec {
-            path: ".hermes/managed-config.yaml",
-            sync: ConfigSync::MergeYaml,
-            directories: &[],
-        }),
     },
-    ProviderSpec {
-        id: ProviderId::Pi,
-        key: "pi",
-        display_name: "Pi",
-        home_dir: ".pi",
-        hook: HookSpec {
-            source: "pi/hooks",
-            scripts_dir: ".pi/hooks",
-            registration: HookRegistration::File(".pi/agent/hooks.json"),
-            external_file: ".pi/hooks.json",
-            bridge: Bridge {
-                directory: None,
-                assets: &[Asset {
-                    destination: ".pi/agent/extensions/hook_bridge.ts",
-                    content: include_str!("../generation/assets/pi/hook_bridge.ts"),
-                }],
-            },
-        },
-        skill: None,
-        instructions: None,
-        command_rule: None,
-        config: None,
-    },
-    ProviderSpec {
-        id: ProviderId::Dsh,
-        key: "dsh",
-        display_name: "DeepSeek",
-        home_dir: ".dsh",
-        hook: HookSpec {
-            source: "dsh/hooks",
-            scripts_dir: ".dsh/hooks",
-            registration: HookRegistration::File(".dsh/hooks.json"),
-            external_file: ".dsh/hooks.json",
-            bridge: Bridge {
-                directory: Some(".dsh/bridge"),
-                assets: &[
-                    Asset {
-                        destination: ".dsh/bridge/package.json",
-                        content: include_str!("../generation/assets/dsh/package.json"),
-                    },
-                    Asset {
-                        destination: ".dsh/bridge/cordis.patch.yml",
-                        content: include_str!("../generation/assets/dsh/cordis.patch.yml"),
-                    },
-                    Asset {
-                        destination: ".dsh/bridge/hook_bridge.ts",
-                        content: include_str!("../generation/assets/dsh/hook_bridge.ts"),
-                    },
-                ],
-            },
-        },
-        skill: Some(&SkillSpec {
-            destination: ".dsh/skills",
-            source: SkillSource::CopyCodex,
-        }),
-        instructions: Some(".dsh/AGENTS.md"),
-        command_rule: None,
-        config: Some(ConfigSpec {
-            path: ".dsh/bridge",
-            sync: ConfigSync::RegisterBundle,
-            directories: &[],
-        }),
-    },
-];
+    skill: Some(&SkillSpec {
+        destination: ".dsh/skills",
+        source: SkillSource::CopyCodex,
+    }),
+    instructions: Some(".dsh/AGENTS.md"),
+    command_rule: None,
+    config: Some(ConfigSpec {
+        path: ".dsh/bridge",
+        sync: ConfigSync::RegisterBundle,
+        directories: &[],
+    }),
+};
+
+pub(crate) const PROVIDERS: &[ProviderSpec] = &[CODEX, CLAUDE, DEVIN, HERMES, PI, DSH];

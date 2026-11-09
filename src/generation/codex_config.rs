@@ -1,13 +1,17 @@
-use std::collections::BTreeSet;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use anyhow::{Context, Result};
-use serde::{Deserialize, Serialize};
 use toml_edit::{DocumentMut, Item, Table};
 
 use crate::{
     fs_ops,
-    generation::{external_hooks::ExternalHookBundle, io, protection},
+    generation::{
+        codex_managed_state::{
+            ManagedState, managed_state_path, read_managed_state, write_managed_state,
+        },
+        external_hooks::ExternalHookBundle,
+        io, protection,
+    },
     layout::SourceLayout,
     runtime_root::RuntimeRoot,
 };
@@ -27,28 +31,6 @@ const MANAGED_KEYS: &[&str] = &[
     "default_permissions",
     "permissions",
 ];
-/// Sidecar next to the Codex config recording the `shell_environment_policy.set` keys last
-/// written, so a key dropped from the source is removed while keys Codex or the user added stay.
-const MANAGED_STATE_FILE: &str = ".agent-harness-managed.json";
-/// Managed before the sidecar existed, so it is removed from the source's absence alone.
-const LEGACY_MANAGED_ENV_KEYS: &[&str] = &["GH_CONFIG_DIR"];
-
-#[derive(Serialize, Deserialize)]
-struct ManagedState {
-    #[serde(default)]
-    shell_environment_policy_set: BTreeSet<String>,
-}
-
-impl ManagedState {
-    fn legacy() -> Self {
-        Self {
-            shell_environment_policy_set: LEGACY_MANAGED_ENV_KEYS
-                .iter()
-                .map(ToString::to_string)
-                .collect(),
-        }
-    }
-}
 
 pub(crate) fn write_config_source(
     source: &Path,
@@ -100,7 +82,7 @@ fn config_source_content_for_runtime(
         .parse::<DocumentMut>()
         .context("failed to parse generated Codex config")?;
     for (key, item) in protection.iter() {
-        merge_item(&mut document[key], item);
+        merge_item(document.entry(key).or_insert(Item::None), item);
     }
     for bundle in external_hooks {
         merge_external_config(&mut document, bundle)?;
@@ -154,7 +136,7 @@ pub(crate) fn sync_managed_document(source: &DocumentMut, target_path: &Path) ->
 
     sync_managed_keys(source, &mut target);
     let state_path = managed_state_path(target_path);
-    let state = sync_env_keys(source, &mut target, &read_managed_state(&state_path));
+    let state = sync_env_keys(source, &mut target, &read_managed_state(&state_path))?;
 
     write_toml_document(target_path, &target)?;
     write_managed_state(&state_path, &state)
@@ -181,7 +163,7 @@ fn sync_env_keys(
     source: &DocumentMut,
     target: &mut DocumentMut,
     previous: &ManagedState,
-) -> ManagedState {
+) -> Result<ManagedState> {
     let generated = env_set_items(source);
     let stale = previous
         .shell_environment_policy_set
@@ -190,11 +172,23 @@ fn sync_env_keys(
         .filter(|key| !generated.iter().any(|(name, _)| name == key));
     remove_env_keys(target, stale);
     for (key, item) in &generated {
-        target["shell_environment_policy"]["set"][key] = (*item).clone();
+        env_set_table(target)?.insert(key, (*item).clone());
     }
-    ManagedState {
+    Ok(ManagedState {
         shell_environment_policy_set: generated.iter().map(|(key, _)| key.to_string()).collect(),
-    }
+    })
+}
+
+fn env_set_table(target: &mut DocumentMut) -> Result<&mut Table> {
+    target
+        .entry("shell_environment_policy")
+        .or_insert_with(toml_edit::table)
+        .as_table_mut()
+        .context("shell_environment_policy is not a table")?
+        .entry("set")
+        .or_insert_with(toml_edit::table)
+        .as_table_mut()
+        .context("shell_environment_policy.set is not a table")
 }
 
 fn env_set_items(source: &DocumentMut) -> Vec<(&str, &Item)> {
@@ -219,24 +213,6 @@ fn remove_env_keys<'a>(target: &mut DocumentMut, keys: impl Iterator<Item = &'a 
     });
 }
 
-fn managed_state_path(target_path: &Path) -> PathBuf {
-    target_path.with_file_name(MANAGED_STATE_FILE)
-}
-
-// A missing or unreadable sidecar must not block the sync; it only forgoes removals, apart from
-// the keys managed before the sidecar existed.
-fn read_managed_state(path: &Path) -> ManagedState {
-    std::fs::read_to_string(path)
-        .ok()
-        .and_then(|content| serde_json::from_str(&content).ok())
-        .unwrap_or_else(ManagedState::legacy)
-}
-
-fn write_managed_state(path: &Path, state: &ManagedState) -> Result<()> {
-    let content = serde_json::to_string_pretty(state)? + "\n";
-    fs_ops::write_file_atomically(path, content.as_bytes())
-}
-
 fn read_toml_document(path: &Path) -> Result<DocumentMut> {
     let content = std::fs::read_to_string(path)
         .with_context(|| format!("failed to read TOML file {}", path.display()))?;
@@ -254,6 +230,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     use super::*;
+    use crate::generation::codex_managed_state::MANAGED_STATE_FILE;
 
     #[test]
     fn sync_managed_config_preserves_codex_owned_project_state() -> Result<()> {
