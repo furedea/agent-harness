@@ -14,20 +14,23 @@ hooks, inventory, protection, installation, verification, CLI, and Home Manager,
 provider-specific render code.
 
 `ProviderSpec` has five concepts, and every field belongs to one of them. A provider difference is an
-enum variant, so a new provider fails to compile until every `match` handles it.
+enum variant, so a new provider fails to compile until every `match` handles it. Every provider has
+hooks, so `hook` is required; the other concepts are an `Option` that is `None` when a provider does
+not have them, instead of a `None` variant inside each type.
 
-- **Hooks**: the source and installed scripts directory, the registration (`HookRegistration`:
-  `InSettings(path)` for Claude, `File(path)` for the others), the file external hook bundles write
-  to, and the bridge files the hook runtime needs (embedded assets, with an optional directory
-  published as a whole).
-- **Skills**: the destination and a `SkillsSource` variant.
+- **Hook** (`HookSpec`): the source and installed scripts directory, the registration
+  (`HookRegistration`: `InSettings(path)` for Claude, `File(path)` for the others), the file
+  external hook bundles write to, and the bridge files the hook runtime needs (embedded assets, with
+  an optional directory published as a whole).
+- **Skill** (`SkillSpec`): the destination and a `SkillSource` variant.
 - **Instructions**: the installed `CLAUDE.md` or `AGENTS.md`.
-- **Command rules**: one `CommandRules` enum: `None`, `DevinHookBlock`, `ClaudeRules` (generated
-  permission and protected-path files, plus the source files verification requires), or
-  `CodexExecpolicy` (one rules file). It replaces a flag and three file lists.
-- **Config**: the managed config path and its `ConfigSync` kind, plus the source directories the
-  config refers to (Claude's statusline). Claude's `settings.json` and Devin's `config.json` are both
-  hook registration and config; the registry states that and publishes the file once.
+- **Command rule** (`CommandRuleSpec`): `DevinHookBlock`, `ClaudeRules` (generated permission and
+  protected-path files, plus the source files verification requires), or `CodexExecpolicy` (one
+  rules file). It replaces a flag and three file lists.
+- **Config** (`ConfigSpec`): the managed config path and its `ConfigSync` kind, plus the source
+  directories the config refers to (Claude's statusline). Claude's `settings.json` and Devin's
+  `config.json` are both hook registration and config; the registry states that and publishes the
+  file once.
 
 `ConfigSync` gains `MergeClaudeSettings` and `MergeToml` next to the existing kinds, so the registry
 declares the sync kind while `config_sync` and `ProviderRenderer` own the content.
@@ -40,7 +43,12 @@ lists derived from it, change order. The complete-source golden files are update
 checked to be order-only: every file is otherwise identical, and each changed file has the same
 lines when sorted. Inventory sorts by `ProviderId`, so its output is independent of registry order.
 
-`nix/providers.json` now also describes Claude and Codex, and the Home Manager module derives their
-options, links, and sync activations from it. `tests/nix_provider_registry.rs` checks the projection
-against the Rust registry. Deprecated per-provider commands stay, per
-[ADR-0010](0010_use_pre_major_compatibility_versions.md).
+The Rust registry is the single source, and `nix/providers.json` is generated from it. The Home
+Manager module reads the JSON to derive each provider's options, links, and sync activations, so Nix
+cannot declare a provider the registry lacks. `tests/nix_provider_registry.rs` is a sourcegen-style
+test, as in rust-analyzer: it renders the JSON from `PROVIDERS` and fails when the committed file
+differs, and `UPDATE_PROVIDERS_JSON=1` rewrites it (see `CONTRIBUTING.md`). A hand-written JSON
+checked by an equality test was rejected because every provider change meant editing two files that a
+test then had to reconcile. The projection derives activation names, commands, and sync targets from
+the `ConfigSync` kind, and the option text from `harness_name`. Deprecated per-provider commands
+stay, per [ADR-0010](0010_use_pre_major_compatibility_versions.md).

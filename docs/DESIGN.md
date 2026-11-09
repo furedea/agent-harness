@@ -78,14 +78,16 @@ agent breaks in predictable ways:
 
 - Decision: declare all six providers (Claude, Codex, Devin, Hermes, pi, and dsh) in
   `ProviderSpec`, with Data / Functions / Capabilities boundaries. Every field is one of five
-  concepts most providers share: hooks (scripts, registration, bridge files), skills,
-  instructions, command rules, and config (path and `ConfigSync` kind). A provider difference is
-  an enum variant, not a field only that provider has.
+  concepts most providers share: hook (`HookSpec`: scripts, registration, bridge files), skill,
+  instructions, command rule, and config (`ConfigSpec`: path and `ConfigSync` kind). Every
+  provider has hooks; the other concepts are an `Option`. A provider difference is an enum
+  variant, not a field only that provider has.
 - Reason: shared paths, asset destinations, and `ConfigSync` strategies prevent parallel lists
-  from drifting, and variants such as `HookRegistration` and `CommandRules` keep the differences
-  visible and exhaustively matched. Lists follow registry order. Tests check the Nix list against
-  Rust, and Home Manager links explicit managed files and subdirectories to coexist with
-  user-owned state.
+  from drifting, and variants such as `HookRegistration` and `CommandRuleSpec` keep the
+  differences visible and exhaustively matched. Lists follow registry order. Rust is the single
+  source: `nix/providers.json` is generated from it by a test that fails when the committed file
+  differs (`UPDATE_PROVIDERS_JSON=1` regenerates it). Home Manager links explicit managed files
+  and subdirectories to coexist with user-owned state.
 - ADRs: [0026], [0027].
 
 ```mermaid
@@ -93,7 +95,8 @@ flowchart LR
   subgraph D["Data (declarations only)"]
     SPEC["PROVIDERS (six ProviderSpec)"]
     CONCEPTS["five concepts: hooks, skills, instructions, command rules, config"]
-    VARIANTS["variants: HookRegistration (InSettings, File), CommandRules (None, DevinHookBlock, ClaudeRules, CodexExecpolicy), SkillsSource"]
+    VARIANTS["variants: HookRegistration (InSettings, File), CommandRuleSpec (DevinHookBlock, ClaudeRules, CodexExecpolicy), SkillSource"]
+    JSON["nix/providers.json (generated from PROVIDERS)"]
     KINDS["ConfigSync kinds: MergeClaudeSettings, MergeToml, MergeTopLevelJson, MergeYaml, RegisterBundle"]
   end
   subgraph F["Functions (computation, no I/O)"]
@@ -113,6 +116,7 @@ flowchart LR
   SPEC --> CONCEPTS
   CONCEPTS --> VARIANTS
   CONCEPTS -- "config" --> KINDS
+  SPEC -- "sourcegen test" --> JSON
   KINDS -- "ConfigSync kind" --> SYNC
   PLAN -- "FileOp list" --> EXEC
   EXEC --> FS
@@ -181,7 +185,7 @@ sequenceDiagram
 | `provider/spec`                                                                           | Data: provider metadata, asset destinations, and optional `ConfigSync`.                                        |
 | `install_plan`                                                                            | Functions: plan publication of rendered staging files and embedded assets.                                     |
 | `filesystem`, `install_executor`, `config_sync`                                           | Capabilities: execute file operations and dispatch config synchronization.                                     |
-| `nix/providers.json`, `nix/home_manager_module.nix`                                       | Checked Nix provider list and generated Home Manager options, links, and sync.                                 |
+| `nix/providers.json`, `nix/home_manager_module.nix`                                       | Nix provider list generated from the registry, and the Home Manager options, links, and sync built from it.    |
 | `generation/hooks`                                                                        | Render hook wiring.                                                                                            |
 | `generation/bridges`, `provider/spec`, `install_plan`                                     | Verify bridge asset contracts; declare embedded bridge assets and destinations in specs and plan their writes. |
 | `generation/command_permissions`                                                          | Maps neutral rules to Claude, Codex, and Devin permission syntax.                                              |
