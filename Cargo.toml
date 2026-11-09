@@ -31,6 +31,9 @@ excessive_nesting = "warn"
 dbg_macro = "deny"
 todo = "deny"
 unimplemented = "deny"
+unwrap_used = "deny"
+indexing_slicing = "deny"
+expect_used = "deny"
 
 # The profile that 'dist' will build with
 [profile.dist]
