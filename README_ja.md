@@ -284,7 +284,7 @@ agent-harness verify --prefix "$HOME"
 
 ### Nix
 
-flake は現在 `aarch64-darwin` 向けにだけパッケージを公開している．
+flake は `x86_64-linux` と `aarch64-darwin` 向けにパッケージを公開している．
 
 ```bash
 nix run github:furedea/agent-harness -- install --prefix "$HOME"
@@ -293,7 +293,7 @@ nix run github:furedea/agent-harness -- verify --prefix "$HOME"
 
 ### Home Manager
 
-エージェントの設定を Nix で管理している場合は Home Manager モジュールを使う．モジュールは `homeManagerModules.default` として公開しており，現在は `aarch64-darwin` を対象にしている．
+エージェントの設定を Nix で管理している場合は Home Manager モジュールを使う．モジュールは `homeManagerModules.default` として公開しており，`x86_64-linux` と `aarch64-darwin` に対応している．
 
 ```nix
 {
@@ -445,8 +445,8 @@ CLI は，個々の出力を確認したり合成したりするための低レ�
 
 | コマンド                         | 出力                                             |
 | -------------------------------- | ------------------------------------------------ |
-| `generate-hooks --provider <id>` | プロバイダのフック JSON または設定断片 |
-| `sync-config --provider <id>` | 既存の設定へ管理対象を同期 |
+| `generate-hooks --provider <id>` | プロバイダのフック JSON または設定断片           |
+| `sync-config --provider <id>`    | 既存の設定へ管理対象を同期                       |
 | `generate-claude-settings`       | Claude Code の設定 JSON 全体                     |
 | `generate-codex-config-source`   | 管理対象の Codex 設定ソース全体                  |
 | `generate-codex-config-fragment` | ガード付きファイルシステムの TOML 断片           |

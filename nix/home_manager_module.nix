@@ -58,7 +58,13 @@ let
       )
     ) (builtins.filter (provider: provider.sync != null) providers)
   );
-  sourceHasProfiles = builtins.pathExists "${cfg.source}/profiles/${cfg.profile}";
+  # Evaluation reads `tree` (a plain path) so it never builds `cfg.source`; the built
+  # `cfg.source` only supplies files copied at build time. Path concatenation (`+`) keeps
+  # the value a path, whereas string interpolation would copy it to the store.
+  sourceTree = cfg.source.tree or cfg.source;
+  sourceHasProfiles = builtins.pathExists (sourceTree + "/profiles/${cfg.profile}");
+  evalProfileSource =
+    if sourceHasProfiles then sourceTree + "/profiles/${cfg.profile}" else sourceTree;
   profileSource = if sourceHasProfiles then "${cfg.source}/profiles/${cfg.profile}" else cfg.source;
 
   agentsMd = if cfg.agentsMd == null then "${profileSource}/AGENTS.md" else cfg.agentsMd;
@@ -75,18 +81,22 @@ let
     inherit (agentToken) configDir;
     settings = cfg.claude.composedSettings;
     secretPathPolicy = builtins.fromJSON (
-      builtins.readFile "${profileSource}/hooks/rules/secret_path_policy.json"
+      builtins.readFile (evalProfileSource + "/hooks/rules/secret_path_policy.json")
     );
   };
 
-  claudeBaseSettings = builtins.fromJSON (builtins.readFile "${profileSource}/claude/settings.json");
+  claudeBaseSettings = builtins.fromJSON (
+    builtins.readFile (evalProfileSource + "/claude/settings.json")
+  );
   claudeSourceSettings = lib.recursiveUpdate claudeBaseSettings cfg.claude.settings;
   claudeSettings = pkgs.writeText "agent-harness-claude-settings.json" (
     builtins.toJSON cfg.claude.composedSettings
   );
 
   codexFormat = pkgs.formats.toml { };
-  codexBaseSettings = builtins.fromTOML (builtins.readFile "${profileSource}/codex/config.toml");
+  codexBaseSettings = builtins.fromTOML (
+    builtins.readFile (evalProfileSource + "/codex/config.toml")
+  );
   codexSourceSettings = lib.recursiveUpdate codexBaseSettings cfg.codex.settings;
   codexSettings = codexFormat.generate "agent-harness-codex-settings.toml" cfg.codex.composedSettings;
 

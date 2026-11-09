@@ -183,21 +183,24 @@ sequenceDiagram
 
 Figures below were measured on v0.9.2.
 
-| Layer               | Location                                              | Count   |
-| ------------------- | ----------------------------------------------------- | ------- |
-| Unit tests          | `#[test]` in `src/`                                   | 77      |
-| Integration tests   | `tests/*.rs`, running the built binary                | 36      |
-| Codex conformance   | `tests/codex/execpolicy.bats`                         | 3 cases |
-| Home Manager module | `tests/home_manager_module.nix` via `nix flake check` | 1 check |
+| Layer               | Location                                                                                  | Count    |
+| ------------------- | ----------------------------------------------------------------------------------------- | -------- |
+| Unit tests          | `#[test]` in `src/`                                                                       | 77       |
+| Integration tests   | `tests/*.rs`, running the built binary                                                    | 36       |
+| Codex conformance   | `tests/codex/execpolicy.bats`                                                             | 3 cases  |
+| Home Manager module | `tests/home_manager_module.nix`, `tests/home_manager_pure_eval.nix` via `nix flake check` | 2 checks |
 
-The flake also builds the skill and hook-bundle builders as checks. CI does not run `nix flake check`
-yet, so the Home Manager module check does not run there until
-[furedea/agent-harness#196](https://github.com/furedea/agent-harness/issues/196) removes
-import-from-derivation and adds the shared `nix-check` call. GitHub Actions runs four workflows:
+The flake also builds the skill and hook-bundle builders as checks. The module reads every
+evaluation-time file (`settings.json`, `config.toml`, `secret_path_policy.json`, `profiles/`) from
+`source.tree`, falling back to `source` when it has no `tree`. The built `source` only supplies files
+copied at build time, so evaluation never builds it: no import-from-derivation
+([furedea/agent-harness#196](https://github.com/furedea/agent-harness/issues/196)). The shared
+`nix-check` workflow runs `nix flake check --all-systems` with import-from-derivation disabled.
+GitHub Actions runs four workflows:
 
 - `ci`: clippy, rustfmt, `cargo test`, and Rust dependency audits, plus calls to the shared
-  workflows in `furedea/reusable-workflows` (`nix-lint`, `gha-lint`, `dependency-review`,
-  `claude-review`, `codex-review`), gathered by an `all-green` job.
+  workflows in `furedea/reusable-workflows` (`nix-lint`, `nix-check`, `gha-lint`,
+  `dependency-review`, `claude-review`, `codex-review`), gathered by an `all-green` job.
 - `codex_conformance`: generated execpolicy rules against the locked Codex CLI, kept separate from
   `ci` by design ([0001]).
 - `release_please`: versioning and changelog.
@@ -207,8 +210,8 @@ CodeQL analysis is not a workflow file: it runs through GitHub's CodeQL default 
 
 ## Known limitations
 
-- Release binaries are built only for `x86_64-unknown-linux-musl`. The Nix package and Home Manager
-  module target only `aarch64-darwin`.
+- Release binaries are built only for `x86_64-unknown-linux-musl`. The Nix package, Home Manager
+  module, and checks target `x86_64-linux` and `aarch64-darwin`.
 - The Home Manager `profile` option accepts only `minimal`. Other setups pass a complete `source`.
 - `verify` checks required paths and runtime commands. It does not compare installed contents with
   the source.
