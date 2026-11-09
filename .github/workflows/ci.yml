@@ -14,7 +14,7 @@ concurrency:
 
 defaults:
   run:
-    shell: nix develop --command bash -eo pipefail {0}
+    shell: nix develop .#ci --command bash -eo pipefail {0}
 
 jobs:
   nix-lint:
