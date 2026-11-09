@@ -19,126 +19,166 @@
       ...
     }:
     let
-      system = "aarch64-darwin";
-      pkgs = import nixpkgs { inherit system; };
-      # Must match cargo-dist-version in Cargo.toml and CARGO_DIST_VERSION in release_artifacts.yml.
-      cargoDist = pkgs.cargo-dist.overrideAttrs (
-        finalAttrs: _: {
-          version = "0.30.2";
-          src = pkgs.fetchFromGitHub {
-            owner = "axodotdev";
-            repo = "cargo-dist";
-            tag = "v${finalAttrs.version}";
-            hash = "sha256-1stUmm7rtNB2z2srOzDvQ9QaGsS0CySBOHt118vmJoM=";
-          };
-          cargoHash = "sha256-Il5PVJHoNdifqUcXxKR+j+Lgga0kIsl7IJp9oGanZ+c=";
-          cargoDeps = pkgs.rustPlatform.fetchCargoVendor {
-            inherit (finalAttrs) src;
-            hash = finalAttrs.cargoHash;
+      systems = [
+        "x86_64-linux"
+        "aarch64-darwin"
+      ];
+      forAllSystems = nixpkgs.lib.genAttrs systems;
+      pkgsFor = forAllSystems (system: import nixpkgs { inherit system; });
+      completeSource = ./tests/fixtures/complete-source;
+    in
+    {
+      packages = forAllSystems (
+        system:
+        let
+          pkgs = pkgsFor.${system};
+        in
+        {
+          default = pkgs.rustPlatform.buildRustPackage {
+            pname = "agent-harness";
+            inherit ((builtins.fromTOML (builtins.readFile ./Cargo.toml)).package) version;
+            src = ./.;
+
+            cargoLock.lockFile = ./Cargo.lock;
+            # Tests generate throwaway RSA keys with the openssl CLI instead of committing key material.
+            nativeCheckInputs = [ pkgs.openssl ];
+
+            postInstall = ''
+              mkdir -p $out/share/agent-harness
+              cp -R profiles $out/share/agent-harness/
+            '';
+
+            meta.mainProgram = "agent-harness";
           };
         }
       );
-    in
-    {
-      packages.${system}.default = pkgs.rustPlatform.buildRustPackage {
-        pname = "agent-harness";
-        inherit ((builtins.fromTOML (builtins.readFile ./Cargo.toml)).package) version;
-        src = ./.;
-
-        cargoLock.lockFile = ./Cargo.lock;
-        # Tests generate throwaway RSA keys with the openssl CLI instead of committing key material.
-        nativeCheckInputs = [ pkgs.openssl ];
-
-        postInstall = ''
-          mkdir -p $out/share/agent-harness
-          cp -R profiles $out/share/agent-harness/
-        '';
-
-        meta.mainProgram = "agent-harness";
-      };
 
       homeManagerModules.default = import ./nix/home_manager_module.nix { inherit self; };
 
-      lib.${system} = import ./nix/lib.nix {
-        agentHarness = self.packages.${system}.default;
-        inherit pkgs;
-      };
+      lib = forAllSystems (
+        system:
+        import ./nix/lib.nix {
+          agentHarness = self.packages.${system}.default;
+          pkgs = pkgsFor.${system};
+        }
+      );
 
-      checks.${system} = {
-        home-manager-minimal = import ./tests/home_manager_module.nix {
-          agentHarnessModule = self.homeManagerModules.default;
-          inherit home-manager pkgs;
-          source = ./tests/fixtures/complete-source;
-        };
-
-        agent-github-token = import ./tests/agent_github_token.nix {
-          agentHarnessModule = self.homeManagerModules.default;
-          inherit home-manager pkgs;
-          source = ./tests/fixtures/complete-source;
-        };
-
-        agent-github-app-token = import ./tests/agent_github_app_token.nix {
-          agentHarnessModule = self.homeManagerModules.default;
-          inherit home-manager pkgs;
-          linuxPkgs = import nixpkgs { system = "x86_64-linux"; };
-          source = ./tests/fixtures/complete-source;
-        };
-
-        skill-from-command = self.lib.${system}.buildSkillFromCommand {
-          name = "example";
-          command = [
-            "${pkgs.coreutils}/bin/printf"
-            "%s\\n"
-            "---"
-            "name: example"
-            "description: Generated skill."
-            "---"
-          ];
-        };
-
-        hook-bundle-from-command =
-          let
-            installer = pkgs.writeShellApplication {
-              name = "example-hook-installer";
-              text = ''
-                readonly HOOK_DIR="$HOME/.claude/hooks"
-
-                mkdir -p "$HOOK_DIR"
-                printf '%s\n' '#!/usr/bin/env bash' 'exit 0' > "$HOOK_DIR/example.sh"
-                chmod +x "$HOOK_DIR/example.sh"
-                printf '%s\n' \
-                  "{\"hooks\":{\"PreToolUse\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"$HOME/.claude/hooks/example.sh\"}]}]}}" \
-                  > "$HOME/.claude/settings.json"
-              '';
-            };
-          in
-          self.lib.${system}.buildHookBundleFromCommands {
-            name = "example";
-            commands = [ [ (pkgs.lib.getExe installer) ] ];
+      checks = forAllSystems (
+        system:
+        let
+          pkgs = pkgsFor.${system};
+        in
+        {
+          home-manager-minimal = import ./tests/home_manager_module.nix {
+            agentHarnessModule = self.homeManagerModules.default;
+            inherit home-manager pkgs;
+            source = completeSource;
           };
-      };
 
-      devShells.${system}.default = pkgs.mkShell {
-        packages =
-          with pkgs;
-          [
-            cargo
-            cargo-deny
-            cargoDist
-            cargo-machete
-            clippy
-            commitlint
-            deadnix
-            ls-lint
-            nixfmt
-            nodejs_22
-            openssl
-            rustc
-            rustfmt
-            statix
-          ]
-          # lefthook before 2.1.6 runs hooks under a pty, which agent sandboxes deny.
-          ++ [ nixpkgs-unstable.legacyPackages.${system}.lefthook ];
-      };
+          home-manager-pure-eval = import ./tests/home_manager_pure_eval.nix {
+            agentHarnessModule = self.homeManagerModules.default;
+            inherit home-manager pkgs;
+            tree = completeSource;
+          };
+
+          agent-github-token = import ./tests/agent_github_token.nix {
+            agentHarnessModule = self.homeManagerModules.default;
+            inherit home-manager pkgs;
+            source = completeSource;
+          };
+
+          agent-github-app-token = import ./tests/agent_github_app_token.nix {
+            agentHarnessModule = self.homeManagerModules.default;
+            inherit home-manager;
+            # The test compares the launchd and systemd renderings, so it needs both hosts.
+            pkgs = pkgsFor.aarch64-darwin;
+            linuxPkgs = pkgsFor.x86_64-linux;
+            # The check itself is a derivation of the system being checked.
+            checkPkgs = pkgs;
+            source = completeSource;
+          };
+
+          skill-from-command = self.lib.${system}.buildSkillFromCommand {
+            name = "example";
+            command = [
+              "${pkgs.coreutils}/bin/printf"
+              "%s\\n"
+              "---"
+              "name: example"
+              "description: Generated skill."
+              "---"
+            ];
+          };
+
+          hook-bundle-from-command =
+            let
+              installer = pkgs.writeShellApplication {
+                name = "example-hook-installer";
+                text = ''
+                  readonly HOOK_DIR="$HOME/.claude/hooks"
+
+                  mkdir -p "$HOOK_DIR"
+                  printf '%s\n' '#!/usr/bin/env bash' 'exit 0' > "$HOOK_DIR/example.sh"
+                  chmod +x "$HOOK_DIR/example.sh"
+                  printf '%s\n' \
+                    "{\"hooks\":{\"PreToolUse\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"$HOME/.claude/hooks/example.sh\"}]}]}}" \
+                    > "$HOME/.claude/settings.json"
+                '';
+              };
+            in
+            self.lib.${system}.buildHookBundleFromCommands {
+              name = "example";
+              commands = [ [ (pkgs.lib.getExe installer) ] ];
+            };
+        }
+      );
+
+      devShells = forAllSystems (
+        system:
+        let
+          pkgs = pkgsFor.${system};
+          # Must match cargo-dist-version in Cargo.toml and CARGO_DIST_VERSION in release_artifacts.yml.
+          cargoDist = pkgs.cargo-dist.overrideAttrs (
+            finalAttrs: _: {
+              version = "0.30.2";
+              src = pkgs.fetchFromGitHub {
+                owner = "axodotdev";
+                repo = "cargo-dist";
+                tag = "v${finalAttrs.version}";
+                hash = "sha256-1stUmm7rtNB2z2srOzDvQ9QaGsS0CySBOHt118vmJoM=";
+              };
+              cargoHash = "sha256-Il5PVJHoNdifqUcXxKR+j+Lgga0kIsl7IJp9oGanZ+c=";
+              cargoDeps = pkgs.rustPlatform.fetchCargoVendor {
+                inherit (finalAttrs) src;
+                hash = finalAttrs.cargoHash;
+              };
+            }
+          );
+        in
+        {
+          default = pkgs.mkShell {
+            packages =
+              with pkgs;
+              [
+                cargo
+                cargo-deny
+                cargoDist
+                cargo-machete
+                clippy
+                commitlint
+                deadnix
+                ls-lint
+                nixfmt
+                nodejs_22
+                openssl
+                rustc
+                rustfmt
+                statix
+              ]
+              # lefthook before 2.1.6 runs hooks under a pty, which agent sandboxes deny.
+              ++ [ nixpkgs-unstable.legacyPackages.${system}.lefthook ];
+          };
+        }
+      );
     };
 }

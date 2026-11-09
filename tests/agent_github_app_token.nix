@@ -3,6 +3,7 @@
   home-manager,
   pkgs,
   linuxPkgs,
+  checkPkgs,
   source,
 }:
 let
@@ -128,4 +129,4 @@ assert lib.assertMsg (
   && linuxTimer.Timer.Persistent
 ) "the App source must check the token at login and every 5 minutes through systemd";
 assert lib.assertMsg (isRejected relativeKey) "a relative App private key path must be rejected";
-pkgs.emptyFile
+checkPkgs.emptyFile

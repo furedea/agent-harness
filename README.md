@@ -383,7 +383,7 @@ agent-harness verify --prefix "$HOME"
 
 ### Nix
 
-The flake currently exposes a package only for `aarch64-darwin`.
+The flake exposes a package for `x86_64-linux` and `aarch64-darwin`.
 
 ```bash
 nix run github:furedea/agent-harness -- install --prefix "$HOME"
@@ -393,7 +393,7 @@ nix run github:furedea/agent-harness -- verify --prefix "$HOME"
 ### Home Manager
 
 Use the Home Manager module when your agent config is managed by Nix. The module is exposed as
-`homeManagerModules.default` and currently targets `aarch64-darwin`.
+`homeManagerModules.default` and supports `x86_64-linux` and `aarch64-darwin`.
 
 ```nix
 {
@@ -587,8 +587,8 @@ The CLI also exposes lower-level generation commands for inspecting or composing
 
 | Command                          | Output                                             |
 | -------------------------------- | -------------------------------------------------- |
-| `generate-hooks --provider <id>` | Provider hook JSON or config fragment |
-| `sync-config --provider <id>` | Sync managed configuration into existing state |
+| `generate-hooks --provider <id>` | Provider hook JSON or config fragment              |
+| `sync-config --provider <id>`    | Sync managed configuration into existing state     |
 | `generate-claude-settings`       | Complete Claude Code settings JSON                 |
 | `generate-codex-config-source`   | Complete managed Codex config source               |
 | `generate-codex-config-fragment` | Guarded-filesystem TOML fragment                   |
