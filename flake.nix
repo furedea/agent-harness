@@ -160,6 +160,7 @@
             packages =
               with pkgs;
               [
+                bats
                 cargo
                 cargo-deny
                 cargoDist
@@ -167,6 +168,7 @@
                 clippy
                 commitlint
                 deadnix
+                jq
                 ls-lint
                 nixfmt
                 nodejs_22
