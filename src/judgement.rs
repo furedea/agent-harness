@@ -27,7 +27,7 @@ pub(crate) struct JudgedUnit {
     pub(crate) path: PathBuf,
 }
 
-/// A model-judged rule: the registry id, its version for cache keys, and the backend rule file.
+/// A model-judged rule: the id and version declared in the backend's own rule file, and that file.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct JudgementRule {
     pub(crate) id: String,
