@@ -50,8 +50,6 @@
 
             meta.mainProgram = "agent-harness";
           };
-
-          jev-lint = pkgs.callPackage ./nix/jev_lint.nix { };
         }
       );
 
