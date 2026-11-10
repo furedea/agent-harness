@@ -7,7 +7,6 @@ mod github_app;
 mod install_executor;
 mod install_plan;
 mod inventory;
-mod judgement;
 mod layout;
 mod manifest;
 mod profile;
