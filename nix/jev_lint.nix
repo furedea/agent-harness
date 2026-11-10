@@ -18,7 +18,7 @@ buildNpmPackage {
   src = ./jev-lint;
 
   nodejs = nodejs_24;
-  npmDepsHash = lib.fakeHash;
+  npmDepsHash = "sha256-y0lRDs4zK1klllbtKyeAOcuiJPdllnMCk8gh9WoMHYQ=";
   # The platform ast-grep binary comes from the locked optional dependency; no install script may
   # download anything.
   npmFlags = [ "--ignore-scripts" ];
