@@ -1,9 +1,0 @@
-{
-  "name": "agent-harness-jev-lint",
-  "version": "0.0.0",
-  "private": true,
-  "description": "Pins jev-lint and its npm dependencies for the Nix package.",
-  "dependencies": {
-    "jev-lint": "0.7.0"
-  }
-}
