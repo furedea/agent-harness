@@ -8,16 +8,33 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, anyhow};
 
 use super::{JudgedUnit, Judgement, JudgementBackend, JudgementRule, RawScore, UnjudgedReason};
 
 const API_KEY_VARIABLES: [&str; 2] = ["TYPESAFE_API_KEY", "TYPESAFEAI_API_KEY"];
+const STDERR_TAIL_LINES: usize = 3;
 
 pub(crate) trait CommandRunner {
     /// Runs `program` and returns its standard output whatever the exit status is, because jev-lint
     /// may exit non-zero when it reports findings.
-    fn run(&self, program: &Path, args: &[OsString]) -> Result<String>;
+    fn run(&self, program: &Path, args: &[OsString]) -> Result<CommandOutput>;
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct CommandOutput {
+    pub(crate) stdout: String,
+    pub(crate) status: String,
+    pub(crate) stderr: String,
+}
+
+impl CommandOutput {
+    /// The exit status and the last lines of stderr, to explain a run that produced no score.
+    fn failure_summary(&self) -> String {
+        let mut tail: Vec<&str> = self.stderr.lines().rev().take(STDERR_TAIL_LINES).collect();
+        tail.reverse();
+        format!("{}; stderr: {}", self.status, tail.join(" | "))
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -47,12 +64,16 @@ fn api_key_from(is_set: bool) -> ApiKey {
 pub(crate) struct ProcessRunner;
 
 impl CommandRunner for ProcessRunner {
-    fn run(&self, program: &Path, args: &[OsString]) -> Result<String> {
+    fn run(&self, program: &Path, args: &[OsString]) -> Result<CommandOutput> {
         let output = Command::new(program)
             .args(args)
             .output()
             .with_context(|| format!("failed to run {}", program.display()))?;
-        Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+        Ok(CommandOutput {
+            stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+            status: output.status.to_string(),
+            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+        })
     }
 }
 
@@ -72,11 +93,20 @@ impl<R: CommandRunner> JevLintBackend<R> {
     }
 
     fn score(&self, unit: &JudgedUnit, rule: &JudgementRule) -> Result<Judgement> {
-        let stdout = self.runner.run(&self.binary, &arguments(unit, rule))?;
-        let score = parse_raw_score(&stdout)
-            .with_context(|| format!("jev-lint rule {} on {}", rule.id, unit.path.display()))?;
+        let output = self.runner.run(&self.binary, &arguments(unit, rule))?;
+        let score = parse_raw_score(&output.stdout)
+            .with_context(|| failure_message(unit, rule, &output))?;
         Ok(Judgement::Scored(score))
     }
+}
+
+fn failure_message(unit: &JudgedUnit, rule: &JudgementRule, output: &CommandOutput) -> String {
+    format!(
+        "jev-lint rule {} on {} ({})",
+        rule.id,
+        unit.path.display(),
+        output.failure_summary()
+    )
 }
 
 impl<R: CommandRunner> JudgementBackend for JevLintBackend<R> {
@@ -101,19 +131,42 @@ fn arguments(unit: &JudgedUnit, rule: &JudgementRule) -> Vec<OsString> {
     ]
 }
 
-/// Reads the number after the first `score` in the output. The README shows findings as
+/// The highest score among the findings in the output. The README shows a finding as
 /// `score 0.89`; stage 3F confirms the exact layout against a real run.
 fn parse_raw_score(stdout: &str) -> Result<RawScore> {
-    let Some((_, after)) = stdout.split_once("score") else {
-        bail!("no score in jev-lint output");
-    };
-    let number: String = after
-        .trim_start_matches(|c: char| c.is_whitespace() || c == ':' || c == '=')
-        .chars()
-        .take_while(|c| c.is_ascii_digit() || *c == '.')
-        .collect();
-    let value = number
-        .parse::<f64>()
-        .with_context(|| format!("jev-lint score is not a number: {number:?}"))?;
-    RawScore::parse(value)
+    let scores = score_texts(stdout)
+        .filter_map(|text| text.parse::<f64>().ok())
+        .map(RawScore::parse)
+        .collect::<Result<Vec<_>>>()?;
+    scores
+        .into_iter()
+        .max_by(|left, right| left.value().total_cmp(&right.value()))
+        .ok_or_else(|| anyhow!("no score in jev-lint output"))
+}
+
+fn score_texts(stdout: &str) -> impl Iterator<Item = &str> {
+    stdout.lines().flat_map(line_score_texts)
+}
+
+fn line_score_texts(line: &str) -> Vec<&str> {
+    let tokens: Vec<&str> = line.split_whitespace().collect();
+    tokens
+        .iter()
+        .enumerate()
+        .filter_map(|(index, token)| score_text(token, tokens.get(index + 1).copied()))
+        .collect()
+}
+
+/// The text after a `score` token, which must be the whole word: paths and rule ids that merely
+/// contain "score" do not count. The value follows as `score 0.9`, `score: 0.9`, or `score=0.9`.
+fn score_text<'a>(token: &'a str, next: Option<&'a str>) -> Option<&'a str> {
+    let rest = token.strip_prefix("score")?;
+    if !(rest.is_empty() || rest.starts_with([':', '='])) {
+        return None;
+    }
+    let inline = rest.trim_start_matches([':', '=']);
+    if inline.is_empty() {
+        return next.map(|text| text.trim_start_matches([':', '=']));
+    }
+    Some(inline)
 }

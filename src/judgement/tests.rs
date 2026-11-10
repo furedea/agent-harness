@@ -4,30 +4,43 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 
-use super::jev_lint::{ApiKey, CommandRunner, JevLintBackend};
+use super::jev_lint::{ApiKey, CommandOutput, CommandRunner, JevLintBackend};
 use super::{JudgedUnit, Judgement, JudgementBackend, JudgementRule, RawScore, UnjudgedReason};
 
 struct FakeRunner {
-    stdout: String,
+    output: CommandOutput,
     calls: RefCell<Vec<(PathBuf, Vec<OsString>)>>,
 }
 
 impl FakeRunner {
     fn replying(stdout: &str) -> Self {
+        Self::failing(stdout, "exit status: 0", "")
+    }
+
+    fn failing(stdout: &str, status: &str, stderr: &str) -> Self {
         Self {
-            stdout: stdout.to_owned(),
+            output: CommandOutput {
+                stdout: stdout.to_owned(),
+                status: status.to_owned(),
+                stderr: stderr.to_owned(),
+            },
             calls: RefCell::new(Vec::new()),
         }
     }
 }
 
 impl CommandRunner for &FakeRunner {
-    fn run(&self, program: &Path, args: &[OsString]) -> Result<String> {
+    fn run(&self, program: &Path, args: &[OsString]) -> Result<CommandOutput> {
         self.calls
             .borrow_mut()
             .push((program.to_path_buf(), args.to_vec()));
-        Ok(self.stdout.clone())
+        Ok(self.output.clone())
     }
+}
+
+fn score_of(stdout: &str, unit: &JudgedUnit, rule: &JudgementRule) -> Judgement {
+    let runner = FakeRunner::replying(stdout);
+    backend(&runner, ApiKey::Present).judge(unit, rule).unwrap()
 }
 
 /// The interface is usable without jev-lint: callers can substitute any backend.
@@ -143,6 +156,46 @@ fn output_without_a_usable_score_is_an_error_not_a_zero() {
             "{stdout:?}"
         );
     }
+}
+
+#[test]
+fn a_path_or_rule_id_that_contains_score_is_not_read_as_the_score() {
+    let unit = JudgedUnit {
+        path: PathBuf::from("scores/score.py"),
+    };
+    let rule = JudgementRule {
+        id: "python/score-names-describe-values".to_owned(),
+        ..rule()
+    };
+    let stdout = "scores/score.py:3 rule python/score-names-describe-values score 0.61 cutoff 0.5";
+
+    assert_eq!(
+        score_of(stdout, &unit, &rule),
+        Judgement::Scored(RawScore::parse(0.61).unwrap())
+    );
+}
+
+#[test]
+fn several_findings_for_one_unit_report_the_highest_score() {
+    let stdout = "src/lib.py:3 score 0.31\nsrc/lib.py:9 score 0.88\nsrc/lib.py:20 score 0.52";
+
+    assert_eq!(
+        score_of(stdout, &unit(), &rule()),
+        Judgement::Scored(RawScore::parse(0.88).unwrap())
+    );
+}
+
+#[test]
+fn a_missing_score_error_carries_the_exit_status_and_the_end_of_stderr() {
+    let runner = FakeRunner::failing("", "exit status: 2", "line1\nline2\nrule file is invalid");
+
+    let error = backend(&runner, ApiKey::Present)
+        .judge(&unit(), &rule())
+        .unwrap_err();
+
+    let message = format!("{error:#}");
+    assert!(message.contains("exit status: 2"), "{message}");
+    assert!(message.contains("rule file is invalid"), "{message}");
 }
 
 #[test]
