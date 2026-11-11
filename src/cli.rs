@@ -426,13 +426,16 @@ fn write_stdout(content: &str) -> Result<()> {
 }
 
 fn resolve_prefix(prefix: Option<PathBuf>) -> Result<PathBuf> {
-    prefix.map_or_else(home_dir, Ok)
+    match prefix {
+        Some(prefix) => Ok(prefix),
+        None => home_dir().context("pass --prefix or set HOME"),
+    }
 }
 
 fn home_dir() -> Result<PathBuf> {
     std::env::var_os("HOME")
         .map(PathBuf::from)
-        .context("HOME is not set; pass --prefix or set HOME")
+        .context("HOME is not set")
 }
 
 impl From<Provider> for render::Provider {

@@ -201,6 +201,32 @@ fn merge_item_keeps_existing_entries_of_an_inline_table() -> Result<()> {
     Ok(())
 }
 
+#[test]
+fn merge_item_keeps_nested_source_tables_under_an_inline_table() -> Result<()> {
+    for base in ["permissions = {}\n", "permissions = { other = 1 }\n"] {
+        assert_guarded_entry_survives_merge(base)?;
+    }
+    Ok(())
+}
+
+fn assert_guarded_entry_survives_merge(base: &str) -> Result<()> {
+    let mut target = base.parse::<DocumentMut>()?;
+    let source = "[permissions.guarded.filesystem]\n\"/a\" = \"read\"\n".parse::<DocumentMut>()?;
+
+    for (key, item) in source.iter() {
+        merge_item(&mut target[key], item);
+    }
+
+    let rendered = target.to_string();
+    let reparsed = rendered.parse::<DocumentMut>()?;
+    assert_eq!(
+        reparsed["permissions"]["guarded"]["filesystem"]["/a"].as_str(),
+        Some("read"),
+        "{rendered}",
+    );
+    Ok(())
+}
+
 fn env_source(pairs: &[(&str, &str)]) -> Result<DocumentMut> {
     let header = (!pairs.is_empty()).then_some("[shell_environment_policy.set]\n");
     let entries = pairs
