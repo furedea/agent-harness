@@ -10,6 +10,7 @@ try {
   process.env.AGENT_HARNESS_PI_ADAPTER = adapter;
   process.env.AGENT_HARNESS_PI_SANDBOX_POLICY = join(root, 'sandbox_policy.json');
   process.env.AGENT_HARNESS_HOOK_TIMEOUT = "3";
+  writeFileSync(process.env.AGENT_HARNESS_PI_SANDBOX_POLICY, JSON.stringify({ filesystem: { denyRead: [], allowWrite: [], denyWrite: [] } }));
   const { default: register } = await import('../src/generation/assets/pi/hook_bridge.ts');
   const listeners = new Map();
   register({ on(event, listener) { listeners.set(event, listener); } });
@@ -91,9 +92,21 @@ sys.exit(${code})
     assert.equal((await fileCall(tool, path))?.block, true, tool + ': ' + path);
   }
   assert.equal(await fileCall('read', 'sub/locked/f'), undefined);
+  // Hard links to a denied literal file are the same file.
+  writeFileSync(join(root, 'secret/real'), 'x');
+  linkSync(join(root, 'secret/real'), join(root, 'alias2'));
+  writeFileSync(policy, JSON.stringify({ filesystem: { denyRead: [join(root, 'secret/real')], allowWrite: [], denyWrite: [] } }));
+  assert.equal((await fileCall('read', 'alias2'))?.block, true);
+  // Glob syntax the translator cannot honour, a bad file and a missing file all fail closed.
+  for (const entry of ['~/[ab]/x', join(root, '{a,b}/x')]) {
+    writeFileSync(policy, JSON.stringify({ filesystem: { denyRead: [entry], allowWrite: [], denyWrite: [] } }));
+    for (const tool of ['read', 'write', 'edit']) assert.equal((await fileCall(tool, 'sub/ok'))?.block, true, entry);
+  }
   writeFileSync(policy, '{');
   for (const tool of ['read', 'write', 'edit']) assert.equal((await fileCall(tool, 'sub/ok'))?.block, true);
   rmSync(policy);
+  for (const tool of ['read', 'write', 'edit']) assert.equal((await fileCall(tool, 'sub/ok'))?.block, true);
+  writeFileSync(policy, JSON.stringify({ filesystem: { denyRead: [], allowWrite: [], denyWrite: [] } }));
   // A hard link is the same file under another name; identity, not spelling, decides.
   const savedHome = process.env.HOME;
   process.env.HOME = join(root, 'home');

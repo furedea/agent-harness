@@ -148,8 +148,15 @@ function sameFile(a: string, b: string): boolean {
 }
 
 // srt only wraps bash, so the generated deny rules are also enforced on the file tools.
-function globRegex(pattern: string, root: string): RegExp {
-	const lexical = resolve(root, normalizeToolPath(pattern));
+interface DenyRule {
+	pattern: RegExp;
+	literal?: string;
+}
+
+function denyRule(entry: string, root: string): DenyRule {
+	// Anything the translator cannot honour must block rather than silently not match.
+	if (/[\[\]{}\0]/.test(entry)) throw new Error("Unsupported glob syntax: " + entry);
+	const lexical = resolve(root, normalizeToolPath(entry.replace(/^\$HOME(?=\/|$)/, homedir())));
 	// Resolve symlinks (macOS /var) in the literal part only, as targets are compared in resolved form.
 	const glob = lexical.search(/[*?]/);
 	const split = glob < 0 ? lexical.length : lexical.lastIndexOf("/", glob);
@@ -158,17 +165,22 @@ function globRegex(pattern: string, root: string): RegExp {
 		.split(/(\*\*\/|\*\*|\*|\?)/)
 		.map(part => ({ "**/": "(?:.*/)?", "**": ".*", "*": "[^/]*", "?": "[^/]" })[part] ?? part.replace(/[.+^${}()|[\]\\]/g, "\\$&"))
 		.join("");
-	return new RegExp("^" + body + "(?:/.*)?$");
+	return { pattern: new RegExp("^" + body + "(?:/.*)?$"), literal: glob < 0 ? absolute : undefined };
 }
 
-function denyRules(root: string): { read: RegExp[]; write: RegExp[] } | undefined {
-	if (!existsSync(SANDBOX_POLICY)) return { read: [], write: [] };
+// A missing or malformed policy blocks the file tools, as it does bash.
+function denyRules(root: string): { read: DenyRule[]; write: DenyRule[] } | undefined {
+	if (!existsSync(SANDBOX_POLICY)) return undefined;
 	const policy: unknown = JSON.parse(readFileSync(SANDBOX_POLICY, "utf8"));
 	if (!isRecord(policy) || !isRecord(policy.filesystem)) return undefined;
 	const { denyRead, denyWrite } = policy.filesystem;
 	if (!Array.isArray(denyRead) || !Array.isArray(denyWrite)) return undefined;
 	if (![...denyRead, ...denyWrite].every(entry => typeof entry === "string" && entry)) return undefined;
-	return { read: denyRead.map(entry => globRegex(entry, root)), write: denyWrite.map(entry => globRegex(entry, root)) };
+	return { read: denyRead.map(entry => denyRule(entry, root)), write: denyWrite.map(entry => denyRule(entry, root)) };
+}
+
+function isDenied(rules: DenyRule[], paths: string[]): boolean {
+	return rules.some(rule => paths.some(path => rule.pattern.test(path) || (rule.literal !== undefined && sameFile(path, rule.literal))));
 }
 
 function fileBoundary(tool: string, input: unknown, cwd: string): string | undefined {
@@ -181,7 +193,7 @@ function fileBoundary(tool: string, input: unknown, cwd: string): string | undef
 		const rules = denyRules(root);
 		if (!rules) return "Invalid sandbox policy";
 		const denied = tool === "read" ? rules.read : [...rules.read, ...rules.write];
-		if ([lexical, target].some(path => denied.some(rule => rule.test(path)))) return "Path is denied by the sandbox policy";
+		if (isDenied(denied, [lexical, target])) return "Path is denied by the sandbox policy";
 		if ([lexical, target].some(isCredentialFile)) return "File tools cannot access Pi credentials";
 		const path = relative(root, target);
 		if (tool !== "read" && (path === ".." || path.startsWith(".." + sep) || isAbsolute(path))) {
