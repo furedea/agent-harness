@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { registerHooks } from 'node:module';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, copyFileSync, writeFileSync, readFileSync, realpathSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, copyFileSync, symlinkSync, writeFileSync, readFileSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -49,6 +49,8 @@ const root = mkdtempSync(join(tmpdir(), 'pi-sandbox-'));
 const cleanups = [];
 try {
   const repo = join(root, 'repo');
+  writeFileSync(join(root, 'target'), 'x');
+  symlinkSync(join(root, 'target'), join(root, 'link-to-target'));
   const worktree = join(root, "work tree's");
   execFileSync('git', ['init', repo]);
   execFileSync('git', ['-C', repo, '-c', 'user.name=Test', '-c', 'user.email=test@example.com', 'commit', '--allow-empty', '-m', 'initial']);
@@ -61,7 +63,7 @@ try {
   const policyPath = join(root, 'sandbox_policy.json');
   const policy = {
     network: { allowedDomains: ['github.com'], deniedDomains: [], allowUnixSockets: ['/nix/var/nix/daemon-socket/socket'] },
-    filesystem: { denyRead: ['~/.pi/agent/auth.json'], allowWrite: [], denyWrite: [] },
+    filesystem: { denyRead: ['~/.pi/agent/auth.json'], allowWrite: [], denyWrite: [join(root, 'link-to-target')] },
   };
   writeFileSync(policyPath, JSON.stringify(policy));
   const bin = join(root, 'bin');
@@ -162,6 +164,10 @@ if (args[3].includes('file_operations.mjs')) {
   assert.ok(plainRecord.settings.filesystem.denyWrite.every(path => !path.endsWith('config.worktree')));
   // A .git planted later would make git run attacker config outside the sandbox, so it is denied even when absent.
   assert.ok(plainRecord.settings.filesystem.denyWrite.includes(join(realpathSync(plain), '.git')));
+  // A protected symlink keeps its own deny rule (the link can be replaced) besides its target's.
+  for (const path of [join(realpathSync(root), 'link-to-target'), join(realpathSync(root), 'target')]) {
+    assert.ok(record.settings.filesystem.denyWrite.includes(path), path);
+  }
   // The first resolution is final: a directory that becomes a repository mid-session is refused, not re-trusted.
   execFileSync('git', ['init', plain]);
   await assert.rejects(() => tool.execute('id', { command: 'true' }, undefined, undefined, { cwd: plain }), /git layout changed/);

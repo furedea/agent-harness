@@ -33,15 +33,18 @@ require('node:child_process').execFileSync('/bin/sh', ['-c', process.argv[5]], {
   const tools = new Map(Object.entries(pi.createAllTools(root)));
   const { default: register } = await import(pathToFileURL(join(root, 'bash_sandbox.ts')));
   let active;
+  let current = ['read', 'mcp_file'];
   register({ registerTool(tool) { tools.set(tool.name, tool); },
     getAllTools() { return [...tools.values()]; },
+    getActiveTools() { return current; },
     setActiveTools(names) { active = names; },
     on(name, handler) { listeners.set(name, handler); },
   });
   tools.set('mcp_file', { name: 'mcp_file' });
   await listeners.get('before_agent_start')();
   const managed = ['bash', 'read', 'write', 'edit', 'grep', 'find', 'ls'];
-  assert.deepEqual(active.sort(), managed.sort());
+  // The user's restriction is kept: only already-active managed tools stay on, nothing is switched on.
+  assert.deepEqual(active, ['read']);
   // Enumerate the actual registry: every unmanaged tool must be inaccessible.
   for (const name of tools.keys()) {
     const decision = await listeners.get('tool_call')({ toolName: name });

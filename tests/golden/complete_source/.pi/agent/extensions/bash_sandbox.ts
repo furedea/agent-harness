@@ -58,6 +58,14 @@ function canonical(path: string): string {
 	}
 }
 
+// A protected symlink must keep its own rule as well as its target's: the link itself can be replaced.
+function protectedPaths(path: string, cwd: string): string[] {
+	const expanded = path.replace(/^(~|\$HOME)(?=\/|$)/, homedir());
+	const absolute = resolve(cwd, expanded);
+	const literal = policyPath(dirname(absolute), cwd) + "/" + basename(absolute);
+	return [...new Set([literal, policyPath(path, cwd)])];
+}
+
 function policyPath(path: string, cwd: string): string {
 	const expanded = path.replace(/^(~|\$HOME)(?=\/|$)/, homedir());
 	const absolute = resolve(cwd, expanded);
@@ -97,8 +105,9 @@ function isCommonDirectory(path: string, common: string): boolean {
 // Policy for one worktree: the static source policy plus what only the runtime knows.
 function buildPolicy(source: Policy, cwd: string, temporary: string, protectedFiles: string[], common: string | undefined): Policy {
 	const policy: Policy = structuredClone(source);
-	for (const key of ["denyRead", "allowWrite", "denyWrite"] as const) {
-		policy.filesystem[key] = policy.filesystem[key].map(path => policyPath(path, cwd));
+	policy.filesystem.allowWrite = policy.filesystem.allowWrite.map(path => policyPath(path, cwd));
+	for (const key of ["denyRead", "denyWrite"] as const) {
+		policy.filesystem[key] = policy.filesystem[key].flatMap(path => protectedPaths(path, cwd));
 	}
 	policy.network.allowUnixSockets = policy.network.allowUnixSockets.map(path => policyPath(path, cwd));
 	policy.filesystem.allowWrite.push(cwd);
@@ -246,7 +255,8 @@ export default function (pi: ExtensionAPI) {
 	}
 	const allowed = new Set(["bash", "read", "write", "edit", "grep", "find", "ls"]);
 	pi.on("before_agent_start", async () => {
-		pi.setActiveTools(pi.getAllTools().filter(tool => allowed.has(tool.name)).map(tool => tool.name));
+		// Narrow only: never switch on a tool the user left off.
+		pi.setActiveTools(pi.getActiveTools().filter(name => allowed.has(name)));
 	});
 	pi.on("tool_call", async event => {
 		if (!allowed.has(event.toolName)) {
