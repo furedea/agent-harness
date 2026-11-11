@@ -20,13 +20,13 @@ use crate::{
     github_app::{self, GitHubRestApi, RefreshRequest},
     inventory::Inventory,
     profile::Profile,
-    provider::spec::ProviderId,
+    provider::spec::{PROVIDERS, ProviderId},
     render::{self, RenderRequest},
     runtime,
     runtime_root::RuntimeRoot,
-    shell::{self, ExternalInputs, hook_bundle, load_snapshot, source_request, sync::SyncPaths},
-    snapshot::{Snapshot, Tree},
+    shell::{self, LoadInputs, hook_bundle, load_source, sync::SyncPaths},
     source,
+    source_model::Source,
 };
 
 #[derive(Debug, Parser)]
@@ -296,61 +296,50 @@ pub fn run() -> Result<()> {
         Command::SyncHermesConfig(args) => sync_config(ProviderId::Hermes, &args),
         Command::SyncDshConfig(args) => sync_config(ProviderId::Dsh, &args),
         Command::Verify(args) => {
-            let source = source::resolve_source(args.source, profile)?;
+            let source = load_resolved_source(args.source, &[], profile)?;
             let prefix = resolve_prefix(args.prefix)?;
             render::verify(&prefix)?;
-            runtime::verify(source.as_path())
+            runtime::verify(&source)
         }
     }
 }
 
 fn generate_claude_settings(args: GenerateFileArgs, profile: Profile) -> Result<()> {
-    let source = source::resolve_source(args.source, profile)?;
-    let files = load_source(source.as_path(), &args.extra_hook)?;
-    shell::execute(&[claude_config::settings_op(
-        Tree::new(source.as_path(), &files),
-        &args.output,
-        &args.extra_hook,
-    )?])
+    let source = load_resolved_source(args.source, &args.extra_hook, profile)?;
+    shell::execute(&[claude_config::settings_op(&source, &args.output)?])
 }
 
 fn generate_codex_config_source(args: GenerateFileArgs, profile: Profile) -> Result<()> {
-    let source = source::resolve_source(args.source, profile)?;
-    let files = load_source(source.as_path(), &args.extra_hook)?;
-    shell::execute(&[codex_config::config_source_op(
-        Tree::new(source.as_path(), &files),
-        &args.output,
-        &args.extra_hook,
-    )?])
+    let source = load_resolved_source(args.source, &args.extra_hook, profile)?;
+    shell::execute(&[codex_config::config_source_op(&source, &args.output)?])
 }
 
 fn write_codex_config_fragment(args: GenerateFileArgs, profile: Profile) -> Result<()> {
-    let source = source::resolve_source(args.source, profile)?;
-    let files = load_source(source.as_path(), &args.extra_hook)?;
-    shell::execute(&[protection::codex_config_fragment_op(
-        Tree::new(source.as_path(), &files),
-        &args.extra_hook,
-        &args.output,
-    )?])
+    let source = load_resolved_source(args.source, &args.extra_hook, profile)?;
+    shell::execute(&[protection::codex_config_fragment_op(&source, &args.output)?])
 }
 
 fn write_hooks(provider: ProviderId, args: GenerateFileArgs, profile: Profile) -> Result<()> {
-    let source = source::resolve_source(args.source, profile)?;
-    let files = load_source(source.as_path(), &args.extra_hook)?;
+    let source = load_resolved_source(args.source, &args.extra_hook, profile)?;
     shell::execute(&[hooks::hooks_op_for_runtime(
-        GenerationContext::home(Tree::new(source.as_path(), &files), &args.extra_hook),
+        GenerationContext::home(&source),
         &args.output,
         provider.spec(),
     )?])
 }
 
-/// The source tree and the external hook bundles a command renders from, read once.
-fn load_source(source: &Path, hook_bundles: &[ExternalHookBundle]) -> Result<Snapshot> {
-    let external = ExternalInputs {
+/// The source tree and the external hook bundles a command renders from, read and parsed once.
+fn load_resolved_source(
+    explicit_source: Option<PathBuf>,
+    hook_bundles: &[ExternalHookBundle],
+    profile: Profile,
+) -> Result<Source> {
+    let root = source::resolve_source(explicit_source, profile)?;
+    let inputs = LoadInputs {
         hook_bundles,
-        ..ExternalInputs::default()
+        ..LoadInputs::new(PROVIDERS)
     };
-    load_snapshot(&source_request(source, external))
+    load_source(root.as_path(), &inputs)
 }
 
 fn sync_config(provider: ProviderId, args: &SyncConfigArgs) -> Result<()> {
@@ -376,11 +365,10 @@ fn write_forbidden_commands(args: GenerateFileArgs, profile: Profile) -> Result<
 fn generate_file(
     args: GenerateFileArgs,
     profile: Profile,
-    generate: impl FnOnce(Tree<'_>, &Path) -> Result<FileOp>,
+    generate: impl FnOnce(&Source, &Path) -> Result<FileOp>,
 ) -> Result<()> {
-    let source = source::resolve_source(args.source, profile)?;
-    let files = load_source(source.as_path(), &[])?;
-    shell::execute(&[generate(Tree::new(source.as_path(), &files), &args.output)?])
+    let source = load_resolved_source(args.source, &[], profile)?;
+    shell::execute(&[generate(&source, &args.output)?])
 }
 
 // Skills and install stay explicit because they add provider and prefix handling
@@ -437,9 +425,8 @@ fn github_app_token(command: GithubAppTokenCommand) -> Result<()> {
 }
 
 fn list(args: ListArgs, profile: Profile) -> Result<()> {
-    let source = source::resolve_source(args.source, profile)?;
-    let files = load_source(source.as_path(), &[])?;
-    let inventory = Inventory::load(Tree::new(source.as_path(), &files))?;
+    let source = load_resolved_source(args.source, &[], profile)?;
+    let inventory = Inventory::load(&source)?;
     let output = match args.command {
         Some(ListCommand::Hooks(hook_args)) => inventory.hooks(hook_args.provider),
         Some(ListCommand::Skills) => inventory.skills(),

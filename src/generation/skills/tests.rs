@@ -8,19 +8,12 @@ fn render_skills(
     external_skills: &[ExternalSkill],
     target: SkillTarget<'_>,
 ) -> Result<()> {
-    let request = crate::shell::source_request(
-        source,
-        crate::shell::ExternalInputs {
-            skills: external_skills,
-            ..Default::default()
-        },
-    );
-    let files = crate::shell::load_snapshot(&request)?;
-    crate::shell::execute(&[super::render_skills(
-        Tree::new(source, &files),
-        external_skills,
-        target,
-    )?])
+    let inputs = crate::shell::LoadInputs {
+        skills: external_skills,
+        ..crate::shell::LoadInputs::new(crate::provider::spec::PROVIDERS)
+    };
+    let loaded = crate::shell::fixtures::load_source_with(source, &inputs)?;
+    crate::shell::execute(&[super::render_skills(&loaded, target)?])
 }
 
 #[test]
@@ -250,7 +243,7 @@ fn render_skills_preserves_installed_skills_when_a_source_is_invalid() -> Result
     )
     .unwrap_err();
 
-    assert!(error.to_string().contains("frontmatter"));
+    assert!(format!("{error:#}").contains("frontmatter"));
     assert_eq!(
         std::fs::read_to_string(out.join("existing/SKILL.md"))?,
         "installed skill\n",
@@ -282,7 +275,7 @@ fn render_skills_rejects_an_external_skill_with_only_a_symlinked_skill_file() ->
     )
     .unwrap_err();
 
-    assert!(error.to_string().contains("SKILL.md"));
+    assert!(format!("{error:#}").contains("SKILL.md"));
     assert_eq!(
         std::fs::read_to_string(out.join("existing/SKILL.md"))?,
         "installed skill\n",
@@ -303,7 +296,7 @@ fn write_skill_source(source: &Path, skill_name: &str) -> Result<()> {
     crate::shell::fixtures::create_dir_all(&skill_dir)?;
     crate::shell::fixtures::write(
         skill_dir.join("SKILL.md"),
-        "---\nname: example\ndescription: test skill\n---\n\nBody\n",
+        "---\nname: example\ndescription: test skill\n---\n\n# Example\n\nBody\n",
     )?;
     Ok(())
 }

@@ -61,6 +61,44 @@ impl FileOp {
         Ok(Self::write(target, content))
     }
 
+    /// The operation with every target under `from` moved to the same place under `to`.
+    ///
+    /// Sources are unchanged: this reuses one provider's output for another without reading it
+    /// back from disk.
+    #[must_use]
+    pub(crate) fn relocated(self, from: &Path, to: &Path) -> Self {
+        let move_target = |target: PathBuf| match target.strip_prefix(from) {
+            Ok(relative) => to.join(relative),
+            Err(_) => target,
+        };
+        match self {
+            Self::WriteFile {
+                target,
+                content,
+                mode,
+            } => Self::WriteFile {
+                target: move_target(target),
+                content,
+                mode,
+            },
+            Self::CopyFile { source, target } => Self::CopyFile {
+                source,
+                target: move_target(target),
+            },
+            Self::CopyTree { source, target } => Self::CopyTree {
+                source,
+                target: move_target(target),
+            },
+            Self::ReplaceTree { target, contents } => Self::ReplaceTree {
+                target: move_target(target),
+                contents: contents
+                    .into_iter()
+                    .map(|operation| operation.relocated(from, to))
+                    .collect(),
+            },
+        }
+    }
+
     pub(crate) fn target(&self) -> &Path {
         match self {
             Self::WriteFile { target, .. }
@@ -68,5 +106,48 @@ impl FileOp {
             | Self::CopyTree { target, .. }
             | Self::ReplaceTree { target, .. } => target,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn relocation_moves_every_target_under_the_old_root_and_keeps_sources() {
+        let operation = FileOp::ReplaceTree {
+            target: PathBuf::from("out/.codex/skills"),
+            contents: vec![
+                FileOp::write("out/.codex/skills/a/SKILL.md", "a"),
+                FileOp::CopyTree {
+                    source: PathBuf::from("source/skills/a/data"),
+                    target: PathBuf::from("out/.codex/skills/a/data"),
+                },
+            ],
+        };
+
+        let moved =
+            operation.relocated(Path::new("out/.codex/skills"), Path::new("out/.pi/skills"));
+
+        let expected = FileOp::ReplaceTree {
+            target: PathBuf::from("out/.pi/skills"),
+            contents: vec![
+                FileOp::write("out/.pi/skills/a/SKILL.md", "a"),
+                FileOp::CopyTree {
+                    source: PathBuf::from("source/skills/a/data"),
+                    target: PathBuf::from("out/.pi/skills/a/data"),
+                },
+            ],
+        };
+        assert_eq!(moved, expected);
+    }
+
+    #[test]
+    fn relocation_leaves_a_target_outside_the_old_root_alone() {
+        let operation = FileOp::write("elsewhere/file", "x");
+
+        let moved = operation.relocated(Path::new("out/a"), Path::new("out/b"));
+
+        assert_eq!(moved, FileOp::write("elsewhere/file", "x"));
     }
 }

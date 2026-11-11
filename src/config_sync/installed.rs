@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 
 use super::codec::{ConfigDocument, Role};
-use crate::{file_op::FileOp, provider::ownership::ConfigSync, snapshot::Snapshot};
+use crate::{file_op::FileOp, provider::ownership::ConfigSync};
 
 /// What a sync leaves to write: the config and, when a claim tracks keys, its sidecar.
 #[derive(Debug, PartialEq, Eq)]
@@ -85,7 +85,7 @@ pub(crate) struct InstalledText<'a> {
 }
 
 /// The config of a provider as the user has it, with the state the harness keeps beside it.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct Installed {
     document: Option<ConfigDocument>,
     /// `None` when there is no readable sidecar.
@@ -108,25 +108,12 @@ impl Installed {
         })
     }
 
-    /// Reads the config at `path` and its sidecar from `files`.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error when the config exists but cannot be read or parsed.
-    pub(crate) fn from_snapshot(sync: &ConfigSync, files: &Snapshot, path: &Path) -> Result<Self> {
-        let text = files.read_text_if_present(path)?;
-        let sidecar = sync
-            .sidecar_file()
-            .map(|file| sidecar_path(path, file))
-            .and_then(|path| files.read_text_if_present(&path).ok().flatten());
-        Self::parse(
-            sync,
-            path,
-            InstalledText {
-                config: text,
-                sidecar,
-            },
-        )
+    /// A config that is not installed.
+    pub(crate) fn absent() -> Self {
+        Self {
+            document: None,
+            tracked: None,
+        }
     }
 
     pub(crate) fn exists(&self) -> bool {
@@ -143,42 +130,32 @@ pub(crate) fn sidecar_path(target: &Path, file: &str) -> PathBuf {
     target.with_file_name(file)
 }
 
-/// The paths a sync reads besides the rendered config: the installed config and its sidecar.
-pub(crate) fn installed_files(sync: &ConfigSync, target: &Path) -> Vec<PathBuf> {
-    std::iter::once(target.to_path_buf())
-        .chain(sync.sidecar_file().map(|file| sidecar_path(target, file)))
-        .collect()
-}
+/// The installed configs a rendering merges into, parsed at the boundary, by the path the
+/// registry names each with.
+#[derive(Debug, Default)]
+pub(crate) struct InstalledConfigs(BTreeMap<String, Installed>);
 
-/// The rendered config at `path`, or an empty one when the file does not exist.
-///
-/// # Errors
-///
-/// Returns an error naming `path` when it exists and cannot be read or parsed.
-pub(crate) fn read_optional_generated(
-    sync: &ConfigSync,
-    files: &Snapshot,
-    path: &Path,
-) -> Result<ConfigDocument> {
-    match files.read_text_if_present(path)? {
-        Some(_) => read_generated(sync, files, path),
-        None => Ok(ConfigDocument::blank(sync.format)),
+impl InstalledConfigs {
+    pub(crate) fn insert(&mut self, path: &str, installed: Installed) {
+        self.0.insert(path.to_owned(), installed);
+    }
+
+    /// The installed config at `path`; one that was not loaded is absent.
+    pub(crate) fn get(&self, path: &str) -> Installed {
+        self.0.get(path).cloned().unwrap_or_else(Installed::absent)
     }
 }
 
-/// The rendered config at `path`.
+/// The rendered config `text` read from `path`.
 ///
 /// # Errors
 ///
-/// Returns an error naming `path` when it cannot be read or parsed.
-pub(crate) fn read_generated(
+/// Returns an error naming `path` when it cannot be parsed.
+pub(crate) fn parse_generated(
     sync: &ConfigSync,
-    files: &Snapshot,
     path: &Path,
+    text: &str,
 ) -> Result<ConfigDocument> {
-    let text = files
-        .read_text(path)
-        .with_context(|| format!("failed to read {}", path.display()))?;
     ConfigDocument::parse(sync.format, text, Role::Generated)
         .with_context(|| format!("failed to parse {}", path.display()))
 }

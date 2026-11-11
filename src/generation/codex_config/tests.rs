@@ -1,13 +1,19 @@
 use super::*;
-use crate::shell::fixtures::load_tree;
+use crate::generation::external_hooks::ExternalHookBundle;
+use crate::provider::spec::PROVIDERS;
+use crate::shell::{LoadInputs, fixtures::load_source_with};
 
 fn write_config_source(
     source: &Path,
     out: &Path,
     external_hooks: &[ExternalHookBundle],
 ) -> Result<()> {
-    let loaded = load_tree(source)?;
-    crate::shell::execute(&[config_source_op(loaded.tree(), out, external_hooks)?])
+    let inputs = LoadInputs {
+        hook_bundles: external_hooks,
+        ..LoadInputs::new(PROVIDERS)
+    };
+    let loaded = load_source_with(source, &inputs)?;
+    crate::shell::execute(&[config_source_op(&loaded, out)?])
 }
 #[test]
 fn merge_item_keeps_existing_entries_of_an_inline_table() -> Result<()> {

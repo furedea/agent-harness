@@ -6,10 +6,10 @@ use serde::Serialize;
 
 use crate::{
     file_op::FileOp,
-    generation::external_hooks::ExternalHookBundle,
+    generation::GenerationContext,
     layout::{InstalledLayout, SourceLayout},
     runtime_root::RuntimeRoot,
-    snapshot::{Snapshot, Tree},
+    source_model::Source,
 };
 
 const GLOB_SCAN_MAX_DEPTH: u64 = 5;
@@ -21,15 +21,8 @@ struct ProtectedPathPolicy {
     paths: Vec<String>,
 }
 
-pub(crate) fn codex_config_fragment_op(
-    source: Tree<'_>,
-    external_hooks: &[ExternalHookBundle],
-    path: &Path,
-) -> Result<FileOp> {
-    Ok(FileOp::write(
-        path,
-        codex_config_fragment(source, external_hooks)?,
-    ))
+pub(crate) fn codex_config_fragment_op(source: &Source, path: &Path) -> Result<FileOp> {
+    Ok(FileOp::write(path, codex_config_fragment(source)?))
 }
 
 pub(crate) fn runtime_policy_op(paths: Vec<String>, path: &Path) -> Result<FileOp> {
@@ -40,21 +33,15 @@ pub(crate) fn runtime_policy_op(paths: Vec<String>, path: &Path) -> Result<FileO
     FileOp::write_json(path, &policy)
 }
 
-pub(crate) fn codex_config_fragment(
-    source: Tree<'_>,
-    external_hooks: &[ExternalHookBundle],
-) -> Result<String> {
-    codex_config_fragment_for_runtime(crate::generation::GenerationContext {
+pub(crate) fn codex_config_fragment(source: &Source) -> Result<String> {
+    codex_config_fragment_for_runtime(GenerationContext {
         source,
-        external_hooks,
         runtime_root: &RuntimeRoot::home(),
         dsh_profile: "web",
     })
 }
 
-pub(crate) fn codex_config_fragment_for_runtime(
-    context: crate::generation::GenerationContext<'_>,
-) -> Result<String> {
+pub(crate) fn codex_config_fragment_for_runtime(context: GenerationContext<'_>) -> Result<String> {
     let mut fragment = String::from("[permissions.guarded.filesystem]\n");
 
     for path in protected_paths_for_runtime(context)? {
@@ -66,11 +53,8 @@ pub(crate) fn codex_config_fragment_for_runtime(
 }
 
 #[cfg(test)]
-pub(crate) fn protected_claude_deny_permissions(
-    source: Tree<'_>,
-    external_hooks: &[ExternalHookBundle],
-) -> Result<Vec<String>> {
-    Ok(protected_paths(source, external_hooks)?
+pub(crate) fn protected_claude_deny_permissions(source: &Source) -> Result<Vec<String>> {
+    Ok(protected_paths(source)?
         .into_iter()
         .map(|path| {
             crate::generation::permission_rule::PathRule::write_installed_path(path).claude()
@@ -79,26 +63,20 @@ pub(crate) fn protected_claude_deny_permissions(
 }
 
 #[cfg(test)]
-pub(crate) fn protected_paths(
-    source: Tree<'_>,
-    external_hooks: &[ExternalHookBundle],
-) -> Result<Vec<String>> {
-    protected_paths_for_runtime(crate::generation::GenerationContext {
+pub(crate) fn protected_paths(source: &Source) -> Result<Vec<String>> {
+    protected_paths_for_runtime(GenerationContext {
         source,
-        external_hooks,
         runtime_root: &RuntimeRoot::home(),
         dsh_profile: "web",
     })
 }
 
-pub(crate) fn protected_paths_for_runtime(
-    context: crate::generation::GenerationContext<'_>,
-) -> Result<Vec<String>> {
+pub(crate) fn protected_paths_for_runtime(context: GenerationContext<'_>) -> Result<Vec<String>> {
     protected_paths_for_providers(context, crate::provider::spec::PROVIDERS)
 }
 
 pub(crate) fn protected_paths_for_providers(
-    context: crate::generation::GenerationContext<'_>,
+    context: GenerationContext<'_>,
     providers: &[crate::provider::spec::ProviderSpec],
 ) -> Result<Vec<String>> {
     let mut paths = Vec::new();
@@ -119,24 +97,27 @@ fn push_unique(paths: &mut Vec<String>, path: String) {
 /// Derived from the same tables the installer uses, so a new provider output is protected
 /// as soon as it is rendered.
 fn harness_owned_files(
-    context: crate::generation::GenerationContext<'_>,
+    context: GenerationContext<'_>,
     providers: &[crate::provider::spec::ProviderSpec],
 ) -> Result<Vec<PathBuf>> {
-    let crate::generation::GenerationContext {
+    let GenerationContext {
         source,
-        external_hooks,
         dsh_profile,
         ..
     } = context;
     let installed = InstalledLayout::relative();
     let mut paths = Vec::new();
-
     for (source_dir, target_dir) in
         installed.synced_directories_for(SourceLayout::new(source.root()), providers)
     {
+        let directory = source
+            .directory(&source_dir)
+            .with_context(|| format!("source directory {} was not loaded", source_dir.display()))?;
         paths.extend(
-            relative_files(source.files(), &source_dir)?
-                .into_iter()
+            directory
+                .relative_files()
+                .map(relative_text)
+                .filter(|path| !is_runtime_artifact(path))
                 .map(|path| target_dir.join(path)),
         );
     }
@@ -147,28 +128,18 @@ fn harness_owned_files(
             .flat_map(|spec| spec.hook.bridge.assets.iter())
             .map(|asset| PathBuf::from(asset.destination)),
     );
-    for bundle in external_hooks {
-        paths.extend(bundle.open(source.files())?.asset_install_paths()?);
+    for bundle in &source.hook_bundles {
+        paths.extend(bundle.assets.iter().map(|asset| asset.target.clone()));
     }
     paths.extend(installed.generated_files_for(dsh_profile, providers));
     Ok(paths)
 }
 
-fn relative_files(files: &Snapshot, root: &Path) -> Result<Vec<String>> {
-    files
-        .regular_files(root)
-        .into_iter()
-        .map(|path| {
-            let relative = path
-                .strip_prefix(root)
-                .with_context(|| format!("failed to strip prefix {}", root.display()))?;
-            let relative = relative.to_string_lossy().into_owned();
-            #[cfg(windows)]
-            let relative = relative.replace('\\', "/");
-            Ok(relative)
-        })
-        .filter(|path| path.as_ref().is_ok_and(|path| !is_runtime_artifact(path)))
-        .collect()
+fn relative_text(path: &Path) -> String {
+    let relative = path.to_string_lossy().into_owned();
+    #[cfg(windows)]
+    let relative = relative.replace('\\', "/");
+    relative
 }
 
 fn is_runtime_artifact(path: &str) -> bool {
@@ -181,14 +152,14 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::*;
-    use crate::shell::fixtures::load_tree;
+    use crate::shell::fixtures::load_source;
 
     #[test]
     fn protected_paths_include_installed_harness_files_only() -> Result<()> {
         let root = test_root("protected_paths_include_installed_harness_files_only")?;
         write_minimal_source(&root)?;
 
-        let paths = protected_paths(load_tree(&root)?.tree(), &[])?;
+        let paths = protected_paths(&load_source(&root)?)?;
 
         assert!(paths.contains(&"~/.claude/hooks/guard.sh".to_string()));
         assert!(paths.contains(&"~/.claude/hooks/rules/allowed_commands.json".to_string()));
@@ -212,7 +183,7 @@ mod tests {
         let root = test_root("protected_claude_permissions_use_edit_for_file_modifications")?;
         write_minimal_source(&root)?;
 
-        let permissions = protected_claude_deny_permissions(load_tree(&root)?.tree(), &[])?;
+        let permissions = protected_claude_deny_permissions(&load_source(&root)?)?;
 
         assert!(
             permissions
@@ -234,7 +205,7 @@ mod tests {
         let root = test_root("codex_config_fragment_writes_guarded_filesystem_toml")?;
         write_minimal_source(&root)?;
 
-        let content = codex_config_fragment(load_tree(&root)?.tree(), &[])?;
+        let content = codex_config_fragment(&load_source(&root)?)?;
 
         assert!(content.contains("[permissions.guarded.filesystem]"));
         assert!(content.contains("\"~/.claude/hooks/guard.sh\" = \"read\""));
@@ -251,13 +222,12 @@ mod tests {
         write_minimal_source(&root)?;
         let runtime_path = PathBuf::from("/work/project\\name\nquoted\"directory");
         let runtime_root = RuntimeRoot::directory(runtime_path.clone())?;
-        let loaded = load_tree(&root)?;
+        let loaded = load_source(&root)?;
         let expected = runtime_path.join(".claude/hooks/guard.sh");
         let expected = expected.to_str().unwrap();
 
-        let content = codex_config_fragment_for_runtime(crate::generation::GenerationContext {
-            source: loaded.tree(),
-            external_hooks: &[],
+        let content = codex_config_fragment_for_runtime(GenerationContext {
+            source: &loaded,
             runtime_root: &runtime_root,
             dsh_profile: "web",
         })?;
@@ -268,9 +238,8 @@ mod tests {
             Some("read"),
         );
         assert!(
-            protected_paths_for_runtime(crate::generation::GenerationContext {
-                source: loaded.tree(),
-                external_hooks: &[],
+            protected_paths_for_runtime(GenerationContext {
+                source: &loaded,
                 runtime_root: &runtime_root,
                 dsh_profile: "web"
             })?
@@ -286,7 +255,7 @@ mod tests {
         write_minimal_source(&root)?;
         write_file(&root.join("hooks/docs/logs/audit/2026-05-19.jsonl"), "{}\n")?;
 
-        let paths = protected_paths(load_tree(&root)?.tree(), &[])?;
+        let paths = protected_paths(&load_source(&root)?)?;
 
         assert!(
             !paths
@@ -304,7 +273,7 @@ mod tests {
         let root = test_root("hook-filename-backslash")?;
         write_file(&root.join("hooks/guard\\name.sh"), "#!/bin/sh\n")?;
 
-        let paths = protected_paths(load_tree(&root)?.tree(), &[])?;
+        let paths = protected_paths(&load_source(&root)?)?;
 
         assert!(paths.contains(&"~/.claude/hooks/guard\\name.sh".to_owned()));
         crate::shell::fixtures::remove_dir_all(root)?;
@@ -325,8 +294,6 @@ mod tests {
         )?;
         write_file(&source.join("AGENTS.md"), "agent instructions\n")?;
         write_file(&source.join("hooks/guard.sh"), "#!/bin/bash\n")?;
-        write_file(&source.join("hooks/rules/allowed_commands.json"), "{}\n")?;
-        write_file(&source.join("hooks/rules/forbidden_commands.json"), "{}\n")?;
         write_file(&source.join("codex/hooks/adapt.sh"), "#!/bin/bash\n")?;
         Ok(())
     }

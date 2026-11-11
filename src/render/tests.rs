@@ -1,12 +1,6 @@
-use crate::shell::fixtures::{load_documents, load_tree};
-use crate::{
-    config_sync::{
-        Merge,
-        installed::{Installed, read_generated},
-    },
-    file_op::FileOp,
-    provider::spec::ProviderId,
-};
+use crate::provider::spec::ProviderId;
+use crate::shell::fixtures::regular_files;
+use crate::shell::sync::{SyncPaths, sync};
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -131,9 +125,7 @@ fn install_home(source: &Path, out: &Path) -> Result<()> {
 }
 
 fn installed_contents(root: &Path) -> Result<Vec<(PathBuf, Vec<u8>)>> {
-    load_tree(root)?
-        .files()
-        .regular_files(root)
+    regular_files(root)?
         .into_iter()
         .map(|path| Ok((path.strip_prefix(root)?.to_path_buf(), std::fs::read(path)?)))
         .collect()
@@ -302,11 +294,11 @@ fn write_minimal_source(source: &Path) -> Result<()> {
     write_file(&source.join("codex/hooks/hook.sh"), "#!/bin/bash\n")?;
     write_file(
         &source.join("skills/example/SKILL.md"),
-        "---\nname: example\n---\n",
+        "---\nname: example\ndescription: example skill\n---\n\n# Example\n",
     )?;
     write_file(
         &source.join("skills/git-commit-split/SKILL.md"),
-        "---\nname: git-commit-split\ndescription: commit split\n---\n",
+        "---\nname: git-commit-split\ndescription: commit split\n---\n\n# Commit split\n",
     )?;
     write_file(
         &source.join("claude/statusline/statusline.sh"),
@@ -367,12 +359,11 @@ fn install_matches_the_merge_the_home_manager_build_applies() -> Result<()> {
     }
     generate_claude_settings(&source, &generated)?;
 
-    let sync = ProviderId::Claude.spec().config.unwrap().sync;
-    let files = load_documents(&[&generated, &synced])?;
-    let document = read_generated(&sync, &files, &generated)?;
-    let existing = Installed::from_snapshot(&sync, &files, &synced)?;
-    let merged = Merge::new(&sync, &document).apply(existing)?;
-    crate::shell::execute(&[FileOp::write(&synced, merged.config)])?;
+    let paths = SyncPaths {
+        source: &generated,
+        target: &synced,
+    };
+    sync(ProviderId::Claude.spec(), &paths, &root)?;
     install_home(&source, &out)?;
 
     assert_eq!(

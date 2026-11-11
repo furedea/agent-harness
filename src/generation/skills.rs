@@ -1,22 +1,20 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
-use anyhow::{Context, Result, bail, ensure};
-use serde::Deserialize;
+use anyhow::{Context, Result, ensure};
 
-use crate::{
-    file_op::FileOp,
-    layout::SourceLayout,
-    render::Provider,
-    snapshot::{Child, Snapshot, Tree},
-};
+use crate::{file_op::FileOp, render::Provider, source_model::Source};
 use frontmatter::{common_frontmatter_entries, frontmatter_text, split_entries, split_frontmatter};
 
 mod frontmatter;
+mod rendering;
 
-const SUPPORTED_SKILL_RENDERING_VERSION: u64 = 1;
-const CODEX_OPENAI_PATH: &str = "agents/openai.yaml";
+use rendering::{
+    DEFAULT_RENDERING, SkillRendering, SkillRenderingEntry, extra_file_op, parse_skill_rendering,
+    provider_frontmatter_entries, validate_skill_rendering_targets,
+};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct SkillMetadata {
@@ -97,97 +95,178 @@ impl SkillName {
     }
 }
 
-#[derive(Debug, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct SkillRendering {
-    version: u64,
-    #[serde(default)]
-    skills: BTreeMap<String, SkillRenderingEntry>,
-}
-
-#[derive(Debug, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct SkillRenderingEntry {
-    #[serde(default)]
-    claude: ClaudeRendering,
-    #[serde(default)]
-    codex: CodexRendering,
-}
-
-#[derive(Debug, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ClaudeRendering {
-    #[serde(default)]
-    frontmatter: BTreeMap<String, FrontmatterValue>,
-}
-
-impl ClaudeRendering {
-    fn invocation(&self) -> SkillInvocation {
-        match self.frontmatter.get("disable-model-invocation") {
-            Some(FrontmatterValue::Bool(true)) => SkillInvocation::Explicit,
-            _ => SkillInvocation::Implicit,
-        }
-    }
-}
-
-#[derive(Debug, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct CodexRendering {
-    #[serde(default)]
-    frontmatter: BTreeMap<String, FrontmatterValue>,
-    openai: Option<CodexOpenAi>,
-}
-
-impl CodexRendering {
-    fn invocation(&self) -> SkillInvocation {
-        match &self.openai {
-            Some(openai) if !openai.allow_implicit_invocation => SkillInvocation::Explicit,
-            _ => SkillInvocation::Implicit,
-        }
-    }
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct CodexOpenAi {
-    allow_implicit_invocation: bool,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(untagged)]
-enum FrontmatterValue {
-    Bool(bool),
-    String(String),
-}
-
-/// Where and for which provider skills are rendered.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct SkillTarget<'a> {
     pub(crate) provider: Provider,
     pub(crate) path: &'a Path,
 }
 
-/// The operation that replaces the skills directory with every rendered skill.
-pub(crate) fn render_skills(
-    source: Tree<'_>,
-    external_skills: &[ExternalSkill],
-    target: SkillTarget<'_>,
-) -> Result<FileOp> {
-    let files = source.files();
-    let skill_dirs = sorted_skill_dirs(files, &SourceLayout::new(source.root()).skills());
-    let skill_rendering = read_skill_rendering(source)?;
-    validate_skill_rendering_targets(&skill_rendering, &skill_dirs)?;
-    validate_external_skills(files, &skill_dirs, external_skills)?;
+/// A file or directory of a skill that is copied beside its rendered `SKILL.md`.
+///
+/// Only the location is kept: the content is copied by the executor, never loaded.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum SupportEntry {
+    File { name: OsString, path: PathBuf },
+    Directory { name: OsString, path: PathBuf },
+}
 
-    let renderer = SkillRenderer {
-        files,
-        rendering: &skill_rendering,
-    };
+/// What the loader found in one built-in skill directory.
+#[derive(Debug)]
+pub(crate) struct SkillFiles {
+    pub(crate) directory: PathBuf,
+    pub(crate) skill_text: String,
+    pub(crate) support: Vec<SupportEntry>,
+}
+
+/// A built-in skill, parsed once.
+#[derive(Debug)]
+struct SourceSkill {
+    name: String,
+    frontmatter: Vec<String>,
+    body: String,
+    metadata: SkillMetadata,
+    support: Vec<SupportEntry>,
+}
+
+impl SourceSkill {
+    fn parse(files: SkillFiles, rendering: &SkillRendering) -> Result<Self> {
+        let skill_file = files.directory.join("SKILL.md");
+        let name = directory_name(&files.directory);
+        let invalid = || format!("invalid skill file {}", skill_file.display());
+        let (frontmatter, body) = split_frontmatter(&files.skill_text).with_context(invalid)?;
+        let entries = split_entries(frontmatter).with_context(invalid)?;
+        let frontmatter_name = frontmatter_text(&entries, "name").with_context(invalid)?;
+        frontmatter_text(&entries, "description").with_context(invalid)?;
+        let title = skill_title(body).with_context(invalid)?;
+        let entry = rendering.skills.get(&name).unwrap_or(&DEFAULT_RENDERING);
+        Ok(Self {
+            frontmatter: common_frontmatter_entries(&skill_file, frontmatter)?,
+            body: body.to_owned(),
+            metadata: SkillMetadata {
+                name: frontmatter_name,
+                title,
+                claude_invocation: entry.claude.invocation(),
+                codex_invocation: entry.codex.invocation(),
+            },
+            support: files.support,
+            name,
+        })
+    }
+
+    fn render(
+        &self,
+        rendering: &SkillRenderingEntry,
+        target: SkillTarget<'_>,
+    ) -> Result<Vec<FileOp>> {
+        let SkillTarget {
+            provider,
+            path: out,
+        } = target;
+        let mut frontmatter = self.frontmatter.clone();
+        let mut operations = self.support_file_ops(out);
+        frontmatter.extend(provider_frontmatter_entries(rendering, provider)?);
+        operations.push(skill_op(out, &frontmatter, &self.body));
+        operations.extend(extra_file_op(provider, out, rendering));
+        Ok(operations)
+    }
+
+    fn support_file_ops(&self, out: &Path) -> Vec<FileOp> {
+        self.support
+            .iter()
+            .map(|entry| support_entry_op(entry, out))
+            .collect()
+    }
+}
+
+fn directory_name(directory: &Path) -> String {
+    directory
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default()
+        .to_owned()
+}
+
+/// The built-in skills of a source and their rendering policy, parsed and validated.
+#[derive(Debug, Default)]
+pub(crate) struct SourceSkills {
+    rendering: SkillRendering,
+    skills: Vec<SourceSkill>,
+}
+
+impl SourceSkills {
+    /// Parses the rendering policy read from `rendering` and every skill directory in `files`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error naming the file that is invalid.
+    pub(crate) fn parse(rendering: Option<(&Path, &str)>, files: Vec<SkillFiles>) -> Result<Self> {
+        let rendering = rendering
+            .map(|(path, text)| parse_skill_rendering(path, text))
+            .transpose()?
+            .unwrap_or_default();
+        let names: BTreeSet<String> = files
+            .iter()
+            .map(|files| directory_name(&files.directory))
+            .collect();
+        validate_skill_rendering_targets(&rendering, &names)?;
+        let skills = files
+            .into_iter()
+            .map(|files| SourceSkill::parse(files, &rendering))
+            .collect::<Result<Vec<_>>>()?;
+        Ok(Self { rendering, skills })
+    }
+
+    pub(crate) fn metadata(&self) -> Vec<SkillMetadata> {
+        let mut metadata: Vec<_> = self
+            .skills
+            .iter()
+            .map(|skill| skill.metadata.clone())
+            .collect();
+        metadata.sort_by(|left, right| left.name.cmp(&right.name));
+        metadata
+    }
+
+    /// Checks external skills against the built-in ones.
+    ///
+    /// `has_skill_file` says, per external skill, whether its directory holds a regular `SKILL.md`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when an external skill has no skill file, shadows a built-in one, or
+    /// repeats another external skill's name.
+    pub(crate) fn validate_external(
+        &self,
+        external_skills: &[ExternalSkill],
+        has_skill_file: &[bool],
+    ) -> Result<()> {
+        let built_in_names: BTreeSet<&str> = self
+            .skills
+            .iter()
+            .map(|skill| skill.name.as_str())
+            .collect();
+        validate_external_skills(external_skills, has_skill_file, &built_in_names)?;
+        reject_duplicate_external_names(external_skills)
+    }
+
+    fn rendering_of(&self, skill: &SourceSkill) -> &SkillRenderingEntry {
+        self.rendering
+            .skills
+            .get(&skill.name)
+            .unwrap_or(&DEFAULT_RENDERING)
+    }
+}
+
+/// The operation that replaces the skills directory with every rendered skill.
+///
+/// # Errors
+///
+/// Returns an error when a frontmatter override of the rendering policy is invalid.
+pub(crate) fn render_skills(source: &Source, target: SkillTarget<'_>) -> Result<FileOp> {
     let mut contents = Vec::new();
-    for entry in skill_dirs {
-        let skill_out = target.path.join(entry.file_name().unwrap_or_default());
-        contents.extend(renderer.render_dir(
-            &entry,
+    for skill in &source.skills.skills {
+        let skill_out = target.path.join(&skill.name);
+        contents.extend(skill.render(
+            source.skills.rendering_of(skill),
             SkillTarget {
                 provider: target.provider,
                 path: &skill_out,
@@ -195,7 +274,7 @@ pub(crate) fn render_skills(
         )?);
     }
 
-    contents.extend(external_skills.iter().map(|skill| FileOp::CopyTree {
+    contents.extend(source.external_skills.iter().map(|skill| FileOp::CopyTree {
         source: skill.source.clone(),
         target: target.path.join(skill.name.as_str()),
     }));
@@ -206,158 +285,37 @@ pub(crate) fn render_skills(
     })
 }
 
-pub(crate) fn built_in_skill_metadata(source: Tree<'_>) -> Result<Vec<SkillMetadata>> {
-    let files = source.files();
-    let skill_dirs = sorted_skill_dirs(files, &SourceLayout::new(source.root()).skills());
-    let skill_rendering = read_skill_rendering(source)?;
-    validate_skill_rendering_targets(&skill_rendering, &skill_dirs)?;
-    let default_rendering = SkillRenderingEntry::default();
-    let mut metadata = skill_dirs
-        .iter()
-        .map(|skill_dir| {
-            let name = skill_dir
-                .file_name()
-                .and_then(|name| name.to_str())
-                .unwrap_or_default();
-            let rendering = skill_rendering
-                .skills
-                .get(name)
-                .unwrap_or(&default_rendering);
-            read_skill_metadata(files, &skill_dir.join("SKILL.md"), rendering)
-        })
-        .collect::<Result<Vec<_>>>()?;
-    metadata.sort_by(|left, right| left.name.cmp(&right.name));
-    Ok(metadata)
-}
-
-/// The directories of `skills_dir` that hold a skill file, sorted.
-fn sorted_skill_dirs(files: &Snapshot, skills_dir: &Path) -> Vec<PathBuf> {
-    files
-        .children(skills_dir)
-        .into_iter()
-        .filter(Child::is_real_directory)
-        .map(|child| child.path)
-        .filter(|path| files.is_file(&path.join("SKILL.md")))
-        .collect()
-}
-
-/// Renders each skill directory from the snapshot of the source.
-struct SkillRenderer<'a> {
-    files: &'a Snapshot,
-    rendering: &'a SkillRendering,
-}
-
-impl SkillRenderer<'_> {
-    fn render_dir(&self, source: &Path, target: SkillTarget<'_>) -> Result<Vec<FileOp>> {
-        let SkillTarget {
-            provider,
-            path: out,
-        } = target;
-        let source_skill = source.join("SKILL.md");
-        let content = self
-            .files
-            .read_text(&source_skill)
-            .with_context(|| format!("failed to read {}", source_skill.display()))?;
-        let (frontmatter, body) = split_frontmatter(content)?;
-        let mut frontmatter = common_frontmatter_entries(&source_skill, frontmatter)?;
-        let skill_name = source
-            .file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or_default();
-
-        let empty_rendering = SkillRenderingEntry::default();
-        let rendering = self
-            .rendering
-            .skills
-            .get(skill_name)
-            .unwrap_or(&empty_rendering);
-
-        let mut operations = self.support_file_ops(source, out);
-        frontmatter.extend(provider_frontmatter_entries(rendering, provider)?);
-        operations.push(skill_op(out, &frontmatter, body));
-        operations.extend(extra_file_op(provider, out, rendering));
-        Ok(operations)
-    }
-
-    fn support_file_ops(&self, source: &Path, out: &Path) -> Vec<FileOp> {
-        self.files
-            .children(source)
-            .into_iter()
-            .filter(|child| child.name != "SKILL.md")
-            .filter_map(|child| support_entry_op(child, out))
-            .collect()
-    }
-}
-
-fn read_skill_rendering(source: Tree<'_>) -> Result<SkillRendering> {
-    let path = SourceLayout::new(source.root()).skill_rendering();
-    let Some(content) = source.files().read_text_if_present(&path)? else {
-        return Ok(SkillRendering::default());
-    };
-
-    let rendering: SkillRendering = serde_json::from_str(content)
-        .with_context(|| format!("failed to parse {}", path.display()))?;
-    if rendering.version != SUPPORTED_SKILL_RENDERING_VERSION {
-        bail!("unsupported skill rendering version: {}", rendering.version);
-    }
-    Ok(rendering)
-}
-
-fn validate_skill_rendering_targets(
-    skill_rendering: &SkillRendering,
-    skill_dirs: &[PathBuf],
-) -> Result<()> {
-    let skill_names = skill_dirs
-        .iter()
-        .filter_map(|path| path.file_name().and_then(|name| name.to_str()))
-        .collect::<BTreeSet<_>>();
-    let unknown = skill_rendering
-        .skills
-        .keys()
-        .filter(|name| !skill_names.contains(name.as_str()))
-        .cloned()
-        .collect::<Vec<_>>();
-
-    if unknown.is_empty() {
-        return Ok(());
-    }
-
-    bail!(
-        "skill rendering policy references unknown skills: {}",
-        unknown.join(", ")
-    )
-}
-
 fn validate_external_skills(
-    files: &Snapshot,
-    skill_dirs: &[PathBuf],
     external_skills: &[ExternalSkill],
+    has_skill_file: &[bool],
+    built_in_names: &BTreeSet<&str>,
 ) -> Result<()> {
-    let built_in_names = skill_dirs
-        .iter()
-        .filter_map(|path| path.file_name().and_then(|name| name.to_str()))
-        .collect::<BTreeSet<_>>();
-    let mut external_names = BTreeSet::new();
-
-    for skill in external_skills {
-        validate_external_skill(files, skill, &built_in_names)?;
-        ensure!(
-            external_names.insert(skill.name.as_str()),
-            "duplicate external skill name: {}",
-            skill.name.as_str()
-        );
+    for (skill, has_file) in external_skills.iter().zip(has_skill_file) {
+        validate_external_skill(skill, *has_file, built_in_names)?;
     }
+    Ok(())
+}
 
+fn reject_duplicate_external_names(external_skills: &[ExternalSkill]) -> Result<()> {
+    let mut names = BTreeSet::new();
+    let duplicate = external_skills
+        .iter()
+        .find(|skill| !names.insert(skill.name.as_str()));
+    ensure!(
+        duplicate.is_none(),
+        "duplicate external skill name: {}",
+        duplicate.map_or("", |skill| skill.name.as_str())
+    );
     Ok(())
 }
 
 fn validate_external_skill(
-    files: &Snapshot,
     skill: &ExternalSkill,
+    has_skill_file: bool,
     built_in_names: &BTreeSet<&str>,
 ) -> Result<()> {
     ensure!(
-        files.is_regular_file(&skill.skill_file()),
+        has_skill_file,
         "external skill directory must contain a regular SKILL.md file: {}",
         skill.source.display()
     );
@@ -369,27 +327,6 @@ fn validate_external_skill(
     Ok(())
 }
 
-fn read_skill_metadata(
-    files: &Snapshot,
-    path: &Path,
-    rendering: &SkillRenderingEntry,
-) -> Result<SkillMetadata> {
-    let content = files
-        .read_text(path)
-        .with_context(|| format!("failed to read {}", path.display()))?;
-    let (frontmatter, body) = split_frontmatter(content)?;
-    let entries = split_entries(frontmatter)?;
-    let name = frontmatter_text(&entries, "name")?;
-    frontmatter_text(&entries, "description")?;
-    let title = skill_title(body)?;
-    Ok(SkillMetadata {
-        name,
-        title,
-        claude_invocation: rendering.claude.invocation(),
-        codex_invocation: rendering.codex.invocation(),
-    })
-}
-
 fn skill_title(body: &str) -> Result<String> {
     body.lines()
         .find_map(|line| line.strip_prefix("# "))
@@ -398,87 +335,22 @@ fn skill_title(body: &str) -> Result<String> {
 }
 
 /// Copies a support file or directory of a skill beside its rendered `SKILL.md`.
-///
-/// Symlinks are skipped, so a skill never reaches outside its own directory.
-fn support_entry_op(child: Child, out: &Path) -> Option<FileOp> {
-    let target = out.join(&child.name);
-    if child.is_real_directory() {
-        return Some(FileOp::CopyTree {
-            source: child.path,
-            target,
-        });
+fn support_entry_op(entry: &SupportEntry, out: &Path) -> FileOp {
+    match entry {
+        SupportEntry::Directory { name, path } => FileOp::CopyTree {
+            source: path.clone(),
+            target: out.join(name),
+        },
+        SupportEntry::File { name, path } => FileOp::CopyFile {
+            source: path.clone(),
+            target: out.join(name),
+        },
     }
-    child.is_regular_file().then_some(FileOp::CopyFile {
-        source: child.path,
-        target,
-    })
 }
 
 fn skill_op(out: &Path, frontmatter: &[String], body: &str) -> FileOp {
     let content = format!("---\n{}\n---\n{body}", frontmatter.join("\n").trim_end());
     FileOp::write(out.join("SKILL.md"), content)
-}
-
-fn provider_frontmatter_entries(
-    skill_rendering: &SkillRenderingEntry,
-    provider: Provider,
-) -> Result<Vec<String>> {
-    frontmatter_overrides(skill_rendering, provider)
-        .iter()
-        .map(|(key, value)| frontmatter_entry(key, value))
-        .collect()
-}
-
-fn frontmatter_overrides(
-    skill_rendering: &SkillRenderingEntry,
-    provider: Provider,
-) -> &BTreeMap<String, FrontmatterValue> {
-    match provider {
-        Provider::Claude => &skill_rendering.claude.frontmatter,
-        Provider::Codex => &skill_rendering.codex.frontmatter,
-    }
-}
-
-fn frontmatter_entry(key: &str, value: &FrontmatterValue) -> Result<String> {
-    validate_frontmatter_key(key)?;
-    let rendered = match value {
-        FrontmatterValue::Bool(value) => value.to_string(),
-        FrontmatterValue::String(value) => serde_json::to_string(value)?,
-    };
-    Ok(format!("{key}: {rendered}"))
-}
-
-fn validate_frontmatter_key(key: &str) -> Result<()> {
-    if key.is_empty()
-        || !key
-            .chars()
-            .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
-    {
-        bail!("skill rendering frontmatter key is invalid: {key}");
-    }
-    Ok(())
-}
-
-fn extra_file_op(
-    provider: Provider,
-    out: &Path,
-    skill_rendering: &SkillRenderingEntry,
-) -> Option<FileOp> {
-    let Provider::Codex = provider else {
-        return None;
-    };
-    let openai = skill_rendering.codex.openai.as_ref()?;
-    Some(FileOp::write(
-        out.join(CODEX_OPENAI_PATH),
-        codex_openai_content(openai),
-    ))
-}
-
-fn codex_openai_content(openai: &CodexOpenAi) -> String {
-    format!(
-        "policy:\n  allow_implicit_invocation: {}\n",
-        openai.allow_implicit_invocation
-    )
 }
 
 #[cfg(test)]
