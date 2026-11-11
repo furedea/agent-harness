@@ -200,6 +200,13 @@ fn validate_hooks(config: &HookConfig) -> Result<()> {
     if !config.codex.is_object() {
         bail!("hook config codex section must be a JSON object");
     }
+    if let Some(key) = config
+        .providers
+        .keys()
+        .find(|key| !PROVIDERS.iter().any(|spec| spec.key == key.as_str()))
+    {
+        bail!("hook config contains unknown provider key: {key}");
+    }
     let invalid = PROVIDERS.iter().find(|spec| {
         config
             .providers

@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use toml_edit::{DocumentMut, Item, Table, TableLike};
+use toml_edit::{DocumentMut, Item, TableLike};
 
 use crate::{
     fs_ops,
@@ -115,15 +115,15 @@ fn merge_external_features(
 }
 
 fn merge_item(target: &mut Item, source: &Item) {
-    match (target.as_table_mut(), source.as_table()) {
+    match (target.as_table_like_mut(), source.as_table_like()) {
         (Some(target), Some(source)) => merge_tables(target, source),
         _ => *target = source.clone(),
     }
 }
 
-fn merge_tables(target: &mut Table, source: &Table) {
-    for (key, item) in source {
-        merge_item(&mut target[key], item);
+fn merge_tables(target: &mut dyn TableLike, source: &dyn TableLike) {
+    for (key, item) in source.iter() {
+        merge_item(target.entry(key).or_insert(Item::None), item);
     }
 }
 
