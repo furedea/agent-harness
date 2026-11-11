@@ -16,15 +16,7 @@ pub(crate) enum ConfigSync {
     RegisterBundle,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) enum ProviderId {
-    Claude,
-    Codex,
-    Devin,
-    Hermes,
-    Pi,
-    Dsh,
-}
+pub(crate) use super::id::ProviderId;
 
 impl ProviderId {
     pub(crate) fn spec(self) -> &'static ProviderSpec {

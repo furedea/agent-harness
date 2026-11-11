@@ -51,8 +51,8 @@ Each layer closes a hole the previous one leaves open.
 3. **`#![forbid(clippy::disallowed_methods, clippy::disallowed_types)]`** at the top of
     `generation`, `provider::spec`, `provider::renderer`, `install_plan`, and `file_op`. A computation
     module cannot `#[allow]` the ban again. `forbid` also rejects macro-generated `allow(clippy::style)`,
-    so `ProviderId` implements clap's `ValueEnum` by hand in `provider/command_line.rs` instead of
-    deriving it.
+    so `ProviderId` lives in `provider/id.rs`, which keeps clap's `ValueEnum` derive under
+    `#![deny(...)]` instead; the registry test still enumerates every variant through the derive.
 
 `tests/provider_spec_layering.rs` is deleted: it was a substring check on four files, and it could
 not see a wrapper. CI runs `cargo clippy -- -D warnings`, which skips `#[cfg(test)]` code, so test
@@ -78,4 +78,4 @@ Revisit it if the core must be reused by another program.
     computation, is the next step.
 - The merge of Claude, Codex, Devin, Hermes, pi, and dsh configs is still per-provider code behind
     `ConfigSync`. Declaring ownership in the spec and syncing with one implementation is a later step.
-- `ProviderId` has a hand-written `ValueEnum`; the duplicate provider enums are tracked separately.
+- The duplicate provider enums are tracked separately.
