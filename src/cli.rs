@@ -289,7 +289,7 @@ pub fn run() -> Result<()> {
         Command::SyncDshConfig(args) => sync_config(ProviderId::Dsh, &args),
         Command::Verify(args) => {
             let source = source::resolve_source(args.source, profile)?;
-            let prefix = args.prefix.unwrap_or_else(default_home_dir);
+            let prefix = resolve_prefix(args.prefix)?;
             render::verify(&prefix)?;
             runtime::verify(source.as_path())
         }
@@ -329,7 +329,7 @@ fn sync_config(provider: ProviderId, args: &SyncConfigArgs) -> Result<()> {
         source: &args.source,
         target: &args.target,
     };
-    crate::config_sync::sync(provider.spec(), &paths, &default_home_dir())
+    crate::config_sync::sync(provider.spec(), &paths, &home_dir()?)
 }
 
 fn write_codex_rules(args: GenerateFileArgs, profile: Profile) -> Result<()> {
@@ -369,7 +369,7 @@ fn generate_skills(args: GenerateSkillsArgs, profile: Profile) -> Result<()> {
 
 fn install(args: InstallArgs, profile: Profile) -> Result<()> {
     let source = source::resolve_source(args.source, profile)?;
-    let prefix = args.prefix.unwrap_or_else(default_home_dir);
+    let prefix = resolve_prefix(args.prefix)?;
     let runtime_root = args
         .runtime_root
         .map(RuntimeRoot::directory)
@@ -425,8 +425,14 @@ fn write_stdout(content: &str) -> Result<()> {
         .context("failed to write command output")
 }
 
-fn default_home_dir() -> PathBuf {
-    std::env::var_os("HOME").map_or_else(|| PathBuf::from("."), PathBuf::from)
+fn resolve_prefix(prefix: Option<PathBuf>) -> Result<PathBuf> {
+    prefix.map_or_else(home_dir, Ok)
+}
+
+fn home_dir() -> Result<PathBuf> {
+    std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .context("HOME is not set; pass --prefix or set HOME")
 }
 
 impl From<Provider> for render::Provider {

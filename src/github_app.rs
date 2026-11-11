@@ -46,10 +46,12 @@ pub(crate) fn refresh(
     }
     match mint_token(request, api, now_unix) {
         Ok(minted) => files.write_token(&minted, now_unix),
-        Err(error) => {
-            files.record_failure(&format!("{error:#}"), now_unix)?;
-            Err(error)
-        }
+        Err(error) => match files.record_failure(&format!("{error:#}"), now_unix) {
+            Ok(()) => Err(error),
+            Err(record_error) => Err(error.context(format!(
+                "also failed to record the failure: {record_error:#}"
+            ))),
+        },
     }
 }
 

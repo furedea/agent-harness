@@ -149,6 +149,28 @@ fn refresh_mints_when_the_recorded_status_is_corrupt() -> Result<()> {
 }
 
 #[test]
+fn refresh_reports_the_fetch_error_when_the_recorded_status_is_corrupt() -> Result<()> {
+    let fixture = Fixture::new("corrupt-failure")?;
+    std::fs::create_dir_all(&fixture.config_dir)?;
+    std::fs::write(fixture.config_dir.join("agent_harness_token.json"), "{")?;
+    let failing = FakeApi {
+        fail_with: Some("GitHub is unreachable"),
+        ..FakeApi::default()
+    };
+
+    let error = refresh(&fixture.request(Some(42)), &failing, NOW).unwrap_err();
+
+    assert!(format!("{error:#}").contains("GitHub is unreachable"));
+    assert!(
+        status(&fixture.config_dir, NOW)
+            .unwrap_err()
+            .to_string()
+            .contains("GitHub is unreachable")
+    );
+    Ok(())
+}
+
+#[test]
 fn refresh_mints_after_a_failed_refresh() -> Result<()> {
     let fixture = Fixture::new("retry")?;
     refresh(&fixture.request(Some(42)), &FakeApi::default(), NOW)?;

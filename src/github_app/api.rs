@@ -1,9 +1,14 @@
+use std::time::Duration;
+
 use anyhow::{Context, Result};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 
 const API_BASE_URL: &str = "https://api.github.com";
 const API_VERSION: &str = "2022-11-28";
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+const RESPONSE_TIMEOUT: Duration = Duration::from_secs(30);
+const BODY_TIMEOUT: Duration = Duration::from_secs(30);
 const USER_AGENT: &str = concat!("agent-harness/", env!("CARGO_PKG_VERSION"));
 
 /// GitHub REST endpoints that authenticate with an App JWT.
@@ -37,9 +42,18 @@ pub(crate) struct GitHubRestApi {
 impl GitHubRestApi {
     pub(crate) fn new() -> Self {
         Self {
-            agent: ureq::Agent::new_with_defaults(),
+            agent: build_agent(),
         }
     }
+}
+
+fn build_agent() -> ureq::Agent {
+    ureq::Agent::config_builder()
+        .timeout_connect(Some(CONNECT_TIMEOUT))
+        .timeout_recv_response(Some(RESPONSE_TIMEOUT))
+        .timeout_recv_body(Some(BODY_TIMEOUT))
+        .build()
+        .into()
 }
 
 impl GitHubAppApi for GitHubRestApi {
@@ -88,4 +102,19 @@ fn read_json<T: DeserializeOwned>(
         .read_to_string()
         .with_context(|| format!("failed to read the response to {action}"))?;
     serde_json::from_str(&body).with_context(|| format!("unexpected response to {action}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn agent_bounds_connect_response_and_body_waits() {
+        let agent = build_agent();
+        let timeouts = agent.config().timeouts();
+
+        assert!(timeouts.connect.is_some());
+        assert!(timeouts.recv_response.is_some());
+        assert!(timeouts.recv_body.is_some());
+    }
 }

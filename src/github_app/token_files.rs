@@ -116,8 +116,10 @@ impl TokenFiles {
     }
 
     /// Records a failed refresh without touching the current token.
+    ///
+    /// An unreadable status record is replaced by a fresh one that holds only the failure.
     pub(crate) fn record_failure(&self, message: &str, now_unix: u64) -> Result<()> {
-        let mut status = self.status()?.unwrap_or_default();
+        let mut status = self.status().ok().flatten().unwrap_or_default();
         status.last_failure = Some(RefreshFailure {
             failed_at_unix: now_unix,
             message: message.to_owned(),

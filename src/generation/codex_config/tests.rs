@@ -184,6 +184,23 @@ fn sync_managed_document_survives_an_unreadable_sidecar() -> Result<()> {
     Ok(())
 }
 
+#[test]
+fn merge_item_keeps_existing_entries_of_an_inline_table() -> Result<()> {
+    let mut target = "features = { existing = true }\n".parse::<DocumentMut>()?;
+    let source = "[features]\nadded = true\n".parse::<DocumentMut>()?;
+
+    for (key, item) in source.iter() {
+        merge_item(&mut target[key], item);
+    }
+
+    let features = target["features"]
+        .as_table_like()
+        .context("features should stay a table")?;
+    assert_eq!(features.get("existing").and_then(Item::as_bool), Some(true));
+    assert_eq!(features.get("added").and_then(Item::as_bool), Some(true));
+    Ok(())
+}
+
 fn env_source(pairs: &[(&str, &str)]) -> Result<DocumentMut> {
     let header = (!pairs.is_empty()).then_some("[shell_environment_policy.set]\n");
     let entries = pairs

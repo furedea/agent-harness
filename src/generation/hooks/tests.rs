@@ -227,6 +227,22 @@ fn read_hooks_rejects_a_non_object_optional_section() -> Result<()> {
     Ok(())
 }
 
+#[test]
+fn read_hooks_rejects_an_unknown_provider_key() -> Result<()> {
+    let root = test_root("read_hooks_rejects_an_unknown_provider_key")?;
+    write_file(
+        &root.join("hooks.json"),
+        r#"{"version":1,"claude":{},"codex":{},"hermse":{}}"#,
+    )?;
+
+    let error = read_hooks(&root).unwrap_err().to_string();
+
+    assert_eq!(error, "hook config contains unknown provider key: hermse");
+
+    std::fs::remove_dir_all(root)?;
+    Ok(())
+}
+
 fn test_root(name: &str) -> Result<PathBuf> {
     let nanos = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
     let root = std::env::temp_dir().join(format!("agent-harness-{name}-{nanos}"));
