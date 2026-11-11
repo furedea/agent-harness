@@ -526,8 +526,10 @@ configuration, and a linked worktree's `.git` pointer file. Outside a repository
 policy and the directory itself apply. A directory's first resolution is fixed for the session; if its
 Git layout changes afterwards, bash refuses to run until Pi restarts. Invalid settings or unavailable
 srt block bash execution. Pi itself, hooks, and user `!` commands run outside this wrapper.
-File-tool writes stay inside the worktree, file tools cannot access `.git`, and file-hook
-failures block read, write, and edit calls.
+Pi's read, write, edit, grep, find, and ls tools perform their file I/O in a helper process that
+runs under the same srt settings, so the kernel enforces `allowWrite`, `denyWrite`, and `denyRead`
+for them as well; the helper being absent or the settings being invalid blocks them. Hooks are a
+policy layer only: as with Claude, a hook failure lets the call proceed.
 
 Installation replaces the managed hook and skill directories and rewrites Claude Code's managed
 settings. Codex config synchronization replaces only these managed top-level keys and preserves
