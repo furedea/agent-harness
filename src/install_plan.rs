@@ -9,6 +9,16 @@ pub(crate) enum FileOp {
     InstallFile { source: PathBuf, target: PathBuf },
 }
 
+impl FileOp {
+    pub(crate) fn target(&self) -> &std::path::Path {
+        match self {
+            Self::WriteFile { target, .. }
+            | Self::ReplaceDirectory { target, .. }
+            | Self::InstallFile { target, .. } => target,
+        }
+    }
+}
+
 /// Plan publication of a complete rendered installation without accessing the filesystem.
 pub(crate) fn plan_install(
     rendered: &InstalledLayout<'_>,

@@ -3,7 +3,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result, bail};
 
-use crate::{layout::SourceLayout, manifest::Manifest, profile::Profile};
+use crate::{
+    layout::SourceLayout, manifest::Manifest, profile::Profile, provider::spec::PROVIDERS,
+};
 
 const ENV_SOURCE: &str = "AGENT_HARNESS_SOURCE";
 
@@ -174,18 +176,28 @@ fn profile_source(root: &Path, profile: Profile) -> Option<PathBuf> {
 }
 
 fn validate_source_tree(path: &Path) -> Result<()> {
-    let missing = SourceLayout::new(path).missing_required_files();
-
-    if missing.is_empty() {
-        Manifest::read(path)?;
-        return Ok(());
+    let layout = SourceLayout::new(path);
+    let missing_files = layout.missing_required_files();
+    if !missing_files.is_empty() {
+        bail!(
+            "missing required harness source files under {}: {}",
+            path.display(),
+            missing_files.join(", ")
+        )
     }
-
-    bail!(
-        "missing required harness source files under {}: {}",
-        path.display(),
-        missing.join(", ")
-    )
+    let missing_directories = layout.missing_required_directories(PROVIDERS);
+    if !missing_directories.is_empty() {
+        bail!(
+            "missing required harness source directories: {}",
+            missing_directories
+                .iter()
+                .map(|directory| directory.display().to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    }
+    Manifest::read(path)?;
+    Ok(())
 }
 
 #[cfg(test)]
