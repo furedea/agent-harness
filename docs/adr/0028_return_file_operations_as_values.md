@@ -26,8 +26,10 @@ that tests are outside the lint and that reads are not yet banned.
 - **One port.** `shell::io` holds the filesystem trait and its real implementation. Its contract:
     nothing is written in place; `FileMode::Standard` files get the process's default mode,
     `FileMode::Private` files are `0600` in `0700` directories (GitHub App token files), and
-    `FileMode::Bits` reproduces a packaged file exactly. Copies keep their source's permission bits.
-    Before this change every installed file was `0600`, so generated config now follows the umask.
+    `FileMode::Bits` reproduces a packaged file exactly. Copies keep their source's permission bits,
+    and a regular file that already exists keeps its own bits when replaced, so a sync never widens
+    a config the user restricted (one holding API keys, say). Before this change every installed
+    file was `0600`; now only new generated files follow the umask.
 - **Providers render in order.** Each provider's operations are applied before the next provider
     renders, because a provider may read what an earlier one wrote (copied skills, the merged Codex
     config).
