@@ -75,7 +75,7 @@ flowchart LR
     SYNC["shell::sync"]
     ENGINE["config_sync::Merge (one engine)"]
   end
-  SNAP["Snapshot: files read once"]
+  SRC["Source: documents parsed once"]
   DISK[("disk")]
   SPEC -- "ProviderSpec" --> RENDER
   SPEC -- "ProviderSpec" --> RENDERER
@@ -94,15 +94,14 @@ flowchart LR
   EXEC --> FS
   FS --> DISK
   DISK --> LOAD
-  LOAD --> SNAP
-  SNAP -- "Snapshot" --> RENDER
-  SNAP -- "Snapshot" --> RENDERER
-  SNAP -- "Snapshot" --> SYNC
+  LOAD --> SRC
+  SRC -- "Source" --> RENDER
+  SRC -- "Source" --> RENDERER
 ```
 
-- 層をまたぐのは値だけである．`ProviderSpec` が Data から Functions と Capabilities へ渡り，計算が読むファイルの `Snapshot` が loader から Functions へ渡り，`FileOp` の一覧が生成，レンダリング，計画，同期から唯一の書き込み口である executor へ渡る（[0028]）．
-- 計算の層が書き込めないことを，1 つの crate の中で 3 つの仕組みで保証する．`clippy.toml` が `std` の書き込み API を禁止し，`shell::io` だけが禁止を外す．ポートは `pub(in crate::shell)` なので，計算の層は自前のラッパー経由でも到達できない．`generation`，`provider::spec`，`provider::renderer`，`install_plan`，`file_op`，`snapshot`，`layout`，`manifest`，`inventory`，`render` の `#![forbid(...)]` が，禁止を再び許可することを防ぐ．crate の分割は採らなかった．`std::fs` はどの crate からも呼べるので clippy の禁止は結局必要で，分割で置き換わるのは可視性だけだからである（[0028]）．テストは検査の対象外である．
-- 同じ禁止が読み込みにも及ぶ．結果は与えられた入力だけで決まり，実行した瞬間のディスクには左右されない．`shell::load` が source，外部 bundle，インストール済みの設定を一度だけ `Snapshot`（ファイル，種類，文書のテキスト）に読み込み，計算はそれだけに問い合わせる．禁止するのは `std::fs` の読み込み，`Path` の `exists`／`is_dir`／`read_dir`／`metadata`，`std::env`，`std::process::Command` である．プログラムの命令的な端である `cli`，`source`，`runtime`，`github_app`，`shell::load`，`shell::hook_bundle`，ビルドスクリプトは，理由を添えた `#![expect(...)]` で自分だけ禁止を外す．不要になると `expect` がコンパイルエラーになる（[0028]）．
+- 層をまたぐのは値だけである．`ProviderSpec` が Data から Functions と Capabilities へ渡り，loader が境界で組み立てた型付きの `Source` が loader から Functions へ渡り，`FileOp` の一覧が生成，レンダリング，計画，同期から唯一の書き込み口である executor へ渡る（[0028]）．
+- 計算の層が書き込めないことを，1 つの crate の中で 3 つの仕組みで保証する．`clippy.toml` が `std` の書き込み API を禁止し，`shell::io` だけが禁止を外す．ポートは `pub(in crate::shell)` なので，計算の層は自前のラッパー経由でも到達できない．`generation`，`provider::spec`，`provider::renderer`，`install_plan`，`file_op`，`source_model`，`layout`，`manifest`，`inventory`，`render` の `#![forbid(...)]` が，禁止を再び許可することを防ぐ．crate の分割は採らなかった．`std::fs` はどの crate からも呼べるので clippy の禁止は結局必要で，分割で置き換わるのは可視性だけだからである（[0028]）．テストは検査の対象外である．
+- 同じ禁止が読み込みにも及ぶ．結果は与えられた入力だけで決まり，実行した瞬間のディスクには左右されない．`shell::load` が source，外部 bundle，インストール済みの設定を一度だけ型付きの `Source` に読み込む．文書はすべて境界で解析と検証を済ませ，失敗はそのファイルのパスとともに境界で出る．丸ごとコピーするだけのディレクトリは場所とファイル一覧だけを持つ．計算は `Source` だけを読む．禁止するのは `std::fs` の読み込み，`Path` の `exists`／`is_dir`／`read_dir`／`metadata`，`std::env`，`std::process::Command` である．プログラムの命令的な端である `cli`，`source`，`runtime`，`github_app`，`shell::load`，`shell::hook_bundle`，ビルドスクリプトは，理由を添えた `#![expect(...)]` で自分だけ禁止を外す．不要になると `expect` がコンパイルエラーになる（[0028]）．
 - 秘密のファイル（GitHub App のトークン）だけを `0600` で書く．それ以外はプロセスの既定のモードで書き，コピーは元のファイルの権限ビットを保ち，既存のファイルを置き換えるときはその権限ビットを保つ．
 - Claude と Codex も他の 4 つと同じく registry に宣言する．registry は各 provider が持つものを宣言し，中身は provider ごとの関数が生成する（[0027]）．
 
@@ -158,8 +157,8 @@ sequenceDiagram
 | `provider/spec`，`provider/ownership`，`provider/registry`                                | Data: プロバイダのメタデータ，資産の出力先，`ConfigSync` の所有範囲の宣言，registry．         |
 | `config_sync`（`codec`，`engine`，`installed`）                                           | Functions: 形式の codec，宣言された所有範囲を適用する唯一の処理，解析済みの `Installed`．     |
 | `install_plan`                                                                            | Functions: 生成済み staging の公開と埋め込み資産の配置を計画する．                            |
-| `shell`（`io`，`load`，`executor`，`sync`，`hook_bundle`）                                | Capabilities: ファイル I/O のポート，snapshot の loader，`FileOp` の executor，設定同期，hook bundle． |
-| `snapshot`                                                                                | Functions: 計算がディスクの代わりに問い合わせる，読み取り専用の `Snapshot` と `Tree`．          |
+| `shell`（`io`，`load`，`executor`，`sync`，`hook_bundle`）                                | Capabilities: ファイル I/O のポート，`Source` の loader，`FileOp` の executor，設定同期，hook bundle． |
+| `source_model`                                                                            | Functions: 計算が読む型付きの `Source`（フック設定，権限規則，スキル，設定，bundle）．         |
 | `nix/providers.json`，`nix/home_manager_module.nix`                                       | registry から生成する Nix の一覧と，そこから作る Home Manager の option，リンク，同期．       |
 | `generation/hooks`                                                                        | フックの配線を描画する．                                                                      |
 | `generation/bridges`，`provider/spec`，`install_plan`                                     | ブリッジ asset の契約を検証し，spec の埋め込み asset と出力先から書き込みを計画する．         |
