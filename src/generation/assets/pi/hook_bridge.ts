@@ -121,7 +121,12 @@ function touchesGit(path: string): boolean {
 
 // Mirrors the srt denyRead entry for Pi's own credentials, which the file tools would otherwise bypass.
 function isCredentialFile(path: string): boolean {
-	return path === join(realpathSync(homedir()), ".pi", "agent", "auth.json") || path === join(homedir(), ".pi", "agent", "auth.json");
+	// HOME may not exist (build sandboxes); then only the lexical form can match.
+	let realHome = homedir();
+	try {
+		realHome = realpathSync(realHome);
+	} catch {}
+	return [homedir(), realHome].some(home => path === join(home, ".pi", "agent", "auth.json"));
 }
 
 function fileBoundary(tool: string, input: unknown, cwd: string): string | undefined {
