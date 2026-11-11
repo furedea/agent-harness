@@ -109,13 +109,40 @@ fn merge_permissions(root: &mut Map<String, Value>, context: GenerationContext<'
 fn merge_sandbox(root: &mut Map<String, Value>, context: GenerationContext<'_>) -> Result<()> {
     let sandbox = object_entry(root, "sandbox")?;
     let filesystem = object_entry(sandbox, "filesystem")?;
-    let deny_write = protected_paths(context)?
-        .into_iter()
-        .map(Value::String)
-        .collect();
+    let source_paths = source_deny_write(filesystem)?;
+    let deny_write = unique_in_order(source_paths.into_iter().chain(protected_paths(context)?));
 
-    filesystem.insert("denyWrite".to_string(), Value::Array(deny_write));
+    filesystem.insert(
+        "denyWrite".to_string(),
+        Value::Array(deny_write.into_iter().map(Value::String).collect()),
+    );
     Ok(())
+}
+
+fn source_deny_write(filesystem: &Map<String, Value>) -> Result<Vec<String>> {
+    let Some(entries) = filesystem.get("denyWrite") else {
+        return Ok(Vec::new());
+    };
+    let Value::Array(entries) = entries else {
+        bail!("sandbox.filesystem.denyWrite must be a JSON array");
+    };
+    entries
+        .iter()
+        .map(|entry| {
+            entry
+                .as_str()
+                .map(ToOwned::to_owned)
+                .context("sandbox.filesystem.denyWrite entries must be strings")
+        })
+        .collect()
+}
+
+fn unique_in_order(paths: impl IntoIterator<Item = String>) -> Vec<String> {
+    let mut seen = std::collections::HashSet::new();
+    paths
+        .into_iter()
+        .filter(|path| seen.insert(path.clone()))
+        .collect()
 }
 
 fn protected_paths(context: GenerationContext<'_>) -> Result<Vec<String>> {
@@ -242,6 +269,59 @@ mod tests {
                 .contains(&"~/.claude/hooks/guard.sh".to_string())
         );
 
+        std::fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn build_settings_keeps_source_deny_write_and_the_harness_paths() -> Result<()> {
+        let root = test_root("build_settings_keeps_source_deny_write_and_the_harness_paths")?;
+        write_minimal_source(&root)?;
+        let base = json!({
+            "sandbox": {
+                "filesystem": {
+                    "denyWrite": [
+                        "~/**/.git/hooks",
+                        "~/.local/state/agent-harness/verification",
+                        "~/.claude/hooks/guard.sh"
+                    ]
+                }
+            }
+        });
+
+        let settings = build_settings(GenerationContext::home(&root, &[]), base)?;
+
+        let deny_write = array_strings(&settings["sandbox"]["filesystem"]["denyWrite"]);
+        assert_eq!(
+            deny_write[..3],
+            [
+                "~/**/.git/hooks",
+                "~/.local/state/agent-harness/verification",
+                "~/.claude/hooks/guard.sh"
+            ],
+        );
+        assert!(deny_write.contains(&"~/.claude/hooks/rules/command_permissions.json".to_string()));
+        let guard_count = deny_write
+            .iter()
+            .filter(|path| *path == "~/.claude/hooks/guard.sh")
+            .count();
+        assert_eq!(guard_count, 1);
+
+        std::fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn build_settings_rejects_a_non_array_deny_write() -> Result<()> {
+        let root = test_root("build_settings_rejects_a_non_array_deny_write")?;
+        write_minimal_source(&root)?;
+        let base = json!({"sandbox": {"filesystem": {"denyWrite": "~/x"}}});
+
+        let error = build_settings(GenerationContext::home(&root, &[]), base)
+            .unwrap_err()
+            .to_string();
+
+        assert!(error.contains("denyWrite"));
         std::fs::remove_dir_all(root)?;
         Ok(())
     }

@@ -247,6 +247,30 @@ fn write_config_source_keeps_guarded_filesystem_entries_from_the_source() -> Res
     Ok(())
 }
 
+#[test]
+fn write_config_source_renders_source_declared_write_denied_paths() -> Result<()> {
+    let root = test_root("write_config_source_renders_source_declared_write_denied_paths")?;
+    write_minimal_source(&root)?;
+    write_file(
+        &root.join("codex/config.toml"),
+        "[permissions.guarded.filesystem]\n\"~/.local/state/agent-harness/verification\" = \"read\"\n",
+    )?;
+    let out = root.join("config.toml");
+
+    write_config_source(&root, &out, &[])?;
+
+    let document = std::fs::read_to_string(&out)?.parse::<DocumentMut>()?;
+    let guarded = &document["permissions"]["guarded"]["filesystem"];
+    assert_eq!(
+        guarded["~/.local/state/agent-harness/verification"].as_str(),
+        Some("read"),
+    );
+    assert_eq!(guarded["~/.codex/hooks/adapt.sh"].as_str(), Some("read"));
+
+    std::fs::remove_dir_all(root)?;
+    Ok(())
+}
+
 fn test_root(name: &str) -> Result<std::path::PathBuf> {
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)?
