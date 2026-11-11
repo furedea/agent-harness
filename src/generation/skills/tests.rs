@@ -3,6 +3,14 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::*;
 
+fn render_skills(
+    source: &Path,
+    external_skills: &[ExternalSkill],
+    target: SkillTarget<'_>,
+) -> Result<()> {
+    crate::shell::execute(&[super::render_skills(source, external_skills, target)?])
+}
+
 #[test]
 fn render_claude_skill_applies_frontmatter_overrides() -> Result<()> {
     let root = test_root("render_claude_skill_applies_frontmatter_overrides")?;
@@ -40,7 +48,7 @@ fn render_claude_skill_applies_frontmatter_overrides() -> Result<()> {
     assert!(content.contains("disable-model-invocation: true"));
     assert!(!out.join("custom-command/agents/openai.yaml").exists());
 
-    std::fs::remove_dir_all(root)?;
+    crate::shell::fixtures::remove_dir_all(root)?;
     Ok(())
 }
 
@@ -82,7 +90,7 @@ fn render_codex_skill_writes_explicit_only_metadata() -> Result<()> {
         "policy:\n  allow_implicit_invocation: false\n",
     );
 
-    std::fs::remove_dir_all(root)?;
+    crate::shell::fixtures::remove_dir_all(root)?;
     Ok(())
 }
 
@@ -119,7 +127,7 @@ fn render_skills_copies_an_external_skill_directory_verbatim() -> Result<()> {
         "Upstream commands\n",
     );
 
-    std::fs::remove_dir_all(root)?;
+    crate::shell::fixtures::remove_dir_all(root)?;
     Ok(())
 }
 
@@ -151,7 +159,7 @@ fn render_skills_rejects_an_external_skill_that_shadows_a_built_in_skill() -> Re
     );
 
     assert!(result.is_err());
-    std::fs::remove_dir_all(root)?;
+    crate::shell::fixtures::remove_dir_all(root)?;
     Ok(())
 }
 
@@ -184,7 +192,7 @@ fn render_skills_rejects_duplicate_external_skill_names() -> Result<()> {
     );
 
     assert!(result.is_err());
-    std::fs::remove_dir_all(root)?;
+    crate::shell::fixtures::remove_dir_all(root)?;
     Ok(())
 }
 
@@ -193,7 +201,7 @@ fn render_skills_rejects_an_external_directory_without_a_skill_file() -> Result<
     let root = test_root("render_skills_rejects_an_external_directory_without_a_skill_file")?;
     write_skill_source(&root, "built-in")?;
     let external_skill_dir = root.join("external/incomplete");
-    std::fs::create_dir_all(&external_skill_dir)?;
+    crate::shell::fixtures::create_dir_all(&external_skill_dir)?;
     let external_skills = [ExternalSkill::new("incomplete", external_skill_dir)?];
 
     let result = render_skills(
@@ -206,7 +214,7 @@ fn render_skills_rejects_an_external_directory_without_a_skill_file() -> Result<
     );
 
     assert!(result.is_err());
-    std::fs::remove_dir_all(root)?;
+    crate::shell::fixtures::remove_dir_all(root)?;
     Ok(())
 }
 
@@ -235,7 +243,7 @@ fn render_skills_preserves_installed_skills_when_a_source_is_invalid() -> Result
         std::fs::read_to_string(out.join("existing/SKILL.md"))?,
         "installed skill\n",
     );
-    std::fs::remove_dir_all(root)?;
+    crate::shell::fixtures::remove_dir_all(root)?;
     Ok(())
 }
 
@@ -246,7 +254,7 @@ fn render_skills_rejects_an_external_skill_with_only_a_symlinked_skill_file() ->
     let external = root.join("external");
     let real_skill = root.join("upstream.md");
     write_file(&real_skill, "upstream skill\n")?;
-    std::fs::create_dir(&external)?;
+    crate::shell::fixtures::create_dir(&external)?;
     std::os::unix::fs::symlink(real_skill, external.join("SKILL.md"))?;
     let out = root.join("out");
     write_file(&out.join("existing/SKILL.md"), "installed skill\n")?;
@@ -267,21 +275,21 @@ fn render_skills_rejects_an_external_skill_with_only_a_symlinked_skill_file() ->
         std::fs::read_to_string(out.join("existing/SKILL.md"))?,
         "installed skill\n",
     );
-    std::fs::remove_dir_all(root)?;
+    crate::shell::fixtures::remove_dir_all(root)?;
     Ok(())
 }
 
 fn test_root(name: &str) -> Result<PathBuf> {
     let nanos = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
     let root = std::env::temp_dir().join(format!("agent-harness-{name}-{nanos}"));
-    std::fs::create_dir_all(&root)?;
+    crate::shell::fixtures::create_dir_all(&root)?;
     Ok(root)
 }
 
 fn write_skill_source(source: &Path, skill_name: &str) -> Result<()> {
     let skill_dir = source.join("skills").join(skill_name);
-    std::fs::create_dir_all(&skill_dir)?;
-    std::fs::write(
+    crate::shell::fixtures::create_dir_all(&skill_dir)?;
+    crate::shell::fixtures::write(
         skill_dir.join("SKILL.md"),
         "---\nname: example\ndescription: test skill\n---\n\nBody\n",
     )?;
@@ -289,13 +297,13 @@ fn write_skill_source(source: &Path, skill_name: &str) -> Result<()> {
 }
 
 fn write_skill_rendering(source: &Path, content: &str) -> Result<()> {
-    std::fs::create_dir_all(source)?;
-    std::fs::write(source.join("skill_rendering.json"), content)?;
+    crate::shell::fixtures::create_dir_all(source)?;
+    crate::shell::fixtures::write(source.join("skill_rendering.json"), content)?;
     Ok(())
 }
 
 fn write_file(path: &Path, content: &str) -> Result<()> {
-    std::fs::create_dir_all(path.parent().unwrap_or_else(|| Path::new(".")))?;
-    std::fs::write(path, content)?;
+    crate::shell::fixtures::create_dir_all(path.parent().unwrap_or_else(|| Path::new(".")))?;
+    crate::shell::fixtures::write(path, content)?;
     Ok(())
 }

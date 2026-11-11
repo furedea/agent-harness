@@ -1,6 +1,6 @@
 /// How installation keeps a provider's mutable config in step with the rendered one.
 ///
-/// A variant names the managed operation; `config_sync` owns the code that performs it.
+/// A variant names the managed operation; `shell::sync` owns the code that performs it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ConfigSync {
     /// Every top-level key of the rendered config replaces the installed one.

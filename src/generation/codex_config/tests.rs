@@ -1,6 +1,22 @@
 use std::collections::BTreeMap;
 
 use super::*;
+
+fn sync_managed_document(source: &DocumentMut, target: &Path) -> Result<()> {
+    crate::shell::execute(&sync_managed_document_ops(source, target)?)
+}
+
+fn sync_managed_config(source: &Path, target: &Path) -> Result<()> {
+    crate::shell::execute(&sync_managed_config_ops(source, target)?)
+}
+
+fn write_config_source(
+    source: &Path,
+    out: &Path,
+    external_hooks: &[ExternalHookBundle],
+) -> Result<()> {
+    crate::shell::execute(&[config_source_op(source, out, external_hooks)?])
+}
 use crate::generation::codex_managed_state::MANAGED_STATE_FILE;
 
 #[test]
@@ -47,7 +63,7 @@ fn sync_managed_document_writes_every_generated_env_key() -> Result<()> {
         Some("/nvim.log")
     );
 
-    std::fs::remove_dir_all(root)?;
+    crate::shell::fixtures::remove_dir_all(root)?;
     Ok(())
 }
 
@@ -63,7 +79,7 @@ fn sync_managed_document_removes_a_previously_managed_key_that_left_the_source()
     assert!(!env.contains_key("NVIM_LOG_FILE"));
     assert_eq!(env.get("OTHER").map(String::as_str), Some("1"));
 
-    std::fs::remove_dir_all(root)?;
+    crate::shell::fixtures::remove_dir_all(root)?;
     Ok(())
 }
 
@@ -87,7 +103,7 @@ fn sync_managed_document_keeps_env_keys_added_by_the_user_or_codex() -> Result<(
     );
     assert!(!env.contains_key("NVIM_LOG_FILE"));
 
-    std::fs::remove_dir_all(root)?;
+    crate::shell::fixtures::remove_dir_all(root)?;
     Ok(())
 }
 
@@ -109,7 +125,7 @@ fn sync_managed_document_writes_into_inline_tables() -> Result<()> {
         Some("/nvim.log")
     );
 
-    std::fs::remove_dir_all(root)?;
+    crate::shell::fixtures::remove_dir_all(root)?;
     Ok(())
 }
 
@@ -122,7 +138,7 @@ fn sync_managed_document_rejects_a_non_table_shell_environment_policy() -> Resul
     let result = sync_managed_document(&env_source(&[("NVIM_LOG_FILE", "/x")])?, &target);
 
     assert!(result.is_err());
-    std::fs::remove_dir_all(root)?;
+    crate::shell::fixtures::remove_dir_all(root)?;
     Ok(())
 }
 
@@ -141,7 +157,7 @@ fn sync_managed_document_without_a_sidecar_removes_only_gh_config_dir() -> Resul
     assert!(!env.contains_key("GH_CONFIG_DIR"));
     assert_eq!(env.get("NVIM_LOG_FILE").map(String::as_str), Some("/old"));
 
-    std::fs::remove_dir_all(root)?;
+    crate::shell::fixtures::remove_dir_all(root)?;
     Ok(())
 }
 
@@ -160,7 +176,7 @@ fn sync_managed_document_keeps_a_user_owned_gh_config_dir_once_a_sidecar_exists(
     let env = env_keys(&target)?;
     assert_eq!(env.get("GH_CONFIG_DIR").map(String::as_str), Some("/mine"));
 
-    std::fs::remove_dir_all(root)?;
+    crate::shell::fixtures::remove_dir_all(root)?;
     Ok(())
 }
 
@@ -180,7 +196,7 @@ fn sync_managed_document_survives_an_unreadable_sidecar() -> Result<()> {
     let sidecar = std::fs::read_to_string(root.join(MANAGED_STATE_FILE))?;
     assert!(sidecar.contains("NVIM_LOG_FILE"));
 
-    std::fs::remove_dir_all(root)?;
+    crate::shell::fixtures::remove_dir_all(root)?;
     Ok(())
 }
 
@@ -265,7 +281,7 @@ fn write_config_source_appends_guarded_filesystem_fragment() -> Result<()> {
     assert!(content.contains("[permissions.guarded.filesystem]"));
     assert!(content.contains("\"~/.codex/hooks/adapt.sh\" = \"read\""));
 
-    std::fs::remove_dir_all(root)?;
+    crate::shell::fixtures::remove_dir_all(root)?;
     Ok(())
 }
 
@@ -286,7 +302,7 @@ fn write_config_source_keeps_guarded_filesystem_entries_from_the_source() -> Res
     assert_eq!(guarded["~/.config/gh/hosts.yml"].as_str(), Some("deny"));
     assert_eq!(guarded["~/.codex/hooks/adapt.sh"].as_str(), Some("read"));
 
-    std::fs::remove_dir_all(root)?;
+    crate::shell::fixtures::remove_dir_all(root)?;
     Ok(())
 }
 
@@ -310,7 +326,7 @@ fn write_config_source_renders_source_declared_write_denied_paths() -> Result<()
     );
     assert_eq!(guarded["~/.codex/hooks/adapt.sh"].as_str(), Some("read"));
 
-    std::fs::remove_dir_all(root)?;
+    crate::shell::fixtures::remove_dir_all(root)?;
     Ok(())
 }
 
@@ -319,7 +335,7 @@ fn test_root(name: &str) -> Result<std::path::PathBuf> {
         .duration_since(std::time::UNIX_EPOCH)?
         .as_nanos();
     let root = std::env::temp_dir().join(format!("agent-harness-{name}-{nanos}"));
-    std::fs::create_dir_all(&root)?;
+    crate::shell::fixtures::create_dir_all(&root)?;
     Ok(root)
 }
 
@@ -336,7 +352,9 @@ fn write_minimal_source(source: &Path) -> Result<()> {
 }
 
 fn write_file(path: &Path, content: &str) -> Result<()> {
-    path.parent().map(std::fs::create_dir_all).transpose()?;
-    std::fs::write(path, content)?;
+    path.parent()
+        .map(crate::shell::fixtures::create_dir_all)
+        .transpose()?;
+    crate::shell::fixtures::write(path, content)?;
     Ok(())
 }

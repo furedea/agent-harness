@@ -1,4 +1,4 @@
-use crate::fs_ops;
+use crate::regular_files::regular_files;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -112,7 +112,7 @@ fn install_preserves_existing_files_when_source_generation_fails() -> Result<()>
 }
 
 fn installed_contents(root: &Path) -> Result<Vec<(PathBuf, Vec<u8>)>> {
-    fs_ops::regular_files(root)?
+    regular_files(root)?
         .into_iter()
         .map(|path| Ok((path.strip_prefix(root)?.to_path_buf(), std::fs::read(path)?)))
         .collect()
@@ -344,9 +344,11 @@ fn install_matches_the_merge_the_home_manager_build_applies() -> Result<()> {
         std::fs::create_dir_all(target.parent().unwrap())?;
         std::fs::write(target, r#"{"model":"user-model"}"#)?;
     }
-    crate::generation::claude_config::write_settings(&source, &generated, &[])?;
+    generate_claude_settings(&source, &generated)?;
 
-    crate::generation::claude_config::merge_settings(&generated, &synced)?;
+    crate::shell::execute(&[crate::generation::claude_config::merge_settings_op(
+        &generated, &synced, &synced,
+    )?])?;
     install(GenerationContext::home(&source, &[]), &out)?;
 
     assert_eq!(

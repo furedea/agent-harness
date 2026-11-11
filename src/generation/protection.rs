@@ -5,9 +5,10 @@ use anyhow::{Context, Result};
 use serde::Serialize;
 
 use crate::{
-    fs_ops,
-    generation::{external_hooks::ExternalHookBundle, io},
+    file_op::FileOp,
+    generation::external_hooks::ExternalHookBundle,
     layout::{InstalledLayout, SourceLayout},
+    regular_files::regular_files,
     runtime_root::RuntimeRoot,
 };
 
@@ -20,20 +21,23 @@ struct ProtectedPathPolicy {
     paths: Vec<String>,
 }
 
-pub(crate) fn write_codex_config_fragment(
+pub(crate) fn codex_config_fragment_op(
     source: &Path,
     external_hooks: &[ExternalHookBundle],
     path: &Path,
-) -> Result<()> {
-    io::write_file(path, &codex_config_fragment(source, external_hooks)?)
+) -> Result<FileOp> {
+    Ok(FileOp::write(
+        path,
+        codex_config_fragment(source, external_hooks)?,
+    ))
 }
 
-pub(crate) fn write_runtime_policy(paths: Vec<String>, path: &Path) -> Result<()> {
+pub(crate) fn runtime_policy_op(paths: Vec<String>, path: &Path) -> Result<FileOp> {
     let policy = ProtectedPathPolicy {
         version: POLICY_VERSION,
         paths,
     };
-    io::write_json(path, &policy)
+    FileOp::write_json(path, &policy)
 }
 
 pub(crate) fn codex_config_fragment(
@@ -151,7 +155,7 @@ fn harness_owned_files(
 }
 
 fn relative_files(root: &Path) -> Result<Vec<String>> {
-    fs_ops::regular_files(root)?
+    regular_files(root)?
         .into_iter()
         .map(|path| {
             let relative = path
@@ -197,7 +201,7 @@ mod tests {
                 .any(|path| path.starts_with(&root.display().to_string()))
         );
 
-        std::fs::remove_dir_all(root)?;
+        crate::shell::fixtures::remove_dir_all(root)?;
         Ok(())
     }
 
@@ -219,7 +223,7 @@ mod tests {
                 .all(|permission| !permission.starts_with("Write("))
         );
 
-        std::fs::remove_dir_all(root)?;
+        crate::shell::fixtures::remove_dir_all(root)?;
         Ok(())
     }
 
@@ -234,7 +238,7 @@ mod tests {
         assert!(content.contains("\"~/.claude/hooks/guard.sh\" = \"read\""));
         assert!(content.contains("glob_scan_max_depth = 5"));
 
-        std::fs::remove_dir_all(root)?;
+        crate::shell::fixtures::remove_dir_all(root)?;
         Ok(())
     }
 
@@ -269,7 +273,7 @@ mod tests {
             })?
             .contains(&expected.to_owned())
         );
-        std::fs::remove_dir_all(root)?;
+        crate::shell::fixtures::remove_dir_all(root)?;
         Ok(())
     }
 
@@ -287,7 +291,7 @@ mod tests {
                 .any(|path| path.contains("docs/logs/audit/2026-05-19.jsonl"))
         );
 
-        std::fs::remove_dir_all(root)?;
+        crate::shell::fixtures::remove_dir_all(root)?;
         Ok(())
     }
 
@@ -300,14 +304,14 @@ mod tests {
         let paths = protected_paths(&root, &[])?;
 
         assert!(paths.contains(&"~/.claude/hooks/guard\\name.sh".to_owned()));
-        std::fs::remove_dir_all(root)?;
+        crate::shell::fixtures::remove_dir_all(root)?;
         Ok(())
     }
 
     fn test_root(name: &str) -> Result<PathBuf> {
         let nanos = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
         let root = std::env::temp_dir().join(format!("agent-harness-{name}-{nanos}"));
-        std::fs::create_dir_all(&root)?;
+        crate::shell::fixtures::create_dir_all(&root)?;
         Ok(root)
     }
 
@@ -325,8 +329,10 @@ mod tests {
     }
 
     fn write_file(path: &Path, content: &str) -> Result<()> {
-        path.parent().map(std::fs::create_dir_all).transpose()?;
-        std::fs::write(path, content)?;
+        path.parent()
+            .map(crate::shell::fixtures::create_dir_all)
+            .transpose()?;
+        crate::shell::fixtures::write(path, content)?;
         Ok(())
     }
 }

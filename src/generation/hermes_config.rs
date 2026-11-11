@@ -3,20 +3,22 @@ use std::path::Path;
 use anyhow::{Context, Result, bail};
 use serde_norway::{Mapping, Value};
 
-use crate::fs_ops;
+use crate::file_op::FileOp;
 
 const MANAGED_CONFIG: &str = "plugins:\n  enabled:\n    - agent-harness-hooks\n";
 
-pub(crate) fn write_managed_config(path: &Path) -> Result<()> {
-    fs_ops::write_file_atomically(path, MANAGED_CONFIG.as_bytes())
+pub(crate) fn managed_config_op(path: &Path) -> FileOp {
+    FileOp::write(path, MANAGED_CONFIG)
 }
 
-pub(crate) fn sync_config(source_path: &Path, target_path: &Path) -> Result<()> {
+pub(crate) fn sync_config_op(source_path: &Path, target_path: &Path) -> Result<FileOp> {
     let generated = read_yaml(source_path)?;
     let mut existing = read_yaml_or_empty(target_path)?;
     merge_managed_config(&mut existing, generated)?;
-    let content = serde_norway::to_string(&existing)?;
-    fs_ops::write_file_atomically(target_path, content.as_bytes())
+    Ok(FileOp::write(
+        target_path,
+        serde_norway::to_string(&existing)?,
+    ))
 }
 
 fn merge_managed_config(existing: &mut Value, generated: Value) -> Result<()> {
@@ -122,6 +124,10 @@ mod tests {
 
     use super::*;
 
+    fn sync_config(source: &Path, target: &Path) -> Result<()> {
+        crate::shell::execute(&[sync_config_op(source, target)?])
+    }
+
     #[test]
     fn sync_config_unions_plugins_enabled_and_preserves_user_keys() -> Result<()> {
         let root = test_root("sync-hermes-config")?;
@@ -142,7 +148,7 @@ mod tests {
             serde_norway::from_str::<Value>("- moshi-hooks\n- agent-harness-hooks\n")?,
         );
         assert_eq!(parsed["onboarding"]["seen"]["intro"].as_bool(), Some(true));
-        std::fs::remove_dir_all(root)?;
+        crate::shell::fixtures::remove_dir_all(root)?;
         Ok(())
     }
 
@@ -161,20 +167,22 @@ mod tests {
             parsed["plugins"]["enabled"].as_sequence().map(Vec::len),
             Some(1),
         );
-        std::fs::remove_dir_all(root)?;
+        crate::shell::fixtures::remove_dir_all(root)?;
         Ok(())
     }
 
     fn test_root(name: &str) -> Result<PathBuf> {
         let nanos = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
         let root = std::env::temp_dir().join(format!("agent-harness-{name}-{nanos}"));
-        std::fs::create_dir_all(&root)?;
+        crate::shell::fixtures::create_dir_all(&root)?;
         Ok(root)
     }
 
     fn write_file(path: &Path, content: &str) -> Result<()> {
-        path.parent().map(std::fs::create_dir_all).transpose()?;
-        std::fs::write(path, content)?;
+        path.parent()
+            .map(crate::shell::fixtures::create_dir_all)
+            .transpose()?;
+        crate::shell::fixtures::write(path, content)?;
         Ok(())
     }
 }

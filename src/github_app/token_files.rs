@@ -3,9 +3,10 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
-use crate::fs_ops;
+use crate::file_op::{FileMode, FileOp};
 use crate::github_app::api::InstallationToken;
 use crate::github_app::timestamp;
+use crate::shell;
 
 const HOSTS_FILE: &str = "hosts.yml";
 const CONFIG_FILE: &str = "config.yml";
@@ -106,13 +107,16 @@ impl TokenFiles {
             issuer: Some(*issuer),
             token_sha256: Some(token_sha256(&token.token)),
         };
-        self.create_config_dir()?;
-        fs_ops::write_file_atomically(&self.hosts_path(), hosts_yaml(&token.token).as_bytes())?;
-        self.write_config_once()?;
-        self.write_status(&RefreshStatus {
+        let mut operations = vec![private_file(
+            self.hosts_path(),
+            hosts_yaml(&token.token).into_bytes(),
+        )];
+        operations.extend(self.config_once_op());
+        operations.push(self.status_op(&RefreshStatus {
             token: Some(expiry),
             last_failure: None,
-        })
+        })?);
+        shell::execute(&operations)
     }
 
     /// Records a failed refresh without touching the current token.
@@ -124,8 +128,7 @@ impl TokenFiles {
             failed_at_unix: now_unix,
             message: message.to_owned(),
         });
-        self.create_config_dir()?;
-        self.write_status(&status)
+        shell::execute(&[self.status_op(&status)?])
     }
 
     pub(crate) fn status(&self) -> Result<Option<RefreshStatus>> {
@@ -146,19 +149,15 @@ impl TokenFiles {
         self.path(HOSTS_FILE)
     }
 
-    fn write_status(&self, status: &RefreshStatus) -> Result<()> {
+    fn status_op(&self, status: &RefreshStatus) -> Result<FileOp> {
         let content = serde_json::to_string_pretty(status)? + "\n";
-        fs_ops::write_file_atomically(&self.path(STATUS_FILE), content.as_bytes())
+        Ok(private_file(self.path(STATUS_FILE), content.into_bytes()))
     }
 
-    fn write_config_once(&self) -> Result<()> {
-        write_file_once(&self.path(CONFIG_FILE), CONFIG_CONTENT.as_bytes())
-    }
-
-    fn create_config_dir(&self) -> Result<()> {
-        private_dir_builder()
-            .create(&self.config_dir)
-            .with_context(|| format!("failed to create directory {}", self.config_dir.display()))
+    /// The gh config, written only when the user or gh has not made one.
+    fn config_once_op(&self) -> Option<FileOp> {
+        let path = self.path(CONFIG_FILE);
+        (!path.exists()).then(|| private_file(path, CONFIG_CONTENT.as_bytes().to_vec()))
     }
 
     fn path(&self, file: &str) -> PathBuf {
@@ -174,22 +173,13 @@ fn read_if_exists(path: &Path) -> Result<Option<String>> {
     }
 }
 
-fn write_file_once(path: &Path, content: &[u8]) -> Result<()> {
-    if path.exists() {
-        return Ok(());
+/// Token files are secrets: owner-only, in an owner-only directory.
+fn private_file(target: PathBuf, content: Vec<u8>) -> FileOp {
+    FileOp::WriteFile {
+        target,
+        content,
+        mode: FileMode::Private,
     }
-    fs_ops::write_file_atomically(path, content)
-}
-
-fn private_dir_builder() -> std::fs::DirBuilder {
-    let mut builder = std::fs::DirBuilder::new();
-    builder.recursive(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::DirBuilderExt;
-        builder.mode(0o700);
-    }
-    builder
 }
 
 fn read_hosts_token(path: &Path, recorded_sha256: Option<&str>) -> Result<HostsToken> {

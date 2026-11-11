@@ -3,10 +3,7 @@ use std::path::Path;
 use anyhow::{Context, Result, bail, ensure};
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    generation::{io, permission_rule::PrefixRule},
-    layout::SourceLayout,
-};
+use crate::{file_op::FileOp, generation::permission_rule::PrefixRule, layout::SourceLayout};
 
 #[derive(Debug, Deserialize, Serialize)]
 struct CommandPermissions {
@@ -45,18 +42,18 @@ struct RegexRule {
     justification: String,
 }
 
-pub(crate) fn write_codex_rules(source: &Path, path: &Path) -> Result<()> {
+pub(crate) fn codex_rules_op(source: &Path, path: &Path) -> Result<FileOp> {
     let policy = read_policy(source)?;
-    io::write_file(path, &codex_rules(&policy)?)
+    Ok(FileOp::write(path, codex_rules(&policy)?))
 }
 
-pub(crate) fn write_runtime_policy(source: &Path, path: &Path) -> Result<()> {
-    io::write_json(path, &read_policy(source)?)
+pub(crate) fn runtime_policy_op(source: &Path, path: &Path) -> Result<FileOp> {
+    FileOp::write_json(path, &read_policy(source)?)
 }
 
-pub(crate) fn write_forbidden_commands(source: &Path, path: &Path) -> Result<()> {
+pub(crate) fn forbidden_commands_op(source: &Path, path: &Path) -> Result<FileOp> {
     let policy_path = SourceLayout::new(source).forbidden_command_rules();
-    io::write_json(path, &read_regex_policy(&policy_path)?)
+    FileOp::write_json(path, &read_regex_policy(&policy_path)?)
 }
 
 pub(crate) fn validate_regex_policies(source: &Path) -> Result<()> {
@@ -208,6 +205,10 @@ mod tests {
 
     use super::*;
 
+    fn write_forbidden_commands(source: &Path, path: &Path) -> Result<()> {
+        crate::shell::execute(&[forbidden_commands_op(source, path)?])
+    }
+
     #[test]
     fn codex_rules_include_allow_and_deny_prefixes() -> Result<()> {
         let root = test_root("codex_rules_include_allow_and_deny_prefixes")?;
@@ -221,7 +222,7 @@ mod tests {
         assert!(content.contains(r#"decision = "forbidden""#));
         assert!(content.contains("Do not fetch remote scripts or content from Codex."));
 
-        std::fs::remove_dir_all(root)?;
+        crate::shell::fixtures::remove_dir_all(root)?;
         Ok(())
     }
 
@@ -238,7 +239,7 @@ mod tests {
         assert_eq!(policy.rules[0].patterns, [r"^git add \.$"]);
         assert_eq!(policy.rules[0].justification, "No bulk staging.");
 
-        std::fs::remove_dir_all(root)?;
+        crate::shell::fixtures::remove_dir_all(root)?;
         Ok(())
     }
 
@@ -276,7 +277,7 @@ mod tests {
             serde_json::from_str(&std::fs::read_to_string(&generated_path)?)?;
         assert_eq!(generated, source);
 
-        std::fs::remove_dir_all(root)?;
+        crate::shell::fixtures::remove_dir_all(root)?;
         Ok(())
     }
 
@@ -292,7 +293,7 @@ mod tests {
         assert!(has_rule(&value, "allow", &serde_json::json!(["cargo"])));
         assert!(has_rule(&value, "deny", &serde_json::json!(["curl"])));
 
-        std::fs::remove_dir_all(root)?;
+        crate::shell::fixtures::remove_dir_all(root)?;
         Ok(())
     }
 
@@ -312,7 +313,7 @@ mod tests {
         assert!(claude_allow_permissions(&root)?.contains(&"Bash(cargo:*)".to_string()));
         assert!(claude_deny_permissions(&root)?.contains(&"Bash(curl:*)".to_string()));
 
-        std::fs::remove_dir_all(root)?;
+        crate::shell::fixtures::remove_dir_all(root)?;
         Ok(())
     }
 
@@ -336,7 +337,7 @@ mod tests {
 
         assert_eq!(permissions, ["Bash(git push:*)"]);
 
-        std::fs::remove_dir_all(root)?;
+        crate::shell::fixtures::remove_dir_all(root)?;
         Ok(())
     }
 
@@ -350,7 +351,7 @@ mod tests {
         assert_eq!(permissions["allow"], serde_json::json!(["Exec(cargo)"]));
         assert_eq!(permissions["deny"], serde_json::json!(["Exec(curl)"]));
 
-        std::fs::remove_dir_all(root)?;
+        crate::shell::fixtures::remove_dir_all(root)?;
         Ok(())
     }
 
@@ -374,7 +375,7 @@ mod tests {
 
         assert_eq!(permissions["ask"], serde_json::json!(["Exec(git push)"]));
 
-        std::fs::remove_dir_all(root)?;
+        crate::shell::fixtures::remove_dir_all(root)?;
         Ok(())
     }
 
@@ -399,7 +400,7 @@ mod tests {
         assert!(rules.contains(r#"decision = "prompt""#));
         assert!(!rules.contains("match ="));
 
-        std::fs::remove_dir_all(root)?;
+        crate::shell::fixtures::remove_dir_all(root)?;
         Ok(())
     }
 
@@ -415,7 +416,7 @@ mod tests {
 
         assert!(error.contains("non-empty"));
 
-        std::fs::remove_dir_all(root)?;
+        crate::shell::fixtures::remove_dir_all(root)?;
         Ok(())
     }
 
@@ -431,14 +432,14 @@ mod tests {
 
         assert!(error.contains("whitespace"));
 
-        std::fs::remove_dir_all(root)?;
+        crate::shell::fixtures::remove_dir_all(root)?;
         Ok(())
     }
 
     fn test_root(name: &str) -> Result<PathBuf> {
         let nanos = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
         let root = std::env::temp_dir().join(format!("agent-harness-{name}-{nanos}"));
-        std::fs::create_dir_all(&root)?;
+        crate::shell::fixtures::create_dir_all(&root)?;
         Ok(root)
     }
 
@@ -465,8 +466,10 @@ mod tests {
     }
 
     fn write_file(path: &Path, content: &str) -> Result<()> {
-        path.parent().map(std::fs::create_dir_all).transpose()?;
-        std::fs::write(path, content)?;
+        path.parent()
+            .map(crate::shell::fixtures::create_dir_all)
+            .transpose()?;
+        crate::shell::fixtures::write(path, content)?;
         Ok(())
     }
 }

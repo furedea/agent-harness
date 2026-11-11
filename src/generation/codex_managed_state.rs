@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
-use crate::fs_ops;
+use crate::file_op::FileOp;
 
 /// Sidecar next to the Codex config recording the `shell_environment_policy.set` keys last
 /// written, so a key dropped from the source is removed while keys Codex or the user added stay.
@@ -42,7 +42,6 @@ pub(super) fn read_managed_state(path: &Path) -> ManagedState {
         .unwrap_or_else(ManagedState::legacy)
 }
 
-pub(super) fn write_managed_state(path: &Path, state: &ManagedState) -> Result<()> {
-    let content = serde_json::to_string_pretty(state)? + "\n";
-    fs_ops::write_file_atomically(path, content.as_bytes())
+pub(super) fn managed_state_op(path: &Path, state: &ManagedState) -> Result<FileOp> {
+    FileOp::write_json(path, state)
 }

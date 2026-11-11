@@ -8,8 +8,9 @@ use serde::Deserialize;
 use serde_json::{Map, Value, map::Entry};
 
 use crate::{
-    fs_ops,
+    file_op::FileOp,
     provider::spec::{PROVIDERS, ProviderSpec},
+    regular_files::regular_files,
 };
 
 const SUPPORTED_BUNDLE_VERSION: u64 = 1;
@@ -21,11 +22,12 @@ pub(crate) struct ExternalHookBundle {
 }
 
 impl ExternalHookBundle {
-    pub(crate) fn copy_assets(&self, output: &Path) -> Result<()> {
+    pub(crate) fn asset_ops(&self, output: &Path) -> Result<Vec<FileOp>> {
         self.validate()?;
         self.assets()?
             .iter()
-            .try_for_each(|asset| self.copy_asset(&asset.source, &output.join(&asset.target)))
+            .map(|asset| self.asset_op(&asset.source, &output.join(&asset.target)))
+            .collect()
     }
 
     pub(crate) fn asset_install_paths(&self) -> Result<Vec<PathBuf>> {
@@ -144,14 +146,17 @@ impl ExternalHookBundle {
         provider_hooks.join("external").join(self.name.as_str())
     }
 
-    fn copy_asset(&self, source: &Path, target: &Path) -> Result<()> {
+    fn asset_op(&self, source: &Path, target: &Path) -> Result<FileOp> {
         ensure!(
             !target.exists(),
             "external hook bundle {} conflicts with {}",
             self.name.as_str(),
             target.display(),
         );
-        fs_ops::copy_file(source, target)
+        Ok(FileOp::CopyFile {
+            source: source.to_path_buf(),
+            target: target.to_path_buf(),
+        })
     }
 }
 
@@ -370,7 +375,7 @@ fn existing_regular_files(dir: &Path) -> Result<Vec<PathBuf>> {
     if !dir.is_dir() {
         return Ok(Vec::new());
     }
-    fs_ops::regular_files(dir)
+    regular_files(dir)
 }
 
 fn shell_scripts(dir: &Path) -> Result<Vec<(PathBuf, OsString)>> {

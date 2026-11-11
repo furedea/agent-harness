@@ -3,20 +3,19 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use serde_json::{Map, Value};
 
-use crate::fs_ops;
+use crate::file_op::FileOp;
 
 const MANAGED_KEYS: &[&str] = &["defaultProvider", "defaultModel", "defaultThinkingLevel"];
 
-pub(crate) fn write_managed_config(source: &Path, target: &Path) -> Result<()> {
-    sync_config(&source.join("pi/settings.json"), target)
+pub(crate) fn managed_config_op(source: &Path, target: &Path) -> Result<FileOp> {
+    sync_config_op(&source.join("pi/settings.json"), target)
 }
 
-pub(crate) fn sync_config(source: &Path, target: &Path) -> Result<()> {
+pub(crate) fn sync_config_op(source: &Path, target: &Path) -> Result<FileOp> {
     let generated = managed_settings(read_settings(source)?);
     let mut existing = read_settings(target)?;
     existing.extend(generated);
-    let content = serde_json::to_string_pretty(&existing)? + "\n";
-    fs_ops::write_file_atomically(target, content.as_bytes())
+    FileOp::write_json(target, &existing)
 }
 
 fn managed_settings(mut settings: Map<String, Value>) -> Map<String, Value> {
