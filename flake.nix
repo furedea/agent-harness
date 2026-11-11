@@ -41,7 +41,11 @@
 
             cargoLock.lockFile = ./Cargo.lock;
             # Tests generate throwaway RSA keys with the openssl CLI instead of committing key material.
-            nativeCheckInputs = [ pkgs.openssl ];
+            nativeCheckInputs = [
+              pkgs.openssl
+              pkgs.nodejs_22
+              pkgs.python3
+            ];
 
             postInstall = ''
               mkdir -p $out/share/agent-harness
