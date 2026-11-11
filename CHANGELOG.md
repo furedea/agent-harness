@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.12](https://github.com/furedea/agent-harness/compare/agent-harness-v0.9.11...agent-harness-v0.9.12) (2026-11-11)
+
+
+### Bug Fixes
+
+* **generation:** keep the source sandbox denyWrite entries when rendering Claude settings ([#214](https://github.com/furedea/agent-harness/issues/214)) ([7c415fd](https://github.com/furedea/agent-harness/commit/7c415fd2ddafff2086ed11ca7763e96672dc33fa))
+
 ## [0.9.11](https://github.com/furedea/agent-harness/compare/agent-harness-v0.9.10...agent-harness-v0.9.11) (2026-11-09)
 
 
