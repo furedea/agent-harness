@@ -128,7 +128,11 @@ fn sync_json(spec: &ProviderSpec, config: ConfigSpec) -> Value {
     };
     let mut sync = json!({
         "activation": format!("agentHarness{}{noun}", capitalized(spec.key)),
-        "command": format!("sync-{}-{}", spec.key, noun.to_lowercase()),
+        "command": if spec.id == spec::ProviderId::Pi {
+            "sync-config --provider pi".to_owned()
+        } else {
+            format!("sync-{}-{}", spec.key, noun.to_lowercase())
+        },
         "source": config.path,
         "target": sync_target(spec, config),
     });

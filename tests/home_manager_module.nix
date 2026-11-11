@@ -61,6 +61,15 @@ assert pkgs.lib.assertMsg (hasHomeFile ".pi/agent/hooks.json")
   "pi hook manifest should be installed as a Home Manager file";
 assert pkgs.lib.assertMsg (hasHomeFile ".pi/agent/extensions/hook_bridge.ts")
   "pi bridge extension should be installed as a Home Manager file";
+assert pkgs.lib.assertMsg (builtins.all hasHomeFile [
+  ".pi/agent/skills"
+  ".pi/agent/AGENTS.md"
+]) "pi skills and instructions should be installed";
+assert pkgs.lib.assertMsg (
+  !hasHomeFile ".pi/agent/settings.json"
+) "Pi settings should not be a Home Manager symlink";
+assert pkgs.lib.assertMsg (hasActivation "agentHarnessPiConfig")
+  "Pi settings should be materialized during activation";
 assert pkgs.lib.assertMsg (hasActivation "agentHarnessDshConfig") "dsh profile should be synced";
 assert pkgs.lib.assertMsg (builtins.all hasHomeFile [
   ".dsh/hooks"

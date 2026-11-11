@@ -85,6 +85,7 @@ fn rendered_harness_files(prefix: &Path) -> BTreeSet<String> {
         prefix.join(".claude/skills"),
         prefix.join(".codex/skills"),
         prefix.join(".dsh/skills"),
+        prefix.join(".pi/agent/skills"),
     ];
     let mut pending = vec![prefix.to_path_buf()];
     let mut files = BTreeSet::new();

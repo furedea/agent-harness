@@ -88,12 +88,21 @@
     "hook_manifest": ".pi/agent/hooks.json",
     "id": "pi",
     "linked_paths": {
+      ".pi/agent/AGENTS.md": {},
       ".pi/agent/extensions/hook_bridge.ts": {},
       ".pi/agent/hooks.json": {},
+      ".pi/agent/skills": {
+        "skills_provider": "claude"
+      },
       ".pi/hooks": {}
     },
     "option_description": "Whether to install Pi harness files.",
-    "sync": null
+    "sync": {
+      "activation": "agentHarnessPiConfig",
+      "command": "sync-config --provider pi",
+      "source": ".pi/agent/settings.json",
+      "target": ".pi/agent/settings.json"
+    }
   },
   {
     "display_name": "DeepSeek",

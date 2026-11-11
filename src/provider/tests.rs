@@ -136,6 +136,7 @@ fn registry_derivation_preserves_install_order() {
             ".hermes/hooks",
             ".hermes/plugins/agent-harness-hooks",
             ".pi/hooks",
+            ".pi/agent/skills",
             ".dsh/hooks",
             ".dsh/bridge",
             ".dsh/skills",
@@ -154,7 +155,9 @@ fn registry_derivation_preserves_install_order() {
             ".config/devin/config.json",
             ".hermes/hooks.json",
             ".hermes/managed-config.yaml",
+            ".pi/agent/AGENTS.md",
             ".pi/agent/hooks.json",
+            ".pi/agent/settings.json",
             ".pi/agent/extensions/hook_bridge.ts",
             ".dsh/AGENTS.md",
             ".dsh/hooks.json",
@@ -197,7 +200,7 @@ fn every_provider_declares_the_sync_kind_of_its_mutable_config() {
             ("claude", Some("MergeClaudeSettings".to_owned())),
             ("devin", Some("MergeTopLevelJson".to_owned())),
             ("hermes", Some("MergeYaml".to_owned())),
-            ("pi", None),
+            ("pi", Some("MergeTopLevelJson".to_owned())),
             ("dsh", Some("RegisterBundle".to_owned())),
         ]
     );

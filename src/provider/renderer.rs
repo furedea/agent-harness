@@ -6,7 +6,7 @@ use crate::{
     filesystem::{FileSystem, RealFileSystem},
     generation::{
         GenerationContext, claude_config, codex_config, command_permissions, hermes_config, hooks,
-        protection, skills,
+        pi_config, protection, skills,
     },
     layout::SourceLayout,
     provider::spec::{
@@ -118,13 +118,13 @@ impl ProviderRenderer<'_> {
     }
 
     fn write_config_file(&self, sync: ConfigSync, path: &Path) -> Result<()> {
+        let source = self.context.source;
         match sync {
             ConfigSync::MergeToml => self.merge_codex_config(path),
             ConfigSync::MergeYaml => hermes_config::write_managed_config(path),
+            ConfigSync::MergeTopLevelJson => pi_config::write_managed_config(source, path),
             // These are the hook registration or the bridge directory, rendered with them.
-            ConfigSync::MergeClaudeSettings
-            | ConfigSync::MergeTopLevelJson
-            | ConfigSync::RegisterBundle => Ok(()),
+            ConfigSync::MergeClaudeSettings | ConfigSync::RegisterBundle => Ok(()),
         }
     }
 
