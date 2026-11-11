@@ -185,10 +185,11 @@ fn list_directory(dir: &Path) -> Result<Vec<(PathBuf, bool)>> {
 fn resolve_kind(path: &Path, is_symlink: bool) -> Result<Option<EntryKind>> {
     match std::fs::metadata(path) {
         Ok(metadata) => Ok(Some(kind_of(&metadata))),
-        Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
-            Err(error).with_context(|| format!("failed to inspect {}", path.display()))
-        }
-        Err(_) => Ok(is_symlink.then_some(EntryKind::Other)),
+        // A link that cannot be followed (broken, looping, or into a place it may not enter) is
+        // `Other`, as `Path::is_file` would answer for it.
+        Err(_) if is_symlink => Ok(Some(EntryKind::Other)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error).with_context(|| format!("failed to inspect {}", path.display())),
     }
 }
 

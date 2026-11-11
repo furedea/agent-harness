@@ -160,3 +160,18 @@ fn a_path_named_as_probe_and_document_keeps_its_text() -> Result<()> {
     assert_eq!(snapshot.read_text(&config)?, "{}");
     Ok(())
 }
+
+#[cfg(unix)]
+#[test]
+fn a_looping_symlink_is_recorded_as_other_instead_of_failing_the_walk() -> Result<()> {
+    let root = TemporaryDirectory::create()?;
+    fixtures::symlink(root.path().join("loop"), root.path().join("loop"))?;
+    fixtures::write(root.path().join("kept.json"), "{}")?;
+
+    let snapshot = load_snapshot(&request(&[root.path()], &[]))?;
+
+    assert!(snapshot.exists(&root.path().join("loop")));
+    assert!(!snapshot.is_file(&root.path().join("loop")));
+    assert!(snapshot.is_file(&root.path().join("kept.json")));
+    Ok(())
+}

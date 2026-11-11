@@ -218,18 +218,19 @@ fn installation_request(
 }
 
 /// Copies each bundle's assets into `out`, which must not already hold them.
+///
+/// Each bundle looks at `out` after the previous one was applied, so two bundles that map to one
+/// path conflict.
 fn install_bundle_assets(context: GenerationContext<'_>, out: &Path) -> Result<()> {
     let files = context.source.files();
-    let mut targets = Vec::new();
     for bundle in context.external_hooks {
-        targets.extend(bundle.open(files)?.asset_install_paths()?);
-    }
-    let existing = load_snapshot(&SnapshotRequest {
-        probes: targets.iter().map(|target| out.join(target)).collect(),
-        ..SnapshotRequest::default()
-    })?;
-    for bundle in context.external_hooks {
-        execute(&bundle.open(files)?.asset_ops(Tree::new(out, &existing))?)?;
+        let bundle = bundle.open(files)?;
+        let targets = bundle.asset_install_paths()?;
+        let existing = load_snapshot(&SnapshotRequest {
+            probes: targets.iter().map(|target| out.join(target)).collect(),
+            ..SnapshotRequest::default()
+        })?;
+        execute(&bundle.asset_ops(Tree::new(out, &existing))?)?;
     }
     Ok(())
 }
