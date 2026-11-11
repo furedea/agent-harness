@@ -137,7 +137,9 @@ pub(crate) fn restore(target: &Path, backup: Option<&Path>) -> Result<()> {
     let Some(backup) = backup else {
         return remove_path(target);
     };
-    if std::fs::symlink_metadata(target).is_ok_and(|metadata| metadata.is_dir()) {
+    let replaceable_by_rename =
+        |path: &Path| std::fs::symlink_metadata(path).is_ok_and(|metadata| !metadata.is_dir());
+    if !(replaceable_by_rename(target) && replaceable_by_rename(backup)) {
         remove_path(target)?;
     }
     std::fs::rename(backup, target)
@@ -418,6 +420,20 @@ mod directory_tests {
         assert!(copy_dir(&root.join("absent"), &root.join("new/parent/target")).is_err());
 
         assert!(!root.join("new").exists());
+        std::fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn restore_puts_a_directory_back_over_a_published_file() -> Result<()> {
+        let root = root("restore-type-change")?;
+        std::fs::create_dir_all(root.join("backup"))?;
+        std::fs::write(root.join("backup/kept"), "kept\n")?;
+        std::fs::write(root.join("target"), "published\n")?;
+
+        restore(&root.join("target"), Some(&root.join("backup")))?;
+
+        assert_eq!(std::fs::read_to_string(root.join("target/kept"))?, "kept\n");
         std::fs::remove_dir_all(root)?;
         Ok(())
     }
