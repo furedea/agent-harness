@@ -251,6 +251,7 @@ fn asset_plan_installs_every_provider_at_its_output_relative_destination() -> Re
         "home/.hermes/plugins/agent-harness-hooks/plugin.yaml",
         "home/.hermes/plugins/agent-harness-hooks/__init__.py",
         "home/.pi/agent/extensions/hook_bridge.ts",
+        "home/.pi/agent/extensions/sandbox/file_operations.mjs",
         "home/.pi/agent/extensions/bash_sandbox.ts",
         "home/.pi/agent/extensions/sandbox_policy.json",
         "home/.dsh/bridge/package.json",
@@ -259,7 +260,7 @@ fn asset_plan_installs_every_provider_at_its_output_relative_destination() -> Re
     ] {
         assert!(!fs.read_file(Path::new(expected))?.is_empty());
     }
-    assert_eq!(fs.files.borrow().len(), 8);
+    assert_eq!(fs.files.borrow().len(), 9);
     Ok(())
 }
 

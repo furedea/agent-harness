@@ -35,11 +35,12 @@ fn asset_plan_writes_every_provider_asset_at_its_output_relative_destination() {
         "home/.hermes/plugins/agent-harness-hooks/plugin.yaml",
         "home/.hermes/plugins/agent-harness-hooks/__init__.py",
         "home/.pi/agent/extensions/hook_bridge.ts",
+        "home/.pi/agent/extensions/sandbox/file_operations.mjs",
         "home/.dsh/bridge/package.json",
         "home/.dsh/bridge/cordis.patch.yml",
         "home/.dsh/bridge/hook_bridge.ts",
     ] {
         assert!(targets.contains(&PathBuf::from(expected)));
     }
-    assert_eq!(plan.len(), 8);
+    assert_eq!(plan.len(), 9);
 }

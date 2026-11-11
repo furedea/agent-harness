@@ -91,6 +91,7 @@
       ".pi/agent/AGENTS.md": {},
       ".pi/agent/extensions/bash_sandbox.ts": {},
       ".pi/agent/extensions/hook_bridge.ts": {},
+      ".pi/agent/extensions/sandbox/file_operations.mjs": {},
       ".pi/agent/extensions/sandbox_policy.json": {},
       ".pi/agent/hooks.json": {},
       ".pi/agent/skills": {

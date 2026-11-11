@@ -392,6 +392,10 @@ const PI: ProviderSpec = ProviderSpec {
                     content: include_str!("../generation/assets/pi/hook_bridge.ts"),
                 },
                 Asset {
+                    destination: ".pi/agent/extensions/sandbox/file_operations.mjs",
+                    content: include_str!("../generation/assets/pi/file_operations.mjs"),
+                },
+                Asset {
                     destination: ".pi/agent/extensions/bash_sandbox.ts",
                     content: include_str!("../generation/assets/pi/bash_sandbox.ts"),
                 },

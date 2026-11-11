@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, rmSync, mkdirSync, symlinkSync, linkSync } from 'node:fs';
-import { homedir, tmpdir } from 'node:os';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const root = mkdtempSync(join(tmpdir(), 'pi-bridge-'));
@@ -8,9 +8,7 @@ try {
   const adapter = join(root, 'adapter.py');
   writeFileSync(adapter, '');
   process.env.AGENT_HARNESS_PI_ADAPTER = adapter;
-  process.env.AGENT_HARNESS_PI_SANDBOX_POLICY = join(root, 'sandbox_policy.json');
   process.env.AGENT_HARNESS_HOOK_TIMEOUT = "3";
-  writeFileSync(process.env.AGENT_HARNESS_PI_SANDBOX_POLICY, JSON.stringify({ filesystem: { denyRead: [], allowWrite: [], denyWrite: [] } }));
   const { default: register } = await import('../src/generation/assets/pi/hook_bridge.ts');
   const listeners = new Map();
   register({ on(event, listener) { listeners.set(event, listener); } });
@@ -75,93 +73,23 @@ sys.exit(${code})
   assert.equal(prompts.length, 0);
   output([]);
   const fileCall = (toolName, path) => listeners.get('tool_call')({ toolName, input: { path } }, ctx);
-  mkdirSync(join(root, 'sub'));
-  symlinkSync(tmpdir(), join(root, 'escape'));
-  for (const tool of ['write', 'edit']) {
-    for (const path of ['../outside', join(tmpdir(), 'outside'), 'escape/new/file', '.git/config', 'sub/../../outside', '.GIT/config', '.Git/hooks/x', '@../outside', '@.git/config', '~/../outside', '.git\u200b/config', '.git:stream/config', 'GIT~2/config', '.git./config', '.git /config']) {
-      assert.equal((await fileCall(tool, path))?.block, true, tool + ': ' + path);
-    }
-    assert.equal(await fileCall(tool, 'sub/new/file'), undefined);
-  }
-  for (const tool of ['read', 'write', 'edit']) assert.equal((await fileCall(tool, '.git/config'))?.block, true);
-  // The generated srt deny rules apply to file tools too, since only bash runs inside srt.
-  const policy = join(root, 'sandbox_policy.json');
-  writeFileSync(policy, JSON.stringify({ filesystem: { denyRead: [join(root, 'secret'), '~/.ssh'], allowWrite: [], denyWrite: [join(root, 'sub/locked/**'), join(root, 'hooks-*')] } }));
-  mkdirSync(join(root, 'secret'));
-  for (const [tool, path] of [['read', 'secret/key'], ['read', '~/.ssh/id_ed25519'], ['write', 'sub/locked/f'], ['edit', 'hooks-1/x'], ['write', 'secret/key'], ['read', 'SECRET/key'], ['write', 'sub/LOCKED/f'], ['edit', 'Hooks-1/x']]) {
-    assert.equal((await fileCall(tool, path))?.block, true, tool + ': ' + path);
-  }
-  assert.equal(await fileCall('read', 'sub/locked/f'), undefined);
-  // Hard links to a denied literal file are the same file.
-  writeFileSync(join(root, 'secret/real'), 'x');
-  linkSync(join(root, 'secret/real'), join(root, 'alias2'));
-  writeFileSync(policy, JSON.stringify({ filesystem: { denyRead: [join(root, 'secret/real')], allowWrite: [], denyWrite: [] } }));
-  assert.equal((await fileCall('read', 'alias2'))?.block, true);
-  // Glob syntax the translator cannot honour, a bad file and a missing file all fail closed.
-  for (const entry of ['~/[ab]/x', join(root, '{a,b}/x')]) {
-    writeFileSync(policy, JSON.stringify({ filesystem: { denyRead: [entry], allowWrite: [], denyWrite: [] } }));
-    for (const tool of ['read', 'write', 'edit']) assert.equal((await fileCall(tool, 'sub/ok'))?.block, true, entry);
-  }
-  writeFileSync(policy, '{');
-  for (const tool of ['read', 'write', 'edit']) assert.equal((await fileCall(tool, 'sub/ok'))?.block, true);
-  rmSync(policy);
-  for (const tool of ['read', 'write', 'edit']) assert.equal((await fileCall(tool, 'sub/ok'))?.block, true);
-  writeFileSync(policy, JSON.stringify({ filesystem: { denyRead: [], allowWrite: [], denyWrite: [] } }));
-  // A hard link is the same file under another name; identity, not spelling, decides.
-  const savedHome = process.env.HOME;
-  process.env.HOME = join(root, 'home');
-  mkdirSync(join(root, 'home/.pi/agent'), { recursive: true });
-  writeFileSync(join(root, 'home/.pi/agent/auth.json'), '{}');
-  linkSync(join(root, 'home/.pi/agent/auth.json'), join(root, 'alias'));
-  for (const tool of ['read', 'write', 'edit']) assert.equal((await fileCall(tool, 'alias'))?.block, true, tool + ': hard link');
-  process.env.HOME = savedHome;
-  // grep recurses, so a parent of a denied file would hand its contents out.
-  assert.equal((await fileCall('grep', '~/.pi/agent'))?.block, true, 'grep parent of credentials');
-  assert.equal((await fileCall('grep', '~/.pi'))?.block, true, 'grep grandparent of credentials');
-  // Project-local Pi config is loaded unsandboxed on the next start, so it is not writable.
-  for (const tool of ['write', 'edit']) assert.equal((await fileCall(tool, '.pi/extensions/x.ts'))?.block, true, tool + ': project .pi');
-  assert.equal((await fileCall('read', '.pi/settings.json')), undefined);
-  // Pi's optional search tools read through the same in-process path as read.
-  for (const tool of ['grep', 'find', 'ls']) {
-    for (const path of ['.git', '~/.pi/agent/auth.json']) assert.equal((await fileCall(tool, path))?.block, true, tool + ': ' + path);
-    assert.equal(await fileCall(tool, 'sub'), undefined, tool + ': inside');
-    assert.equal(await listeners.get('tool_call')({ toolName: tool, input: {} }, ctx), undefined, tool + ': default path');
-  }
-  // Pi's credential file is denied to the shell by srt, so the file tools must not hand it out either.
-  for (const tool of ['read', 'write', 'edit']) {
-    for (const path of ['~/.pi/agent/auth.json', join(homedir(), '.pi/agent/auth.json'), '@~/.pi/agent/auth.json', '~/.PI/Agent/AUTH.json', '~/.pi/agent/auth.json/']) {
-      assert.equal((await fileCall(tool, path))?.block, true, tool + ': ' + path);
-    }
-  }
-  assert.equal(await fileCall('read', tmpdir()), undefined);
-  symlinkSync(join(root, 'sub'), join(root, 'inside'));
-  assert.equal(await fileCall('write', 'inside/new'), undefined);
-  symlinkSync(join(root, 'missing'), join(root, 'dangling'));
-  assert.equal((await fileCall('write', 'dangling'))?.block, true);
+  // Hooks are policy only: adapter failures let every tool proceed.
   for (const code of [1, 3]) {
     output([], code);
-    for (const tool of ['read', 'write', 'edit']) assert.equal((await fileCall(tool, 'file'))?.block, true);
-    assert.equal(await call(), undefined);
+    for (const tool of ['bash', 'read', 'write', 'edit', 'grep', 'find', 'ls']) {
+      assert.equal(await fileCall(tool, '../outside'), undefined, tool);
+    }
   }
   writeFileSync(adapter, 'import os, signal\nos.kill(os.getpid(), signal.SIGTERM)\n');
-  for (const tool of ['read', 'write', 'edit']) assert.equal((await fileCall(tool, 'file'))?.block, true);
-  assert.equal(await call(), undefined);
+  assert.equal(await fileCall('write', '../outside'), undefined);
   writeFileSync(adapter, 'import time\ntime.sleep(10)\n');
-  for (const tool of ['read', 'write', 'edit']) assert.equal((await fileCall(tool, 'file'))?.block, true);
-  assert.equal(await call(), undefined);
+  assert.equal(await fileCall('write', '../outside'), undefined);
   const savedPath = process.env.PATH;
   process.env.PATH = root;
-  for (const tool of ['read', 'write', 'edit']) assert.equal((await fileCall(tool, 'file'))?.block, true);
-  assert.equal(await call(), undefined);
+  assert.equal(await fileCall('write', '../outside'), undefined);
   process.env.PATH = savedPath;
   rmSync(adapter);
-  assert.equal((await fileCall('write', 'file'))?.block, true);
-  const missingListeners = new Map();
-  register({ on(event, listener) { missingListeners.set(event, listener); } });
-  assert.equal((await missingListeners.get('tool_call')({ toolName: 'write', input: { path: 'file' } }, ctx))?.block, true);
-  // Without an adapter only file tools fail closed; bash and prompts behave as before the bridge existed.
-  assert.equal(await missingListeners.get('tool_call')({ toolName: 'bash', input: { command: 'true' } }, ctx), undefined);
-  assert.deepEqual(await missingListeners.get('input')({ text: 'hi' }, ctx), { action: 'continue' });
+  assert.equal(await fileCall('write', '../outside'), undefined);
   output([ask]);
   await listeners.get('tool_call')({ toolName: 'read', input: { path: 'README.md' } }, ctx);
   assert.ok(prompts[0].includes('read'));

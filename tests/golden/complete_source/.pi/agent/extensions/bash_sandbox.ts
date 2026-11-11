@@ -1,13 +1,13 @@
 /**
- * Replaces the agent bash tool. Pi and its hooks stay outside srt.
+ * Replaces every built-in agent filesystem tool. Pi and its hooks stay outside srt.
  * Requires srt with recursive denyGlobRegex support (not nixpkgs 0.0.52).
  */
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { lstatSync, mkdtempSync, readFileSync, realpathSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir, homedir } from "node:os";
 import { dirname, join, resolve, basename } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createBashTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { createBashTool, createReadTool, createWriteTool, createEditTool, createGrepTool, createFindTool, createLsTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 type Policy = {
 	network: { allowedDomains: string[]; deniedDomains: string[]; allowUnixSockets: string[] };
@@ -133,7 +133,7 @@ export default function (pi: ExtensionAPI) {
 		validatePolicy(parsed);
 		source = parsed;
 		temporary = realpathSync(mkdtempSync(join(tmpdir(), "pi-srt-")));
-		protectedFiles = [canonical(sourcePath), fileURLToPath(import.meta.url)];
+		protectedFiles = [canonical(sourcePath), fileURLToPath(import.meta.url), fileURLToPath(new URL("./sandbox/file_operations.mjs", import.meta.url))];
 	} catch (error) {
 		failure = error;
 	}
@@ -164,10 +164,94 @@ export default function (pi: ExtensionAPI) {
 		});
 	}
 
-	const bash = toolFor(startCwd);
+	async function request<T>(cwd: string, operation: Record<string, unknown>, signal?: AbortSignal): Promise<T> {
+		const description = "Sandbox " + String(operation.tool ?? operation.operation) + " for " + String(operation.path ?? cwd);
+		const { settingsPath } = prepare(cwd);
+		const helper = fileURLToPath(new URL("./sandbox/file_operations.mjs", import.meta.url));
+		const command = [process.execPath, helper, import.meta.resolve("@earendil-works/pi-coding-agent")].map(quote).join(" ");
+		return new Promise((resolve, reject) => {
+			const fail = (error: unknown) => reject(Object.assign(
+				new Error(description + " failed: " + String(error), { cause: error }),
+				{ code: (error as NodeJS.ErrnoException)?.code },
+			));
+			if (signal?.aborted) return reject(new Error(description + " aborted"));
+			const child = spawn("srt", ["--settings", settingsPath, "-c", command], { cwd, stdio: ["pipe", "pipe", "pipe"], detached: true });
+			let output = "";
+			let stderr = "";
+			const abort = () => { if (child.pid) { try { process.kill(-child.pid, "SIGKILL"); } catch {} } };
+			signal?.addEventListener("abort", abort, { once: true });
+			child.stdout.on("data", chunk => { output += chunk; });
+			child.stderr.on("data", chunk => { stderr += chunk; });
+			child.on("error", fail);
+			child.stdin.on("error", fail);
+			child.on("close", code => {
+				signal?.removeEventListener("abort", abort);
+				try {
+					if (signal?.aborted) return reject(new Error(description + " aborted"));
+					const result = JSON.parse(output);
+					if (result.error) return reject(Object.assign(new Error(description + " failed: " + result.error.message), { code: result.error.code }));
+					if (code !== 0) return reject(new Error(description + " helper failed: " + stderr));
+					resolve(result.value);
+				} catch (error) { fail(error); }
+			});
+			child.stdin.end(JSON.stringify(operation));
+		});
+	}
+
+	function readFor(cwd: string, signal?: AbortSignal) {
+		return createReadTool(cwd, { operations: {
+			readFile: async path => Buffer.from(await request<string>(cwd, { operation: "readFile", path }, signal), "base64"),
+			access: path => request<void>(cwd, { operation: "access", path }, signal),
+			detectImageMimeType: path => request<string | null>(cwd, { operation: "detectImageMimeType", path }, signal),
+		} });
+	}
+	function writeFor(cwd: string, signal?: AbortSignal) {
+		return createWriteTool(cwd, { operations: {
+			writeFile: (path, content) => request<void>(cwd, { operation: "writeFile", path, content }, signal),
+			mkdir: path => request<void>(cwd, { operation: "mkdir", path }, signal),
+		} });
+	}
+	function editFor(cwd: string, signal?: AbortSignal) {
+		return createEditTool(cwd, { operations: {
+			readFile: async path => Buffer.from(await request<string>(cwd, { operation: "readFile", path }, signal), "base64"),
+			access: path => request<void>(cwd, { operation: "access", path, write: true }, signal),
+			writeFile: (path, content) => request<void>(cwd, { operation: "writeFile", path, content }, signal),
+		} });
+	}
 	pi.registerTool({
-		...bash,
-		execute: async (id, params, signal, onUpdate, ctx) => (ctx?.cwd ? toolFor(ctx.cwd) : bash).execute(id, params, signal, onUpdate),
+		...toolFor(startCwd),
+		execute: async (id, params, signal, onUpdate, ctx) =>
+			toolFor(ctx?.cwd ?? startCwd).execute(id, params, signal, onUpdate),
+	});
+	pi.registerTool({
+		...readFor(startCwd),
+		execute: async (id, params, signal, onUpdate, ctx) =>
+			readFor(ctx?.cwd ?? startCwd, signal).execute(id, params, signal, onUpdate),
+	});
+	pi.registerTool({
+		...writeFor(startCwd),
+		execute: async (id, params, signal, onUpdate, ctx) =>
+			writeFor(ctx?.cwd ?? startCwd, signal).execute(id, params, signal, onUpdate),
+	});
+	pi.registerTool({
+		...editFor(startCwd),
+		execute: async (id, params, signal, onUpdate, ctx) =>
+			editFor(ctx?.cwd ?? startCwd, signal).execute(id, params, signal, onUpdate),
+	});
+	// grep spawns rg outside its operations interface, so run the entire search tool in srt.
+	for (const factory of [createGrepTool, createFindTool, createLsTool]) {
+		const tool = factory(startCwd);
+		pi.registerTool({ ...tool, execute: async (id, params, signal, _onUpdate, ctx) =>
+			request(ctx?.cwd ?? startCwd, { operation: "search", tool: tool.name, id, params }, signal) });
+	}
+	const allowed = new Set(["bash", "read", "write", "edit", "grep", "find", "ls"]);
+	pi.on("before_agent_start", async () => {
+		pi.setActiveTools(pi.getAllTools().filter(tool => allowed.has(tool.name)).map(tool => tool.name));
+	});
+	pi.on("tool_call", async event => {
+		if (!allowed.has(event.toolName)) {
+			return { block: true, reason: "Sandbox requires only the managed built-in tools; extension and MCP tools are unsupported" };
+		}
 	});
 	pi.on("session_shutdown", async () => {
 		if (temporary) rmSync(temporary, { recursive: true, force: true });

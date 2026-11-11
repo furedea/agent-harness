@@ -11,6 +11,31 @@ registerHooks({ resolve(specifier, context, next) {
   if (specifier !== '@earendil-works/pi-coding-agent') return next(specifier, context);
   return { shortCircuit: true, url: 'data:text/javascript,' + encodeURIComponent(`
     import { execFileSync } from 'node:child_process';
+    import { readFile, writeFile, mkdir, access } from 'node:fs/promises';
+    export const createReadTool = (cwd, { operations } = {}) => ({ name: 'read', async execute(id, p) {
+      if (!operations) throw new Error('unsandboxed read');
+      await operations.access(p.path);
+      await operations.detectImageMimeType(p.path);
+      return (await operations.readFile(p.path)).toString();
+    }});
+    export const createWriteTool = (cwd, { operations } = {}) => ({ name: 'write', async execute(id, p) {
+      if (!operations) throw new Error('unsandboxed write');
+      await operations.mkdir(cwd);
+      await operations.writeFile(p.path, p.content);
+    }});
+    export const createEditTool = (cwd, { operations } = {}) => ({ name: 'edit', async execute(id, p) {
+      if (!operations) throw new Error('unsandboxed edit');
+      await operations.access(p.path);
+      const before = (await operations.readFile(p.path)).toString();
+      await operations.writeFile(p.path, before.replace(p.oldText, p.newText));
+    }});
+    const search = name => (cwd) => ({ name, async execute(id, p) {
+      // Runs in the helper; its output proves the child, rather than parent, opened the file.
+      return { content: [{ type: 'text', text: (await readFile(p.path)).toString() }] };
+    }});
+    export const createGrepTool = search('grep');
+    export const createFindTool = search('find');
+    export const createLsTool = search('ls');
     export function createBashTool(cwd, { spawnHook }) {
       return { name: 'bash', async execute(id, params) {
         const run = spawnHook({ command: params.command, cwd, env: process.env });
@@ -30,6 +55,9 @@ try {
   execFileSync('git', ['-C', repo, 'worktree', 'add', '-b', 'test', worktree]);
   const extension = join(root, 'bash_sandbox.ts');
   copyFileSync(new URL('../src/generation/assets/pi/bash_sandbox.ts', import.meta.url), extension);
+  mkdirSync(join(root, 'sandbox'));
+  const helper = join(root, 'sandbox/file_operations.mjs');
+  const helperSource = new URL('../src/generation/assets/pi/file_operations.mjs', import.meta.url);
   const policyPath = join(root, 'sandbox_policy.json');
   const policy = {
     network: { allowedDomains: ['github.com'], deniedDomains: [], allowUnixSockets: ['/nix/var/nix/daemon-socket/socket'] },
@@ -44,13 +72,27 @@ const fs = require('node:fs');
 const args = process.argv.slice(2);
 const settings = JSON.parse(fs.readFileSync(args[1], 'utf8'));
 fs.writeFileSync(${JSON.stringify(join(root, 'record.json'))}, JSON.stringify({ args, settings }));
+if (args[3].includes('file_operations.mjs')) {
+  const input = fs.readFileSync(0, 'utf8');
+  fs.appendFileSync(${JSON.stringify(join(root, 'operations.jsonl'))}, JSON.stringify(JSON.parse(input)) + '\\n');
+  require('node:child_process').execFileSync('/bin/sh', ['-c', args[3]], { input, stdio: ['pipe', 'inherit', 'inherit'] });
+}
 `, { mode: 0o755 });
   process.env.PATH = bin + ':' + process.env.PATH;
   process.chdir(worktree);
   const { default: register } = await import(pathToFileURL(extension));
   let tool;
+  const tools = new Map();
   const listeners = new Map();
-  register({ registerTool(value) { tool = value; }, on(event, fn) { listeners.set(event, fn); if (event === 'session_shutdown') cleanups.push(fn); } });
+  register({ getAllTools() { return [...tools.values()]; }, registerTool(value) { tools.set(value.name, value); if (value.name === 'bash') tool = value; }, on(event, fn) { listeners.set(event, fn); if (event === 'session_shutdown') cleanups.push(fn); } });
+  assert.deepEqual([...tools.keys()].sort(), ['bash', 'edit', 'find', 'grep', 'ls', 'read', 'write']);
+  const guardedCall = listeners.get('tool_call');
+  assert.equal(await guardedCall({ toolName: 'read' }), undefined);
+  tools.set('mcp_files', { name: 'mcp_files' });
+  assert.equal((await guardedCall({ toolName: 'mcp_files' })).block, true);
+  assert.equal(await guardedCall({ toolName: 'read' }), undefined);
+  tools.delete('mcp_files');
+  copyFileSync(helperSource, helper);
   assert.equal(tool.name, 'bash');
   const command = "printf '%s' \"a'b; $(echo injection)\"\nfalse";
   await tool.execute('id', { command });
@@ -70,12 +112,40 @@ fs.writeFileSync(${JSON.stringify(join(root, 'record.json'))}, JSON.stringify({ 
   // Nested repositories and submodule gitfiles inside the worktree are denied; the worktree's own .git is not.
   assert.ok(record.settings.filesystem.denyWrite.includes(join(realpathSync(worktree), '*/**/.git')));
   assert.ok(record.settings.filesystem.denyWrite.includes(join(realpathSync(worktree), '.pi')));
+  const file = join(worktree, "data ' $(false).txt");
+  await tools.get('write').execute('w', { path: file, content: 'before' });
+  assert.equal(readFileSync(file, 'utf8'), 'before');
+  assert.equal(await tools.get('read').execute('r', { path: file }), 'before');
+  await tools.get('edit').execute('e', { path: file, oldText: 'before', newText: 'after' });
+  assert.equal(readFileSync(file, 'utf8'), 'after');
+  for (const name of ['grep', 'find', 'ls']) {
+    assert.equal((await tools.get(name).execute('s', { path: file })).content[0].text, 'after');
+  }
+  const operations = readFileSync(join(root, 'operations.jsonl'), 'utf8').trim().split('\n').map(line => JSON.parse(line).operation);
+  assert.deepEqual(operations, ['mkdir', 'writeFile', 'access', 'detectImageMimeType', 'readFile',
+    'access', 'readFile', 'writeFile', 'search', 'search', 'search']);
+  // Cancellation reports which filesystem operation and path were interrupted.
+  const cancelled = AbortSignal.abort();
+  await assert.rejects(() => tools.get('read').execute('cancelled', { path: file }, cancelled), error => {
+    assert.ok(error.message.includes('access'), error.message);
+    assert.ok(error.message.includes(file), error.message);
+    return true;
+  });
+  // Removing the helper must prevent all file operations rather than fall back to local I/O.
+  rmSync(helper);
+  for (const [name, params] of [['read', { path: file }], ['write', { path: file, content: 'escaped' }],
+    ['edit', { path: file, oldText: 'after', newText: 'escaped' }],
+    ...['grep', 'find', 'ls'].map(name => [name, { path: file }])]) {
+    await assert.rejects(() => tools.get(name).execute('missing', params), undefined, name);
+  }
+  assert.equal(readFileSync(file, 'utf8'), 'after');
+  copyFileSync(helperSource, helper);
   // Bracketed IPv6 literals are valid srt domains and must not disable bash.
   writeFileSync(policyPath, JSON.stringify({ ...policy, network: { ...policy.network, allowedDomains: ['github.com', '[2001:db8::1]:443'] } }));
-  register({ registerTool(value) { tool = value; }, on(event, fn) { if (event === 'session_shutdown') cleanups.push(fn); } });
+  register({ getAllTools() { return [...tools.values()]; }, registerTool(value) { tools.set(value.name, value); if (value.name === 'bash') tool = value; }, on(event, fn) { if (event === 'session_shutdown') cleanups.push(fn); } });
   await tool.execute('id', { command: 'true' });
   writeFileSync(policyPath, JSON.stringify(policy));
-  register({ registerTool(value) { tool = value; }, on(event, fn) { if (event === 'session_shutdown') cleanups.push(fn); } });
+  register({ getAllTools() { return [...tools.values()]; }, registerTool(value) { tools.set(value.name, value); if (value.name === 'bash') tool = value; }, on(event, fn) { if (event === 'session_shutdown') cleanups.push(fn); } });
   // Files git reads to locate its config must not be repointable either.
   for (const suffix of ['commondir', 'worktrees/*/commondir', 'worktrees/*/gitdir']) {
     assert.ok(record.settings.filesystem.denyWrite.includes(join(realpathSync(repo), '.git', suffix)), suffix);
@@ -113,13 +183,19 @@ fs.writeFileSync(${JSON.stringify(join(root, 'record.json'))}, JSON.stringify({ 
   for (const invalid of ['{}', '{', JSON.stringify({ ...policy, network: { ...policy.network, deniedDomains: undefined } }),
     ...['https://bad', '*.com', 'host', 'example.com:01', '*'].map(value => JSON.stringify({ ...policy, network: { ...policy.network, allowedDomains: [value] } }))]) {
     writeFileSync(policyPath, invalid);
-    register({ registerTool(value) { tool = value; }, on(event, fn) { if (event === 'session_shutdown') cleanups.push(fn); } });
+    register({ getAllTools() { return [...tools.values()]; }, registerTool(value) { tools.set(value.name, value); if (value.name === 'bash') tool = value; }, on(event, fn) { if (event === 'session_shutdown') cleanups.push(fn); } });
     await assert.rejects(() => tool.execute('id', { command: 'touch escaped' }));
+    for (const name of ['read', 'write', 'edit', 'grep', 'find', 'ls']) {
+      await assert.rejects(() => tools.get(name).execute('bad', { path: file, content: 'escape' }), undefined, name);
+    }
   }
   writeFileSync(policyPath, JSON.stringify(policy));
-  register({ registerTool(value) { tool = value; }, on(event, fn) { if (event === 'session_shutdown') cleanups.push(fn); } });
+  register({ getAllTools() { return [...tools.values()]; }, registerTool(value) { tools.set(value.name, value); if (value.name === 'bash') tool = value; }, on(event, fn) { if (event === 'session_shutdown') cleanups.push(fn); } });
   rmSync(join(bin, 'srt'));
   await assert.rejects(() => tool.execute('id', { command: 'touch escaped' }));
+  for (const name of ['read', 'write', 'edit', 'grep', 'find', 'ls']) {
+    await assert.rejects(() => tools.get(name).execute('missing-srt', { path: file, content: 'escape' }), undefined, name);
+  }
 } finally {
   for (const cleanup of cleanups) await cleanup();
   process.chdir(originalCwd);
