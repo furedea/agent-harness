@@ -11,9 +11,10 @@ use serde_json::{Map, Value};
 
 use crate::{
     file_op::FileOp,
-    generation::{GenerationContext, command_permissions, external_hooks::ExternalHookBundle},
+    generation::{GenerationContext, command_permissions, external_hooks::OpenBundle},
     layout::SourceLayout,
     runtime_root::RuntimeRoot,
+    snapshot::Tree,
 };
 
 #[derive(Debug, Deserialize)]
@@ -68,7 +69,7 @@ pub(crate) fn hooks_op_for_runtime(
 fn hooks_for_runtime(context: GenerationContext<'_>, spec: &ProviderSpec) -> Result<Value> {
     let mut hooks = read_hooks(context.source)?.into_section(spec);
     for bundle in context.external_hooks {
-        merge_bundle(bundle, &mut hooks, spec)?;
+        merge_bundle(&bundle.open(context.source.files())?, &mut hooks, spec)?;
     }
     relocate_commands(&mut hooks, context.runtime_root);
     if spec.command_rule == Some(CommandRuleSpec::InHookRegistration) {
@@ -87,7 +88,7 @@ pub(crate) fn claude_hooks_for_runtime(context: GenerationContext<'_>) -> Result
     hooks_for_runtime(context, ProviderId::Claude.spec())
 }
 
-fn merge_bundle(bundle: &ExternalHookBundle, hooks: &mut Value, spec: &ProviderSpec) -> Result<()> {
+fn merge_bundle(bundle: &OpenBundle<'_>, hooks: &mut Value, spec: &ProviderSpec) -> Result<()> {
     match spec.hook.format {
         HookFormat::SettingsSection => bundle.merge_claude_hooks(hooks),
         HookFormat::WrappedEvents => bundle.merge_codex_hooks(hooks),
@@ -116,7 +117,7 @@ fn relocate_each<'a>(items: impl Iterator<Item = &'a mut Value>, runtime_root: &
     }
 }
 
-pub(crate) fn built_in_hook_metadata(source: &Path) -> Result<Vec<HookMetadata>> {
+pub(crate) fn built_in_hook_metadata(source: Tree<'_>) -> Result<Vec<HookMetadata>> {
     let config = read_hooks(source)?;
     let sections = PROVIDERS
         .iter()
@@ -164,11 +165,13 @@ fn hook_event_rank(event: &str) -> usize {
     }
 }
 
-fn read_hooks(source: &Path) -> Result<HookConfig> {
-    let path = SourceLayout::new(source).hook_config();
-    let content = std::fs::read_to_string(&path)
+fn read_hooks(source: Tree<'_>) -> Result<HookConfig> {
+    let path = SourceLayout::new(source.root()).hook_config();
+    let content = source
+        .files()
+        .read_text(&path)
         .with_context(|| format!("failed to read {}", path.display()))?;
-    let config: HookConfig = serde_json::from_str(&content)
+    let config: HookConfig = serde_json::from_str(content)
         .with_context(|| format!("failed to parse {}", path.display()))?;
     validate_hooks(&config)?;
     Ok(config)

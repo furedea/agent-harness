@@ -1,3 +1,8 @@
+#![expect(
+    clippy::disallowed_methods,
+    reason = "locating the source starts from the environment, the working directory, and the executable"
+)]
+
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
@@ -8,7 +13,8 @@ use crate::{
     manifest::Manifest,
     profile::Profile,
     provider::spec::PROVIDERS,
-    shell::{self, TemporaryDirectory},
+    shell::{self, TemporaryDirectory, load_snapshot},
+    snapshot::{Snapshot, SnapshotRequest, Tree},
 };
 
 const ENV_SOURCE: &str = "AGENT_HARNESS_SOURCE";
@@ -56,14 +62,16 @@ pub(crate) fn resolve_source(
 
     let installed_source = installed_source_dirs()?
         .iter()
-        .find_map(|source| profile_source(source, profile));
+        .map(|source| profile_source(source, profile))
+        .find_map(Result::transpose)
+        .transpose()?;
     if let Some(profile_source) = installed_source {
         validate_source_tree(&profile_source)?;
         return Ok(SourceRoot::external(profile_source));
     }
 
     let cwd = std::env::current_dir().context("failed to read current directory")?;
-    if let Some(profile_source) = profile_source(&cwd, profile) {
+    if let Some(profile_source) = profile_source(&cwd, profile)? {
         validate_source_tree(&profile_source)?;
         return Ok(SourceRoot::external(profile_source));
     }
@@ -72,7 +80,7 @@ pub(crate) fn resolve_source(
 }
 
 fn required_source(path: &Path, label: &str, profile: Profile) -> Result<SourceRoot> {
-    let profile_source = profile_source(path, profile).ok_or_else(|| {
+    let profile_source = profile_source(path, profile)?.ok_or_else(|| {
         anyhow::anyhow!(
             "{label} does not contain the {} agent-harness profile: {}",
             profile.directory_name(),
@@ -110,7 +118,7 @@ fn materialize_packaged_source(profile: Profile) -> Result<SourceRoot> {
     let root = TemporaryDirectory::create()?;
     shell::execute(&packaged_file_ops(root.path()))?;
 
-    let profile_source = profile_source(root.path(), profile).ok_or_else(|| {
+    let profile_source = profile_source(root.path(), profile)?.ok_or_else(|| {
         anyhow::anyhow!(
             "packaged assets do not contain the {} profile",
             profile.directory_name(),
@@ -134,20 +142,34 @@ fn packaged_file_ops(root: &Path) -> Vec<FileOp> {
         .collect()
 }
 
-fn profile_source(root: &Path, profile: Profile) -> Option<PathBuf> {
+fn profile_source(root: &Path, profile: Profile) -> Result<Option<PathBuf>> {
     let profile_root = root.join("profiles").join(profile.directory_name());
-    if SourceLayout::new(&profile_root).is_complete() {
-        return Some(profile_root);
+    if is_complete_source(&profile_root)? {
+        return Ok(Some(profile_root));
     }
 
-    SourceLayout::new(root)
-        .is_complete()
-        .then(|| root.to_path_buf())
+    Ok(is_complete_source(root)?.then(|| root.to_path_buf()))
+}
+
+fn is_complete_source(root: &Path) -> Result<bool> {
+    let files = load_layout(root)?;
+    Ok(SourceLayout::new(root).is_complete(&files))
+}
+
+/// The files and directories that make a source tree complete, and its manifest.
+fn load_layout(root: &Path) -> Result<Snapshot> {
+    let layout = SourceLayout::new(root);
+    load_snapshot(&SnapshotRequest {
+        documents: vec![layout.manifest()],
+        probes: layout.required_paths_for(PROVIDERS),
+        ..SnapshotRequest::default()
+    })
 }
 
 fn validate_source_tree(path: &Path) -> Result<()> {
     let layout = SourceLayout::new(path);
-    let missing_files = layout.missing_required_files();
+    let files = load_layout(path)?;
+    let missing_files = layout.missing_required_files(&files);
     if !missing_files.is_empty() {
         bail!(
             "missing required harness source files under {}: {}",
@@ -155,7 +177,7 @@ fn validate_source_tree(path: &Path) -> Result<()> {
             missing_files.join(", ")
         )
     }
-    let missing_directories = layout.missing_required_directories(PROVIDERS);
+    let missing_directories = layout.missing_required_directories(PROVIDERS, &files);
     if !missing_directories.is_empty() {
         bail!(
             "missing required harness source directories: {}",
@@ -166,7 +188,7 @@ fn validate_source_tree(path: &Path) -> Result<()> {
                 .join(", ")
         )
     }
-    Manifest::read(path)?;
+    Manifest::read(Tree::new(path, &files))?;
     Ok(())
 }
 

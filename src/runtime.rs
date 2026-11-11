@@ -1,9 +1,19 @@
+#![expect(
+    clippy::disallowed_methods,
+    reason = "verification asks the environment which commands the PATH can run"
+)]
+
 use std::ffi::OsStr;
 use std::path::Path;
 
 use anyhow::{Result, bail};
 
-use crate::manifest::Manifest;
+use crate::{
+    layout::SourceLayout,
+    manifest::Manifest,
+    shell::load_snapshot,
+    snapshot::{SnapshotRequest, Tree},
+};
 
 pub(crate) fn verify(source: &Path) -> Result<()> {
     let path = std::env::var_os("PATH");
@@ -11,7 +21,11 @@ pub(crate) fn verify(source: &Path) -> Result<()> {
 }
 
 fn verify_source_with_path(source: &Path, path: Option<&OsStr>) -> Result<()> {
-    let manifest = Manifest::read(source)?;
+    let files = load_snapshot(&SnapshotRequest {
+        documents: vec![SourceLayout::new(source).manifest()],
+        ..SnapshotRequest::default()
+    })?;
+    let manifest = Manifest::read(Tree::new(source, &files))?;
     let missing = manifest
         .runtime_commands()
         .iter()

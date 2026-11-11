@@ -8,7 +8,19 @@ fn render_skills(
     external_skills: &[ExternalSkill],
     target: SkillTarget<'_>,
 ) -> Result<()> {
-    crate::shell::execute(&[super::render_skills(source, external_skills, target)?])
+    let request = crate::shell::source_request(
+        source,
+        crate::shell::ExternalInputs {
+            skills: external_skills,
+            ..Default::default()
+        },
+    );
+    let files = crate::shell::load_snapshot(&request)?;
+    crate::shell::execute(&[super::render_skills(
+        Tree::new(source, &files),
+        external_skills,
+        target,
+    )?])
 }
 
 #[test]

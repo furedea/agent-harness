@@ -1,4 +1,3 @@
-use std::fs::DirEntry;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, ensure};
@@ -8,6 +7,7 @@ use serde_json::{Map, Value};
 use crate::{
     file_op::FileOp,
     provider::spec::{PROVIDERS, ProviderId},
+    snapshot::{Child, SnapshotRequest, Tree},
 };
 
 const SUPPORTED_SPEC_VERSION: u64 = 1;
@@ -22,15 +22,35 @@ pub(crate) struct HookBundleSpec {
 }
 
 impl HookBundleSpec {
-    /// Reads and validates the spec at `path`.
-    pub(crate) fn read(path: &Path) -> Result<Self> {
-        let spec = read_spec(path)?;
+    /// Parses and validates the spec `content` read from `path`.
+    pub(crate) fn parse(path: &Path, content: &str) -> Result<Self> {
+        let spec: Self = serde_json::from_str(content)
+            .with_context(|| format!("failed to parse {}", path.display()))?;
         spec.validate(path)?;
         Ok(spec)
     }
 
+    /// What `capture_ops` reads from `staging`, for the loader.
+    pub(crate) fn capture_request(staging: &Path) -> SnapshotRequest {
+        let codex = ProviderId::Codex.spec();
+        SnapshotRequest {
+            trees: PROVIDERS
+                .iter()
+                .map(|spec| staging.join(spec.hook.scripts_dir))
+                .collect(),
+            listings: vec![staging.join(".codex")],
+            documents: PROVIDERS
+                .iter()
+                .map(|spec| spec.hook.external_file)
+                .chain(codex.config_file())
+                .map(|relative| staging.join(relative))
+                .collect(),
+            probes: Vec::new(),
+        }
+    }
+
     /// The files of a finished installer run in `staging` that the bundle `output` holds.
-    pub(crate) fn capture_ops(&self, staging: &Path, output: &Path) -> Result<Vec<FileOp>> {
+    pub(crate) fn capture_ops(&self, staging: Tree<'_>, output: &Path) -> Result<Vec<FileOp>> {
         let mut operations = capture_supported_files(staging, output, &self.command_replacements)?;
         ensure!(
             !operations.is_empty(),
@@ -99,7 +119,7 @@ impl CommandReplacement {
 }
 
 fn capture_supported_files(
-    staging: &Path,
+    staging: Tree<'_>,
     output: &Path,
     replacements: &[CommandReplacement],
 ) -> Result<Vec<FileOp>> {
@@ -119,22 +139,22 @@ fn capture_supported_files(
     for relative in PROVIDERS.iter().map(|spec| spec.hook.scripts_dir) {
         operations.extend(capture_dir(relative, staging, output));
     }
-    operations.extend(codex_script_ops(staging, output)?);
+    operations.extend(codex_script_ops(staging, output));
     Ok(operations)
 }
 
 /// Rewrites staged hook commands so they point at the bundle output.
 struct CommandNormalization<'a> {
-    staging: &'a Path,
+    staging: Tree<'a>,
     output: &'a Path,
     replacements: &'a [CommandReplacement],
 }
 
 impl CommandNormalization<'_> {
     fn capture_file(&self, relative: &str) -> Result<Option<FileOp>> {
-        let source = self.staging.join(relative);
+        let source = self.staging.root().join(relative);
         let target = self.output.join(relative);
-        match (source.is_file(), is_json(&source)) {
+        match (self.staging.files().is_file(&source), is_json(&source)) {
             (false, _) => Ok(None),
             (true, true) => self.normalized_json_op(&source, &target).map(Some),
             (true, false) => Ok(Some(FileOp::CopyFile { source, target })),
@@ -143,7 +163,9 @@ impl CommandNormalization<'_> {
 
     fn normalized_json_op(&self, source: &Path, target: &Path) -> Result<FileOp> {
         let mut value: Value = serde_json::from_str(
-            &std::fs::read_to_string(source)
+            self.staging
+                .files()
+                .read_text(source)
                 .with_context(|| format!("failed to read {}", source.display()))?,
         )
         .with_context(|| format!("failed to parse {}", source.display()))?;
@@ -170,7 +192,7 @@ impl CommandNormalization<'_> {
 
     fn normalize_command(&self, command: &str) -> String {
         let command = command.replace(
-            self.staging.to_string_lossy().as_ref(),
+            self.staging.root().to_string_lossy().as_ref(),
             self.output.to_string_lossy().as_ref(),
         );
         self.replacements
@@ -189,42 +211,34 @@ fn rewrite_command(object: &mut Map<String, Value>, rewrite: impl FnOnce(&str) -
     }
 }
 
-fn capture_dir(relative: &str, staging: &Path, output: &Path) -> Option<FileOp> {
-    let source = staging.join(relative);
-    source.is_dir().then(|| FileOp::CopyTree {
+fn capture_dir(relative: &str, staging: Tree<'_>, output: &Path) -> Option<FileOp> {
+    let source = staging.root().join(relative);
+    staging.files().is_dir(&source).then(|| FileOp::CopyTree {
         source,
         target: output.join(relative),
     })
 }
 
-fn codex_script_ops(staging: &Path, output: &Path) -> Result<Vec<FileOp>> {
-    let source = staging.join(".codex");
-    if !source.is_dir() {
-        return Ok(Vec::new());
-    }
-
-    let mut operations = Vec::new();
-    for entry in std::fs::read_dir(&source)
-        .with_context(|| format!("failed to read {}", source.display()))?
-    {
-        let entry =
-            entry.with_context(|| format!("failed to read entry in {}", source.display()))?;
-        operations.extend(shell_script_op(&entry, output)?);
-    }
-    Ok(operations)
+fn codex_script_ops(staging: Tree<'_>, output: &Path) -> Vec<FileOp> {
+    let source = staging.root().join(".codex");
+    staging
+        .files()
+        .children(&source)
+        .into_iter()
+        .filter_map(|child| shell_script_op(child, output))
+        .collect()
 }
 
-fn shell_script_op(entry: &DirEntry, output: &Path) -> Result<Option<FileOp>> {
-    let path = entry.path();
-    let is_file = entry
-        .file_type()
-        .with_context(|| format!("failed to inspect {}", path.display()))?
-        .is_file();
-    let is_shell = path.extension().and_then(|extension| extension.to_str()) == Some("sh");
-    Ok((is_file && is_shell).then(|| FileOp::CopyFile {
-        target: output.join(".codex").join(entry.file_name()),
-        source: path,
-    }))
+fn shell_script_op(child: Child, output: &Path) -> Option<FileOp> {
+    let is_shell = child
+        .path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        == Some("sh");
+    (child.is_regular_file() && is_shell).then(|| FileOp::CopyFile {
+        target: output.join(".codex").join(&child.name),
+        source: child.path,
+    })
 }
 
 fn manifest_op(output: &Path) -> Result<FileOp> {
@@ -232,10 +246,4 @@ fn manifest_op(output: &Path) -> Result<FileOp> {
         output.join("hook_bundle.json"),
         &serde_json::json!({"version": BUNDLE_VERSION}),
     )
-}
-
-fn read_spec(path: &Path) -> Result<HookBundleSpec> {
-    let content = std::fs::read_to_string(path)
-        .with_context(|| format!("failed to read {}", path.display()))?;
-    serde_json::from_str(&content).with_context(|| format!("failed to parse {}", path.display()))
 }

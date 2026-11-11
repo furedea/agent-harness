@@ -1,15 +1,17 @@
-use std::path::Path;
-
-use anyhow::{Context, Result, bail};
+use anyhow::{Result, bail};
 use serde_json::{Map, Value};
 
-use crate::file_op::FileOp;
+use crate::{
+    file_op::FileOp,
+    generation::json_documents::{read_json, read_json_or_empty},
+    snapshot::ConfigFiles,
+};
 
-pub(crate) fn sync_config_op(source_path: &Path, target_path: &Path) -> Result<FileOp> {
-    let generated = read_json(source_path)?;
-    let mut existing = read_json_or_empty(target_path)?;
+pub(crate) fn sync_config_op(config: ConfigFiles<'_>) -> Result<FileOp> {
+    let generated = read_json(config.files, config.generated)?;
+    let mut existing = read_json_or_empty(config.files, config.target)?;
     merge_managed_config(&mut existing, generated)?;
-    FileOp::write_json(target_path, &existing)
+    FileOp::write_json(config.target, &existing)
 }
 
 fn merge_managed_config(existing: &mut Value, generated: Value) -> Result<()> {
@@ -81,24 +83,6 @@ fn object_mut<'a>(value: &'a mut Value, name: &str) -> Result<&'a mut Map<String
     }
 }
 
-fn read_json(path: &Path) -> Result<Value> {
-    let content = std::fs::read_to_string(path)
-        .with_context(|| format!("failed to read JSON file {}", path.display()))?;
-    serde_json::from_str(&content)
-        .with_context(|| format!("failed to parse JSON file {}", path.display()))
-}
-
-fn read_json_or_empty(path: &Path) -> Result<Value> {
-    match std::fs::read_to_string(path) {
-        Ok(content) => serde_json::from_str(&content)
-            .with_context(|| format!("failed to parse JSON file {}", path.display())),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Value::Object(Map::new())),
-        Err(error) => {
-            Err(error).with_context(|| format!("failed to read JSON file {}", path.display()))
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
@@ -107,9 +91,21 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+    use crate::shell::fixtures::load_documents;
+    use std::path::Path;
 
     fn sync_config(source: &Path, target: &Path) -> Result<()> {
-        crate::shell::execute(&[sync_config_op(source, target)?])
+        let files = load_documents(&[source, target])?;
+        let config = ConfigFiles {
+            generated: source,
+            target,
+            files: &files,
+        };
+        crate::shell::execute(&[sync_config_op(config)?])
+    }
+
+    fn read_json_file(path: &Path) -> Result<Value> {
+        read_json(&load_documents(&[path])?, path)
     }
 
     #[test]
@@ -132,7 +128,7 @@ mod tests {
         sync_config(&source, &target)?;
 
         assert_eq!(
-            read_json(&target)?,
+            read_json_file(&target)?,
             json!({
                 "version": 1,
                 "devin": {"org_id": "org-123"},
@@ -171,7 +167,7 @@ mod tests {
         sync_config(&source, &target)?;
 
         assert_eq!(
-            read_json(&target)?,
+            read_json_file(&target)?,
             json!({
                 "version": 1,
                 "agent": {"model": "swe-2-max"},
@@ -202,10 +198,10 @@ mod tests {
         write_file(&source, &serde_json::to_string(&generated)?)?;
 
         sync_config(&source, &target)?;
-        let first = read_json(&target)?;
+        let first = read_json_file(&target)?;
         sync_config(&source, &target)?;
 
-        assert_eq!(read_json(&target)?, first);
+        assert_eq!(read_json_file(&target)?, first);
         assert_eq!(first["permissions"]["allow"], json!(["Exec(cargo)"]),);
         crate::shell::fixtures::remove_dir_all(root)?;
         Ok(())
@@ -226,7 +222,7 @@ mod tests {
         sync_config(&source, &target)?;
 
         assert_eq!(
-            read_json(&target)?["permissions"],
+            read_json_file(&target)?["permissions"],
             json!({"allow": ["Exec(ls)", "Read(**)"]}),
         );
         crate::shell::fixtures::remove_dir_all(root)?;
@@ -243,7 +239,7 @@ mod tests {
 
         sync_config(&source, &target)?;
 
-        assert_eq!(read_json(&target)?, generated);
+        assert_eq!(read_json_file(&target)?, generated);
         crate::shell::fixtures::remove_dir_all(root)?;
         Ok(())
     }

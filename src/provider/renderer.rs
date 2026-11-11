@@ -45,7 +45,7 @@ impl ProviderRenderer<'_> {
     }
 
     fn copy_instructions(&self, spec: &ProviderSpec) -> Option<FileOp> {
-        let source = SourceLayout::new(self.context.source).agent_instructions();
+        let source = SourceLayout::new(self.context.source.root()).agent_instructions();
         spec.instructions.map(|path| FileOp::CopyFile {
             source,
             target: self.out.join(path),
@@ -154,6 +154,6 @@ impl ProviderRenderer<'_> {
 
     fn merge_codex_config(&self, path: &Path) -> Result<Vec<FileOp>> {
         let generated = codex_config::generated_config_source(self.context)?;
-        codex_config::sync_managed_document_ops(&generated, path)
+        codex_config::sync_managed_document_ops(&generated, path, self.context.source.files())
     }
 }

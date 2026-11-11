@@ -1,7 +1,9 @@
-use std::path::Path;
+#![forbid(clippy::disallowed_methods, clippy::disallowed_types)]
 
 use anyhow::{Context, Result, ensure};
 use serde::Deserialize;
+
+use crate::snapshot::Tree;
 
 const SUPPORTED_VERSION: u64 = 1;
 
@@ -13,11 +15,13 @@ pub(crate) struct Manifest {
 }
 
 impl Manifest {
-    pub(crate) fn read(source: &Path) -> Result<Self> {
-        let path = source.join("manifest.json");
-        let content = std::fs::read_to_string(&path)
+    pub(crate) fn read(source: Tree<'_>) -> Result<Self> {
+        let path = source.root().join("manifest.json");
+        let content = source
+            .files()
+            .read_text(&path)
             .with_context(|| format!("failed to read source manifest {}", path.display()))?;
-        let manifest = serde_json::from_str::<Self>(&content)
+        let manifest = serde_json::from_str::<Self>(content)
             .with_context(|| format!("failed to parse source manifest {}", path.display()))?;
         ensure!(
             manifest.version == SUPPORTED_VERSION,

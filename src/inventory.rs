@@ -1,8 +1,11 @@
-use std::collections::BTreeSet;
-use std::path::Path;
+#![forbid(clippy::disallowed_methods, clippy::disallowed_types)]
 
-use crate::provider::spec::{PROVIDERS, ProviderId};
+use crate::{
+    provider::spec::{PROVIDERS, ProviderId},
+    snapshot::Tree,
+};
 use anyhow::Result;
+use std::collections::BTreeSet;
 
 use crate::generation::{
     hooks::{self, HookMetadata},
@@ -16,7 +19,7 @@ pub(crate) struct Inventory {
 }
 
 impl Inventory {
-    pub(crate) fn load(source: &Path) -> Result<Self> {
+    pub(crate) fn load(source: Tree<'_>) -> Result<Self> {
         Ok(Self {
             skills: skills::built_in_skill_metadata(source)?,
             hooks: hooks::built_in_hook_metadata(source)?,

@@ -1,11 +1,10 @@
-use std::path::Path;
-
 use anyhow::{Context, Result, ensure};
 use serde::Deserialize;
 
 use crate::{
     generation::permission_rule::{PathAccess, PathPattern, PathRule},
     layout::SourceLayout,
+    snapshot::Tree,
 };
 
 #[derive(Debug, Deserialize)]
@@ -36,7 +35,7 @@ impl From<SecretPathAccess> for PathAccess {
     }
 }
 
-pub(crate) fn claude_deny_permissions(source: &Path) -> Result<Vec<String>> {
+pub(crate) fn claude_deny_permissions(source: Tree<'_>) -> Result<Vec<String>> {
     let policy = read_policy(source)?;
     Ok(policy
         .rules
@@ -49,11 +48,13 @@ pub(crate) fn claude_deny_permissions(source: &Path) -> Result<Vec<String>> {
         .collect())
 }
 
-fn read_policy(source: &Path) -> Result<SecretPathPolicy> {
-    let path = SourceLayout::new(source).secret_path_policy();
-    let content = std::fs::read_to_string(&path)
+fn read_policy(source: Tree<'_>) -> Result<SecretPathPolicy> {
+    let path = SourceLayout::new(source.root()).secret_path_policy();
+    let content = source
+        .files()
+        .read_text(&path)
         .with_context(|| format!("failed to read {}", path.display()))?;
-    let policy: SecretPathPolicy = serde_json::from_str(&content)
+    let policy: SecretPathPolicy = serde_json::from_str(content)
         .with_context(|| format!("failed to parse {}", path.display()))?;
     validate_policy(&policy)?;
     Ok(policy)
@@ -78,10 +79,11 @@ fn validate_policy(policy: &SecretPathPolicy) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::*;
+    use crate::shell::fixtures::load_tree;
 
     #[test]
     fn claude_deny_permissions_render_from_secret_path_policy() -> Result<()> {
@@ -98,7 +100,7 @@ mod tests {
 "#,
         )?;
 
-        let permissions = claude_deny_permissions(&root)?;
+        let permissions = claude_deny_permissions(load_tree(&root)?.tree())?;
 
         assert_eq!(
             permissions,
@@ -118,7 +120,9 @@ mod tests {
         let root = test_root("invalid_policy_version_is_rejected")?;
         write_policy(&root, r#"{"version":2,"rules":[]}"#)?;
 
-        let error = read_policy(&root).unwrap_err().to_string();
+        let error = read_policy(load_tree(&root)?.tree())
+            .unwrap_err()
+            .to_string();
 
         assert!(error.contains("unsupported secret path policy version"));
 
@@ -134,7 +138,7 @@ mod tests {
             r#"{"version":1,"rules":[{"pattern":"a)b","access":["read"]}]}"#,
         )?;
 
-        let error = format!("{:#}", read_policy(&root).unwrap_err());
+        let error = format!("{:#}", read_policy(load_tree(&root)?.tree()).unwrap_err());
 
         assert!(error.contains("parentheses"));
 

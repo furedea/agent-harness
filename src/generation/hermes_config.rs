@@ -3,7 +3,10 @@ use std::path::Path;
 use anyhow::{Context, Result, bail};
 use serde_norway::{Mapping, Value};
 
-use crate::file_op::FileOp;
+use crate::{
+    file_op::FileOp,
+    snapshot::{ConfigFiles, Snapshot},
+};
 
 const MANAGED_CONFIG: &str = "plugins:\n  enabled:\n    - agent-harness-hooks\n";
 
@@ -11,12 +14,12 @@ pub(crate) fn managed_config_op(path: &Path) -> FileOp {
     FileOp::write(path, MANAGED_CONFIG)
 }
 
-pub(crate) fn sync_config_op(source_path: &Path, target_path: &Path) -> Result<FileOp> {
-    let generated = read_yaml(source_path)?;
-    let mut existing = read_yaml_or_empty(target_path)?;
+pub(crate) fn sync_config_op(config: ConfigFiles<'_>) -> Result<FileOp> {
+    let generated = read_yaml(config.files, config.generated)?;
+    let mut existing = read_yaml_or_empty(config.files, config.target)?;
     merge_managed_config(&mut existing, generated)?;
     Ok(FileOp::write(
-        target_path,
+        config.target,
         serde_norway::to_string(&existing)?,
     ))
 }
@@ -91,30 +94,24 @@ fn mapping_mut<'a>(value: &'a mut Value, name: &str) -> Result<&'a mut Mapping> 
     }
 }
 
-fn read_yaml(path: &Path) -> Result<Value> {
-    let content = std::fs::read_to_string(path)
+fn read_yaml(files: &Snapshot, path: &Path) -> Result<Value> {
+    let content = files
+        .read_text(path)
         .with_context(|| format!("failed to read YAML file {}", path.display()))?;
-    serde_norway::from_str(&content)
+    serde_norway::from_str(content)
         .with_context(|| format!("failed to parse YAML file {}", path.display()))
 }
 
-fn read_yaml_or_empty(path: &Path) -> Result<Value> {
-    match std::fs::read_to_string(path) {
-        Ok(content) => {
-            let value: Value = serde_norway::from_str(&content)
-                .with_context(|| format!("failed to parse YAML file {}", path.display()))?;
-            Ok(match value {
-                Value::Null => Value::Mapping(Mapping::new()),
-                value => value,
-            })
-        }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            Ok(Value::Mapping(Mapping::new()))
-        }
-        Err(error) => {
-            Err(error).with_context(|| format!("failed to read YAML file {}", path.display()))
-        }
-    }
+fn read_yaml_or_empty(files: &Snapshot, path: &Path) -> Result<Value> {
+    let Some(content) = files.read_text_if_present(path)? else {
+        return Ok(Value::Mapping(Mapping::new()));
+    };
+    let value: Value = serde_norway::from_str(content)
+        .with_context(|| format!("failed to parse YAML file {}", path.display()))?;
+    Ok(match value {
+        Value::Null => Value::Mapping(Mapping::new()),
+        value => value,
+    })
 }
 
 #[cfg(test)]
@@ -123,9 +120,16 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::*;
+    use crate::shell::fixtures::load_documents;
 
     fn sync_config(source: &Path, target: &Path) -> Result<()> {
-        crate::shell::execute(&[sync_config_op(source, target)?])
+        let files = load_documents(&[source, target])?;
+        let config = ConfigFiles {
+            generated: source,
+            target,
+            files: &files,
+        };
+        crate::shell::execute(&[sync_config_op(config)?])
     }
 
     #[test]
