@@ -3,7 +3,10 @@ use std::path::Path;
 use anyhow::{Context, Result, ensure};
 use serde::Deserialize;
 
-use crate::layout::SourceLayout;
+use crate::{
+    generation::permission_rule::{PathAccess, PathPattern, PathRule},
+    layout::SourceLayout,
+};
 
 #[derive(Debug, Deserialize)]
 struct SecretPathPolicy {
@@ -13,7 +16,7 @@ struct SecretPathPolicy {
 
 #[derive(Debug, Deserialize)]
 struct SecretPathRule {
-    pattern: String,
+    pattern: PathPattern,
     access: Vec<SecretPathAccess>,
 }
 
@@ -24,11 +27,11 @@ enum SecretPathAccess {
     Write,
 }
 
-impl SecretPathAccess {
-    fn claude_permission(self, pattern: &str) -> String {
-        match self {
-            Self::Read => format!("Read({pattern})"),
-            Self::Write => format!("Edit({pattern})"),
+impl From<SecretPathAccess> for PathAccess {
+    fn from(access: SecretPathAccess) -> Self {
+        match access {
+            SecretPathAccess::Read => Self::Read,
+            SecretPathAccess::Write => Self::Write,
         }
     }
 }
@@ -41,7 +44,7 @@ pub(crate) fn claude_deny_permissions(source: &Path) -> Result<Vec<String>> {
         .flat_map(|rule| {
             rule.access
                 .iter()
-                .map(|access| access.claude_permission(&rule.pattern))
+                .map(|&access| PathRule::new(rule.pattern.clone(), access.into()).claude())
         })
         .collect())
 }
@@ -64,10 +67,6 @@ fn validate_policy(policy: &SecretPathPolicy) -> Result<()> {
     );
 
     for rule in &policy.rules {
-        ensure!(
-            !rule.pattern.trim().is_empty(),
-            "secret path policy patterns must not be empty"
-        );
         ensure!(
             !rule.access.is_empty(),
             "secret path policy access list must not be empty"
@@ -122,6 +121,22 @@ mod tests {
         let error = read_policy(&root).unwrap_err().to_string();
 
         assert!(error.contains("unsupported secret path policy version"));
+
+        std::fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn patterns_with_parentheses_are_rejected() -> Result<()> {
+        let root = test_root("patterns_with_parentheses_are_rejected")?;
+        write_policy(
+            &root,
+            r#"{"version":1,"rules":[{"pattern":"a)b","access":["read"]}]}"#,
+        )?;
+
+        let error = format!("{:#}", read_policy(&root).unwrap_err());
+
+        assert!(error.contains("parentheses"));
 
         std::fs::remove_dir_all(root)?;
         Ok(())

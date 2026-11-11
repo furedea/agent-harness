@@ -5,7 +5,8 @@ use serde_json::{Map, Value};
 
 use crate::generation::{
     GenerationContext, claude_permissions::PermissionRules, command_permissions,
-    external_hooks::ExternalHookBundle, hooks, io, protection, secret_path_policy,
+    external_hooks::ExternalHookBundle, hooks, io, permission_rule::PathRule, protection,
+    secret_path_policy,
 };
 use crate::{fs_ops, layout::SourceLayout, runtime_root::RuntimeRoot};
 
@@ -76,7 +77,7 @@ fn merge_permissions(root: &mut Map<String, Value>, context: GenerationContext<'
     rules.extend_deny(
         protected_paths(context)?
             .into_iter()
-            .map(|path| format!("Edit({path})")),
+            .map(|path| PathRule::write_installed_path(path).claude()),
     );
 
     rules.write_into(permissions);

@@ -14,6 +14,7 @@ pub(crate) mod hermes_config;
 pub(crate) mod hook_bundle;
 pub(crate) mod hooks;
 mod io;
+pub(crate) mod permission_rule;
 pub(crate) mod pi_config;
 pub(crate) mod protection;
 pub(crate) mod secret_path_policy;

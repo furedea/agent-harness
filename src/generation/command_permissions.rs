@@ -3,7 +3,10 @@ use std::path::Path;
 use anyhow::{Context, Result, bail, ensure};
 use serde::{Deserialize, Serialize};
 
-use crate::{generation::io, layout::SourceLayout};
+use crate::{
+    generation::{io, permission_rule::PrefixRule},
+    layout::SourceLayout,
+};
 
 #[derive(Debug, Deserialize, Serialize)]
 struct CommandPermissions {
@@ -14,7 +17,7 @@ struct CommandPermissions {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 struct Rule {
     decision: Decision,
-    prefix: Vec<String>,
+    prefix: PrefixRule,
     justification: String,
 }
 
@@ -68,7 +71,7 @@ pub(crate) fn claude_allow_permissions(source: &Path) -> Result<Vec<String>> {
         .rules
         .iter()
         .filter(|rule| rule.decision == Decision::Allow)
-        .map(|rule| claude_permission(&rule.prefix))
+        .map(|rule| rule.prefix.claude())
         .collect())
 }
 
@@ -77,7 +80,7 @@ pub(crate) fn claude_ask_permissions(source: &Path) -> Result<Vec<String>> {
         .rules
         .iter()
         .filter(|rule| rule.decision == Decision::Ask)
-        .map(|rule| claude_permission(&rule.prefix))
+        .map(|rule| rule.prefix.claude())
         .collect())
 }
 
@@ -86,7 +89,7 @@ pub(crate) fn claude_deny_permissions(source: &Path) -> Result<Vec<String>> {
         .rules
         .iter()
         .filter(|rule| rule.decision == Decision::Deny)
-        .map(|rule| claude_permission(&rule.prefix))
+        .map(|rule| rule.prefix.claude())
         .collect())
 }
 
@@ -104,7 +107,7 @@ fn devin_permissions_for(policy: &CommandPermissions, decision: Decision) -> Vec
         .rules
         .iter()
         .filter(|rule| rule.decision == decision)
-        .map(|rule| devin_permission(&rule.prefix))
+        .map(|rule| rule.prefix.devin())
         .collect()
 }
 
@@ -162,12 +165,6 @@ fn validate_policy(policy: &CommandPermissions) -> Result<()> {
 }
 
 fn validate_rule(index: usize, rule: &Rule) -> Result<()> {
-    if rule.prefix.is_empty() {
-        bail!("command permission rule {index} must have a non-empty prefix");
-    }
-    if rule.prefix.iter().any(|part| part.trim().is_empty()) {
-        bail!("command permission rule {index} contains an empty prefix segment");
-    }
     if rule.justification.trim().is_empty() {
         bail!("command permissions rule {index} must have a non-empty justification");
     }
@@ -190,7 +187,7 @@ fn codex_rules(policy: &CommandPermissions) -> Result<String> {
 fn codex_rule(rule: &Rule) -> Result<String> {
     Ok(format!(
         "prefix_rule(\n    pattern = {},\n    decision = \"{}\",\n    justification = {},\n)\n",
-        serde_json::to_string(&rule.prefix)?,
+        serde_json::to_string(rule.prefix.tokens())?,
         decision_name(rule.decision),
         serde_json::to_string(&rule.justification)?,
     ))
@@ -202,14 +199,6 @@ fn decision_name(decision: Decision) -> &'static str {
         Decision::Ask => "prompt",
         Decision::Deny => "forbidden",
     }
-}
-
-fn claude_permission(pattern: &[String]) -> String {
-    format!("Bash({}:*)", pattern.join(" "))
-}
-
-fn devin_permission(pattern: &[String]) -> String {
-    format!("Exec({})", pattern.join(" "))
 }
 
 #[cfg(test)]
@@ -422,9 +411,25 @@ mod tests {
             r#"{"version":1,"rules":[{"decision":"allow","prefix":[],"justification":"x"}]}"#,
         )?;
 
-        let error = read_policy(&root).unwrap_err().to_string();
+        let error = format!("{:#}", read_policy(&root).unwrap_err());
 
-        assert!(error.contains("non-empty prefix"));
+        assert!(error.contains("non-empty"));
+
+        std::fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn read_policy_rejects_whitespace_inside_a_prefix_segment() -> Result<()> {
+        let root = test_root("read_policy_rejects_whitespace_inside_a_prefix_segment")?;
+        write_file(
+            &root.join("command_permissions.json"),
+            r#"{"version":1,"rules":[{"decision":"allow","prefix":["rm -rf"],"justification":"x"}]}"#,
+        )?;
+
+        let error = format!("{:#}", read_policy(&root).unwrap_err());
+
+        assert!(error.contains("whitespace"));
 
         std::fs::remove_dir_all(root)?;
         Ok(())
