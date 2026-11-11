@@ -1,16 +1,25 @@
+#![forbid(clippy::disallowed_methods, clippy::disallowed_types)]
+
 use std::path::{Path, PathBuf};
 
 use anyhow::{Result, bail, ensure};
 
 use crate::{
     file_op::FileOp,
-    generation::{GenerationContext, claude_config, command_permissions, skills},
+    generation::{
+        GenerationContext, claude_config, command_permissions, external_hooks::ExternalHookBundle,
+        skills,
+    },
     layout::{InstalledLayout, SourceLayout},
     provider::{
         renderer::ProviderRenderer,
         spec::{ConfigSync, PROVIDERS, ProviderSpec},
     },
-    shell::{TemporaryDirectory, execute},
+    runtime_root::RuntimeRoot,
+    shell::{
+        ExternalInputs, TemporaryDirectory, execute, load_snapshot, source_request, sync_documents,
+    },
+    snapshot::{ConfigFiles, Snapshot, SnapshotRequest, Tree},
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -19,10 +28,39 @@ pub(crate) enum Provider {
     Codex,
 }
 
+/// What a rendering run is asked to do, before any of it is read from the disk.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct RenderRequest<'a> {
+    pub(crate) dsh_profile: &'a str,
+    pub(crate) source: &'a Path,
+    pub(crate) external_hooks: &'a [ExternalHookBundle],
+    pub(crate) runtime_root: &'a RuntimeRoot,
+}
+
+impl RenderRequest<'_> {
+    /// The computation context over the snapshot `files` taken for this request.
+    fn context<'f>(&'f self, files: &'f Snapshot) -> GenerationContext<'f> {
+        GenerationContext {
+            dsh_profile: self.dsh_profile,
+            source: Tree::new(self.source, files),
+            external_hooks: self.external_hooks,
+            runtime_root: self.runtime_root,
+        }
+    }
+
+    fn external_inputs(&self) -> ExternalInputs<'_> {
+        ExternalInputs {
+            hook_bundles: self.external_hooks,
+            skills: &[],
+        }
+    }
+}
+
 #[cfg(test)]
 pub(crate) fn generate_claude_settings(source: &Path, out: &Path) -> Result<()> {
+    let files = load_snapshot(&source_request(source, ExternalInputs::default()))?;
     execute(&[crate::generation::claude_config::settings_op(
-        source,
+        Tree::new(source, &files),
         out,
         &[],
     )?])
@@ -30,8 +68,9 @@ pub(crate) fn generate_claude_settings(source: &Path, out: &Path) -> Result<()> 
 
 #[cfg(test)]
 pub(crate) fn generate_codex_config_source(source: &Path, out: &Path) -> Result<()> {
+    let files = load_snapshot(&source_request(source, ExternalInputs::default()))?;
     execute(&[crate::generation::codex_config::config_source_op(
-        source,
+        Tree::new(source, &files),
         out,
         &[],
     )?])
@@ -42,13 +81,22 @@ pub(crate) fn generate_skills(
     external_skills: &[skills::ExternalSkill],
     target: skills::SkillTarget<'_>,
 ) -> Result<()> {
-    execute(&[skills::render_skills(source, external_skills, target)?])
+    let external = ExternalInputs {
+        skills: external_skills,
+        ..ExternalInputs::default()
+    };
+    let files = load_snapshot(&source_request(source, external))?;
+    execute(&[skills::render_skills(
+        Tree::new(source, &files),
+        external_skills,
+        target,
+    )?])
 }
 
-pub(crate) fn install(context: GenerationContext<'_>, out: &Path) -> Result<()> {
+pub(crate) fn install(request: &RenderRequest<'_>, out: &Path) -> Result<()> {
     let staging = TemporaryDirectory::create()?;
     carry_over_mutable_configs(out, staging.path())?;
-    render_installation(context, staging.path())?;
+    render_installation(request, staging.path())?;
     preserve_claude_settings(out, staging.path())?;
     let plan = crate::install_plan::plan_install(
         &InstalledLayout::new(staging.path()),
@@ -59,11 +107,18 @@ pub(crate) fn install(context: GenerationContext<'_>, out: &Path) -> Result<()> 
 
 /// Seeds mutable configs that rendering merges into with their installed state.
 fn carry_over_mutable_configs(installed: &Path, staging: &Path) -> Result<()> {
-    let seeds: Vec<FileOp> = PROVIDERS
+    let paths: Vec<&str> = PROVIDERS
         .iter()
         .filter(|spec| merges_into_installed_config(spec))
         .filter_map(ProviderSpec::config_path)
-        .filter(|path| installed.join(path).exists())
+        .collect();
+    let files = load_snapshot(&SnapshotRequest {
+        probes: paths.iter().map(|path| installed.join(path)).collect(),
+        ..SnapshotRequest::default()
+    })?;
+    let seeds: Vec<FileOp> = paths
+        .into_iter()
+        .filter(|path| files.exists(&installed.join(path)))
         .map(|path| FileOp::CopyFile {
             source: installed.join(path),
             target: staging.join(path),
@@ -95,24 +150,34 @@ fn preserve_claude_settings(installed: &Path, staging: &Path) -> Result<()> {
         return Ok(());
     };
     let generated = staging.join(path);
-    let merged = claude_config::merge_settings_op(&generated, &installed.join(path), &generated)?;
-    execute(&[merged])
+    let target = installed.join(path);
+    let files = load_snapshot(&SnapshotRequest {
+        documents: vec![generated.clone(), target.clone()],
+        ..SnapshotRequest::default()
+    })?;
+    let config = ConfigFiles {
+        generated: &generated,
+        target: &target,
+        files: &files,
+    };
+    execute(&[claude_config::merge_settings_op(config, &generated)?])
 }
 
-fn render_installation(context: GenerationContext<'_>, out: &Path) -> Result<()> {
-    render_installation_for(context, out, PROVIDERS)
+fn render_installation(request: &RenderRequest<'_>, out: &Path) -> Result<()> {
+    render_installation_for(request, out, PROVIDERS)
 }
 
 pub(crate) fn render_installation_for(
-    context: GenerationContext<'_>,
+    request: &RenderRequest<'_>,
     out: &Path,
     providers: &[ProviderSpec],
 ) -> Result<()> {
-    let installed = InstalledLayout::new(out);
+    let files = load_snapshot(&installation_request(request, out, providers))?;
+    let context = request.context(&files);
+    let source_layout = SourceLayout::new(context.source.root());
     command_permissions::validate_regex_policies(context.source)?;
-    let source_layout = SourceLayout::new(context.source);
     if let Some(missing) = source_layout
-        .missing_required_directories(providers)
+        .missing_required_directories(providers, &files)
         .first()
     {
         bail!(
@@ -120,11 +185,10 @@ pub(crate) fn render_installation_for(
             missing.display()
         );
     }
-    execute(&synced_directory_ops(&installed, source_layout, providers))?;
+    let directories = InstalledLayout::new(out).synced_directories_for(source_layout, providers);
+    execute(&synced_directory_ops(directories, &files))?;
     execute(&crate::install_plan::plan_assets_for(out, providers))?;
-    for bundle in context.external_hooks {
-        execute(&bundle.asset_ops(out)?)?;
-    }
+    install_bundle_assets(context, out)?;
     let renderer = ProviderRenderer {
         context,
         providers,
@@ -136,21 +200,51 @@ pub(crate) fn render_installation_for(
     Ok(())
 }
 
-/// Optional source directories that a profile omits install as empty directories.
-fn synced_directory_ops(
-    installed: &InstalledLayout<'_>,
-    source_layout: SourceLayout<'_>,
+/// The source, the bundles, and the installed configs that rendering merges its output into.
+fn installation_request(
+    request: &RenderRequest<'_>,
+    out: &Path,
     providers: &[ProviderSpec],
-) -> Vec<FileOp> {
-    installed
-        .synced_directories_for(source_layout, providers)
+) -> SnapshotRequest {
+    let mut snapshot = source_request(request.source, request.external_inputs());
+    let merged_configs = providers
+        .iter()
+        .filter(|spec| merges_into_installed_config(spec))
+        .filter_map(|spec| Some((spec.config?.sync, spec.config_file()?)));
+    snapshot
+        .documents
+        .extend(merged_configs.flat_map(|(sync, path)| sync_documents(sync, &out.join(path))));
+    snapshot
+}
+
+/// Copies each bundle's assets into `out`, which must not already hold them.
+///
+/// Each bundle looks at `out` after the previous one was applied, so two bundles that map to one
+/// path conflict.
+fn install_bundle_assets(context: GenerationContext<'_>, out: &Path) -> Result<()> {
+    let files = context.source.files();
+    for bundle in context.external_hooks {
+        let bundle = bundle.open(files)?;
+        let targets = bundle.asset_install_paths()?;
+        let existing = load_snapshot(&SnapshotRequest {
+            probes: targets.iter().map(|target| out.join(target)).collect(),
+            ..SnapshotRequest::default()
+        })?;
+        execute(&bundle.asset_ops(Tree::new(out, &existing))?)?;
+    }
+    Ok(())
+}
+
+/// Optional source directories that a profile omits install as empty directories.
+fn synced_directory_ops(directories: Vec<(PathBuf, PathBuf)>, files: &Snapshot) -> Vec<FileOp> {
+    directories
         .into_iter()
-        .map(|(source, target)| synced_directory_op(source, target))
+        .map(|(source, target)| synced_directory_op(source, target, files))
         .collect()
 }
 
-fn synced_directory_op(source: PathBuf, target: PathBuf) -> FileOp {
-    if source.is_dir() {
+fn synced_directory_op(source: PathBuf, target: PathBuf, files: &Snapshot) -> FileOp {
+    if files.is_dir(&source) {
         return FileOp::CopyTree { source, target };
     }
     FileOp::ReplaceTree {
@@ -161,16 +255,26 @@ fn synced_directory_op(source: PathBuf, target: PathBuf) -> FileOp {
 
 pub(crate) fn verify(root: &Path) -> Result<()> {
     let installed = InstalledLayout::new(root);
-    for path in installed.verified_files_for(PROVIDERS) {
+    let required_files = installed.verified_files_for(PROVIDERS);
+    let required_directories = installed.verified_directories_for(PROVIDERS);
+    let files = load_snapshot(&SnapshotRequest {
+        probes: required_files
+            .iter()
+            .chain(&required_directories)
+            .cloned()
+            .collect(),
+        ..SnapshotRequest::default()
+    })?;
+    for path in required_files {
         ensure!(
-            path.is_file(),
+            files.is_file(&path),
             "missing or invalid harness file: {}",
             path.display()
         );
     }
-    for path in installed.verified_directories_for(PROVIDERS) {
+    for path in required_directories {
         ensure!(
-            path.is_dir(),
+            files.is_dir(&path),
             "missing or invalid harness directory: {}",
             path.display()
         );

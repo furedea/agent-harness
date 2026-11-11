@@ -1,5 +1,3 @@
-use std::ffi::OsString;
-use std::fs::DirEntry;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
@@ -10,7 +8,7 @@ use serde_json::{Map, Value, map::Entry};
 use crate::{
     file_op::FileOp,
     provider::spec::{PROVIDERS, ProviderSpec},
-    regular_files::regular_files,
+    snapshot::{Snapshot, Tree},
 };
 
 const SUPPORTED_BUNDLE_VERSION: u64 = 1;
@@ -22,18 +20,51 @@ pub(crate) struct ExternalHookBundle {
 }
 
 impl ExternalHookBundle {
-    pub(crate) fn asset_ops(&self, output: &Path) -> Result<Vec<FileOp>> {
-        self.validate()?;
+    /// The bundle directory, which the loader reads into the snapshot.
+    pub(crate) fn source(&self) -> &Path {
+        &self.source
+    }
+
+    /// Checks the bundle's manifest in `files` and returns the bundle ready to render.
+    pub(crate) fn open<'a>(&'a self, files: &'a Snapshot) -> Result<OpenBundle<'a>> {
+        let path = self.source.join("hook_bundle.json");
+        let manifest: HookBundleManifest = serde_json::from_str(
+            files
+                .read_text(&path)
+                .with_context(|| format!("failed to read {}", path.display()))?,
+        )
+        .with_context(|| format!("failed to parse {}", path.display()))?;
+        ensure!(
+            manifest.version == SUPPORTED_BUNDLE_VERSION,
+            "unsupported external hook bundle version for {}: {}",
+            self.name.as_str(),
+            manifest.version,
+        );
+        Ok(OpenBundle {
+            bundle: self,
+            files,
+        })
+    }
+}
+
+/// A bundle whose manifest was checked, read through the snapshot that holds its files.
+pub(crate) struct OpenBundle<'a> {
+    bundle: &'a ExternalHookBundle,
+    files: &'a Snapshot,
+}
+
+impl OpenBundle<'_> {
+    /// Copies of the bundle's assets into `output`, refusing to overwrite a file already there.
+    pub(crate) fn asset_ops(&self, output: Tree<'_>) -> Result<Vec<FileOp>> {
         let assets = self.assets()?;
         self.reject_duplicate_targets(&assets)?;
         assets
             .iter()
-            .map(|asset| self.asset_op(&asset.source, &output.join(&asset.target)))
+            .map(|asset| self.asset_op(asset, output))
             .collect()
     }
 
     pub(crate) fn asset_install_paths(&self) -> Result<Vec<PathBuf>> {
-        self.validate()?;
         Ok(self
             .assets()?
             .into_iter()
@@ -41,10 +72,9 @@ impl ExternalHookBundle {
             .collect())
     }
 
-    pub(crate) fn codex_config_path(&self) -> Result<Option<PathBuf>> {
-        self.validate()?;
-        let path = self.source.join(".codex/config.toml");
-        Ok(path.is_file().then_some(path))
+    pub(crate) fn codex_config_path(&self) -> Option<PathBuf> {
+        let path = self.bundle.source.join(".codex/config.toml");
+        self.files.is_file(&path).then_some(path)
     }
 
     pub(crate) fn merge_claude_hooks(&self, hooks: &mut Value) -> Result<()> {
@@ -71,8 +101,7 @@ impl ExternalHookBundle {
     }
 
     fn merge_hooks(&self, hooks: &mut Value, file: &HookFile) -> Result<()> {
-        self.validate()?;
-        match read_optional_json(&self.source.join(file.path))? {
+        match self.read_optional_json(&self.bundle.source.join(file.path))? {
             Some(generated) => self.merge_generated(file.target(hooks), file.events(&generated)),
             None => Ok(()),
         }
@@ -81,7 +110,7 @@ impl ExternalHookBundle {
     fn merge_generated(&self, target: &mut Value, events: &Value) -> Result<()> {
         let relocation = CommandRelocation {
             assets: &self.assets()?,
-            source: &self.source,
+            source: &self.bundle.source,
         };
         relocation
             .merge_events(target, events)
@@ -91,24 +120,8 @@ impl ExternalHookBundle {
     fn merge_failure(&self) -> String {
         format!(
             "failed to merge external hook bundle {}",
-            self.name.as_str()
+            self.bundle.name.as_str()
         )
-    }
-
-    fn validate(&self) -> Result<()> {
-        let path = self.source.join("hook_bundle.json");
-        let manifest: HookBundleManifest = serde_json::from_str(
-            &std::fs::read_to_string(&path)
-                .with_context(|| format!("failed to read {}", path.display()))?,
-        )
-        .with_context(|| format!("failed to parse {}", path.display()))?;
-        ensure!(
-            manifest.version == SUPPORTED_BUNDLE_VERSION,
-            "unsupported external hook bundle version for {}: {}",
-            self.name.as_str(),
-            manifest.version,
-        );
-        Ok(())
     }
 
     fn assets(&self) -> Result<Vec<HookAsset>> {
@@ -119,33 +132,38 @@ impl ExternalHookBundle {
             .into_iter()
             .flatten()
             .collect::<Vec<_>>();
-        assets.extend(self.codex_scripts()?);
+        assets.extend(self.codex_scripts());
         assets.sort_by(|left, right| left.target.cmp(&right.target));
         Ok(assets)
     }
 
     fn asset_tree(&self, relative: &Path) -> Result<Vec<HookAsset>> {
-        let source = self.source.join(relative);
+        let source = self.bundle.source.join(relative);
         let target_root = self.asset_root(relative);
-        existing_regular_files(&source)?
+        self.files
+            .regular_files(&source)
             .into_iter()
             .map(|file| tree_asset(file, &source, &target_root))
             .collect()
     }
 
-    fn codex_scripts(&self) -> Result<Vec<HookAsset>> {
+    fn codex_scripts(&self) -> Vec<HookAsset> {
         let target_root = self.asset_root(Path::new(".codex/hooks"));
-        Ok(shell_scripts(&self.source.join(".codex"))?
+        self.files
+            .children(&self.bundle.source.join(".codex"))
             .into_iter()
-            .map(|(source, file_name)| HookAsset {
-                source,
-                target: target_root.join(file_name),
+            .filter(|child| child.is_regular_file() && is_shell_script(&child.path))
+            .map(|child| HookAsset {
+                source: child.path,
+                target: target_root.join(child.name),
             })
-            .collect())
+            .collect()
     }
 
     fn asset_root(&self, provider_hooks: &Path) -> PathBuf {
-        provider_hooks.join("external").join(self.name.as_str())
+        provider_hooks
+            .join("external")
+            .join(self.bundle.name.as_str())
     }
 
     /// Two bundle files that land on one installed path would silently overwrite each other.
@@ -155,23 +173,39 @@ impl ExternalHookBundle {
         ensure!(
             duplicate.is_none(),
             "external hook bundle {} maps two files to {}",
-            self.name.as_str(),
+            self.bundle.name.as_str(),
             duplicate.map_or_else(String::new, |asset| asset.target.display().to_string()),
         );
         Ok(())
     }
 
-    fn asset_op(&self, source: &Path, target: &Path) -> Result<FileOp> {
+    fn asset_op(&self, asset: &HookAsset, output: Tree<'_>) -> Result<FileOp> {
+        let target = output.root().join(&asset.target);
         ensure!(
-            !target.exists(),
+            !output.files().exists(&target),
             "external hook bundle {} conflicts with {}",
-            self.name.as_str(),
+            self.bundle.name.as_str(),
             target.display(),
         );
         Ok(FileOp::CopyFile {
-            source: source.to_path_buf(),
-            target: target.to_path_buf(),
+            source: asset.source.clone(),
+            target,
         })
+    }
+
+    fn read_optional_json(&self, path: &Path) -> Result<Option<Value>> {
+        self.files
+            .is_file(path)
+            .then(|| self.read_json(path))
+            .transpose()
+    }
+
+    fn read_json(&self, path: &Path) -> Result<Value> {
+        let content = self
+            .files
+            .read_text(path)
+            .with_context(|| format!("failed to read {}", path.display()))?;
+        serde_json::from_str(content).with_context(|| format!("failed to parse {}", path.display()))
     }
 }
 
@@ -386,54 +420,14 @@ fn tree_asset(file: PathBuf, source: &Path, target_root: &Path) -> Result<HookAs
     })
 }
 
-fn existing_regular_files(dir: &Path) -> Result<Vec<PathBuf>> {
-    if !dir.is_dir() {
-        return Ok(Vec::new());
-    }
-    regular_files(dir)
-}
-
-fn shell_scripts(dir: &Path) -> Result<Vec<(PathBuf, OsString)>> {
-    if !dir.is_dir() {
-        return Ok(Vec::new());
-    }
-    let mut scripts = Vec::new();
-    for entry in
-        std::fs::read_dir(dir).with_context(|| format!("failed to read {}", dir.display()))?
-    {
-        let entry = entry.with_context(|| format!("failed to read entry in {}", dir.display()))?;
-        scripts.extend(shell_script(&entry)?);
-    }
-    Ok(scripts)
-}
-
-fn shell_script(entry: &DirEntry) -> Result<Option<(PathBuf, OsString)>> {
-    let path = entry.path();
-    let is_file = entry
-        .file_type()
-        .with_context(|| format!("failed to inspect {}", path.display()))?
-        .is_file();
-    let is_shell = path.extension().and_then(|extension| extension.to_str()) == Some("sh");
-    Ok((is_file && is_shell).then(|| (path, entry.file_name())))
-}
-
-fn read_optional_json(path: &Path) -> Result<Option<Value>> {
-    if !path.is_file() {
-        return Ok(None);
-    }
-    read_json(path).map(Some)
-}
-
-fn read_json(path: &Path) -> Result<Value> {
-    let content = std::fs::read_to_string(path)
-        .with_context(|| format!("failed to read {}", path.display()))?;
-    serde_json::from_str(&content).with_context(|| format!("failed to parse {}", path.display()))
+fn is_shell_script(path: &Path) -> bool {
+    path.extension().and_then(|extension| extension.to_str()) == Some("sh")
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::shell::fixtures::{create_dir_all, remove_dir_all, write};
+    use crate::shell::fixtures::{create_dir_all, load_tree, remove_dir_all, write};
 
     #[test]
     fn asset_ops_reject_two_files_that_land_on_one_installed_path() -> Result<()> {
@@ -448,7 +442,11 @@ mod tests {
             .parse()
             .map_err(anyhow::Error::msg)?;
 
-        let error = bundle.asset_ops(&root.join("out")).unwrap_err();
+        let files = load_tree(&root)?;
+        let out = root.join("out");
+        let output = Tree::new(&out, files.files());
+
+        let error = bundle.open(files.files())?.asset_ops(output).unwrap_err();
 
         assert!(format!("{error:#}").contains("maps two files to"));
         remove_dir_all(root)?;

@@ -8,8 +8,8 @@ use crate::{
     file_op::FileOp,
     generation::external_hooks::ExternalHookBundle,
     layout::{InstalledLayout, SourceLayout},
-    regular_files::regular_files,
     runtime_root::RuntimeRoot,
+    snapshot::{Snapshot, Tree},
 };
 
 const GLOB_SCAN_MAX_DEPTH: u64 = 5;
@@ -22,7 +22,7 @@ struct ProtectedPathPolicy {
 }
 
 pub(crate) fn codex_config_fragment_op(
-    source: &Path,
+    source: Tree<'_>,
     external_hooks: &[ExternalHookBundle],
     path: &Path,
 ) -> Result<FileOp> {
@@ -41,7 +41,7 @@ pub(crate) fn runtime_policy_op(paths: Vec<String>, path: &Path) -> Result<FileO
 }
 
 pub(crate) fn codex_config_fragment(
-    source: &Path,
+    source: Tree<'_>,
     external_hooks: &[ExternalHookBundle],
 ) -> Result<String> {
     codex_config_fragment_for_runtime(crate::generation::GenerationContext {
@@ -67,7 +67,7 @@ pub(crate) fn codex_config_fragment_for_runtime(
 
 #[cfg(test)]
 pub(crate) fn protected_claude_deny_permissions(
-    source: &Path,
+    source: Tree<'_>,
     external_hooks: &[ExternalHookBundle],
 ) -> Result<Vec<String>> {
     Ok(protected_paths(source, external_hooks)?
@@ -80,7 +80,7 @@ pub(crate) fn protected_claude_deny_permissions(
 
 #[cfg(test)]
 pub(crate) fn protected_paths(
-    source: &Path,
+    source: Tree<'_>,
     external_hooks: &[ExternalHookBundle],
 ) -> Result<Vec<String>> {
     protected_paths_for_runtime(crate::generation::GenerationContext {
@@ -132,10 +132,10 @@ fn harness_owned_files(
     let mut paths = Vec::new();
 
     for (source_dir, target_dir) in
-        installed.synced_directories_for(SourceLayout::new(source), providers)
+        installed.synced_directories_for(SourceLayout::new(source.root()), providers)
     {
         paths.extend(
-            relative_files(&source_dir)?
+            relative_files(source.files(), &source_dir)?
                 .into_iter()
                 .map(|path| target_dir.join(path)),
         );
@@ -148,14 +148,15 @@ fn harness_owned_files(
             .map(|asset| PathBuf::from(asset.destination)),
     );
     for bundle in external_hooks {
-        paths.extend(bundle.asset_install_paths()?);
+        paths.extend(bundle.open(source.files())?.asset_install_paths()?);
     }
     paths.extend(installed.generated_files_for(dsh_profile, providers));
     Ok(paths)
 }
 
-fn relative_files(root: &Path) -> Result<Vec<String>> {
-    regular_files(root)?
+fn relative_files(files: &Snapshot, root: &Path) -> Result<Vec<String>> {
+    files
+        .regular_files(root)
         .into_iter()
         .map(|path| {
             let relative = path
@@ -180,13 +181,14 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::*;
+    use crate::shell::fixtures::load_tree;
 
     #[test]
     fn protected_paths_include_installed_harness_files_only() -> Result<()> {
         let root = test_root("protected_paths_include_installed_harness_files_only")?;
         write_minimal_source(&root)?;
 
-        let paths = protected_paths(&root, &[])?;
+        let paths = protected_paths(load_tree(&root)?.tree(), &[])?;
 
         assert!(paths.contains(&"~/.claude/hooks/guard.sh".to_string()));
         assert!(paths.contains(&"~/.claude/hooks/rules/allowed_commands.json".to_string()));
@@ -210,7 +212,7 @@ mod tests {
         let root = test_root("protected_claude_permissions_use_edit_for_file_modifications")?;
         write_minimal_source(&root)?;
 
-        let permissions = protected_claude_deny_permissions(&root, &[])?;
+        let permissions = protected_claude_deny_permissions(load_tree(&root)?.tree(), &[])?;
 
         assert!(
             permissions
@@ -232,7 +234,7 @@ mod tests {
         let root = test_root("codex_config_fragment_writes_guarded_filesystem_toml")?;
         write_minimal_source(&root)?;
 
-        let content = codex_config_fragment(&root, &[])?;
+        let content = codex_config_fragment(load_tree(&root)?.tree(), &[])?;
 
         assert!(content.contains("[permissions.guarded.filesystem]"));
         assert!(content.contains("\"~/.claude/hooks/guard.sh\" = \"read\""));
@@ -249,11 +251,12 @@ mod tests {
         write_minimal_source(&root)?;
         let runtime_path = PathBuf::from("/work/project\\name\nquoted\"directory");
         let runtime_root = RuntimeRoot::directory(runtime_path.clone())?;
+        let loaded = load_tree(&root)?;
         let expected = runtime_path.join(".claude/hooks/guard.sh");
         let expected = expected.to_str().unwrap();
 
         let content = codex_config_fragment_for_runtime(crate::generation::GenerationContext {
-            source: &root,
+            source: loaded.tree(),
             external_hooks: &[],
             runtime_root: &runtime_root,
             dsh_profile: "web",
@@ -266,7 +269,7 @@ mod tests {
         );
         assert!(
             protected_paths_for_runtime(crate::generation::GenerationContext {
-                source: &root,
+                source: loaded.tree(),
                 external_hooks: &[],
                 runtime_root: &runtime_root,
                 dsh_profile: "web"
@@ -283,7 +286,7 @@ mod tests {
         write_minimal_source(&root)?;
         write_file(&root.join("hooks/docs/logs/audit/2026-05-19.jsonl"), "{}\n")?;
 
-        let paths = protected_paths(&root, &[])?;
+        let paths = protected_paths(load_tree(&root)?.tree(), &[])?;
 
         assert!(
             !paths
@@ -301,7 +304,7 @@ mod tests {
         let root = test_root("hook-filename-backslash")?;
         write_file(&root.join("hooks/guard\\name.sh"), "#!/bin/sh\n")?;
 
-        let paths = protected_paths(&root, &[])?;
+        let paths = protected_paths(load_tree(&root)?.tree(), &[])?;
 
         assert!(paths.contains(&"~/.claude/hooks/guard\\name.sh".to_owned()));
         crate::shell::fixtures::remove_dir_all(root)?;

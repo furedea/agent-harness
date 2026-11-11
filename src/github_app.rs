@@ -1,3 +1,8 @@
+#![expect(
+    clippy::disallowed_methods,
+    reason = "the token refresh is its own imperative command: it reads the private key and the gh config it renews"
+)]
+
 mod api;
 mod jwt;
 mod timestamp;

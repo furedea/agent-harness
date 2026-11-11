@@ -14,7 +14,7 @@
 #![expect(
     clippy::disallowed_methods,
     clippy::disallowed_types,
-    reason = "this module is the filesystem port; std's write APIs are banned everywhere else"
+    reason = "this module is the filesystem port; std's write and read APIs are banned everywhere else"
 )]
 
 use std::fs::{File, OpenOptions};
@@ -26,10 +26,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use anyhow::{Context, Result, ensure};
 
-use crate::{
-    file_op::{FileMode, FileOp},
-    regular_files::regular_files,
-};
+use crate::file_op::{FileMode, FileOp};
+use regular_files::regular_files;
+
+mod regular_files;
 
 /// What a new file holds and the permissions it gets.
 pub(in crate::shell) struct NewFile<'a> {

@@ -5,7 +5,12 @@ use std::str::FromStr;
 use anyhow::{Context, Result, bail, ensure};
 use serde::Deserialize;
 
-use crate::{file_op::FileOp, layout::SourceLayout, render::Provider};
+use crate::{
+    file_op::FileOp,
+    layout::SourceLayout,
+    render::Provider,
+    snapshot::{Child, Snapshot, Tree},
+};
 use frontmatter::{common_frontmatter_entries, frontmatter_text, split_entries, split_frontmatter};
 
 mod frontmatter;
@@ -43,6 +48,11 @@ pub(crate) struct ExternalSkill {
 }
 
 impl ExternalSkill {
+    /// The file whose presence makes the directory a skill, for the loader to look at.
+    pub(crate) fn skill_file(&self) -> PathBuf {
+        self.source.join("SKILL.md")
+    }
+
     pub(crate) fn new(name: impl Into<String>, source: PathBuf) -> Result<Self> {
         Ok(Self {
             name: SkillName::parse(name)?,
@@ -159,22 +169,25 @@ pub(crate) struct SkillTarget<'a> {
 
 /// The operation that replaces the skills directory with every rendered skill.
 pub(crate) fn render_skills(
-    source: &Path,
+    source: Tree<'_>,
     external_skills: &[ExternalSkill],
     target: SkillTarget<'_>,
 ) -> Result<FileOp> {
-    let skills_dir = SourceLayout::new(source).skills();
-    let skill_dirs = sorted_skill_dirs(&skills_dir)?;
+    let files = source.files();
+    let skill_dirs = sorted_skill_dirs(files, &SourceLayout::new(source.root()).skills());
     let skill_rendering = read_skill_rendering(source)?;
     validate_skill_rendering_targets(&skill_rendering, &skill_dirs)?;
-    validate_external_skills(&skill_dirs, external_skills)?;
+    validate_external_skills(files, &skill_dirs, external_skills)?;
 
+    let renderer = SkillRenderer {
+        files,
+        rendering: &skill_rendering,
+    };
     let mut contents = Vec::new();
     for entry in skill_dirs {
         let skill_out = target.path.join(entry.file_name().unwrap_or_default());
-        contents.extend(render_skill_dir(
+        contents.extend(renderer.render_dir(
             &entry,
-            &skill_rendering,
             SkillTarget {
                 provider: target.provider,
                 path: &skill_out,
@@ -193,9 +206,9 @@ pub(crate) fn render_skills(
     })
 }
 
-pub(crate) fn built_in_skill_metadata(source: &Path) -> Result<Vec<SkillMetadata>> {
-    let skills_dir = SourceLayout::new(source).skills();
-    let skill_dirs = sorted_skill_dirs(&skills_dir)?;
+pub(crate) fn built_in_skill_metadata(source: Tree<'_>) -> Result<Vec<SkillMetadata>> {
+    let files = source.files();
+    let skill_dirs = sorted_skill_dirs(files, &SourceLayout::new(source.root()).skills());
     let skill_rendering = read_skill_rendering(source)?;
     validate_skill_rendering_targets(&skill_rendering, &skill_dirs)?;
     let default_rendering = SkillRenderingEntry::default();
@@ -210,80 +223,79 @@ pub(crate) fn built_in_skill_metadata(source: &Path) -> Result<Vec<SkillMetadata
                 .skills
                 .get(name)
                 .unwrap_or(&default_rendering);
-            read_skill_metadata(&skill_dir.join("SKILL.md"), rendering)
+            read_skill_metadata(files, &skill_dir.join("SKILL.md"), rendering)
         })
         .collect::<Result<Vec<_>>>()?;
     metadata.sort_by(|left, right| left.name.cmp(&right.name));
     Ok(metadata)
 }
 
-fn sorted_skill_dirs(skills_dir: &Path) -> Result<Vec<PathBuf>> {
-    if !skills_dir.exists() {
-        return Ok(Vec::new());
+/// The directories of `skills_dir` that hold a skill file, sorted.
+fn sorted_skill_dirs(files: &Snapshot, skills_dir: &Path) -> Vec<PathBuf> {
+    files
+        .children(skills_dir)
+        .into_iter()
+        .filter(Child::is_real_directory)
+        .map(|child| child.path)
+        .filter(|path| files.is_file(&path.join("SKILL.md")))
+        .collect()
+}
+
+/// Renders each skill directory from the snapshot of the source.
+struct SkillRenderer<'a> {
+    files: &'a Snapshot,
+    rendering: &'a SkillRendering,
+}
+
+impl SkillRenderer<'_> {
+    fn render_dir(&self, source: &Path, target: SkillTarget<'_>) -> Result<Vec<FileOp>> {
+        let SkillTarget {
+            provider,
+            path: out,
+        } = target;
+        let source_skill = source.join("SKILL.md");
+        let content = self
+            .files
+            .read_text(&source_skill)
+            .with_context(|| format!("failed to read {}", source_skill.display()))?;
+        let (frontmatter, body) = split_frontmatter(content)?;
+        let mut frontmatter = common_frontmatter_entries(&source_skill, frontmatter)?;
+        let skill_name = source
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or_default();
+
+        let empty_rendering = SkillRenderingEntry::default();
+        let rendering = self
+            .rendering
+            .skills
+            .get(skill_name)
+            .unwrap_or(&empty_rendering);
+
+        let mut operations = self.support_file_ops(source, out);
+        frontmatter.extend(provider_frontmatter_entries(rendering, provider)?);
+        operations.push(skill_op(out, &frontmatter, body));
+        operations.extend(extra_file_op(provider, out, rendering));
+        Ok(operations)
     }
 
-    let mut dirs = Vec::new();
-    for entry in std::fs::read_dir(skills_dir)
-        .with_context(|| format!("failed to read directory {}", skills_dir.display()))?
-    {
-        let entry =
-            entry.with_context(|| format!("failed to read entry in {}", skills_dir.display()))?;
-        dirs.extend(skill_dir(&entry)?);
+    fn support_file_ops(&self, source: &Path, out: &Path) -> Vec<FileOp> {
+        self.files
+            .children(source)
+            .into_iter()
+            .filter(|child| child.name != "SKILL.md")
+            .filter_map(|child| support_entry_op(child, out))
+            .collect()
     }
-    dirs.sort();
-    Ok(dirs)
 }
 
-fn skill_dir(entry: &std::fs::DirEntry) -> Result<Option<PathBuf>> {
-    let path = entry.path();
-    let is_dir = entry
-        .file_type()
-        .with_context(|| format!("failed to inspect {}", path.display()))?
-        .is_dir();
-    Ok((is_dir && path.join("SKILL.md").is_file()).then_some(path))
-}
-
-fn render_skill_dir(
-    source: &Path,
-    skill_rendering: &SkillRendering,
-    target: SkillTarget<'_>,
-) -> Result<Vec<FileOp>> {
-    let SkillTarget {
-        provider,
-        path: out,
-    } = target;
-    let source_skill = source.join("SKILL.md");
-    let content = std::fs::read_to_string(&source_skill)
-        .with_context(|| format!("failed to read {}", source_skill.display()))?;
-    let (frontmatter, body) = split_frontmatter(&content)?;
-    let mut frontmatter = common_frontmatter_entries(&source_skill, frontmatter)?;
-    let skill_name = source
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or_default();
-
-    let empty_rendering = SkillRenderingEntry::default();
-    let rendering = skill_rendering
-        .skills
-        .get(skill_name)
-        .unwrap_or(&empty_rendering);
-
-    let mut operations = support_file_ops(source, out)?;
-    frontmatter.extend(provider_frontmatter_entries(rendering, provider)?);
-    operations.push(skill_op(out, &frontmatter, body));
-    operations.extend(extra_file_op(provider, out, rendering));
-    Ok(operations)
-}
-
-fn read_skill_rendering(source: &Path) -> Result<SkillRendering> {
-    let path = SourceLayout::new(source).skill_rendering();
-    if !path.exists() {
+fn read_skill_rendering(source: Tree<'_>) -> Result<SkillRendering> {
+    let path = SourceLayout::new(source.root()).skill_rendering();
+    let Some(content) = source.files().read_text_if_present(&path)? else {
         return Ok(SkillRendering::default());
-    }
+    };
 
-    let content = std::fs::read_to_string(&path)
-        .with_context(|| format!("failed to read {}", path.display()))?;
-    let rendering: SkillRendering = serde_json::from_str(&content)
+    let rendering: SkillRendering = serde_json::from_str(content)
         .with_context(|| format!("failed to parse {}", path.display()))?;
     if rendering.version != SUPPORTED_SKILL_RENDERING_VERSION {
         bail!("unsupported skill rendering version: {}", rendering.version);
@@ -317,6 +329,7 @@ fn validate_skill_rendering_targets(
 }
 
 fn validate_external_skills(
+    files: &Snapshot,
     skill_dirs: &[PathBuf],
     external_skills: &[ExternalSkill],
 ) -> Result<()> {
@@ -327,7 +340,7 @@ fn validate_external_skills(
     let mut external_names = BTreeSet::new();
 
     for skill in external_skills {
-        validate_external_skill(skill, &built_in_names)?;
+        validate_external_skill(files, skill, &built_in_names)?;
         ensure!(
             external_names.insert(skill.name.as_str()),
             "duplicate external skill name: {}",
@@ -338,14 +351,13 @@ fn validate_external_skills(
     Ok(())
 }
 
-fn validate_external_skill(skill: &ExternalSkill, built_in_names: &BTreeSet<&str>) -> Result<()> {
-    let has_regular_skill_file = skill
-        .source
-        .join("SKILL.md")
-        .symlink_metadata()
-        .is_ok_and(|metadata| metadata.is_file());
+fn validate_external_skill(
+    files: &Snapshot,
+    skill: &ExternalSkill,
+    built_in_names: &BTreeSet<&str>,
+) -> Result<()> {
     ensure!(
-        has_regular_skill_file,
+        files.is_regular_file(&skill.skill_file()),
         "external skill directory must contain a regular SKILL.md file: {}",
         skill.source.display()
     );
@@ -357,10 +369,15 @@ fn validate_external_skill(skill: &ExternalSkill, built_in_names: &BTreeSet<&str
     Ok(())
 }
 
-fn read_skill_metadata(path: &Path, rendering: &SkillRenderingEntry) -> Result<SkillMetadata> {
-    let content = std::fs::read_to_string(path)
+fn read_skill_metadata(
+    files: &Snapshot,
+    path: &Path,
+    rendering: &SkillRenderingEntry,
+) -> Result<SkillMetadata> {
+    let content = files
+        .read_text(path)
         .with_context(|| format!("failed to read {}", path.display()))?;
-    let (frontmatter, body) = split_frontmatter(&content)?;
+    let (frontmatter, body) = split_frontmatter(content)?;
     let entries = split_entries(frontmatter)?;
     let name = frontmatter_text(&entries, "name")?;
     frontmatter_text(&entries, "description")?;
@@ -380,40 +397,21 @@ fn skill_title(body: &str) -> Result<String> {
         .context("SKILL.md body must contain a level-one heading")
 }
 
-fn support_file_ops(source: &Path, out: &Path) -> Result<Vec<FileOp>> {
-    let mut operations = Vec::new();
-    for entry in std::fs::read_dir(source)
-        .with_context(|| format!("failed to read directory {}", source.display()))?
-    {
-        let entry =
-            entry.with_context(|| format!("failed to read entry in {}", source.display()))?;
-        operations.extend(support_entry_op(&entry, out)?);
-    }
-    Ok(operations)
-}
-
-fn support_entry_op(entry: &std::fs::DirEntry, out: &Path) -> Result<Option<FileOp>> {
-    let path = entry.path();
-    let name = entry.file_name();
-    if name == "SKILL.md" {
-        return Ok(None);
-    }
-
-    let target = out.join(name);
-    let file_type = entry
-        .file_type()
-        .with_context(|| format!("failed to inspect {}", path.display()))?;
-    if file_type.is_dir() {
-        return Ok(Some(FileOp::CopyTree {
-            source: path,
+/// Copies a support file or directory of a skill beside its rendered `SKILL.md`.
+///
+/// Symlinks are skipped, so a skill never reaches outside its own directory.
+fn support_entry_op(child: Child, out: &Path) -> Option<FileOp> {
+    let target = out.join(&child.name);
+    if child.is_real_directory() {
+        return Some(FileOp::CopyTree {
+            source: child.path,
             target,
-        }));
+        });
     }
-    // Symlinks are skipped, so a skill never reaches outside its own directory.
-    Ok(file_type.is_file().then_some(FileOp::CopyFile {
-        source: path,
+    child.is_regular_file().then_some(FileOp::CopyFile {
+        source: child.path,
         target,
-    }))
+    })
 }
 
 fn skill_op(out: &Path, frontmatter: &[String], body: &str) -> FileOp {

@@ -1,18 +1,24 @@
+#![expect(
+    clippy::disallowed_methods,
+    reason = "running the installers is the point of this command, and so is checking its output"
+)]
+
 use std::path::Path;
 use std::process::Command;
 
 use anyhow::{Context, Result, bail, ensure};
 
-use super::{TemporaryDirectory, execute};
+use super::{TemporaryDirectory, execute, load_snapshot};
 use crate::{
     file_op::FileOp,
     generation::hook_bundle::{HookBundleSpec, Installer},
     provider::spec::PROVIDERS,
+    snapshot::{SnapshotRequest, Tree},
 };
 
 /// Runs a spec's installers in an isolated home and captures what they wrote as a bundle.
 pub(crate) fn generate(spec_path: &Path, output: &Path) -> Result<()> {
-    let spec = HookBundleSpec::read(spec_path)?;
+    let spec = read_spec(spec_path)?;
     if output.exists() {
         bail!("hook bundle output already exists: {}", output.display());
     }
@@ -22,7 +28,20 @@ pub(crate) fn generate(spec_path: &Path, output: &Path) -> Result<()> {
     spec.installers
         .iter()
         .try_for_each(|installer| run_installer(installer, home.path()))?;
-    execute(&spec.capture_ops(home.path(), output)?)
+    let staged = load_snapshot(&HookBundleSpec::capture_request(home.path()))?;
+    execute(&spec.capture_ops(Tree::new(home.path(), &staged), output)?)
+}
+
+fn read_spec(path: &Path) -> Result<HookBundleSpec> {
+    let request = SnapshotRequest {
+        documents: vec![path.to_path_buf()],
+        ..SnapshotRequest::default()
+    };
+    let files = load_snapshot(&request)?;
+    let content = files
+        .read_text(path)
+        .with_context(|| format!("failed to read {}", path.display()))?;
+    HookBundleSpec::parse(path, content)
 }
 
 fn provider_directories(home: &Path) -> Vec<FileOp> {

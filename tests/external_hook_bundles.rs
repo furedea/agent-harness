@@ -5,6 +5,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde_json::{Map, Value};
 use toml_edit::DocumentMut;
 
+#[path = "external-hook-bundles/asset_conflict.rs"]
+mod asset_conflict;
 #[path = "external-hook-bundles/bundle_generation.rs"]
 mod bundle_generation;
 #[path = "external-hook-bundles/provider_composition.rs"]

@@ -9,7 +9,8 @@ filesystem, and a layering test that only grepped source text for `fs_ops` and `
 installed files that were all `0600` and a check that a wrapper such as `io::write_json` bypassed,
 we decided for a Functional Core / Imperative Shell split in one crate, enforced by three layers,
 and against splitting the crate, to make "computation cannot write" a compile-time fact, accepting
-that tests are outside the lint and that reads are not yet banned.
+that tests are outside the lint. The [amendment](#amendment-computation-does-not-read-either)
+extends the same split to reads.
 
 ## Pattern
 
@@ -70,12 +71,49 @@ A `core` crate that cannot depend on I/O would make the boundary structural, but
 
 Revisit it if the core must be reused by another program.
 
+## Amendment: computation does not read either
+
+A computation that reads mid-way depends on the disk at that instant, so one input could yield two
+outputs. The same split now covers reads.
+
+- **Read once, at the boundary.** `shell::load` takes a `SnapshotRequest` (directories to walk,
+  directories to list, files to read as text, paths to probe) and returns a `Snapshot`: every path
+  with its kind (symlinks resolved as `Path::is_file` would) and the UTF-8 text of the documents
+  computation parses. A tree records text only for `json`, `toml`, `yaml`, `yml`, and `md`; a named
+  document is read whatever its extension. Whole directories that are merely copied need no contents:
+  computation returns `FileOp::CopyTree` with the source path, and only the listing it decides on
+  is in the snapshot.
+- **Computation queries a value.** `Snapshot` and `Tree` (a root plus its snapshot) live in
+  `snapshot.rs`, which is itself under `forbid`. `generation`, the renderer, and the sync functions
+  receive a `Tree` or a `ConfigFiles` (rendered config, user config, snapshot) instead of a path.
+  The loader walks a symlinked directory one hop and never a symlink met inside it, and
+  `regular_files` skips what lies behind a symlink, as the directory walk it replaced did, so a
+  profile may share a `hooks` directory without its protected paths vanishing.
+- **Stages reload.** The install still renders in stages whose later stages need what earlier ones
+  wrote (the carried-over configs, the files a bundle's assets must not collide with). Each stage
+  takes its own snapshot after the previous one is applied; computation stays a function of one
+  snapshot.
+- **The ban.** `clippy.toml` also bans `std::fs::{read, read_to_string, read_dir, metadata,
+  symlink_metadata, canonicalize, read_link}`, `Path::{exists, try_exists, is_file, is_dir,
+  is_symlink, metadata, symlink_metadata, read_dir, read_link, canonicalize}`,
+  `std::env::{var, var_os, vars, vars_os, current_dir, current_exe, home_dir}`, and
+  `std::process::Command::new`. `forbid` now also covers `snapshot`, `layout`, `manifest`,
+  `inventory`, and `render`.
+- **Who may read.** `shell::load` and `shell::io` are the port. The remaining imperative modules
+  lift the ban for themselves with `#![expect(clippy::disallowed_methods, reason = "...")]`: `cli`
+  (`HOME`), `source` (environment, working directory, executable), `runtime` (`PATH` and file
+  modes), `github_app` (the key and the `gh` config it renews), `shell::hook_bundle` (it runs the
+  installers), and `build.rs`. This is smaller than routing each through the port: their reads are
+  the point of the module, not an input to a computation, and `expect` fails to compile when one
+  stops reading.
+
 ## Consequences
 
-- Reads are not banned. Computation still reads the source tree and installed configs, so its result
-    can depend on the disk at the moment it runs. Loading a validated snapshot at the boundary, and
-    banning `std::fs` reads, `Path::exists`, `std::env::var`, and `std::process::Command` in
-    computation, is the next step.
+- A snapshot holds raw text, and computation still parses a document where it uses it. Parsing is
+    deterministic, so it cannot make a result depend on the disk; parsing once into constrained types
+    at the boundary is left for the sync step.
+- A snapshot walks the whole source tree, so a very large source directory costs a read of its
+    documents even when a command needs only one.
 - The merge of Claude, Codex, Devin, Hermes, pi, and dsh configs is still per-provider code behind
     `ConfigSync`. Declaring ownership in the spec and syncing with one implementation is a later step.
 - The duplicate provider enums are tracked separately.

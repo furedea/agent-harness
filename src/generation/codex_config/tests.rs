@@ -3,11 +3,18 @@ use std::collections::BTreeMap;
 use super::*;
 
 fn sync_managed_document(source: &DocumentMut, target: &Path) -> Result<()> {
-    crate::shell::execute(&sync_managed_document_ops(source, target)?)
+    let files = load_documents(&[target, &managed_state_path(target)])?;
+    crate::shell::execute(&sync_managed_document_ops(source, target, &files)?)
 }
 
 fn sync_managed_config(source: &Path, target: &Path) -> Result<()> {
-    crate::shell::execute(&sync_managed_config_ops(source, target)?)
+    let files = load_documents(&[source, target, &managed_state_path(target)])?;
+    let config = ConfigFiles {
+        generated: source,
+        target,
+        files: &files,
+    };
+    crate::shell::execute(&sync_managed_config_ops(config)?)
 }
 
 fn write_config_source(
@@ -15,9 +22,11 @@ fn write_config_source(
     out: &Path,
     external_hooks: &[ExternalHookBundle],
 ) -> Result<()> {
-    crate::shell::execute(&[config_source_op(source, out, external_hooks)?])
+    let loaded = load_tree(source)?;
+    crate::shell::execute(&[config_source_op(loaded.tree(), out, external_hooks)?])
 }
 use crate::generation::codex_managed_state::MANAGED_STATE_FILE;
+use crate::shell::fixtures::{load_documents, load_tree};
 
 #[test]
 fn sync_managed_config_preserves_codex_owned_project_state() -> Result<()> {
@@ -256,7 +265,7 @@ fn env_source(pairs: &[(&str, &str)]) -> Result<DocumentMut> {
 }
 
 fn env_keys(target: &Path) -> Result<BTreeMap<String, String>> {
-    let document = read_toml_document(target)?;
+    let document = read_toml_document(&load_documents(&[target])?, target)?;
     let set = document
         .get("shell_environment_policy")
         .and_then(|policy| policy.get("set"))
@@ -356,5 +365,20 @@ fn write_file(path: &Path, content: &str) -> Result<()> {
         .map(crate::shell::fixtures::create_dir_all)
         .transpose()?;
     crate::shell::fixtures::write(path, content)?;
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn sync_managed_document_starts_from_an_empty_document_when_the_target_is_a_dangling_symlink()
+-> Result<()> {
+    let root = crate::shell::TemporaryDirectory::create()?;
+    let target = root.path().join("config.toml");
+    crate::shell::fixtures::symlink(root.path().join("gone.toml"), &target)?;
+
+    let files = load_documents(&[&target, &managed_state_path(&target)])?;
+    let operations = sync_managed_document_ops(&env_source(&[])?, &target, &files)?;
+
+    assert_eq!(operations[0].target(), target);
     Ok(())
 }

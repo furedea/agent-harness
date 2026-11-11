@@ -4,16 +4,26 @@ use anyhow::{Context, Result, bail};
 use serde_json::{Map, Value};
 
 use crate::generation::{
-    GenerationContext, claude_permissions::PermissionRules, command_permissions,
-    external_hooks::ExternalHookBundle, hooks, permission_rule::PathRule, protection,
-    secret_path_policy,
+    GenerationContext,
+    claude_permissions::PermissionRules,
+    command_permissions,
+    external_hooks::ExternalHookBundle,
+    hooks,
+    json_documents::{read_json, read_json_or_empty},
+    permission_rule::PathRule,
+    protection, secret_path_policy,
 };
-use crate::{file_op::FileOp, layout::SourceLayout, runtime_root::RuntimeRoot};
+use crate::{
+    file_op::FileOp,
+    layout::SourceLayout,
+    runtime_root::RuntimeRoot,
+    snapshot::{ConfigFiles, Tree},
+};
 
 mod home_paths;
 
 pub(crate) fn settings_op(
-    source: &Path,
+    source: Tree<'_>,
     out: &Path,
     external_hooks: &[ExternalHookBundle],
 ) -> Result<FileOp> {
@@ -24,35 +34,30 @@ pub(crate) fn settings_op_for_runtime(
     context: GenerationContext<'_>,
     out: &Path,
 ) -> Result<FileOp> {
-    let base = read_json(&SourceLayout::new(context.source).claude_settings())?;
+    let base = read_json(
+        context.source.files(),
+        &SourceLayout::new(context.source.root()).claude_settings(),
+    )?;
     let settings = build_settings(context, base)?;
     FileOp::write_json(out, &settings)
 }
 
 /// Merges generated settings into the installed file and writes the result to `out`, leaving `~/`
 /// paths for the sync that knows the home.
-pub(crate) fn merge_settings_op(
-    generated_path: &Path,
-    installed_path: &Path,
-    out: &Path,
-) -> Result<FileOp> {
-    let merged = merged_settings(generated_path, installed_path)?;
+pub(crate) fn merge_settings_op(files: ConfigFiles<'_>, out: &Path) -> Result<FileOp> {
+    let merged = merged_settings(files)?;
     FileOp::write_json(out, &merged)
 }
 
-pub(crate) fn sync_settings_op(
-    source_path: &Path,
-    target_path: &Path,
-    home: &Path,
-) -> Result<FileOp> {
-    let mut merged = merged_settings(source_path, target_path)?;
+pub(crate) fn sync_settings_op(files: ConfigFiles<'_>, home: &Path) -> Result<FileOp> {
+    let mut merged = merged_settings(files)?;
     home_paths::expand_excluded_command_home_paths(&mut merged, home);
-    FileOp::write_json(target_path, &merged)
+    FileOp::write_json(files.target, &merged)
 }
 
-fn merged_settings(source_path: &Path, target_path: &Path) -> Result<Value> {
-    let generated = read_json(source_path)?;
-    let mut existing = read_json_or_empty(target_path)?;
+fn merged_settings(config: ConfigFiles<'_>) -> Result<Value> {
+    let generated = read_json(config.files, config.generated)?;
+    let mut existing = read_json_or_empty(config.files, config.target)?;
     merge_managed_settings(&mut existing, generated)?;
     Ok(existing)
 }
@@ -171,24 +176,6 @@ fn merge_managed_settings(existing: &mut Value, generated: Value) -> Result<()> 
     Ok(())
 }
 
-fn read_json(path: &Path) -> Result<Value> {
-    let content = std::fs::read_to_string(path)
-        .with_context(|| format!("failed to read JSON file {}", path.display()))?;
-    serde_json::from_str(&content)
-        .with_context(|| format!("failed to parse JSON file {}", path.display()))
-}
-
-fn read_json_or_empty(path: &Path) -> Result<Value> {
-    match std::fs::read_to_string(path) {
-        Ok(content) => serde_json::from_str(&content)
-            .with_context(|| format!("failed to parse JSON file {}", path.display())),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Value::Object(Map::new())),
-        Err(error) => {
-            Err(error).with_context(|| format!("failed to read JSON file {}", path.display()))
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
@@ -197,9 +184,20 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+    use crate::shell::fixtures::{load_documents, load_tree};
 
     fn sync_settings(source: &Path, target: &Path, home: &Path) -> Result<()> {
-        crate::shell::execute(&[sync_settings_op(source, target, home)?])
+        let files = load_documents(&[source, target])?;
+        let config = ConfigFiles {
+            generated: source,
+            target,
+            files: &files,
+        };
+        crate::shell::execute(&[sync_settings_op(config, home)?])
+    }
+
+    fn read_json_file(path: &Path) -> Result<Value> {
+        read_json(&load_documents(&[path])?, path)
     }
 
     #[test]
@@ -221,7 +219,9 @@ mod tests {
             }
         });
 
-        let settings = build_settings(GenerationContext::home(&root, &[]), base)?;
+        let loaded = load_tree(&root)?;
+
+        let settings = build_settings(GenerationContext::home(loaded.tree(), &[]), base)?;
 
         assert_eq!(
             settings["hooks"]["PreToolUse"][0]["hooks"][1]["command"].as_str(),
@@ -278,7 +278,9 @@ mod tests {
             }
         });
 
-        let settings = build_settings(GenerationContext::home(&root, &[]), base)?;
+        let loaded = load_tree(&root)?;
+
+        let settings = build_settings(GenerationContext::home(loaded.tree(), &[]), base)?;
 
         let deny_write = array_strings(&settings["sandbox"]["filesystem"]["denyWrite"]);
         assert_eq!(
@@ -306,7 +308,9 @@ mod tests {
         write_minimal_source(&root)?;
         let base = json!({"sandbox": {"filesystem": {"denyWrite": "~/x"}}});
 
-        let error = build_settings(GenerationContext::home(&root, &[]), base)
+        let loaded = load_tree(&root)?;
+
+        let error = build_settings(GenerationContext::home(loaded.tree(), &[]), base)
             .unwrap_err()
             .to_string();
 
@@ -327,7 +331,9 @@ mod tests {
             }
         });
 
-        let settings = build_settings(GenerationContext::home(&root, &[]), base)?;
+        let loaded = load_tree(&root)?;
+
+        let settings = build_settings(GenerationContext::home(loaded.tree(), &[]), base)?;
 
         let allow = array_strings(&settings["permissions"]["allow"]);
         let ask = array_strings(&settings["permissions"]["ask"]);
@@ -363,7 +369,7 @@ mod tests {
         sync_settings(&source, &target, &root)?;
 
         assert_eq!(
-            read_json(&target)?,
+            read_json_file(&target)?,
             json!({
                 "model": "provider-model",
                 "hooks": {"PreToolUse": ["generated-hook"]},
@@ -384,7 +390,7 @@ mod tests {
 
         sync_settings(&source, &target, &root)?;
 
-        assert_eq!(read_json(&target)?, generated);
+        assert_eq!(read_json_file(&target)?, generated);
         crate::shell::fixtures::remove_dir_all(root)?;
         Ok(())
     }

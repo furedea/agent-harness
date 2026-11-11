@@ -9,11 +9,12 @@ use crate::{
         codex_managed_state::{
             ManagedState, managed_state_op, managed_state_path, read_managed_state,
         },
-        external_hooks::ExternalHookBundle,
+        external_hooks::{ExternalHookBundle, OpenBundle},
         protection,
     },
     layout::SourceLayout,
     runtime_root::RuntimeRoot,
+    snapshot::{ConfigFiles, Snapshot, Tree},
 };
 
 const MANAGED_KEYS: &[&str] = &[
@@ -33,7 +34,7 @@ const MANAGED_KEYS: &[&str] = &[
 ];
 
 pub(crate) fn config_source_op(
-    source: &Path,
+    source: Tree<'_>,
     out: &Path,
     external_hooks: &[ExternalHookBundle],
 ) -> Result<FileOp> {
@@ -43,12 +44,9 @@ pub(crate) fn config_source_op(
     ))
 }
 
-pub(crate) fn sync_managed_config_ops(
-    source_path: &Path,
-    target_path: &Path,
-) -> Result<Vec<FileOp>> {
-    let source = read_toml_document(source_path)?;
-    sync_managed_document_ops(&source, target_path)
+pub(crate) fn sync_managed_config_ops(config: ConfigFiles<'_>) -> Result<Vec<FileOp>> {
+    let source = read_toml_document(config.files, config.generated)?;
+    sync_managed_document_ops(&source, config.target, config.files)
 }
 
 pub(crate) fn generated_config_source(
@@ -59,7 +57,10 @@ pub(crate) fn generated_config_source(
         .context("failed to parse generated Codex config source")
 }
 
-fn config_source_content(source: &Path, external_hooks: &[ExternalHookBundle]) -> Result<String> {
+fn config_source_content(
+    source: Tree<'_>,
+    external_hooks: &[ExternalHookBundle],
+) -> Result<String> {
     config_source_content_for_runtime(crate::generation::GenerationContext {
         source,
         external_hooks,
@@ -76,8 +77,10 @@ fn config_source_content_for_runtime(
         external_hooks,
         ..
     } = context;
-    let base_path = SourceLayout::new(source).codex_config();
-    let base = std::fs::read_to_string(&base_path)
+    let base_path = SourceLayout::new(source.root()).codex_config();
+    let base = source
+        .files()
+        .read_text(&base_path)
         .with_context(|| format!("failed to read TOML file {}", base_path.display()))?;
     let mut document = base
         .parse::<DocumentMut>()
@@ -91,16 +94,20 @@ fn config_source_content_for_runtime(
         merge_item(document.entry(key).or_insert(Item::None), item);
     }
     for bundle in external_hooks {
-        merge_external_config(&mut document, bundle)?;
+        merge_external_config(&mut document, &bundle.open(source.files())?, source.files())?;
     }
     Ok(document.to_string())
 }
 
-fn merge_external_config(document: &mut DocumentMut, bundle: &ExternalHookBundle) -> Result<()> {
-    let Some(path) = bundle.codex_config_path()? else {
+fn merge_external_config(
+    document: &mut DocumentMut,
+    bundle: &OpenBundle<'_>,
+    files: &Snapshot,
+) -> Result<()> {
+    let Some(path) = bundle.codex_config_path() else {
         return Ok(());
     };
-    let generated = read_toml_document(&path)?;
+    let generated = read_toml_document(files, &path)?;
     merge_external_features(document, &generated, &path)
 }
 
@@ -137,16 +144,17 @@ fn merge_tables(target: &mut dyn TableLike, source: &dyn TableLike) {
 pub(crate) fn sync_managed_document_ops(
     source: &DocumentMut,
     target_path: &Path,
+    files: &Snapshot,
 ) -> Result<Vec<FileOp>> {
-    let mut target = if target_path.exists() {
-        read_toml_document(target_path)?
+    let mut target = if files.exists(target_path) {
+        read_toml_document(files, target_path)?
     } else {
         DocumentMut::new()
     };
 
     sync_managed_keys(source, &mut target);
     let state_path = managed_state_path(target_path);
-    let state = sync_env_keys(source, &mut target, &read_managed_state(&state_path))?;
+    let state = sync_env_keys(source, &mut target, &read_managed_state(files, &state_path))?;
 
     Ok(vec![
         FileOp::write(target_path, target.to_string()),
@@ -225,8 +233,9 @@ fn remove_env_keys<'a>(target: &mut DocumentMut, keys: impl Iterator<Item = &'a 
     });
 }
 
-fn read_toml_document(path: &Path) -> Result<DocumentMut> {
-    let content = std::fs::read_to_string(path)
+fn read_toml_document(files: &Snapshot, path: &Path) -> Result<DocumentMut> {
+    let content = files
+        .read_text(path)
         .with_context(|| format!("failed to read TOML file {}", path.display()))?;
     content
         .parse::<DocumentMut>()

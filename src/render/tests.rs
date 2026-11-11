@@ -1,4 +1,5 @@
-use crate::regular_files::regular_files;
+use crate::shell::fixtures::{load_documents, load_tree};
+use crate::snapshot::ConfigFiles;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -11,7 +12,7 @@ fn install_places_codex_and_claude_files_under_output_root() -> Result<()> {
     let out = root.join("out");
     write_minimal_source(&source)?;
 
-    install(GenerationContext::home(&source, &[]), &out)?;
+    install_home(&source, &out)?;
 
     let missing_files: Vec<&str> = [
         ".codex/AGENTS.md",
@@ -59,7 +60,7 @@ fn install_accepts_read_only_command_regex_source_files() -> Result<()> {
         .into_iter()
         .try_for_each(|file_name| set_readonly(&source.join("hooks/rules").join(file_name)))?;
 
-    install(GenerationContext::home(&source, &[]), &out)?;
+    install_home(&source, &out)?;
 
     assert!(
         out.join(".claude/hooks/rules/allowed_commands.json")
@@ -80,7 +81,7 @@ fn verify_rejects_a_missing_codex_config() -> Result<()> {
     let source = root.join("source");
     let out = root.join("out");
     write_minimal_source(&source)?;
-    install(GenerationContext::home(&source, &[]), &out)?;
+    install_home(&source, &out)?;
     verify(&out)?;
     std::fs::remove_file(out.join(".codex/config.toml"))?;
 
@@ -97,13 +98,13 @@ fn install_preserves_existing_files_when_source_generation_fails() -> Result<()>
     let source = root.join("source");
     let out = root.join("out");
     write_minimal_source(&source)?;
-    install(GenerationContext::home(&source, &[]), &out)?;
+    install_home(&source, &out)?;
     let before = installed_contents(&out)?;
     write_file(&source.join("AGENTS.md"), "replacement instructions\n")?;
     std::fs::remove_file(source.join("hooks/hook.sh"))?;
     write_file(&source.join("codex/config.toml"), "invalid TOML [")?;
 
-    let error = install(GenerationContext::home(&source, &[]), &out).unwrap_err();
+    let error = install_home(&source, &out).unwrap_err();
 
     assert!(format!("{error:#}").contains("TOML"));
     assert_eq!(installed_contents(&out)?, before);
@@ -111,8 +112,21 @@ fn install_preserves_existing_files_when_source_generation_fails() -> Result<()>
     Ok(())
 }
 
+fn install_home(source: &Path, out: &Path) -> Result<()> {
+    let runtime_root = RuntimeRoot::home();
+    let request = RenderRequest {
+        dsh_profile: "web",
+        source,
+        external_hooks: &[],
+        runtime_root: &runtime_root,
+    };
+    install(&request, out)
+}
+
 fn installed_contents(root: &Path) -> Result<Vec<(PathBuf, Vec<u8>)>> {
-    regular_files(root)?
+    load_tree(root)?
+        .files()
+        .regular_files(root)
         .into_iter()
         .map(|path| Ok((path.strip_prefix(root)?.to_path_buf(), std::fs::read(path)?)))
         .collect()
@@ -124,7 +138,7 @@ fn verify_rejects_required_paths_with_the_wrong_file_type() -> Result<()> {
     let source = root.join("source");
     let out = root.join("out");
     write_minimal_source(&source)?;
-    install(GenerationContext::home(&source, &[]), &out)?;
+    install_home(&source, &out)?;
     let replace_with_directory = |path: &Path| std::fs::create_dir(path);
     let replace_with_file = |path: &Path| std::fs::write(path, "not a directory");
     assert_verify_rejects(&out, ".claude/settings.json", replace_with_directory)?;
@@ -321,7 +335,7 @@ fn install_keeps_top_level_claude_settings_it_does_not_generate() -> Result<()> 
         r#"{"model":"user-model","hooks":{"Stale":[]}}"#,
     )?;
 
-    install(GenerationContext::home(&source, &[]), &out)?;
+    install_home(&source, &out)?;
 
     let settings: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(out.join(".claude/settings.json"))?)?;
@@ -346,10 +360,16 @@ fn install_matches_the_merge_the_home_manager_build_applies() -> Result<()> {
     }
     generate_claude_settings(&source, &generated)?;
 
+    let files = load_documents(&[&generated, &synced])?;
+    let config = ConfigFiles {
+        generated: &generated,
+        target: &synced,
+        files: &files,
+    };
     crate::shell::execute(&[crate::generation::claude_config::merge_settings_op(
-        &generated, &synced, &synced,
+        config, &synced,
     )?])?;
-    install(GenerationContext::home(&source, &[]), &out)?;
+    install_home(&source, &out)?;
 
     assert_eq!(
         std::fs::read_to_string(out.join(".claude/settings.json"))?,
@@ -369,7 +389,7 @@ fn install_rejects_a_source_without_hooks_and_keeps_the_installed_hooks() -> Res
     std::fs::write(out.join(".claude/hooks/installed.sh"), "installed\n")?;
     std::fs::remove_dir_all(source.join("hooks"))?;
 
-    assert!(install(GenerationContext::home(&source, &[]), &out).is_err());
+    assert!(install_home(&source, &out).is_err());
 
     assert_eq!(
         std::fs::read_to_string(out.join(".claude/hooks/installed.sh"))?,
@@ -390,7 +410,7 @@ fn install_leaves_home_paths_to_the_sync_when_the_prefix_is_not_the_home() -> Re
         r#"{"sandbox":{"excludedCommands":["~/.local/bin/tool *"]}}"#,
     )?;
 
-    install(GenerationContext::home(&source, &[]), &out)?;
+    install_home(&source, &out)?;
 
     let settings = std::fs::read_to_string(out.join(".claude/settings.json"))?;
     assert!(settings.contains("\"~/.local/bin/tool *\""));
