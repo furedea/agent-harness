@@ -308,3 +308,90 @@ fn write_file(path: &Path, content: &str) -> Result<()> {
     std::fs::write(path, content)?;
     Ok(())
 }
+
+#[test]
+fn install_keeps_top_level_claude_settings_it_does_not_generate() -> Result<()> {
+    let root = test_root("install_keeps_top_level_claude_settings_it_does_not_generate")?;
+    let source = root.join("source");
+    let out = root.join("out");
+    write_minimal_source(&source)?;
+    std::fs::create_dir_all(out.join(".claude"))?;
+    std::fs::write(
+        out.join(".claude/settings.json"),
+        r#"{"model":"user-model","hooks":{"Stale":[]}}"#,
+    )?;
+
+    install(GenerationContext::home(&source, &[]), &out)?;
+
+    let settings: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(out.join(".claude/settings.json"))?)?;
+    assert_eq!(settings["model"], "user-model");
+    assert!(settings["hooks"].get("Stale").is_none());
+    assert!(settings["permissions"].is_object());
+    std::fs::remove_dir_all(root)?;
+    Ok(())
+}
+
+#[test]
+fn install_matches_the_merge_the_home_manager_build_applies() -> Result<()> {
+    let root = test_root("install_matches_the_merge_the_home_manager_build_applies")?;
+    let source = root.join("source");
+    let out = root.join("out");
+    let generated = root.join("generated.json");
+    let synced = root.join("synced/settings.json");
+    write_minimal_source(&source)?;
+    for target in [&out.join(".claude/settings.json"), &synced] {
+        std::fs::create_dir_all(target.parent().unwrap())?;
+        std::fs::write(target, r#"{"model":"user-model"}"#)?;
+    }
+    crate::generation::claude_config::write_settings(&source, &generated, &[])?;
+
+    crate::generation::claude_config::merge_settings(&generated, &synced)?;
+    install(GenerationContext::home(&source, &[]), &out)?;
+
+    assert_eq!(
+        std::fs::read_to_string(out.join(".claude/settings.json"))?,
+        std::fs::read_to_string(&synced)?
+    );
+    std::fs::remove_dir_all(root)?;
+    Ok(())
+}
+
+#[test]
+fn install_rejects_a_source_without_hooks_and_keeps_the_installed_hooks() -> Result<()> {
+    let root = test_root("install_rejects_a_source_without_hooks_and_keeps_the_installed_hooks")?;
+    let source = root.join("source");
+    let out = root.join("out");
+    write_minimal_source(&source)?;
+    std::fs::create_dir_all(out.join(".claude/hooks"))?;
+    std::fs::write(out.join(".claude/hooks/installed.sh"), "installed\n")?;
+    std::fs::remove_dir_all(source.join("hooks"))?;
+
+    assert!(install(GenerationContext::home(&source, &[]), &out).is_err());
+
+    assert_eq!(
+        std::fs::read_to_string(out.join(".claude/hooks/installed.sh"))?,
+        "installed\n"
+    );
+    std::fs::remove_dir_all(root)?;
+    Ok(())
+}
+
+#[test]
+fn install_leaves_home_paths_to_the_sync_when_the_prefix_is_not_the_home() -> Result<()> {
+    let root = test_root("install_leaves_home_paths_to_the_sync")?;
+    let source = root.join("source");
+    let out = root.join("out");
+    write_minimal_source(&source)?;
+    std::fs::write(
+        source.join("claude/settings.json"),
+        r#"{"sandbox":{"excludedCommands":["~/.local/bin/tool *"]}}"#,
+    )?;
+
+    install(GenerationContext::home(&source, &[]), &out)?;
+
+    let settings = std::fs::read_to_string(out.join(".claude/settings.json"))?;
+    assert!(settings.contains("\"~/.local/bin/tool *\""));
+    std::fs::remove_dir_all(root)?;
+    Ok(())
+}

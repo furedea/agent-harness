@@ -1,4 +1,4 @@
-use crate::provider::spec::{ProviderId, ProviderSpec, SkillSource};
+use crate::provider::spec::{CommandRuleSpec, ProviderId, ProviderSpec, SkillSource};
 use std::path::{Path, PathBuf};
 
 const MANIFEST_PATH: &str = "manifest.json";
@@ -45,6 +45,22 @@ impl<'a> SourceLayout<'a> {
             .iter()
             .copied()
             .filter(|relative| !self.root.join(relative).is_file())
+            .collect()
+    }
+
+    /// Source directories the installation cannot do without: those holding the hook rule files.
+    pub(crate) fn required_directories_for(self, providers: &[ProviderSpec]) -> Vec<PathBuf> {
+        providers
+            .iter()
+            .filter(|spec| matches!(spec.command_rule, Some(CommandRuleSpec::ClaudeRules { .. })))
+            .map(|spec| self.root.join(spec.hook.source))
+            .collect()
+    }
+
+    pub(crate) fn missing_required_directories(self, providers: &[ProviderSpec]) -> Vec<PathBuf> {
+        self.required_directories_for(providers)
+            .into_iter()
+            .filter(|path| !path.is_dir())
             .collect()
     }
 

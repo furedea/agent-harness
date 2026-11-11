@@ -5,24 +5,189 @@ use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, ensure};
 
+/// Copies a source directory over `target` so that a failure leaves `target` untouched.
 pub(crate) fn copy_dir(source: &Path, target: &Path) -> Result<()> {
-    if target.exists() {
-        std::fs::remove_dir_all(target)
-            .with_context(|| format!("failed to remove directory {}", target.display()))?;
+    let created = create_missing_parents(target)?;
+    let published = stage_directory(source, target).and_then(|staged| {
+        let swapped = swap_in(&staged, target);
+        let _ = remove_path(&staged);
+        swapped
+    });
+    match published {
+        Ok(backup) => {
+            // The replacement is live, so a backup that cannot be deleted is only a leftover.
+            let _ = backup.as_deref().map(discard);
+            Ok(())
+        }
+        Err(error) => {
+            remove_created_parents(&created);
+            Err(error)
+        }
     }
-    std::fs::create_dir_all(target)
-        .with_context(|| format!("failed to create directory {}", target.display()))?;
+}
 
+/// Copies `source` into a fresh sibling of `target`, which must already have its parent.
+pub(crate) fn stage_directory(source: &Path, target: &Path) -> Result<PathBuf> {
+    ensure!(
+        source.is_dir(),
+        "source directory does not exist: {}",
+        source.display()
+    );
+    let staged = sibling_path(target, "tmp")?;
+    let copied = copy_tree(source, &staged);
+    if copied.is_err() {
+        let _ = remove_path(&staged);
+    }
+    copied.map(|()| staged)
+}
+
+fn copy_tree(source: &Path, staged: &Path) -> Result<()> {
+    std::fs::create_dir(staged)
+        .with_context(|| format!("failed to create directory {}", staged.display()))?;
     for file in regular_files(source)? {
         let relative = file
             .strip_prefix(source)
             .with_context(|| format!("failed to strip prefix {}", source.display()))?;
-        copy_file(&file, &target.join(relative))?;
+        copy_file(&file, &staged.join(relative))?;
     }
-
     Ok(())
+}
+
+/// Writes `content` into a fresh sibling of `target`, which must already have its parent.
+pub(crate) fn stage_file(target: &Path, content: &[u8]) -> Result<PathBuf> {
+    let (path, mut file) = create_temporary_file(target)?;
+    let written = file
+        .write_all(content)
+        .with_context(|| format!("failed to write temporary file for {}", target.display()));
+    if written.is_err() {
+        let _ = remove_path(&path);
+    }
+    written.map(|()| path)
+}
+
+/// Renames `staged` over `target`, returning the backup of what was there.
+pub(crate) fn swap_in(staged: &Path, target: &Path) -> Result<Option<PathBuf>> {
+    let backup = back_up(target)?;
+    let renamed = std::fs::rename(staged, target)
+        .with_context(|| format!("failed to replace {}", target.display()));
+    let Err(error) = renamed else {
+        return Ok(backup);
+    };
+    match restore(target, backup.as_deref()) {
+        Ok(()) => Err(error),
+        Err(restore_error) => Err(error.context(format!(
+            "could not restore {} from {}: {restore_error:#}",
+            target.display(),
+            backup.as_deref().map_or_else(
+                || "nothing (it did not exist)".to_owned(),
+                |path| path.display().to_string()
+            )
+        ))),
+    }
+}
+
+/// Backs up a regular file with a hard link so it stays in place until the rename replaces it.
+fn back_up(target: &Path) -> Result<Option<PathBuf>> {
+    let is_file = std::fs::symlink_metadata(target).is_ok_and(|metadata| metadata.is_file());
+    if !is_file {
+        return move_aside(target);
+    }
+    let backup = sibling_path(target, "bak")?;
+    std::fs::hard_link(target, &backup)
+        .or_else(|_| std::fs::copy(target, &backup).map(drop))
+        .with_context(|| format!("failed to back up {}", target.display()))?;
+    Ok(Some(backup))
+}
+
+/// Creates the missing parent directories of `target` and returns them, outermost first.
+pub(crate) fn create_missing_parents(target: &Path) -> Result<Vec<PathBuf>> {
+    let Some(parent) = target.parent() else {
+        return Ok(Vec::new());
+    };
+    let mut missing: Vec<PathBuf> = parent
+        .ancestors()
+        .take_while(|ancestor| !ancestor.exists())
+        .map(Path::to_path_buf)
+        .collect();
+    missing.reverse();
+    if let Err(error) = create_parent(target) {
+        remove_created_parents(&missing);
+        return Err(error);
+    }
+    Ok(missing)
+}
+
+/// Removes directories `create_missing_parents` made, innermost first, if they are still empty.
+pub(crate) fn remove_created_parents(created: &[PathBuf]) {
+    for directory in created.iter().rev() {
+        let _ = std::fs::remove_dir(directory);
+    }
+}
+
+fn create_parent(target: &Path) -> Result<()> {
+    let Some(parent) = target.parent() else {
+        return Ok(());
+    };
+    std::fs::create_dir_all(parent)
+        .with_context(|| format!("failed to create directory {}", parent.display()))
+}
+
+/// Renames an existing `target` to a sibling backup, or returns `None` when nothing exists.
+pub(crate) fn move_aside(target: &Path) -> Result<Option<PathBuf>> {
+    if std::fs::symlink_metadata(target).is_err() {
+        return Ok(None);
+    }
+    let backup = sibling_path(target, "bak")?;
+    std::fs::rename(target, &backup)
+        .with_context(|| format!("failed to move {} aside", target.display()))?;
+    Ok(Some(backup))
+}
+
+/// Puts `backup` back at `target`, discarding whatever was published there meanwhile.
+pub(crate) fn restore(target: &Path, backup: Option<&Path>) -> Result<()> {
+    let Some(backup) = backup else {
+        return remove_path(target);
+    };
+    let replaceable_by_rename =
+        |path: &Path| std::fs::symlink_metadata(path).is_ok_and(|metadata| !metadata.is_dir());
+    if !(replaceable_by_rename(target) && replaceable_by_rename(backup)) {
+        remove_path(target)?;
+    }
+    std::fs::rename(backup, target)
+        .with_context(|| format!("failed to restore {}", target.display()))
+}
+
+pub(crate) fn discard(backup: &Path) -> Result<()> {
+    remove_path(backup)
+}
+
+fn remove_path(path: &Path) -> Result<()> {
+    let Ok(metadata) = std::fs::symlink_metadata(path) else {
+        return Ok(());
+    };
+    let removal = if metadata.is_dir() {
+        std::fs::remove_dir_all(path)
+    } else {
+        std::fs::remove_file(path)
+    };
+    removal.with_context(|| format!("failed to remove {}", path.display()))
+}
+
+fn sibling_path(target: &Path, label: &str) -> Result<PathBuf> {
+    static NEXT_ID: AtomicU64 = AtomicU64::new(0);
+    let name = target.file_name().context("output path must name a file")?;
+    let candidate = || {
+        let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
+        let mut sibling_name = std::ffi::OsString::from(".");
+        sibling_name.push(name);
+        sibling_name.push(format!(".{}.{id}.{label}", std::process::id()));
+        target.with_file_name(sibling_name)
+    };
+    std::iter::repeat_with(candidate)
+        .find(|path| std::fs::symlink_metadata(path).is_err())
+        .context("no free sibling path")
 }
 
 pub(crate) fn copy_file(source: &Path, target: &Path) -> Result<()> {
@@ -231,6 +396,74 @@ mod tests {
         assert!(std::fs::symlink_metadata(&target)?.file_type().is_file());
         assert_eq!(std::fs::read_to_string(&target)?, "installed\n");
         assert_eq!(std::fs::read_to_string(&source)?, "store\n");
+        std::fs::remove_dir_all(root)?;
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod directory_tests {
+    use super::*;
+
+    fn root(name: &str) -> Result<PathBuf> {
+        let root =
+            std::env::temp_dir().join(format!("agent-harness-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root)?;
+        Ok(root)
+    }
+
+    #[test]
+    fn copy_dir_rejects_a_missing_source_and_keeps_the_target() -> Result<()> {
+        let root = root("copy-dir-missing")?;
+        std::fs::create_dir_all(root.join("target"))?;
+        std::fs::write(root.join("target/kept"), "kept\n")?;
+
+        assert!(copy_dir(&root.join("absent"), &root.join("target")).is_err());
+
+        assert_eq!(std::fs::read_to_string(root.join("target/kept"))?, "kept\n");
+        std::fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn copy_dir_removes_the_parents_it_created_when_the_source_is_missing() -> Result<()> {
+        let root = root("copy-dir-parents")?;
+
+        assert!(copy_dir(&root.join("absent"), &root.join("new/parent/target")).is_err());
+
+        assert!(!root.join("new").exists());
+        std::fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn restore_puts_a_directory_back_over_a_published_file() -> Result<()> {
+        let root = root("restore-type-change")?;
+        std::fs::create_dir_all(root.join("backup"))?;
+        std::fs::write(root.join("backup/kept"), "kept\n")?;
+        std::fs::write(root.join("target"), "published\n")?;
+
+        restore(&root.join("target"), Some(&root.join("backup")))?;
+
+        assert_eq!(std::fs::read_to_string(root.join("target/kept"))?, "kept\n");
+        std::fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn copy_dir_replaces_the_target_and_leaves_no_sibling_behind() -> Result<()> {
+        let root = root("copy-dir-replace")?;
+        std::fs::create_dir_all(root.join("source"))?;
+        std::fs::write(root.join("source/new"), "new\n")?;
+        std::fs::create_dir_all(root.join("target"))?;
+        std::fs::write(root.join("target/old"), "old\n")?;
+
+        copy_dir(&root.join("source"), &root.join("target"))?;
+
+        assert!(!root.join("target/old").exists());
+        assert_eq!(std::fs::read_to_string(root.join("target/new"))?, "new\n");
+        assert_eq!(std::fs::read_dir(&root)?.count(), 2);
         std::fs::remove_dir_all(root)?;
         Ok(())
     }
