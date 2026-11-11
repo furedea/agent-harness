@@ -9,3 +9,12 @@
 //! declares says which parts of its config the harness writes.
 
 pub(crate) mod codec;
+mod engine;
+mod home_paths;
+pub(crate) mod installed;
+
+#[expect(
+    unused_imports,
+    reason = "the providers migrate to the engine in the next commit"
+)]
+pub(crate) use engine::Merge;
