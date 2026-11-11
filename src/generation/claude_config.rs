@@ -50,7 +50,7 @@ fn write_settings_file(target_path: &Path, settings: &Value) -> Result<()> {
     fs_ops::write_file_atomically(target_path, content.as_bytes())
 }
 
-fn build_settings(context: GenerationContext<'_>, mut settings: Value) -> Result<Value> {
+pub(crate) fn build_settings(context: GenerationContext<'_>, mut settings: Value) -> Result<Value> {
     let root = object_mut(&mut settings, "Claude settings root")?;
 
     relocate_status_line(root, context.runtime_root)?;

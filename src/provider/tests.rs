@@ -164,6 +164,8 @@ fn registry_derivation_preserves_install_order() {
             ".pi/agent/hooks.json",
             ".pi/agent/settings.json",
             ".pi/agent/extensions/hook_bridge.ts",
+            ".pi/agent/extensions/bash_sandbox.ts",
+            ".pi/agent/extensions/sandbox_policy.json",
             ".dsh/AGENTS.md",
             ".dsh/hooks.json",
         ]

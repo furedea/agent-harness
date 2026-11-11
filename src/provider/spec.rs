@@ -392,10 +392,22 @@ const PI: ProviderSpec = ProviderSpec {
         external_file: ".pi/hooks.json",
         bridge: Bridge {
             directory: None,
-            assets: &[Asset {
-                destination: ".pi/agent/extensions/hook_bridge.ts",
-                content: include_str!("../generation/assets/pi/hook_bridge.ts"),
-            }],
+            assets: &[
+                Asset {
+                    destination: ".pi/agent/extensions/hook_bridge.ts",
+                    content: include_str!("../generation/assets/pi/hook_bridge.ts"),
+                },
+                Asset {
+                    destination: ".pi/agent/extensions/bash_sandbox.ts",
+                    content: include_str!("../generation/assets/pi/bash_sandbox.ts"),
+                },
+                Asset {
+                    destination: ".pi/agent/extensions/sandbox_policy.json",
+                    // Rendering replaces this invalid policy before publication.
+                    content: "{}
+",
+                },
+            ],
         },
     },
     skill: Some(&SkillSpec {

@@ -511,7 +511,19 @@ Devin, Hermes Agent, and pi config directories.
 | `~/.pi/agent/settings.json`              | Managed model defaults merged with user keys |
 | `~/.pi/agent/hooks.json`                 | pi hook manifest                             |
 | `~/.pi/agent/extensions/hook_bridge.ts`  | pi extension that runs the manifest          |
+| `~/.pi/agent/extensions/bash_sandbox.ts` | pi bash tool replacement using srt           |
+| `~/.pi/agent/extensions/sandbox_policy.json` | Generated srt policy                     |
 | `~/.pi/hooks/`                           | pi hook adapters                             |
+
+Pi's agent bash tool requires `srt` on `PATH` with recursive `denyGlobRegex`
+support; nixpkgs sandbox-runtime 0.0.52 does not satisfy this requirement.
+Installing srt is separate from installing the harness. The policy comes from
+`claude/settings.json`'s sandbox block and adds Pi authentication-file read protection.
+At startup the extension resolves the worktree and common Git directory, grants them write
+access, and denies writes to Git hooks and configuration. Invalid settings or unavailable
+srt block bash execution. Pi itself, hooks, and user `!` commands run outside this wrapper.
+File-tool writes stay inside the worktree, file tools cannot access `.git`, and file-hook
+failures block read, write, and edit calls.
 
 Installation replaces the managed hook and skill directories and rewrites Claude Code's managed
 settings. Codex config synchronization replaces only these managed top-level keys and preserves

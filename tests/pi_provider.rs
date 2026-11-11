@@ -178,3 +178,88 @@ fn assert_synced_settings(source: &Path, target: &Path, expected: &Value) -> Res
     assert_eq!(&actual, expected);
     Ok(())
 }
+
+#[test]
+fn pi_install_generates_complete_srt_policy_from_claude_source() -> Result<()> {
+    let root = std::env::temp_dir().join(format!("pi-sandbox-{}", std::process::id()));
+    let source = root.join("source");
+    std::fs::create_dir_all(&source)?;
+    assert!(
+        Command::new("cp")
+            .arg("-R")
+            .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/complete-source/."))
+            .arg(&source)
+            .status()?
+            .success()
+    );
+    let mut claude: Value =
+        serde_json::from_slice(&std::fs::read(source.join("claude/settings.json"))?)?;
+    claude["sandbox"] = json!({
+        "network": {"allowedDomains": ["github.com"], "allowUnixSockets": ["/custom/socket"]},
+        "filesystem": {"denyRead": ["~/.ssh"], "denyWrite": ["~/**/.git/hooks"], "allowWrite": ["~/.cache/nix"]}
+    });
+    std::fs::write(
+        source.join("claude/settings.json"),
+        serde_json::to_vec(&claude)?,
+    )?;
+    let output = Command::new(env!("CARGO_BIN_EXE_agent-harness"))
+        .args(["install", "--source"])
+        .arg(&source)
+        .arg("--prefix")
+        .arg(root.join("home"))
+        .output()?;
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let policy: Value = serde_json::from_slice(&std::fs::read(
+        root.join("home/.pi/agent/extensions/sandbox_policy.json"),
+    )?)?;
+    assert_eq!(policy["network"]["allowedDomains"], json!(["github.com"]));
+    assert_eq!(policy["network"]["deniedDomains"], json!([]));
+    assert!(
+        policy["network"]["allowUnixSockets"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("/nix/var/nix/daemon-socket/socket"))
+    );
+    assert!(
+        policy["filesystem"]["denyRead"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("~/.pi/agent/auth.json"))
+    );
+    assert!(
+        policy["filesystem"]["denyRead"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("~/.ssh"))
+    );
+    assert!(
+        policy["filesystem"]["denyWrite"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("~/**/.git/hooks"))
+    );
+    assert_eq!(policy["filesystem"]["allowWrite"], json!(["~/.cache/nix"]));
+    assert!(
+        root.join("home/.pi/agent/extensions/bash_sandbox.ts")
+            .is_file()
+    );
+    std::fs::remove_dir_all(root)?;
+    Ok(())
+}
+
+#[test]
+fn pi_bash_tool_runs_only_through_srt() -> Result<()> {
+    let output = Command::new("node")
+        .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/pi_sandbox_smoke.mjs"))
+        .output()?;
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    Ok(())
+}

@@ -32,6 +32,8 @@
     "~/.pi/agent/hooks.json",
     "~/.pi/agent/settings.json",
     "~/.pi/agent/extensions/hook_bridge.ts",
+    "~/.pi/agent/extensions/bash_sandbox.ts",
+    "~/.pi/agent/extensions/sandbox_policy.json",
     "~/.dsh/AGENTS.md",
     "~/.dsh/hooks.json",
     "~/.claude/hooks/rules/command_permissions.json",

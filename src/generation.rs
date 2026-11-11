@@ -16,6 +16,7 @@ pub(crate) mod hooks;
 mod io;
 pub(crate) mod permission_rule;
 pub(crate) mod pi_config;
+pub(crate) mod pi_sandbox;
 pub(crate) mod protection;
 pub(crate) mod secret_path_policy;
 pub(crate) mod skills;

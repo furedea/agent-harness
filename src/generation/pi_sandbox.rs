@@ -1,0 +1,51 @@
+use std::path::Path;
+
+use anyhow::{Context, Result};
+use serde_json::{Value, json};
+
+use super::{GenerationContext, claude_config, io};
+use crate::layout::SourceLayout;
+
+pub(crate) fn write_policy(context: GenerationContext<'_>, out: &Path) -> Result<()> {
+    let base = std::fs::read(SourceLayout::new(context.source).claude_settings())?;
+    let settings = claude_config::build_settings(context, serde_json::from_slice(&base)?)?;
+    let sandbox = settings.get("sandbox").context("missing sandbox")?;
+    let network = sandbox.get("network").unwrap_or(&Value::Null);
+    let filesystem = sandbox.get("filesystem").context("missing filesystem")?;
+    let mut sockets = strings(network, "allowUnixSockets")?;
+    sockets.push(json!("/nix/var/nix/daemon-socket/socket"));
+    let mut deny_read = strings(filesystem, "denyRead")?;
+    deny_read.push(json!("~/.pi/agent/auth.json"));
+    let policy = json!({
+        "network": {
+            "allowedDomains": strings(network, "allowedDomains")?,
+            "deniedDomains": strings(network, "deniedDomains")?,
+            "allowUnixSockets": sockets
+        },
+        "filesystem": {
+            "denyRead": deny_read,
+            "allowWrite": strings(filesystem, "allowWrite")?,
+            "denyWrite": strings(filesystem, "denyWrite")?
+        }
+    });
+    io::write_json(
+        &out.join(".pi/agent/extensions/sandbox_policy.json"),
+        &policy,
+    )
+}
+
+fn strings(object: &Value, key: &str) -> Result<Vec<Value>> {
+    let Some(value) = object.get(key) else {
+        return Ok(Vec::new());
+    };
+    let values = value
+        .as_array()
+        .with_context(|| format!("{key} must be an array"))?;
+    anyhow::ensure!(
+        values
+            .iter()
+            .all(|value| value.as_str().is_some_and(|s| !s.is_empty())),
+        "{key} entries must be nonempty strings"
+    );
+    Ok(values.clone())
+}
