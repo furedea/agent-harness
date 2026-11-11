@@ -5,37 +5,49 @@ use serde_json::{Map, Value};
 
 use crate::generation::{
     GenerationContext, claude_permissions::PermissionRules, command_permissions,
-    external_hooks::ExternalHookBundle, hooks, io, permission_rule::PathRule, protection,
+    external_hooks::ExternalHookBundle, hooks, permission_rule::PathRule, protection,
     secret_path_policy,
 };
-use crate::{fs_ops, layout::SourceLayout, runtime_root::RuntimeRoot};
+use crate::{file_op::FileOp, layout::SourceLayout, runtime_root::RuntimeRoot};
 
 mod home_paths;
 
-pub(crate) fn write_settings(
+pub(crate) fn settings_op(
     source: &Path,
     out: &Path,
     external_hooks: &[ExternalHookBundle],
-) -> Result<()> {
-    write_settings_for_runtime(GenerationContext::home(source, external_hooks), out)
+) -> Result<FileOp> {
+    settings_op_for_runtime(GenerationContext::home(source, external_hooks), out)
 }
 
-pub(crate) fn write_settings_for_runtime(context: GenerationContext<'_>, out: &Path) -> Result<()> {
+pub(crate) fn settings_op_for_runtime(
+    context: GenerationContext<'_>,
+    out: &Path,
+) -> Result<FileOp> {
     let base = read_json(&SourceLayout::new(context.source).claude_settings())?;
     let settings = build_settings(context, base)?;
-    io::write_json(out, &settings)
+    FileOp::write_json(out, &settings)
 }
 
-/// Merges generated settings into the target, leaving `~/` paths for the sync that knows the home.
-pub(crate) fn merge_settings(source_path: &Path, target_path: &Path) -> Result<()> {
-    let merged = merged_settings(source_path, target_path)?;
-    write_settings_file(target_path, &merged)
+/// Merges generated settings into the installed file and writes the result to `out`, leaving `~/`
+/// paths for the sync that knows the home.
+pub(crate) fn merge_settings_op(
+    generated_path: &Path,
+    installed_path: &Path,
+    out: &Path,
+) -> Result<FileOp> {
+    let merged = merged_settings(generated_path, installed_path)?;
+    FileOp::write_json(out, &merged)
 }
 
-pub(crate) fn sync_settings(source_path: &Path, target_path: &Path, home: &Path) -> Result<()> {
+pub(crate) fn sync_settings_op(
+    source_path: &Path,
+    target_path: &Path,
+    home: &Path,
+) -> Result<FileOp> {
     let mut merged = merged_settings(source_path, target_path)?;
     home_paths::expand_excluded_command_home_paths(&mut merged, home);
-    write_settings_file(target_path, &merged)
+    FileOp::write_json(target_path, &merged)
 }
 
 fn merged_settings(source_path: &Path, target_path: &Path) -> Result<Value> {
@@ -43,11 +55,6 @@ fn merged_settings(source_path: &Path, target_path: &Path) -> Result<Value> {
     let mut existing = read_json_or_empty(target_path)?;
     merge_managed_settings(&mut existing, generated)?;
     Ok(existing)
-}
-
-fn write_settings_file(target_path: &Path, settings: &Value) -> Result<()> {
-    let content = serde_json::to_string_pretty(settings)? + "\n";
-    fs_ops::write_file_atomically(target_path, content.as_bytes())
 }
 
 pub(crate) fn build_settings(context: GenerationContext<'_>, mut settings: Value) -> Result<Value> {
@@ -191,6 +198,10 @@ mod tests {
 
     use super::*;
 
+    fn sync_settings(source: &Path, target: &Path, home: &Path) -> Result<()> {
+        crate::shell::execute(&[sync_settings_op(source, target, home)?])
+    }
+
     #[test]
     fn build_settings_merges_hooks_command_permissions_and_protected_paths() -> Result<()> {
         let root =
@@ -247,7 +258,7 @@ mod tests {
                 .contains(&"~/.claude/hooks/guard.sh".to_string())
         );
 
-        std::fs::remove_dir_all(root)?;
+        crate::shell::fixtures::remove_dir_all(root)?;
         Ok(())
     }
 
@@ -285,7 +296,7 @@ mod tests {
             .count();
         assert_eq!(guard_count, 1);
 
-        std::fs::remove_dir_all(root)?;
+        crate::shell::fixtures::remove_dir_all(root)?;
         Ok(())
     }
 
@@ -300,7 +311,7 @@ mod tests {
             .to_string();
 
         assert!(error.contains("denyWrite"));
-        std::fs::remove_dir_all(root)?;
+        crate::shell::fixtures::remove_dir_all(root)?;
         Ok(())
     }
 
@@ -326,7 +337,7 @@ mod tests {
         assert!(!allow.contains(&"Bash(cargo:*)".to_string()));
         assert!(ask.contains(&"Bash(cargo:*)".to_string()));
 
-        std::fs::remove_dir_all(root)?;
+        crate::shell::fixtures::remove_dir_all(root)?;
         Ok(())
     }
 
@@ -359,7 +370,7 @@ mod tests {
                 "permissions": {"allow": ["generated-command"]}
             }),
         );
-        std::fs::remove_dir_all(root)?;
+        crate::shell::fixtures::remove_dir_all(root)?;
         Ok(())
     }
 
@@ -374,7 +385,7 @@ mod tests {
         sync_settings(&source, &target, &root)?;
 
         assert_eq!(read_json(&target)?, generated);
-        std::fs::remove_dir_all(root)?;
+        crate::shell::fixtures::remove_dir_all(root)?;
         Ok(())
     }
 
@@ -390,7 +401,7 @@ mod tests {
     fn test_root(name: &str) -> Result<PathBuf> {
         let nanos = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
         let root = std::env::temp_dir().join(format!("agent-harness-{name}-{nanos}"));
-        std::fs::create_dir_all(&root)?;
+        crate::shell::fixtures::create_dir_all(&root)?;
         Ok(root)
     }
 
@@ -467,8 +478,8 @@ mod tests {
 
     fn write_file(path: &Path, content: &str) -> Result<()> {
         let parent = path.parent().context("test file path must have a parent")?;
-        std::fs::create_dir_all(parent)?;
-        std::fs::write(path, content)?;
+        crate::shell::fixtures::create_dir_all(parent)?;
+        crate::shell::fixtures::write(path, content)?;
         Ok(())
     }
 }

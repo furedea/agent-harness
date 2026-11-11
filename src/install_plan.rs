@@ -1,23 +1,6 @@
-use std::path::PathBuf;
+#![forbid(clippy::disallowed_methods, clippy::disallowed_types)]
 
-use crate::layout::InstalledLayout;
-
-#[derive(Debug, PartialEq, Eq)]
-pub(crate) enum FileOp {
-    WriteFile { target: PathBuf, content: Vec<u8> },
-    ReplaceDirectory { source: PathBuf, target: PathBuf },
-    InstallFile { source: PathBuf, target: PathBuf },
-}
-
-impl FileOp {
-    pub(crate) fn target(&self) -> &std::path::Path {
-        match self {
-            Self::WriteFile { target, .. }
-            | Self::ReplaceDirectory { target, .. }
-            | Self::InstallFile { target, .. } => target,
-        }
-    }
-}
+use crate::{file_op::FileOp, layout::InstalledLayout};
 
 /// Plan publication of a complete rendered installation without accessing the filesystem.
 pub(crate) fn plan_install(
@@ -36,12 +19,12 @@ pub(crate) fn plan_install_for(
         .managed_directories_for(providers)
         .into_iter()
         .zip(installed.managed_directories_for(providers))
-        .map(|(source, target)| FileOp::ReplaceDirectory { source, target });
+        .map(|(source, target)| FileOp::CopyTree { source, target });
     let files = rendered
         .managed_files_for(providers)
         .into_iter()
         .zip(installed.managed_files_for(providers))
-        .map(|(source, target)| FileOp::InstallFile { source, target });
+        .map(|(source, target)| FileOp::CopyFile { source, target });
     directories.chain(files).collect()
 }
 
@@ -55,9 +38,6 @@ pub(crate) fn plan_assets_for(
     providers
         .iter()
         .flat_map(|spec| spec.hook.bridge.assets.iter())
-        .map(|asset| FileOp::WriteFile {
-            target: out.join(asset.destination),
-            content: asset.content.as_bytes().to_vec(),
-        })
+        .map(|asset| FileOp::write(out.join(asset.destination), asset.content))
         .collect()
 }

@@ -8,8 +8,9 @@ use serde::Deserialize;
 use serde_json::{Map, Value, map::Entry};
 
 use crate::{
-    fs_ops,
+    file_op::FileOp,
     provider::spec::{PROVIDERS, ProviderSpec},
+    regular_files::regular_files,
 };
 
 const SUPPORTED_BUNDLE_VERSION: u64 = 1;
@@ -21,11 +22,14 @@ pub(crate) struct ExternalHookBundle {
 }
 
 impl ExternalHookBundle {
-    pub(crate) fn copy_assets(&self, output: &Path) -> Result<()> {
+    pub(crate) fn asset_ops(&self, output: &Path) -> Result<Vec<FileOp>> {
         self.validate()?;
-        self.assets()?
+        let assets = self.assets()?;
+        self.reject_duplicate_targets(&assets)?;
+        assets
             .iter()
-            .try_for_each(|asset| self.copy_asset(&asset.source, &output.join(&asset.target)))
+            .map(|asset| self.asset_op(&asset.source, &output.join(&asset.target)))
+            .collect()
     }
 
     pub(crate) fn asset_install_paths(&self) -> Result<Vec<PathBuf>> {
@@ -144,14 +148,30 @@ impl ExternalHookBundle {
         provider_hooks.join("external").join(self.name.as_str())
     }
 
-    fn copy_asset(&self, source: &Path, target: &Path) -> Result<()> {
+    /// Two bundle files that land on one installed path would silently overwrite each other.
+    fn reject_duplicate_targets(&self, assets: &[HookAsset]) -> Result<()> {
+        let mut seen = std::collections::BTreeSet::new();
+        let duplicate = assets.iter().find(|asset| !seen.insert(&asset.target));
+        ensure!(
+            duplicate.is_none(),
+            "external hook bundle {} maps two files to {}",
+            self.name.as_str(),
+            duplicate.map_or_else(String::new, |asset| asset.target.display().to_string()),
+        );
+        Ok(())
+    }
+
+    fn asset_op(&self, source: &Path, target: &Path) -> Result<FileOp> {
         ensure!(
             !target.exists(),
             "external hook bundle {} conflicts with {}",
             self.name.as_str(),
             target.display(),
         );
-        fs_ops::copy_file(source, target)
+        Ok(FileOp::CopyFile {
+            source: source.to_path_buf(),
+            target: target.to_path_buf(),
+        })
     }
 }
 
@@ -370,7 +390,7 @@ fn existing_regular_files(dir: &Path) -> Result<Vec<PathBuf>> {
     if !dir.is_dir() {
         return Ok(Vec::new());
     }
-    fs_ops::regular_files(dir)
+    regular_files(dir)
 }
 
 fn shell_scripts(dir: &Path) -> Result<Vec<(PathBuf, OsString)>> {
@@ -408,4 +428,30 @@ fn read_json(path: &Path) -> Result<Value> {
     let content = std::fs::read_to_string(path)
         .with_context(|| format!("failed to read {}", path.display()))?;
     serde_json::from_str(&content).with_context(|| format!("failed to parse {}", path.display()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::shell::fixtures::{create_dir_all, remove_dir_all, write};
+
+    #[test]
+    fn asset_ops_reject_two_files_that_land_on_one_installed_path() -> Result<()> {
+        let root =
+            std::env::temp_dir().join(format!("agent-harness-dup-assets-{}", std::process::id()));
+        let _ = remove_dir_all(&root);
+        create_dir_all(root.join(".codex/hooks"))?;
+        write(root.join("hook_bundle.json"), r#"{"version": 1}"#)?;
+        write(root.join(".codex/foo.sh"), "one\n")?;
+        write(root.join(".codex/hooks/foo.sh"), "two\n")?;
+        let bundle: ExternalHookBundle = format!("tool={}", root.display())
+            .parse()
+            .map_err(anyhow::Error::msg)?;
+
+        let error = bundle.asset_ops(&root.join("out")).unwrap_err();
+
+        assert!(format!("{error:#}").contains("maps two files to"));
+        remove_dir_all(root)?;
+        Ok(())
+    }
 }

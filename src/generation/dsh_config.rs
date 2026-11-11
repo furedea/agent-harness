@@ -3,11 +3,12 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use serde_json::{Map, Value, json};
 
-use super::io;
+use crate::file_op::FileOp;
 
 const BUNDLE: &str = "agent-harness-dsh-hooks";
 
-pub(crate) fn sync_config(bundle: &Path, target: &Path) -> Result<()> {
+/// The updated profile, or nothing when the profile does not exist yet.
+pub(crate) fn sync_config_ops(bundle: &Path, target: &Path) -> Result<Vec<FileOp>> {
     let bundle = bundle
         .canonicalize()
         .context("failed to resolve dsh bridge bundle")?;
@@ -18,7 +19,7 @@ pub(crate) fn sync_config(bundle: &Path, target: &Path) -> Result<()> {
                 "Skipping dsh profile {}: run dsh once to initialize it, then reactivate.",
                 target.display()
             );
-            return Ok(());
+            return Ok(Vec::new());
         }
         Err(error) => return Err(error.into()),
     };
@@ -38,7 +39,7 @@ pub(crate) fn sync_config(bundle: &Path, target: &Path) -> Result<()> {
     if !bundles.iter().any(|value| value.as_str() == Some(BUNDLE)) {
         bundles.push(json!(BUNDLE));
     }
-    io::write_json(target, &config)
+    Ok(vec![FileOp::write_json(target, &config)?])
 }
 
 fn object<'a>(parent: &'a mut Map<String, Value>, key: &str) -> Result<&'a mut Map<String, Value>> {

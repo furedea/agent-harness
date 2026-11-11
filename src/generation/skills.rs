@@ -5,7 +5,7 @@ use std::str::FromStr;
 use anyhow::{Context, Result, bail, ensure};
 use serde::Deserialize;
 
-use crate::{fs_ops, generation::io, layout::SourceLayout, render::Provider};
+use crate::{file_op::FileOp, layout::SourceLayout, render::Provider};
 use frontmatter::{common_frontmatter_entries, frontmatter_text, split_entries, split_frontmatter};
 
 mod frontmatter;
@@ -157,38 +157,40 @@ pub(crate) struct SkillTarget<'a> {
     pub(crate) path: &'a Path,
 }
 
-impl<'a> SkillTarget<'a> {
-    fn join(self, path: &'a Path) -> Self {
-        Self {
-            provider: self.provider,
-            path,
-        }
-    }
-}
-
+/// The operation that replaces the skills directory with every rendered skill.
 pub(crate) fn render_skills(
     source: &Path,
     external_skills: &[ExternalSkill],
     target: SkillTarget<'_>,
-) -> Result<()> {
+) -> Result<FileOp> {
     let skills_dir = SourceLayout::new(source).skills();
     let skill_dirs = sorted_skill_dirs(&skills_dir)?;
     let skill_rendering = read_skill_rendering(source)?;
     validate_skill_rendering_targets(&skill_rendering, &skill_dirs)?;
     validate_external_skills(&skill_dirs, external_skills)?;
 
-    let staging = fs_ops::TemporaryDirectory::create()?;
-
+    let mut contents = Vec::new();
     for entry in skill_dirs {
-        let skill_out = staging.path().join(entry.file_name().unwrap_or_default());
-        render_skill_dir(&entry, &skill_rendering, target.join(&skill_out))?;
+        let skill_out = target.path.join(entry.file_name().unwrap_or_default());
+        contents.extend(render_skill_dir(
+            &entry,
+            &skill_rendering,
+            SkillTarget {
+                provider: target.provider,
+                path: &skill_out,
+            },
+        )?);
     }
 
-    for skill in external_skills {
-        fs_ops::copy_dir(&skill.source, &staging.path().join(skill.name.as_str()))?;
-    }
+    contents.extend(external_skills.iter().map(|skill| FileOp::CopyTree {
+        source: skill.source.clone(),
+        target: target.path.join(skill.name.as_str()),
+    }));
 
-    fs_ops::copy_dir(staging.path(), target.path)
+    Ok(FileOp::ReplaceTree {
+        target: target.path.to_path_buf(),
+        contents,
+    })
 }
 
 pub(crate) fn built_in_skill_metadata(source: &Path) -> Result<Vec<SkillMetadata>> {
@@ -245,7 +247,11 @@ fn render_skill_dir(
     source: &Path,
     skill_rendering: &SkillRendering,
     target: SkillTarget<'_>,
-) -> Result<()> {
+) -> Result<Vec<FileOp>> {
+    let SkillTarget {
+        provider,
+        path: out,
+    } = target;
     let source_skill = source.join("SKILL.md");
     let content = std::fs::read_to_string(&source_skill)
         .with_context(|| format!("failed to read {}", source_skill.display()))?;
@@ -262,10 +268,11 @@ fn render_skill_dir(
         .get(skill_name)
         .unwrap_or(&empty_rendering);
 
-    copy_support_files(source, target.path)?;
-    frontmatter.extend(provider_frontmatter_entries(rendering, target.provider)?);
-    write_skill(target.path, &frontmatter, body)?;
-    write_extra_files(target, rendering)
+    let mut operations = support_file_ops(source, out)?;
+    frontmatter.extend(provider_frontmatter_entries(rendering, provider)?);
+    operations.push(skill_op(out, &frontmatter, body));
+    operations.extend(extra_file_op(provider, out, rendering));
+    Ok(operations)
 }
 
 fn read_skill_rendering(source: &Path) -> Result<SkillRendering> {
@@ -373,46 +380,45 @@ fn skill_title(body: &str) -> Result<String> {
         .context("SKILL.md body must contain a level-one heading")
 }
 
-fn copy_support_files(source: &Path, out: &Path) -> Result<()> {
-    std::fs::create_dir_all(out)
-        .with_context(|| format!("failed to create directory {}", out.display()))?;
-
+fn support_file_ops(source: &Path, out: &Path) -> Result<Vec<FileOp>> {
+    let mut operations = Vec::new();
     for entry in std::fs::read_dir(source)
         .with_context(|| format!("failed to read directory {}", source.display()))?
     {
         let entry =
             entry.with_context(|| format!("failed to read entry in {}", source.display()))?;
-        copy_support_entry(&entry, out)?;
+        operations.extend(support_entry_op(&entry, out)?);
     }
-
-    Ok(())
+    Ok(operations)
 }
 
-fn copy_support_entry(entry: &std::fs::DirEntry, out: &Path) -> Result<()> {
+fn support_entry_op(entry: &std::fs::DirEntry, out: &Path) -> Result<Option<FileOp>> {
     let path = entry.path();
     let name = entry.file_name();
     if name == "SKILL.md" {
-        return Ok(());
+        return Ok(None);
     }
 
     let target = out.join(name);
     let file_type = entry
         .file_type()
         .with_context(|| format!("failed to inspect {}", path.display()))?;
-    if file_type.is_symlink() {
-        return Ok(());
-    }
     if file_type.is_dir() {
-        fs_ops::copy_dir(&path, &target)?;
-    } else if file_type.is_file() {
-        fs_ops::copy_file(&path, &target)?;
+        return Ok(Some(FileOp::CopyTree {
+            source: path,
+            target,
+        }));
     }
-    Ok(())
+    // Symlinks are skipped, so a skill never reaches outside its own directory.
+    Ok(file_type.is_file().then_some(FileOp::CopyFile {
+        source: path,
+        target,
+    }))
 }
 
-fn write_skill(out: &Path, frontmatter: &[String], body: &str) -> Result<()> {
+fn skill_op(out: &Path, frontmatter: &[String], body: &str) -> FileOp {
     let content = format!("---\n{}\n---\n{body}", frontmatter.join("\n").trim_end());
-    io::write_file(&out.join("SKILL.md"), &content)
+    FileOp::write(out.join("SKILL.md"), content)
 }
 
 fn provider_frontmatter_entries(
@@ -455,16 +461,19 @@ fn validate_frontmatter_key(key: &str) -> Result<()> {
     Ok(())
 }
 
-fn write_extra_files(target: SkillTarget<'_>, skill_rendering: &SkillRenderingEntry) -> Result<()> {
-    if let Provider::Codex = target.provider
-        && let Some(openai) = &skill_rendering.codex.openai
-    {
-        io::write_file(
-            &target.path.join(CODEX_OPENAI_PATH),
-            &codex_openai_content(openai),
-        )?;
-    }
-    Ok(())
+fn extra_file_op(
+    provider: Provider,
+    out: &Path,
+    skill_rendering: &SkillRenderingEntry,
+) -> Option<FileOp> {
+    let Provider::Codex = provider else {
+        return None;
+    };
+    let openai = skill_rendering.codex.openai.as_ref()?;
+    Some(FileOp::write(
+        out.join(CODEX_OPENAI_PATH),
+        codex_openai_content(openai),
+    ))
 }
 
 fn codex_openai_content(openai: &CodexOpenAi) -> String {

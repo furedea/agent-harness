@@ -1,6 +1,8 @@
+#![forbid(clippy::disallowed_methods, clippy::disallowed_types)]
+
 /// How installation keeps a provider's mutable config in step with the rendered one.
 ///
-/// A variant names the managed operation; `config_sync` owns the code that performs it.
+/// A variant names the managed operation; `shell::sync` owns the code that performs it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ConfigSync {
     /// Every top-level key of the rendered config replaces the installed one.
@@ -14,15 +16,7 @@ pub(crate) enum ConfigSync {
     RegisterBundle,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, clap::ValueEnum)]
-pub(crate) enum ProviderId {
-    Claude,
-    Codex,
-    Devin,
-    Hermes,
-    Pi,
-    Dsh,
-}
+pub(crate) use super::id::ProviderId;
 
 impl ProviderId {
     pub(crate) fn spec(self) -> &'static ProviderSpec {

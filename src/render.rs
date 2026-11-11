@@ -1,15 +1,16 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result, bail, ensure};
+use anyhow::{Result, bail, ensure};
 
 use crate::{
-    filesystem::{FileSystem, RealFileSystem, TemporaryDirectory},
+    file_op::FileOp,
     generation::{GenerationContext, claude_config, command_permissions, skills},
     layout::{InstalledLayout, SourceLayout},
     provider::{
         renderer::ProviderRenderer,
         spec::{ConfigSync, PROVIDERS, ProviderSpec},
     },
+    shell::{TemporaryDirectory, execute},
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -20,12 +21,20 @@ pub(crate) enum Provider {
 
 #[cfg(test)]
 pub(crate) fn generate_claude_settings(source: &Path, out: &Path) -> Result<()> {
-    crate::generation::claude_config::write_settings(source, out, &[])
+    execute(&[crate::generation::claude_config::settings_op(
+        source,
+        out,
+        &[],
+    )?])
 }
 
 #[cfg(test)]
 pub(crate) fn generate_codex_config_source(source: &Path, out: &Path) -> Result<()> {
-    crate::generation::codex_config::write_config_source(source, out, &[])
+    execute(&[crate::generation::codex_config::config_source_op(
+        source,
+        out,
+        &[],
+    )?])
 }
 
 pub(crate) fn generate_skills(
@@ -33,7 +42,7 @@ pub(crate) fn generate_skills(
     external_skills: &[skills::ExternalSkill],
     target: skills::SkillTarget<'_>,
 ) -> Result<()> {
-    skills::render_skills(source, external_skills, target)
+    execute(&[skills::render_skills(source, external_skills, target)?])
 }
 
 pub(crate) fn install(context: GenerationContext<'_>, out: &Path) -> Result<()> {
@@ -45,18 +54,22 @@ pub(crate) fn install(context: GenerationContext<'_>, out: &Path) -> Result<()> 
         &InstalledLayout::new(staging.path()),
         &InstalledLayout::new(out),
     );
-    crate::install_executor::execute(&RealFileSystem, &plan)?;
-    Ok(())
+    execute(&plan)
 }
 
 /// Seeds mutable configs that rendering merges into with their installed state.
 fn carry_over_mutable_configs(installed: &Path, staging: &Path) -> Result<()> {
-    PROVIDERS
+    let seeds: Vec<FileOp> = PROVIDERS
         .iter()
         .filter(|spec| merges_into_installed_config(spec))
         .filter_map(ProviderSpec::config_path)
         .filter(|path| installed.join(path).exists())
-        .try_for_each(|path| RealFileSystem.copy_file(&installed.join(path), &staging.join(path)))
+        .map(|path| FileOp::CopyFile {
+            source: installed.join(path),
+            target: staging.join(path),
+        })
+        .collect();
+    execute(&seeds)
 }
 
 fn merges_into_installed_config(spec: &ProviderSpec) -> bool {
@@ -81,16 +94,9 @@ fn preserve_claude_settings(installed: &Path, staging: &Path) -> Result<()> {
     else {
         return Ok(());
     };
-    let generated = staging.join(format!("{path}.generated"));
-    let target = staging.join(path);
-    std::fs::rename(&target, &generated)
-        .with_context(|| format!("failed to set aside {}", target.display()))?;
-    if installed.join(path).exists() {
-        RealFileSystem.copy_file(&installed.join(path), &target)?;
-    }
-    claude_config::merge_settings(&generated, &target)?;
-    std::fs::remove_file(&generated)
-        .with_context(|| format!("failed to remove {}", generated.display()))
+    let generated = staging.join(path);
+    let merged = claude_config::merge_settings_op(&generated, &installed.join(path), &generated)?;
+    execute(&[merged])
 }
 
 fn render_installation(context: GenerationContext<'_>, out: &Path) -> Result<()> {
@@ -114,31 +120,43 @@ pub(crate) fn render_installation_for(
             missing.display()
         );
     }
-    for (source, target) in installed.synced_directories_for(source_layout, providers) {
-        sync_directory(&source, &target)?;
-    }
-    crate::install_executor::execute(
-        &RealFileSystem,
-        &crate::install_plan::plan_assets_for(out, providers),
-    )?;
+    execute(&synced_directory_ops(&installed, source_layout, providers))?;
+    execute(&crate::install_plan::plan_assets_for(out, providers))?;
     for bundle in context.external_hooks {
-        bundle.copy_assets(out)?;
+        execute(&bundle.asset_ops(out)?)?;
     }
     let renderer = ProviderRenderer {
         context,
         providers,
         out,
     };
-    providers.iter().try_for_each(|spec| renderer.render(spec))
+    for spec in providers {
+        execute(&renderer.render(spec)?)?;
+    }
+    Ok(())
 }
 
 /// Optional source directories that a profile omits install as empty directories.
-fn sync_directory(source: &Path, target: &Path) -> Result<()> {
+fn synced_directory_ops(
+    installed: &InstalledLayout<'_>,
+    source_layout: SourceLayout<'_>,
+    providers: &[ProviderSpec],
+) -> Vec<FileOp> {
+    installed
+        .synced_directories_for(source_layout, providers)
+        .into_iter()
+        .map(|(source, target)| synced_directory_op(source, target))
+        .collect()
+}
+
+fn synced_directory_op(source: PathBuf, target: PathBuf) -> FileOp {
     if source.is_dir() {
-        return RealFileSystem.replace_directory(source, target);
+        return FileOp::CopyTree { source, target };
     }
-    std::fs::create_dir_all(target)
-        .with_context(|| format!("failed to create directory {}", target.display()))
+    FileOp::ReplaceTree {
+        target,
+        contents: Vec::new(),
+    }
 }
 
 pub(crate) fn verify(root: &Path) -> Result<()> {

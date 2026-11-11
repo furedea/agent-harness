@@ -1,3 +1,5 @@
+#![forbid(clippy::disallowed_methods, clippy::disallowed_types)]
+
 use std::path::Path;
 
 use crate::runtime_root::RuntimeRoot;
@@ -13,7 +15,6 @@ pub(crate) mod external_hooks;
 pub(crate) mod hermes_config;
 pub(crate) mod hook_bundle;
 pub(crate) mod hooks;
-mod io;
 pub(crate) mod permission_rule;
 pub(crate) mod pi_config;
 pub(crate) mod pi_sandbox;

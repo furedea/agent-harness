@@ -4,13 +4,13 @@ use anyhow::{Context, Result};
 use toml_edit::{DocumentMut, Item, TableLike};
 
 use crate::{
-    fs_ops,
+    file_op::FileOp,
     generation::{
         codex_managed_state::{
-            ManagedState, managed_state_path, read_managed_state, write_managed_state,
+            ManagedState, managed_state_op, managed_state_path, read_managed_state,
         },
         external_hooks::ExternalHookBundle,
-        io, protection,
+        protection,
     },
     layout::SourceLayout,
     runtime_root::RuntimeRoot,
@@ -32,17 +32,23 @@ const MANAGED_KEYS: &[&str] = &[
     "permissions",
 ];
 
-pub(crate) fn write_config_source(
+pub(crate) fn config_source_op(
     source: &Path,
     out: &Path,
     external_hooks: &[ExternalHookBundle],
-) -> Result<()> {
-    io::write_file(out, &config_source_content(source, external_hooks)?)
+) -> Result<FileOp> {
+    Ok(FileOp::write(
+        out,
+        config_source_content(source, external_hooks)?,
+    ))
 }
 
-pub(crate) fn sync_managed_config(source_path: &Path, target_path: &Path) -> Result<()> {
+pub(crate) fn sync_managed_config_ops(
+    source_path: &Path,
+    target_path: &Path,
+) -> Result<Vec<FileOp>> {
     let source = read_toml_document(source_path)?;
-    sync_managed_document(&source, target_path)
+    sync_managed_document_ops(&source, target_path)
 }
 
 pub(crate) fn generated_config_source(
@@ -127,7 +133,11 @@ fn merge_tables(target: &mut dyn TableLike, source: &dyn TableLike) {
     }
 }
 
-pub(crate) fn sync_managed_document(source: &DocumentMut, target_path: &Path) -> Result<()> {
+/// The config and its sidecar, both of which the sync rewrites.
+pub(crate) fn sync_managed_document_ops(
+    source: &DocumentMut,
+    target_path: &Path,
+) -> Result<Vec<FileOp>> {
     let mut target = if target_path.exists() {
         read_toml_document(target_path)?
     } else {
@@ -138,8 +148,10 @@ pub(crate) fn sync_managed_document(source: &DocumentMut, target_path: &Path) ->
     let state_path = managed_state_path(target_path);
     let state = sync_env_keys(source, &mut target, &read_managed_state(&state_path))?;
 
-    write_toml_document(target_path, &target)?;
-    write_managed_state(&state_path, &state)
+    Ok(vec![
+        FileOp::write(target_path, target.to_string()),
+        managed_state_op(&state_path, &state)?,
+    ])
 }
 
 fn sync_managed_keys(source: &DocumentMut, target: &mut DocumentMut) {
@@ -219,10 +231,6 @@ fn read_toml_document(path: &Path) -> Result<DocumentMut> {
     content
         .parse::<DocumentMut>()
         .with_context(|| format!("failed to parse TOML file {}", path.display()))
-}
-
-fn write_toml_document(path: &Path, document: &DocumentMut) -> Result<()> {
-    fs_ops::write_file_atomically(path, document.to_string().as_bytes())
 }
 
 #[cfg(test)]

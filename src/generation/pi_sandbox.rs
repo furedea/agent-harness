@@ -3,10 +3,10 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use serde_json::{Value, json};
 
-use super::{GenerationContext, claude_config, io};
-use crate::layout::SourceLayout;
+use super::{GenerationContext, claude_config};
+use crate::{file_op::FileOp, layout::SourceLayout};
 
-pub(crate) fn write_policy(context: GenerationContext<'_>, out: &Path) -> Result<()> {
+pub(crate) fn policy_op(context: GenerationContext<'_>, out: &Path) -> Result<FileOp> {
     let base = std::fs::read(SourceLayout::new(context.source).claude_settings())?;
     let settings = claude_config::build_settings(context, serde_json::from_slice(&base)?)?;
     let sandbox = settings.get("sandbox").context("missing sandbox")?;
@@ -28,8 +28,8 @@ pub(crate) fn write_policy(context: GenerationContext<'_>, out: &Path) -> Result
             "denyWrite": strings(filesystem, "denyWrite")?
         }
     });
-    io::write_json(
-        &out.join(".pi/agent/extensions/sandbox_policy.json"),
+    FileOp::write_json(
+        out.join(".pi/agent/extensions/sandbox_policy.json"),
         &policy,
     )
 }

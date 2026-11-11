@@ -4,3 +4,30 @@ cognitive-complexity-threshold = 15
 allow-unwrap-in-tests = true
 allow-expect-in-tests = true
 allow-indexing-slicing-in-tests = true
+
+# Writes belong to the filesystem port in `src/shell/io.rs`; everything else returns `FileOp`
+# values for the executor to apply. Computation modules also `forbid` these lints, so they
+# cannot allow them again.
+disallowed-methods = [
+  { path = "std::fs::write", reason = "return a FileOp and let shell::execute write it" },
+  { path = "std::fs::copy", reason = "return a FileOp::CopyFile and let shell::execute copy it" },
+  { path = "std::fs::create_dir", reason = "return a FileOp and let shell::execute create parents" },
+  { path = "std::fs::create_dir_all", reason = "return a FileOp and let shell::execute create parents" },
+  { path = "std::fs::remove_file", reason = "removal belongs to the filesystem port" },
+  { path = "std::fs::remove_dir", reason = "removal belongs to the filesystem port" },
+  { path = "std::fs::remove_dir_all", reason = "removal belongs to the filesystem port" },
+  { path = "std::fs::rename", reason = "renames belong to the filesystem port" },
+  { path = "std::fs::hard_link", reason = "links belong to the filesystem port" },
+  { path = "std::fs::soft_link", reason = "links belong to the filesystem port" },
+  { path = "std::fs::set_permissions", reason = "modes are set through FileMode" },
+  { path = "std::fs::File::create", reason = "return a FileOp and let shell::execute write it" },
+  { path = "std::fs::File::create_new", reason = "return a FileOp and let shell::execute write it" },
+  { path = "std::fs::OpenOptions::open", reason = "opening for write belongs to the filesystem port" },
+  { path = "std::fs::DirBuilder::create", reason = "directories are created by the filesystem port" },
+  { path = "std::os::unix::fs::symlink", reason = "links belong to the filesystem port" },
+]
+disallowed-types = [
+  { path = "std::fs::File", reason = "file handles belong to the filesystem port" },
+  { path = "std::fs::OpenOptions", reason = "opening for write belongs to the filesystem port" },
+  { path = "std::fs::DirBuilder", reason = "directories are created by the filesystem port" },
+]

@@ -10,7 +10,8 @@ use serde::Deserialize;
 use serde_json::{Map, Value};
 
 use crate::{
-    generation::{GenerationContext, command_permissions, external_hooks::ExternalHookBundle, io},
+    file_op::FileOp,
+    generation::{GenerationContext, command_permissions, external_hooks::ExternalHookBundle},
     layout::SourceLayout,
     runtime_root::RuntimeRoot,
 };
@@ -56,12 +57,12 @@ pub(crate) struct HookMetadata {
 }
 
 /// Writes the hook configuration a provider reads, in the shape that provider expects.
-pub(crate) fn write_hooks_for_runtime(
+pub(crate) fn hooks_op_for_runtime(
     context: GenerationContext<'_>,
     path: &Path,
     spec: &ProviderSpec,
-) -> Result<()> {
-    io::write_json(path, &hooks_for_runtime(context, spec)?)
+) -> Result<FileOp> {
+    FileOp::write_json(path, &hooks_for_runtime(context, spec)?)
 }
 
 fn hooks_for_runtime(context: GenerationContext<'_>, spec: &ProviderSpec) -> Result<Value> {
@@ -165,8 +166,8 @@ fn hook_event_rank(event: &str) -> usize {
 
 fn read_hooks(source: &Path) -> Result<HookConfig> {
     let path = SourceLayout::new(source).hook_config();
-    let content =
-        io::read_file(&path).with_context(|| format!("failed to read {}", path.display()))?;
+    let content = std::fs::read_to_string(&path)
+        .with_context(|| format!("failed to read {}", path.display()))?;
     let config: HookConfig = serde_json::from_str(&content)
         .with_context(|| format!("failed to parse {}", path.display()))?;
     validate_hooks(&config)?;

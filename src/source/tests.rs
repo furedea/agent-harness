@@ -55,7 +55,9 @@ fn flat_source_root(name: &str) -> PathBuf {
     std::env::temp_dir().join(format!(
         "agent-harness-flat-source-{name}-{}-{}",
         std::process::id(),
-        unique_suffix(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |duration| duration.as_nanos()),
     ))
 }
 

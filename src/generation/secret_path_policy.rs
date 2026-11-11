@@ -109,7 +109,7 @@ mod tests {
             ],
         );
 
-        std::fs::remove_dir_all(root)?;
+        crate::shell::fixtures::remove_dir_all(root)?;
         Ok(())
     }
 
@@ -122,7 +122,7 @@ mod tests {
 
         assert!(error.contains("unsupported secret path policy version"));
 
-        std::fs::remove_dir_all(root)?;
+        crate::shell::fixtures::remove_dir_all(root)?;
         Ok(())
     }
 
@@ -138,21 +138,23 @@ mod tests {
 
         assert!(error.contains("parentheses"));
 
-        std::fs::remove_dir_all(root)?;
+        crate::shell::fixtures::remove_dir_all(root)?;
         Ok(())
     }
 
     fn test_root(name: &str) -> Result<PathBuf> {
         let nanos = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
         let root = std::env::temp_dir().join(format!("agent-harness-{name}-{nanos}"));
-        std::fs::create_dir_all(&root)?;
+        crate::shell::fixtures::create_dir_all(&root)?;
         Ok(root)
     }
 
     fn write_policy(source: &Path, content: &str) -> Result<()> {
         let path = SourceLayout::new(source).secret_path_policy();
-        path.parent().map(std::fs::create_dir_all).transpose()?;
-        std::fs::write(path, content)?;
+        path.parent()
+            .map(crate::shell::fixtures::create_dir_all)
+            .transpose()?;
+        crate::shell::fixtures::write(path, content)?;
         Ok(())
     }
 }
