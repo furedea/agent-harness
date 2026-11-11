@@ -1,3 +1,4 @@
+mod command_line;
 pub(crate) mod renderer;
 pub(crate) mod spec;
 

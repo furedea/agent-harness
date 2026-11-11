@@ -1,3 +1,5 @@
+#![forbid(clippy::disallowed_methods, clippy::disallowed_types)]
+
 /// How installation keeps a provider's mutable config in step with the rendered one.
 ///
 /// A variant names the managed operation; `shell::sync` owns the code that performs it.
@@ -14,7 +16,7 @@ pub(crate) enum ConfigSync {
     RegisterBundle,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, clap::ValueEnum)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum ProviderId {
     Claude,
     Codex,

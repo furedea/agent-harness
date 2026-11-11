@@ -1,3 +1,5 @@
+#![forbid(clippy::disallowed_methods, clippy::disallowed_types)]
+
 use crate::{file_op::FileOp, layout::InstalledLayout};
 
 /// Plan publication of a complete rendered installation without accessing the filesystem.

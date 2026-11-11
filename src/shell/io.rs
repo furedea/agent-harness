@@ -10,6 +10,11 @@
 //! - File mode: `FileMode::Private` files are `0600` and the directories made for them `0700`.
 //!   Every other file and directory is created with the process's default mode, and copies keep
 //!   the permission bits of their source.
+#![expect(
+    clippy::disallowed_methods,
+    clippy::disallowed_types,
+    reason = "this module is the filesystem port; std's write APIs are banned everywhere else"
+)]
 
 use std::fs::{File, OpenOptions};
 use std::io::Write;

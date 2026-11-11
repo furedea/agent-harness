@@ -1,3 +1,5 @@
+#![forbid(clippy::disallowed_methods, clippy::disallowed_types)]
+
 use std::path::Path;
 
 use anyhow::{Context, Result};

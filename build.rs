@@ -8,6 +8,10 @@ const ASSET_DIRS: [&str; 1] = ["profiles"];
 
 type BuildResult<T> = Result<T, Box<dyn Error>>;
 
+#[allow(
+    clippy::disallowed_methods,
+    reason = "a build script runs before the crate exists and owns its OUT_DIR output"
+)]
 fn main() -> BuildResult<()> {
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR")?);
     let out_path = PathBuf::from(env::var("OUT_DIR")?).join("packaged_assets.rs");
