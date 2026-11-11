@@ -1,8 +1,4 @@
 #![forbid(clippy::disallowed_methods, clippy::disallowed_types)]
-#![expect(
-    dead_code,
-    reason = "the registry declares its ownership in the next commit"
-)]
 //! What a provider declares about the config the harness keeps in step with the rendered one.
 //!
 //! The declaration has two independent parts. The format says how the text is read and written;
@@ -40,10 +36,6 @@ pub(crate) enum KeyScope {
 }
 
 impl KeyScope {
-    pub(crate) fn is_listed(self) -> bool {
-        matches!(self, Self::Listed(_))
-    }
-
     pub(crate) fn owns(self, key: &str) -> bool {
         match self {
             Self::Every => true,
@@ -132,11 +124,6 @@ impl ConfigSync {
     /// Whether every key of the rendered config replaces the installed one.
     pub(crate) fn replaces_every_key(&self) -> bool {
         self.key_scopes().any(|scope| scope == KeyScope::Every)
-    }
-
-    /// Whether some claim owns top-level keys by listing them.
-    pub(crate) fn owns_listed_keys(&self) -> bool {
-        self.key_scopes().any(KeyScope::is_listed)
     }
 
     fn key_scopes(&self) -> impl Iterator<Item = KeyScope> {

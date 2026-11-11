@@ -182,3 +182,17 @@ fn codex_survives_an_unreadable_sidecar() -> Result<()> {
     );
     Ok(())
 }
+
+#[cfg(unix)]
+#[test]
+fn codex_starts_from_an_empty_config_when_the_target_is_a_dangling_symlink() -> Result<()> {
+    let sandbox = Sandbox::new("codex-dangling")?;
+    let source = sandbox.put("generated.toml", "model = \"m\"\n")?;
+    let target = sandbox.path("config.toml");
+    crate::shell::fixtures::symlink(sandbox.path("gone.toml"), &target)?;
+
+    sandbox.sync(ProviderId::Codex, &source, &target)?;
+
+    assert!(sandbox.text("config.toml")?.contains("model = \"m\""));
+    Ok(())
+}

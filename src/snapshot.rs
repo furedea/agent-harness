@@ -234,14 +234,5 @@ impl<'a> Tree<'a> {
     }
 }
 
-/// A rendered config and the user-owned config it is merged into, with the snapshot that holds
-/// both.
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct ConfigFiles<'a> {
-    pub(crate) generated: &'a Path,
-    pub(crate) target: &'a Path,
-    pub(crate) files: &'a Snapshot,
-}
-
 #[cfg(test)]
 mod tests;

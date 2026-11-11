@@ -287,6 +287,12 @@ impl ConfigTree for Yaml {
 #[derive(Clone, Debug)]
 pub(crate) struct Toml(DocumentMut);
 
+impl Toml {
+    pub(crate) fn from_document(document: DocumentMut) -> Self {
+        Self(document)
+    }
+}
+
 fn toml_parent_mut<'a>(
     root: &'a mut DocumentMut,
     parents: &[&str],

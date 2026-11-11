@@ -150,6 +150,22 @@ pub(crate) fn installed_files(sync: &ConfigSync, target: &Path) -> Vec<PathBuf> 
         .collect()
 }
 
+/// The rendered config at `path`, or an empty one when the file does not exist.
+///
+/// # Errors
+///
+/// Returns an error naming `path` when it exists and cannot be read or parsed.
+pub(crate) fn read_optional_generated(
+    sync: &ConfigSync,
+    files: &Snapshot,
+    path: &Path,
+) -> Result<ConfigDocument> {
+    match files.read_text_if_present(path)? {
+        Some(_) => read_generated(sync, files, path),
+        None => Ok(ConfigDocument::blank(sync.format)),
+    }
+}
+
 /// The rendered config at `path`.
 ///
 /// # Errors
