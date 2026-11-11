@@ -6,13 +6,16 @@
  * adapter's blocking output is translated back into pi result shapes.
  */
 import { spawn } from "node:child_process";
-import { existsSync, realpathSync, lstatSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, lstatSync, statSync } from "node:fs";
 import { homedir } from "node:os";
+import { fileURLToPath } from "node:url";
 import { join, resolve, dirname, basename, relative, isAbsolute, sep } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 const ADAPTER =
 	process.env.AGENT_HARNESS_PI_ADAPTER ?? join(homedir(), ".pi", "hooks", "hook_adapter.py");
+const SANDBOX_POLICY =
+	process.env.AGENT_HARNESS_PI_SANDBOX_POLICY ?? join(dirname(fileURLToPath(import.meta.url)), "sandbox_policy.json");
 const TIMEOUT_MS = Number(process.env.AGENT_HARNESS_HOOK_TIMEOUT ?? "30") * 1000;
 
 interface AdapterRun {
@@ -129,7 +132,43 @@ function isCredentialFile(path: string): boolean {
 	// Case-folded and NFC-normalized because macOS volumes are case-insensitive by default.
 	const fold = (value: string) => value.normalize("NFC").toLowerCase();
 	const candidates = [homedir(), realHome].map(home => fold(join(home, ".pi", "agent", "auth.json")));
-	return candidates.includes(fold(path));
+	if (candidates.includes(fold(path))) return true;
+	return [homedir(), realHome].some(home => sameFile(path, join(home, ".pi", "agent", "auth.json")));
+}
+
+// Hard links make the same file reachable under another name.
+function sameFile(a: string, b: string): boolean {
+	try {
+		const left = statSync(a);
+		const right = statSync(b);
+		return left.dev === right.dev && left.ino === right.ino;
+	} catch {
+		return false;
+	}
+}
+
+// srt only wraps bash, so the generated deny rules are also enforced on the file tools.
+function globRegex(pattern: string, root: string): RegExp {
+	const lexical = resolve(root, normalizeToolPath(pattern));
+	// Resolve symlinks (macOS /var) in the literal part only, as targets are compared in resolved form.
+	const glob = lexical.search(/[*?]/);
+	const split = glob < 0 ? lexical.length : lexical.lastIndexOf("/", glob);
+	const absolute = join(targetPath(lexical.slice(0, split) || "/"), lexical.slice(split));
+	const body = absolute
+		.split(/(\*\*\/|\*\*|\*|\?)/)
+		.map(part => ({ "**/": "(?:.*/)?", "**": ".*", "*": "[^/]*", "?": "[^/]" })[part] ?? part.replace(/[.+^${}()|[\]\\]/g, "\\$&"))
+		.join("");
+	return new RegExp("^" + body + "(?:/.*)?$");
+}
+
+function denyRules(root: string): { read: RegExp[]; write: RegExp[] } | undefined {
+	if (!existsSync(SANDBOX_POLICY)) return { read: [], write: [] };
+	const policy: unknown = JSON.parse(readFileSync(SANDBOX_POLICY, "utf8"));
+	if (!isRecord(policy) || !isRecord(policy.filesystem)) return undefined;
+	const { denyRead, denyWrite } = policy.filesystem;
+	if (!Array.isArray(denyRead) || !Array.isArray(denyWrite)) return undefined;
+	if (![...denyRead, ...denyWrite].every(entry => typeof entry === "string" && entry)) return undefined;
+	return { read: denyRead.map(entry => globRegex(entry, root)), write: denyWrite.map(entry => globRegex(entry, root)) };
 }
 
 function fileBoundary(tool: string, input: unknown, cwd: string): string | undefined {
@@ -139,6 +178,10 @@ function fileBoundary(tool: string, input: unknown, cwd: string): string | undef
 		const lexical = resolve(root, normalizeToolPath(input.path));
 		const target = targetPath(lexical);
 		if ([lexical, target].some(touchesGit)) return "File tools cannot access .git";
+		const rules = denyRules(root);
+		if (!rules) return "Invalid sandbox policy";
+		const denied = tool === "read" ? rules.read : [...rules.read, ...rules.write];
+		if ([lexical, target].some(path => denied.some(rule => rule.test(path)))) return "Path is denied by the sandbox policy";
 		if ([lexical, target].some(isCredentialFile)) return "File tools cannot access Pi credentials";
 		const path = relative(root, target);
 		if (tool !== "read" && (path === ".." || path.startsWith(".." + sep) || isAbsolute(path))) {

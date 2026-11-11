@@ -106,10 +106,12 @@ function buildPolicy(source: Policy, cwd: string, temporary: string, protectedFi
 	if (common) {
 		policy.filesystem.allowWrite.push(common);
 		policy.filesystem.denyWrite.push(join(common, "hooks"), join(common, "config"), join(common, "commondir"), join(common, "config.worktree"),
-			join(common, "modules/*/config"), join(common, "modules/*/hooks"),
+			join(common, "modules/**/config"), join(common, "modules/**/hooks"),
 			join(common, "worktrees/*/config.worktree"), join(common, "worktrees/*/commondir"), join(common, "worktrees/*/gitdir"),
 		);
 	}
+	// Nested repositories and submodule gitfiles; "*/" keeps the worktree's own .git out of this pattern.
+	policy.filesystem.denyWrite.push(join(cwd, "*/**/.git"));
 	// git runs outside the sandbox, so a .git the sandbox can create or rewrite would make it honour attacker config.
 	if (!common || !isCommonDirectory(join(cwd, ".git"), common)) policy.filesystem.denyWrite.push(join(cwd, ".git"));
 	validatePolicy(policy);

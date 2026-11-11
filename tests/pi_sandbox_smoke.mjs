@@ -64,9 +64,11 @@ fs.writeFileSync(${JSON.stringify(join(root, 'record.json'))}, JSON.stringify({ 
   for (const path of [join(realpathSync(repo), '.git/hooks'), join(realpathSync(repo), '.git/config'), join(realpathSync(repo), '.git/worktrees/*/config.worktree')]) {
     assert.ok(record.settings.filesystem.denyWrite.includes(path));
   }
-  for (const suffix of ['config.worktree', 'modules/*/config', 'modules/*/hooks']) {
+  for (const suffix of ['config.worktree', 'modules/**/config', 'modules/**/hooks']) {
     assert.ok(record.settings.filesystem.denyWrite.includes(join(realpathSync(repo), '.git', suffix)), suffix);
   }
+  // Nested repositories and submodule gitfiles inside the worktree are denied; the worktree's own .git is not.
+  assert.ok(record.settings.filesystem.denyWrite.includes(join(realpathSync(worktree), '*/**/.git')));
   // Bracketed IPv6 literals are valid srt domains and must not disable bash.
   writeFileSync(policyPath, JSON.stringify({ ...policy, network: { ...policy.network, allowedDomains: ['github.com', '[2001:db8::1]:443'] } }));
   register({ registerTool(value) { tool = value; }, on(event, fn) { if (event === 'session_shutdown') cleanups.push(fn); } });
