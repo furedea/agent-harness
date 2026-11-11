@@ -6,7 +6,7 @@
  * adapter's blocking output is translated back into pi result shapes.
  */
 import { spawn } from "node:child_process";
-import { realpathSync, lstatSync } from "node:fs";
+import { existsSync, realpathSync, lstatSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve, dirname, basename, relative, isAbsolute, sep } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -24,6 +24,8 @@ interface AdapterRun {
 function dispatch(event: string, payload: unknown): Promise<AdapterRun> {
 	return new Promise((resolve) => {
 		const run: AdapterRun = { code: -1, stdout: "", stderr: "" };
+		// A missing adapter must not read as exit 2 (deny) from the interpreter's "can't open file".
+		if (!existsSync(ADAPTER)) return resolve(run);
 		const done = (result: AdapterRun) => {
 			clearTimeout(timer);
 			resolve(result);
@@ -108,9 +110,13 @@ function normalizeToolPath(path: string): string {
 	return plain.startsWith("~/") ? join(homedir(), plain.slice(2)) : plain;
 }
 
-// Case-insensitive, and tolerant of trailing dots/spaces and the 8.3 alias that NTFS/HFS+ fold onto .git.
+// Case-insensitive, ignoring format characters (zero-width etc.), stream suffixes, trailing dots/spaces
+// and 8.3 aliases that case-folding or NTFS/HFS+ filesystems map onto .git.
 function touchesGit(path: string): boolean {
-	return path.split(sep).some(part => /^(\.git|git~1)[. ]*$/i.test(part.normalize("NFC")));
+	return path.split(sep).some(part => {
+		const name = part.normalize("NFC").replace(/\p{Cf}/gu, "").split(":")[0];
+		return /^(\.git|git~\d+)[. ]*$/i.test(name);
+	});
 }
 
 function fileBoundary(tool: string, input: unknown, cwd: string): string | undefined {

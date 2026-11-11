@@ -517,10 +517,13 @@ Devin, Hermes Agent, and pi config directories.
 
 Pi's agent bash tool requires `srt` on `PATH` with recursive `denyGlobRegex`
 support; nixpkgs sandbox-runtime 0.0.52 does not satisfy this requirement.
-Installing srt is separate from installing the harness. The policy comes from
+Installing srt is separate from installing the harness, so `agent-harness verify` does not check it;
+declare `srt` in the source manifest's `runtime_commands` to have verify require it. The policy comes from
 `claude/settings.json`'s sandbox block and adds Pi authentication-file read protection.
-At startup the extension resolves the worktree and common Git directory, grants them write
-access, and denies writes to Git hooks and configuration. Invalid settings or unavailable
+For each command's working directory the extension resolves the worktree and, inside a Git
+repository, the common Git directory, grants them write access, and denies writes to Git hooks,
+configuration, and a linked worktree's `.git` pointer file. Outside a repository only the base
+policy and the directory itself apply. Invalid settings or unavailable
 srt block bash execution. Pi itself, hooks, and user `!` commands run outside this wrapper.
 File-tool writes stay inside the worktree, file tools cannot access `.git`, and file-hook
 failures block read, write, and edit calls.

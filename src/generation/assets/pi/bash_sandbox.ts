@@ -3,7 +3,7 @@
  * Requires srt with recursive denyGlobRegex support (not nixpkgs 0.0.52).
  */
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, realpathSync, writeFileSync, rmSync } from "node:fs";
+import { lstatSync, mkdtempSync, readFileSync, realpathSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir, homedir } from "node:os";
 import { dirname, join, resolve, basename } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -72,44 +72,92 @@ function quote(value: string): string {
 	return "'" + value.replaceAll("'", "'\\''") + "'";
 }
 
+type Prepared = { settingsPath: string; content: string };
+
+// A directory outside any repository is fine; a missing or broken git is not.
+function gitCommonDir(cwd: string): string | undefined {
+	try {
+		const out = execFileSync("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+		return canonical(out.trim());
+	} catch (error) {
+		if (typeof (error as { status?: unknown }).status === "number") return undefined;
+		throw error;
+	}
+}
+
+function isGitfile(path: string): boolean {
+	try {
+		return lstatSync(path).isFile();
+	} catch {
+		return false;
+	}
+}
+
+// Policy for one worktree: the static source policy plus what only the runtime knows.
+function buildPolicy(source: Policy, cwd: string, temporary: string, protectedFiles: string[]): Policy {
+	const policy: Policy = structuredClone(source);
+	for (const key of ["denyRead", "allowWrite", "denyWrite"] as const) {
+		policy.filesystem[key] = policy.filesystem[key].map(path => policyPath(path, cwd));
+	}
+	policy.network.allowUnixSockets = policy.network.allowUnixSockets.map(path => policyPath(path, cwd));
+	policy.filesystem.allowWrite.push(cwd);
+	policy.filesystem.denyWrite.push(temporary, ...protectedFiles);
+	const common = gitCommonDir(cwd);
+	if (common) {
+		policy.filesystem.allowWrite.push(common);
+		policy.filesystem.denyWrite.push(join(common, "hooks"), join(common, "config"), join(common, "worktrees/*/config.worktree"));
+	}
+	// In a linked worktree .git is a pointer file; redirecting it would repoint git at attacker-owned config.
+	if (isGitfile(join(cwd, ".git"))) policy.filesystem.denyWrite.push(join(cwd, ".git"));
+	validatePolicy(policy);
+	return policy;
+}
+
 export default function (pi: ExtensionAPI) {
-	const cwd = realpathSync(process.cwd());
-	let settingsPath: string | undefined;
-	let content: string | undefined;
+	const startCwd = realpathSync(process.cwd());
+	const prepared = new Map<string, Prepared>();
+	let source: Policy | undefined;
 	let failure: unknown;
 	let temporary: string | undefined;
+	let protectedFiles: string[] = [];
 	try {
-		const source = fileURLToPath(new URL("./sandbox_policy.json", import.meta.url));
-		const policy: unknown = JSON.parse(readFileSync(source, "utf8"));
-		validatePolicy(policy);
-		for (const key of ["denyRead", "allowWrite", "denyWrite"] as const) {
-			policy.filesystem[key] = policy.filesystem[key].map(path => policyPath(path, cwd));
-		}
-		policy.network.allowUnixSockets = policy.network.allowUnixSockets.map(path => policyPath(path, cwd));
-		const common = canonical(execFileSync("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], { cwd, encoding: "utf8" }).trim());
-		policy.filesystem.allowWrite.push(cwd, common);
+		const sourcePath = fileURLToPath(new URL("./sandbox_policy.json", import.meta.url));
+		const parsed: unknown = JSON.parse(readFileSync(sourcePath, "utf8"));
+		validatePolicy(parsed);
+		source = parsed;
 		temporary = realpathSync(mkdtempSync(join(tmpdir(), "pi-srt-")));
-		settingsPath = join(temporary, "settings.json");
-		policy.filesystem.denyWrite.push(
-			join(common, "hooks"), join(common, "config"), join(common, "worktrees/*/config.worktree"),
-			temporary, canonical(source), fileURLToPath(import.meta.url),
-		);
-		validatePolicy(policy);
-		content = JSON.stringify(policy);
-		writeFileSync(settingsPath, content, { mode: 0o600 });
+		protectedFiles = [canonical(sourcePath), fileURLToPath(import.meta.url)];
 	} catch (error) {
 		failure = error;
 	}
-	const bash = createBashTool(cwd, {
-		spawnHook: ({ command, cwd, env }) => {
-			if (failure || !settingsPath || !content) throw new Error("Sandbox unavailable: " + String(failure));
-			if (readFileSync(settingsPath, "utf8") !== content) throw new Error("Sandbox settings changed");
-			return { command: "exec srt --settings " + quote(settingsPath) + " -c " + quote(command), cwd, env };
-		},
-	});
+
+	function prepare(cwdInput: string): Prepared {
+		if (failure || !source || !temporary) throw new Error("Sandbox unavailable: " + String(failure));
+		const cwd = realpathSync(cwdInput);
+		const known = prepared.get(cwd);
+		if (known) return known;
+		const content = JSON.stringify(buildPolicy(source, cwd, temporary, protectedFiles));
+		const settingsPath = join(temporary, prepared.size + ".json");
+		writeFileSync(settingsPath, content, { mode: 0o600 });
+		const entry = { settingsPath, content };
+		prepared.set(cwd, entry);
+		return entry;
+	}
+
+	function toolFor(cwd: string) {
+		return createBashTool(cwd, {
+			spawnHook: ({ command, cwd, env }) => {
+				const { settingsPath, content } = prepare(cwd);
+				if (readFileSync(settingsPath, "utf8") !== content) throw new Error("Sandbox settings changed");
+				return { command: "exec srt --settings " + quote(settingsPath) + " -c " + quote(command), cwd, env };
+			},
+		});
+	}
+
+	const bash = toolFor(startCwd);
 	pi.registerTool({
 		...bash,
-		execute: async (id, params, signal, onUpdate, _ctx) => bash.execute(id, params, signal, onUpdate),
+		execute: async (id, params, signal, onUpdate, ctx) => (ctx?.cwd ? toolFor(ctx.cwd) : bash).execute(id, params, signal, onUpdate),
 	});
 	pi.on("session_shutdown", async () => {
 		if (temporary) rmSync(temporary, { recursive: true, force: true });

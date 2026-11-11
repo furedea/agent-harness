@@ -63,6 +63,16 @@ with open(${JSON.stringify(join(root, 'record.json'))},'w') as f: json.dump(dict
   for (const path of [join(realpathSync(repo), '.git/hooks'), join(realpathSync(repo), '.git/config'), join(realpathSync(repo), '.git/worktrees/*/config.worktree')]) {
     assert.ok(record.settings.filesystem.denyWrite.includes(path));
   }
+  // A linked worktree's .git gitfile must not be redirectable from inside the sandbox.
+  assert.ok(record.settings.filesystem.denyWrite.includes(join(realpathSync(worktree), '.git')));
+  // Pi supplies a per-call cwd; the policy must follow it, and non-git dirs must still run.
+  const plain = join(root, 'plain');
+  mkdirSync(plain);
+  await tool.execute('id', { command: 'true' }, undefined, undefined, { cwd: plain });
+  const plainRecord = JSON.parse(readFileSync(join(root, 'record.json')));
+  assert.ok(plainRecord.settings.filesystem.allowWrite.includes(realpathSync(plain)));
+  assert.ok(!plainRecord.settings.filesystem.allowWrite.includes(realpathSync(worktree)));
+  assert.ok(plainRecord.settings.filesystem.denyWrite.every(path => !path.endsWith('config.worktree')));
   // Startup failures must still replace bash, and execution must refuse.
   for (const invalid of ['{}', '{', JSON.stringify({ ...policy, network: { ...policy.network, deniedDomains: undefined } }),
     ...['https://bad', '*.com', 'host', 'example.com:01', '*'].map(value => JSON.stringify({ ...policy, network: { ...policy.network, allowedDomains: [value] } }))]) {

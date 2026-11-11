@@ -76,7 +76,7 @@ sys.exit(${code})
   mkdirSync(join(root, 'sub'));
   symlinkSync(tmpdir(), join(root, 'escape'));
   for (const tool of ['write', 'edit']) {
-    for (const path of ['../outside', join(tmpdir(), 'outside'), 'escape/new/file', '.git/config', 'sub/../../outside', '.GIT/config', '.Git/hooks/x', '@../outside', '@.git/config', '~/../outside', '.git /config']) {
+    for (const path of ['../outside', join(tmpdir(), 'outside'), 'escape/new/file', '.git/config', 'sub/../../outside', '.GIT/config', '.Git/hooks/x', '@../outside', '@.git/config', '~/../outside', '.git\u200b/config', '.git:stream/config', 'GIT~2/config', '.git./config', '.git /config']) {
       assert.equal((await fileCall(tool, path))?.block, true, tool + ': ' + path);
     }
     assert.equal(await fileCall(tool, 'sub/new/file'), undefined);
@@ -108,6 +108,9 @@ sys.exit(${code})
   const missingListeners = new Map();
   register({ on(event, listener) { missingListeners.set(event, listener); } });
   assert.equal((await missingListeners.get('tool_call')({ toolName: 'write', input: { path: 'file' } }, ctx))?.block, true);
+  // Without an adapter only file tools fail closed; bash and prompts behave as before the bridge existed.
+  assert.equal(await missingListeners.get('tool_call')({ toolName: 'bash', input: { command: 'true' } }, ctx), undefined);
+  assert.deepEqual(await missingListeners.get('input')({ text: 'hi' }, ctx), { action: 'continue' });
   output([ask]);
   await listeners.get('tool_call')({ toolName: 'read', input: { path: 'README.md' } }, ctx);
   assert.ok(prompts[0].includes('read'));
