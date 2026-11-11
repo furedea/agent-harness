@@ -9,11 +9,23 @@ use anyhow::{Context, Result, ensure};
 
 /// Copies a source directory over `target` so that a failure leaves `target` untouched.
 pub(crate) fn copy_dir(source: &Path, target: &Path) -> Result<()> {
-    create_parent(target)?;
-    let staged = stage_directory(source, target)?;
-    let backup = swap_in(&staged, target);
-    let _ = remove_path(&staged);
-    backup?.as_deref().map_or(Ok(()), discard)
+    let created = create_missing_parents(target)?;
+    let published = stage_directory(source, target).and_then(|staged| {
+        let swapped = swap_in(&staged, target);
+        let _ = remove_path(&staged);
+        swapped
+    });
+    match published {
+        Ok(backup) => {
+            // The replacement is live, so a backup that cannot be deleted is only a leftover.
+            let _ = backup.as_deref().map(discard);
+            Ok(())
+        }
+        Err(error) => {
+            remove_created_parents(&created);
+            Err(error)
+        }
+    }
 }
 
 /// Copies `source` into a fresh sibling of `target`, which must already have its parent.
@@ -395,6 +407,17 @@ mod directory_tests {
         assert!(copy_dir(&root.join("absent"), &root.join("target")).is_err());
 
         assert_eq!(std::fs::read_to_string(root.join("target/kept"))?, "kept\n");
+        std::fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn copy_dir_removes_the_parents_it_created_when_the_source_is_missing() -> Result<()> {
+        let root = root("copy-dir-parents")?;
+
+        assert!(copy_dir(&root.join("absent"), &root.join("new/parent/target")).is_err());
+
+        assert!(!root.join("new").exists());
         std::fs::remove_dir_all(root)?;
         Ok(())
     }
