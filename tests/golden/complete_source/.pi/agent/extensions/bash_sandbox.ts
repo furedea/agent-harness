@@ -58,12 +58,25 @@ function canonical(path: string): string {
 	}
 }
 
+function isSymlink(path: string): boolean {
+	try {
+		return lstatSync(path).isSymbolicLink();
+	} catch {
+		return false;
+	}
+}
+
 // A protected symlink must keep its own rule as well as its target's: the link itself can be replaced.
 function protectedPaths(path: string, cwd: string): string[] {
 	const expanded = path.replace(/^(~|\$HOME)(?=\/|$)/, homedir());
 	const absolute = resolve(cwd, expanded);
 	const literal = policyPath(dirname(absolute), cwd) + "/" + basename(absolute);
-	return [...new Set([literal, policyPath(path, cwd)])];
+	// Intermediate components that are symlinks (e.g. a linked ~/.claude) can be replaced too.
+	const links: string[] = [];
+	for (let part = absolute; part !== dirname(part); part = dirname(part)) {
+		if (isSymlink(part) && part !== absolute) links.push(policyPath(dirname(part), cwd) + "/" + basename(part));
+	}
+	return [...new Set([literal, policyPath(path, cwd), ...links])];
 }
 
 function policyPath(path: string, cwd: string): string {

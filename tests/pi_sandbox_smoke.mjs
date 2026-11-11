@@ -51,6 +51,8 @@ try {
   const repo = join(root, 'repo');
   writeFileSync(join(root, 'target'), 'x');
   symlinkSync(join(root, 'target'), join(root, 'link-to-target'));
+  mkdirSync(join(root, 'real-dir'));
+  symlinkSync(join(root, 'real-dir'), join(root, 'linked-dir'));
   const worktree = join(root, "work tree's");
   execFileSync('git', ['init', repo]);
   execFileSync('git', ['-C', repo, '-c', 'user.name=Test', '-c', 'user.email=test@example.com', 'commit', '--allow-empty', '-m', 'initial']);
@@ -63,7 +65,7 @@ try {
   const policyPath = join(root, 'sandbox_policy.json');
   const policy = {
     network: { allowedDomains: ['github.com'], deniedDomains: [], allowUnixSockets: ['/nix/var/nix/daemon-socket/socket'] },
-    filesystem: { denyRead: ['~/.pi/agent/auth.json'], allowWrite: [], denyWrite: [join(root, 'link-to-target')] },
+    filesystem: { denyRead: ['~/.pi/agent/auth.json'], allowWrite: [], denyWrite: [join(root, 'link-to-target'), join(root, 'linked-dir/inner')] },
   };
   writeFileSync(policyPath, JSON.stringify(policy));
   const bin = join(root, 'bin');
@@ -168,6 +170,7 @@ if (args[3].includes('file_operations.mjs')) {
   for (const path of [join(realpathSync(root), 'link-to-target'), join(realpathSync(root), 'target')]) {
     assert.ok(record.settings.filesystem.denyWrite.includes(path), path);
   }
+  assert.ok(record.settings.filesystem.denyWrite.includes(join(realpathSync(root), 'linked-dir')), 'symlinked ancestor');
   // The first resolution is final: a directory that becomes a repository mid-session is refused, not re-trusted.
   execFileSync('git', ['init', plain]);
   await assert.rejects(() => tool.execute('id', { command: 'true' }, undefined, undefined, { cwd: plain }), /git layout changed/);
