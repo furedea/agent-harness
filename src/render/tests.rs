@@ -333,8 +333,8 @@ fn install_keeps_top_level_claude_settings_it_does_not_generate() -> Result<()> 
 }
 
 #[test]
-fn install_matches_the_home_manager_sync_of_claude_settings() -> Result<()> {
-    let root = test_root("install_matches_the_home_manager_sync_of_claude_settings")?;
+fn install_matches_the_merge_the_home_manager_build_applies() -> Result<()> {
+    let root = test_root("install_matches_the_merge_the_home_manager_build_applies")?;
     let source = root.join("source");
     let out = root.join("out");
     let generated = root.join("generated.json");
@@ -346,7 +346,7 @@ fn install_matches_the_home_manager_sync_of_claude_settings() -> Result<()> {
     }
     crate::generation::claude_config::write_settings(&source, &generated, &[])?;
 
-    crate::generation::claude_config::sync_settings(&generated, &synced, &out)?;
+    crate::generation::claude_config::merge_settings(&generated, &synced)?;
     install(GenerationContext::home(&source, &[]), &out)?;
 
     assert_eq!(
@@ -373,6 +373,25 @@ fn install_rejects_a_source_without_hooks_and_keeps_the_installed_hooks() -> Res
         std::fs::read_to_string(out.join(".claude/hooks/installed.sh"))?,
         "installed\n"
     );
+    std::fs::remove_dir_all(root)?;
+    Ok(())
+}
+
+#[test]
+fn install_leaves_home_paths_to_the_sync_when_the_prefix_is_not_the_home() -> Result<()> {
+    let root = test_root("install_leaves_home_paths_to_the_sync")?;
+    let source = root.join("source");
+    let out = root.join("out");
+    write_minimal_source(&source)?;
+    std::fs::write(
+        source.join("claude/settings.json"),
+        r#"{"sandbox":{"excludedCommands":["~/.local/bin/tool *"]}}"#,
+    )?;
+
+    install(GenerationContext::home(&source, &[]), &out)?;
+
+    let settings = std::fs::read_to_string(out.join(".claude/settings.json"))?;
+    assert!(settings.contains("\"~/.local/bin/tool *\""));
     std::fs::remove_dir_all(root)?;
     Ok(())
 }

@@ -9,6 +9,8 @@ use crate::generation::{
 };
 use crate::{fs_ops, layout::SourceLayout, runtime_root::RuntimeRoot};
 
+mod home_paths;
+
 pub(crate) fn write_settings(
     source: &Path,
     out: &Path,
@@ -23,53 +25,28 @@ pub(crate) fn write_settings_for_runtime(context: GenerationContext<'_>, out: &P
     io::write_json(out, &settings)
 }
 
+/// Merges generated settings into the target, leaving `~/` paths for the sync that knows the home.
+pub(crate) fn merge_settings(source_path: &Path, target_path: &Path) -> Result<()> {
+    let merged = merged_settings(source_path, target_path)?;
+    write_settings_file(target_path, &merged)
+}
+
 pub(crate) fn sync_settings(source_path: &Path, target_path: &Path, home: &Path) -> Result<()> {
+    let mut merged = merged_settings(source_path, target_path)?;
+    home_paths::expand_excluded_command_home_paths(&mut merged, home);
+    write_settings_file(target_path, &merged)
+}
+
+fn merged_settings(source_path: &Path, target_path: &Path) -> Result<Value> {
     let generated = read_json(source_path)?;
     let mut existing = read_json_or_empty(target_path)?;
     merge_managed_settings(&mut existing, generated)?;
-    expand_excluded_command_home_paths(&mut existing, home);
-    let content = serde_json::to_string_pretty(&existing)? + "\n";
+    Ok(existing)
+}
+
+fn write_settings_file(target_path: &Path, settings: &Value) -> Result<()> {
+    let content = serde_json::to_string_pretty(settings)? + "\n";
     fs_ops::write_file_atomically(target_path, content.as_bytes())
-}
-
-fn expand_excluded_command_home_paths(settings: &mut Value, home: &Path) {
-    let Some(commands) = settings
-        .get_mut("sandbox")
-        .and_then(|sandbox| sandbox.get_mut("excludedCommands"))
-        .and_then(Value::as_array_mut)
-    else {
-        return;
-    };
-    let home = home.to_string_lossy();
-    for command in commands {
-        expand_command_home_path(command, &home);
-    }
-}
-
-fn expand_command_home_path(command: &mut Value, home: &str) {
-    let Value::String(command) = command else {
-        return;
-    };
-    let mut quote_count = 0;
-    let mut escaped = false;
-    let mut expand_next = true;
-    let mut expanded = String::new();
-    for (index, character) in command.char_indices() {
-        let expand_home = expand_next && command[index..].starts_with("~/");
-        push_command_character(&mut expanded, character, expand_home.then_some(home));
-        quote_count += usize::from(character == '"' && !escaped);
-        expand_next = character == '"' && !escaped && quote_count % 2 == 1;
-        escaped = character == '\\' && !escaped;
-    }
-    *command = expanded;
-}
-
-fn push_command_character(expanded: &mut String, character: char, home: Option<&str>) {
-    if let Some(home) = home {
-        expanded.push_str(home);
-    } else {
-        expanded.push(character);
-    }
 }
 
 fn build_settings(context: GenerationContext<'_>, mut settings: Value) -> Result<Value> {

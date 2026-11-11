@@ -60,7 +60,9 @@ fn carry_over_mutable_toml_configs(installed: &Path, staging: &Path) -> Result<(
         .try_for_each(|path| RealFileSystem.copy_file(&installed.join(path), &staging.join(path)))
 }
 
-/// Merges the generated Claude settings into the installed file, as the Home Manager path does.
+/// Merges the generated Claude settings into the installed file.
+///
+/// `~/` stays unexpanded: the prefix is not always the home, and the Home Manager sync expands it.
 fn preserve_claude_settings(installed: &Path, staging: &Path) -> Result<()> {
     let Some(path) = PROVIDERS
         .iter()
@@ -77,7 +79,7 @@ fn preserve_claude_settings(installed: &Path, staging: &Path) -> Result<()> {
     if installed.join(path).exists() {
         RealFileSystem.copy_file(&installed.join(path), &target)?;
     }
-    claude_config::sync_settings(&generated, &target, installed)?;
+    claude_config::merge_settings(&generated, &target)?;
     std::fs::remove_file(&generated)
         .with_context(|| format!("failed to remove {}", generated.display()))
 }

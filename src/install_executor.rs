@@ -28,7 +28,10 @@ pub(crate) fn execute(filesystem: &impl FileSystem, plan: &[FileOp]) -> Result<(
         .iter()
         .try_for_each(|replacement| swap(filesystem, replacement, &mut swapped));
     match result {
-        Ok(()) => commit(filesystem, &swapped),
+        Ok(()) => {
+            commit(filesystem, &swapped);
+            Ok(())
+        }
         Err(error) => {
             discard_staged(filesystem, &staged);
             Err(roll_back(filesystem, &swapped, error))
@@ -77,11 +80,14 @@ fn swap<'a>(
     Ok(())
 }
 
-fn commit(filesystem: &impl FileSystem, swapped: &[Swapped<'_>]) -> Result<()> {
-    swapped
+/// Backups are leftovers once every swap succeeded, so failing to delete one is not a failure.
+fn commit(filesystem: &impl FileSystem, swapped: &[Swapped<'_>]) {
+    for backup in swapped
         .iter()
         .filter_map(|published| published.backup.as_deref())
-        .try_for_each(|backup| filesystem.discard(backup))
+    {
+        let _ = filesystem.discard(backup);
+    }
 }
 
 fn discard_staged(filesystem: &impl FileSystem, staged: &[Staged<'_>]) {
