@@ -84,7 +84,7 @@ sys.exit(${code})
   for (const tool of ['read', 'write', 'edit']) assert.equal((await fileCall(tool, '.git/config'))?.block, true);
   // Pi's credential file is denied to the shell by srt, so the file tools must not hand it out either.
   for (const tool of ['read', 'write', 'edit']) {
-    for (const path of ['~/.pi/agent/auth.json', join(homedir(), '.pi/agent/auth.json'), '@~/.pi/agent/auth.json']) {
+    for (const path of ['~/.pi/agent/auth.json', join(homedir(), '.pi/agent/auth.json'), '@~/.pi/agent/auth.json', '~/.PI/Agent/AUTH.json', '~/.pi/agent/auth.json/']) {
       assert.equal((await fileCall(tool, path))?.block, true, tool + ': ' + path);
     }
   }

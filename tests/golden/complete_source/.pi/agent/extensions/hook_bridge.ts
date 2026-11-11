@@ -126,7 +126,10 @@ function isCredentialFile(path: string): boolean {
 	try {
 		realHome = realpathSync(realHome);
 	} catch {}
-	return [homedir(), realHome].some(home => path === join(home, ".pi", "agent", "auth.json"));
+	// Case-folded and NFC-normalized because macOS volumes are case-insensitive by default.
+	const fold = (value: string) => value.normalize("NFC").toLowerCase();
+	const candidates = [homedir(), realHome].map(home => fold(join(home, ".pi", "agent", "auth.json")));
+	return candidates.includes(fold(path));
 }
 
 function fileBoundary(tool: string, input: unknown, cwd: string): string | undefined {
