@@ -77,8 +77,7 @@ fn merge_permissions(root: &mut Map<String, Value>, context: GenerationContext<'
     rules.extend_deny(
         protected_paths(context)?
             .into_iter()
-            .map(|path| PathRule::write(path).map(|rule| rule.claude()))
-            .collect::<Result<Vec<_>>>()?,
+            .map(|path| PathRule::write_installed_path(path).claude()),
     );
 
     rules.write_into(permissions);

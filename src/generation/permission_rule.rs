@@ -97,8 +97,12 @@ impl PathRule {
         Self { pattern, access }
     }
 
-    pub(crate) fn write(path: String) -> Result<Self> {
-        Ok(Self::new(PathPattern::try_from(path)?, PathAccess::Write))
+    /// Denies writes to a path derived from the install root or synced file names.
+    ///
+    /// Such paths are not authored policy, so parentheses (for example in a root directory
+    /// name) are kept as before instead of failing generation.
+    pub(crate) fn write_installed_path(path: String) -> Self {
+        Self::new(PathPattern(path), PathAccess::Write)
     }
 
     pub(crate) fn claude(&self) -> String {
@@ -157,6 +161,13 @@ mod tests {
         assert!(PathPattern::try_from("a(b".to_owned()).is_err());
         assert!(PathPattern::try_from("a)b".to_owned()).is_err());
         assert!(PathPattern::try_from("~/.ssh/**".to_owned()).is_ok());
+    }
+
+    #[test]
+    fn installed_paths_keep_parentheses() {
+        let rule = PathRule::write_installed_path("/Users/me/Work (old)/x".to_owned());
+
+        assert_eq!(rule.claude(), "Edit(/Users/me/Work (old)/x)");
     }
 
     #[test]

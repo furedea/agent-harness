@@ -66,10 +66,12 @@ pub(crate) fn protected_claude_deny_permissions(
     source: &Path,
     external_hooks: &[ExternalHookBundle],
 ) -> Result<Vec<String>> {
-    protected_paths(source, external_hooks)?
+    Ok(protected_paths(source, external_hooks)?
         .into_iter()
-        .map(|path| Ok(crate::generation::permission_rule::PathRule::write(path)?.claude()))
-        .collect()
+        .map(|path| {
+            crate::generation::permission_rule::PathRule::write_installed_path(path).claude()
+        })
+        .collect())
 }
 
 #[cfg(test)]
