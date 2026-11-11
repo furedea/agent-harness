@@ -52,7 +52,7 @@ impl<'a> SourceLayout<'a> {
     pub(crate) fn required_directories_for(self, providers: &[ProviderSpec]) -> Vec<PathBuf> {
         providers
             .iter()
-            .filter(|spec| matches!(spec.command_rule, Some(CommandRuleSpec::ClaudeRules { .. })))
+            .filter(|spec| matches!(spec.command_rule, Some(CommandRuleSpec::RuleFiles { .. })))
             .map(|spec| self.root.join(spec.hook.source))
             .collect()
     }
@@ -200,7 +200,7 @@ impl<'a> InstalledLayout<'a> {
         providers
             .iter()
             .filter_map(|spec| spec.skill)
-            .filter(|skill| skill.source != SkillSource::CopyCodex)
+            .filter(|skill| !matches!(skill.source, SkillSource::CopyRendered(_)))
             .map(|skill| self.root.join(skill.destination))
             .collect()
     }

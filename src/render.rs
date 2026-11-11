@@ -8,7 +8,7 @@ use crate::{
     layout::{InstalledLayout, SourceLayout},
     provider::{
         renderer::ProviderRenderer,
-        spec::{ConfigSync, PROVIDERS, ProviderId, ProviderSpec},
+        spec::{ConfigSync, PROVIDERS, ProviderSpec},
     },
 };
 
@@ -53,16 +53,18 @@ pub(crate) fn install(context: GenerationContext<'_>, out: &Path) -> Result<()> 
 fn carry_over_mutable_configs(installed: &Path, staging: &Path) -> Result<()> {
     PROVIDERS
         .iter()
-        .filter(|spec| {
-            spec.id == ProviderId::Pi
-                || spec
-                    .config
-                    .is_some_and(|config| config.sync == ConfigSync::MergeToml)
-        })
-        .filter_map(|spec| spec.config)
-        .map(|config| config.path)
+        .filter(|spec| merges_into_installed_config(spec))
+        .filter_map(ProviderSpec::config_path)
         .filter(|path| installed.join(path).exists())
         .try_for_each(|path| RealFileSystem.copy_file(&installed.join(path), &staging.join(path)))
+}
+
+fn merges_into_installed_config(spec: &ProviderSpec) -> bool {
+    let sync = spec.config.map(|config| config.sync);
+    matches!(
+        sync,
+        Some(ConfigSync::ReplaceListedKeys | ConfigSync::MergeToml)
+    )
 }
 
 /// Merges the generated Claude settings into the installed file.
@@ -71,9 +73,11 @@ fn carry_over_mutable_configs(installed: &Path, staging: &Path) -> Result<()> {
 fn preserve_claude_settings(installed: &Path, staging: &Path) -> Result<()> {
     let Some(path) = PROVIDERS
         .iter()
-        .filter_map(|spec| spec.config)
-        .find(|config| config.sync == ConfigSync::MergeClaudeSettings)
-        .map(|config| config.path)
+        .find(|spec| {
+            spec.config
+                .is_some_and(|config| config.sync == ConfigSync::ReplaceGeneratedKeys)
+        })
+        .and_then(ProviderSpec::config_path)
     else {
         return Ok(());
     };

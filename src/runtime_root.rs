@@ -2,6 +2,8 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Result, bail};
 
+use crate::provider::spec::PROVIDERS;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum RuntimeRoot {
     Home,
@@ -44,7 +46,8 @@ fn absolute_path(path: PathBuf) -> Result<PathBuf> {
 }
 
 fn relocate_command_under(root: &Path, command: &str) -> String {
-    if !command.contains("$HOME/.claude/") && !command.contains("$HOME/.codex/") {
+    let homes = provider_home_references();
+    if !homes.iter().any(|home| command.contains(home)) {
         return command.to_owned();
     }
 
@@ -56,25 +59,43 @@ fn relocate_command_under(root: &Path, command: &str) -> String {
     )
 }
 
+/// `$HOME/<home_dir>/` for every provider, so a new provider is relocated without an edit here.
+fn provider_home_references() -> Vec<String> {
+    PROVIDERS
+        .iter()
+        .map(|spec| format!("$HOME/{}/", spec.home_dir))
+        .collect()
+}
+
 fn replace_home_references(command: &str, root: &str) -> String {
-    let double_quoted_root = double_quote_escape(root);
-    let command = command
-        .replace(
-            "\"$HOME/.claude/",
-            &format!("\"{double_quoted_root}/.claude/"),
-        )
-        .replace(
-            "\"$HOME/.codex/",
-            &format!("\"{double_quoted_root}/.codex/"),
-        );
-    let shell_root = shell_quote(root);
-    command
-        .replace("$HOME/.claude/", &format!("{shell_root}/.claude/"))
-        .replace("$HOME/.codex/", &format!("{shell_root}/.codex/"))
+    let quoted = [
+        ("\"", double_quote_escape(root)),
+        ("'", single_quote_escape(root)),
+    ];
+    let command = quoted
+        .iter()
+        .fold(command.to_owned(), |command, (quote, root)| {
+            replace_after(&command, quote, root)
+        });
+    replace_after(&command, "", &shell_quote(root))
+}
+
+/// Replaces `$HOME` in each provider home that follows `prefix` with `root`.
+fn replace_after(command: &str, prefix: &str, root: &str) -> String {
+    provider_home_references()
+        .iter()
+        .fold(command.to_owned(), |command, home| {
+            let rest = &home["$HOME".len()..];
+            command.replace(&format!("{prefix}{home}"), &format!("{prefix}{root}{rest}"))
+        })
 }
 
 fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\"'\"'"))
+}
+
+fn single_quote_escape(value: &str) -> String {
+    value.replace('\'', "'\"'\"'")
 }
 
 fn double_quote_escape(value: &str) -> String {
@@ -122,6 +143,55 @@ mod tests {
                 "bash \"$HOME/.codex/hooks/adapt.sh\" $HOME/.claude/hooks/guard.sh"
             ),
             "export AGENT_HARNESS_ROOT='/work/project with spaces'; bash \"/work/project with spaces/.codex/hooks/adapt.sh\" '/work/project with spaces'/.claude/hooks/guard.sh",
+        );
+        Ok(())
+    }
+
+    fn hook_command(home_dir: &str) -> String {
+        format!("bash \"$HOME/{home_dir}/hooks/run.sh\"")
+    }
+
+    fn relocated_hook_command(home_dir: &str) -> String {
+        format!(
+            "export AGENT_HARNESS_ROOT='/work/project'; bash \"/work/project/{home_dir}/hooks/run.sh\""
+        )
+    }
+
+    #[test]
+    fn directory_relocates_the_hook_commands_of_every_provider() -> Result<()> {
+        let root = RuntimeRoot::directory(PathBuf::from("/work/project"))?;
+
+        let relocated: Vec<_> = PROVIDERS
+            .iter()
+            .map(|spec| root.relocate_command(&hook_command(spec.home_dir)))
+            .collect();
+        let expected: Vec<_> = PROVIDERS
+            .iter()
+            .map(|spec| relocated_hook_command(spec.home_dir))
+            .collect();
+
+        assert_eq!(relocated, expected);
+        Ok(())
+    }
+
+    #[test]
+    fn directory_leaves_commands_outside_every_provider_home_alone() -> Result<()> {
+        let root = RuntimeRoot::directory(PathBuf::from("/work/project"))?;
+
+        assert_eq!(
+            root.relocate_command("bash \"$HOME/.unknown/hooks/run.sh\""),
+            "bash \"$HOME/.unknown/hooks/run.sh\""
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn directory_keeps_single_quoted_hook_paths_inside_their_quotes() -> Result<()> {
+        let root = RuntimeRoot::directory(PathBuf::from("/work/project with spaces"))?;
+
+        assert_eq!(
+            root.relocate_command("bash -c '$HOME/.pi/hooks/run.sh'"),
+            "export AGENT_HARNESS_ROOT='/work/project with spaces'; bash -c '/work/project with spaces/.pi/hooks/run.sh'",
         );
         Ok(())
     }

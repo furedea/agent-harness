@@ -59,9 +59,9 @@ flowchart LR
   subgraph D["Data (declarations only)"]
     SPEC["PROVIDERS (six ProviderSpec)"]
     CONCEPTS["five concepts: hooks, skills, instructions, command rules, config"]
-    VARIANTS["variants: HookRegistration (InSettings, File), CommandRuleSpec (DevinHookBlock, ClaudeRules, CodexExecpolicy), SkillSource"]
+    VARIANTS["variants: HookRegistration (InSettings, File), HookFormat (SettingsSection, WrappedEvents, BareEvents), CommandRuleSpec (InHookRegistration, RuleFiles, ExecpolicyFile), SkillSource (RenderFrontmatter, RenderWithInvocationPolicy, CopyRendered), ConfigLocation"]
     JSON["nix/providers.json (generated from PROVIDERS)"]
-    KINDS["ConfigSync kinds: MergeClaudeSettings, MergeToml, MergeTopLevelJson, MergeYaml, RegisterBundle"]
+    KINDS["ConfigSync kinds: ReplaceGeneratedKeys, ReplaceListedKeys, MergePermissionEntries, MergeToml, MergeYaml, RegisterBundle"]
   end
   subgraph F["Functions (computation, no I/O)"]
     RENDER["hook rendering: builds hook and config values"]

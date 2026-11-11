@@ -10,7 +10,8 @@ use crate::{
     },
     layout::SourceLayout,
     provider::spec::{
-        CommandRuleSpec, ConfigSync, HookRegistration, ProviderSpec, SkillSource, SkillSpec,
+        CommandRuleSpec, ConfigSync, HookRegistration, ProviderId, ProviderSpec, SkillSource,
+        SkillSpec,
     },
     render::Provider,
 };
@@ -61,10 +62,11 @@ impl ProviderRenderer<'_> {
 
     fn render_skill(&self, skill: &SkillSpec) -> Result<()> {
         let target = self.out.join(skill.destination);
+        let render = |provider| self.generate_skills(provider, &target);
         match skill.source {
-            SkillSource::RenderClaude => self.generate_skills(Provider::Claude, &target),
-            SkillSource::RenderCodex => self.generate_skills(Provider::Codex, &target),
-            SkillSource::CopyCodex => self.copy_codex_skills(&target),
+            SkillSource::RenderFrontmatter => render(Provider::Claude),
+            SkillSource::RenderWithInvocationPolicy => render(Provider::Codex),
+            SkillSource::CopyRendered(from) => self.copy_rendered_skills(from, &target),
         }
     }
 
@@ -76,25 +78,25 @@ impl ProviderRenderer<'_> {
         skills::render_skills(self.context.source, &[], target)
     }
 
-    fn copy_codex_skills(&self, target: &Path) -> Result<()> {
-        let codex = crate::provider::spec::ProviderId::Codex
+    fn copy_rendered_skills(&self, from: ProviderId, target: &Path) -> Result<()> {
+        let rendered = from
             .spec()
             .skill
-            .context("the Codex provider spec declares no skills")?;
-        RealFileSystem.replace_directory(&self.out.join(codex.destination), target)
+            .with_context(|| format!("the {} provider spec declares no skills", from.spec().key))?;
+        RealFileSystem.replace_directory(&self.out.join(rendered.destination), target)
     }
 
     fn write_command_rule(&self, rule: CommandRuleSpec) -> Result<()> {
         match rule {
             // Devin's rules are written into its hook registration.
-            CommandRuleSpec::DevinHookBlock => Ok(()),
-            CommandRuleSpec::ClaudeRules {
+            CommandRuleSpec::InHookRegistration => Ok(()),
+            CommandRuleSpec::RuleFiles {
                 permissions,
                 protected_paths,
                 ..
             } => self
                 .write_policy_files(&self.out.join(permissions), &self.out.join(protected_paths)),
-            CommandRuleSpec::CodexExecpolicy { rules_file } => self.write_rules_file(rules_file),
+            CommandRuleSpec::ExecpolicyFile { rules_file } => self.write_rules_file(rules_file),
         }
     }
 
@@ -122,9 +124,11 @@ impl ProviderRenderer<'_> {
         match sync {
             ConfigSync::MergeToml => self.merge_codex_config(path),
             ConfigSync::MergeYaml => hermes_config::write_managed_config(path),
-            ConfigSync::MergeTopLevelJson => pi_config::write_managed_config(source, path),
+            ConfigSync::ReplaceListedKeys => pi_config::write_managed_config(source, path),
             // These are the hook registration or the bridge directory, rendered with them.
-            ConfigSync::MergeClaudeSettings | ConfigSync::RegisterBundle => Ok(()),
+            ConfigSync::ReplaceGeneratedKeys
+            | ConfigSync::MergePermissionEntries
+            | ConfigSync::RegisterBundle => Ok(()),
         }
     }
 
