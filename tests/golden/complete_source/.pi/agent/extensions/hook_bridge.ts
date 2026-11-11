@@ -119,6 +119,11 @@ function touchesGit(path: string): boolean {
 	});
 }
 
+// Mirrors the srt denyRead entry for Pi's own credentials, which the file tools would otherwise bypass.
+function isCredentialFile(path: string): boolean {
+	return path === join(realpathSync(homedir()), ".pi", "agent", "auth.json") || path === join(homedir(), ".pi", "agent", "auth.json");
+}
+
 function fileBoundary(tool: string, input: unknown, cwd: string): string | undefined {
 	if (!isRecord(input) || typeof input.path !== "string" || !input.path) return "Invalid file path";
 	try {
@@ -126,6 +131,7 @@ function fileBoundary(tool: string, input: unknown, cwd: string): string | undef
 		const lexical = resolve(root, normalizeToolPath(input.path));
 		const target = targetPath(lexical);
 		if ([lexical, target].some(touchesGit)) return "File tools cannot access .git";
+		if ([lexical, target].some(isCredentialFile)) return "File tools cannot access Pi credentials";
 		const path = relative(root, target);
 		if (tool !== "read" && (path === ".." || path.startsWith(".." + sep) || isAbsolute(path))) {
 			return "File writes must stay inside the worktree";

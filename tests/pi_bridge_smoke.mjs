@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync, rmSync, mkdirSync, symlinkSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const root = mkdtempSync(join(tmpdir(), 'pi-bridge-'));
@@ -82,6 +82,12 @@ sys.exit(${code})
     assert.equal(await fileCall(tool, 'sub/new/file'), undefined);
   }
   for (const tool of ['read', 'write', 'edit']) assert.equal((await fileCall(tool, '.git/config'))?.block, true);
+  // Pi's credential file is denied to the shell by srt, so the file tools must not hand it out either.
+  for (const tool of ['read', 'write', 'edit']) {
+    for (const path of ['~/.pi/agent/auth.json', join(homedir(), '.pi/agent/auth.json'), '@~/.pi/agent/auth.json']) {
+      assert.equal((await fileCall(tool, path))?.block, true, tool + ': ' + path);
+    }
+  }
   assert.equal(await fileCall('read', tmpdir()), undefined);
   symlinkSync(join(root, 'sub'), join(root, 'inside'));
   assert.equal(await fileCall('write', 'inside/new'), undefined);
