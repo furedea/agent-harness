@@ -112,7 +112,10 @@ pub(crate) fn create_missing_parents(target: &Path) -> Result<Vec<PathBuf>> {
         .map(Path::to_path_buf)
         .collect();
     missing.reverse();
-    create_parent(target)?;
+    if let Err(error) = create_parent(target) {
+        remove_created_parents(&missing);
+        return Err(error);
+    }
     Ok(missing)
 }
 
