@@ -1,4 +1,4 @@
-# ADR-0029: Run Pi file operations inside srt
+# ADR-0030: Run Pi file operations inside srt
 
 - Status: Accepted
 - Date: 2026-11-12

@@ -5,15 +5,20 @@ use std::path::Path;
 use anyhow::{Context, Result};
 
 use crate::{
+    config_sync::{
+        Merge,
+        codec::{ConfigDocument, Toml},
+        installed::{Installed, read_optional_generated},
+    },
     file_op::FileOp,
     generation::{
-        GenerationContext, claude_config, codex_config, command_permissions, hermes_config, hooks,
-        pi_config, pi_sandbox, protection, skills,
+        GenerationContext, claude_config, codex_config, command_permissions, hooks, pi_sandbox,
+        protection, skills,
     },
     layout::SourceLayout,
     provider::spec::{
-        CommandRuleSpec, ConfigSync, HookRegistration, ProviderId, ProviderSpec, SkillSource,
-        SkillSpec,
+        CommandRuleSpec, ConfigSpec, ConfigSync, HookRegistration, ProviderId, ProviderSpec,
+        RenderedConfig, SkillSource, SkillSpec,
     },
     render::Provider,
 };
@@ -41,7 +46,15 @@ impl ProviderRenderer<'_> {
         operations.extend(self.render_skill(spec)?);
         operations.extend(self.write_command_rule(spec)?);
         operations.extend(self.write_config(spec)?);
+        operations.extend(self.write_sandbox_policy(spec)?);
         Ok(operations)
+    }
+
+    /// Pi's srt policy, generated from the same source as Claude's sandbox block.
+    fn write_sandbox_policy(&self, spec: &ProviderSpec) -> Result<Option<FileOp>> {
+        (spec.id == ProviderId::Pi)
+            .then(|| pi_sandbox::policy_op(self.context, self.out))
+            .transpose()
     }
 
     fn copy_instructions(&self, spec: &ProviderSpec) -> Option<FileOp> {
@@ -134,29 +147,59 @@ impl ProviderRenderer<'_> {
 
     fn write_config(&self, spec: &ProviderSpec) -> Result<Vec<FileOp>> {
         match spec.config.zip(spec.config_file()) {
-            Some((config, path)) => self.write_config_file(config.sync, &self.out.join(path)),
+            Some((config, path)) => self.write_config_file(config, &self.out.join(path)),
             None => Ok(Vec::new()),
         }
     }
 
-    fn write_config_file(&self, sync: ConfigSync, path: &Path) -> Result<Vec<FileOp>> {
-        let source = self.context.source;
-        match sync {
-            ConfigSync::MergeToml => self.merge_codex_config(path),
-            ConfigSync::MergeYaml => Ok(vec![hermes_config::managed_config_op(path)]),
-            ConfigSync::ReplaceListedKeys => Ok(vec![
-                pi_sandbox::policy_op(self.context, self.out)?,
-                pi_config::managed_config_op(source, path)?,
-            ]),
-            // These are the hook registration or the bridge directory, rendered with them.
-            ConfigSync::ReplaceGeneratedKeys
-            | ConfigSync::MergePermissionEntries
-            | ConfigSync::RegisterBundle => Ok(Vec::new()),
+    fn write_config_file(&self, config: ConfigSpec, path: &Path) -> Result<Vec<FileOp>> {
+        let target = InstalledConfig {
+            sync: &config.sync,
+            path,
+        };
+        match config.rendered {
+            // The hook registration or the bridge directory, rendered with them.
+            RenderedConfig::WithHooks => Ok(Vec::new()),
+            RenderedConfig::Fixed(content) => Ok(vec![FileOp::write(path, content)]),
+            RenderedConfig::SourceFile(relative) => self.merge_source_file(target, relative),
+            RenderedConfig::SourceTomlWithProtection => self.merge_protected_toml(target),
         }
     }
 
-    fn merge_codex_config(&self, path: &Path) -> Result<Vec<FileOp>> {
-        let generated = codex_config::generated_config_source(self.context)?;
-        codex_config::sync_managed_document_ops(&generated, path, self.context.source.files())
+    fn merge_source_file(
+        &self,
+        target: InstalledConfig<'_>,
+        relative: &str,
+    ) -> Result<Vec<FileOp>> {
+        let path = self.context.source.root().join(relative);
+        let generated = read_optional_generated(target.sync, self.context.source.files(), &path)?;
+        self.merge_into_installed(target, &generated)
     }
+
+    fn merge_protected_toml(&self, target: InstalledConfig<'_>) -> Result<Vec<FileOp>> {
+        let generated = codex_config::generated_config_source(self.context)?;
+        self.merge_into_installed(
+            target,
+            &ConfigDocument::Toml(Toml::from_document(generated)),
+        )
+    }
+
+    fn merge_into_installed(
+        &self,
+        target: InstalledConfig<'_>,
+        generated: &ConfigDocument,
+    ) -> Result<Vec<FileOp>> {
+        let installed =
+            Installed::from_snapshot(target.sync, self.context.source.files(), target.path)?;
+        Merge::new(target.sync, generated)
+            .apply(installed)?
+            .into_ops(target.sync, target.path)
+    }
+}
+
+/// A mutable config in the output, which rendering merges the generated config into.
+#[derive(Clone, Copy)]
+struct InstalledConfig<'a> {
+    sync: &'a ConfigSync,
+    path: &'a Path,
 }

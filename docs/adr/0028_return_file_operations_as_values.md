@@ -114,6 +114,7 @@ outputs. The same split now covers reads.
     at the boundary is left for the sync step.
 - A snapshot walks the whole source tree, so a very large source directory costs a read of its
     documents even when a command needs only one.
-- The merge of Claude, Codex, Devin, Hermes, pi, and dsh configs is still per-provider code behind
-    `ConfigSync`. Declaring ownership in the spec and syncing with one implementation is a later step.
+- The merge of Claude, Codex, Devin, Hermes, pi, and dsh configs was still per-provider code behind
+    `ConfigSync` when this was written; [ADR-0029](0029_declare_config_ownership_and_sync_with_one_engine.md)
+    declares ownership in the spec and syncs with one implementation.
 - The duplicate provider enums are tracked separately.

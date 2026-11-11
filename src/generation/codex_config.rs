@@ -6,32 +6,13 @@ use toml_edit::{DocumentMut, Item, TableLike};
 use crate::{
     file_op::FileOp,
     generation::{
-        codex_managed_state::{
-            ManagedState, managed_state_op, managed_state_path, read_managed_state,
-        },
         external_hooks::{ExternalHookBundle, OpenBundle},
         protection,
     },
     layout::SourceLayout,
     runtime_root::RuntimeRoot,
-    snapshot::{ConfigFiles, Snapshot, Tree},
+    snapshot::{Snapshot, Tree},
 };
-
-const MANAGED_KEYS: &[&str] = &[
-    "model",
-    "model_reasoning_effort",
-    "personality",
-    "approval_policy",
-    "sandbox_mode",
-    "approvals_reviewer",
-    "cli_auth_credentials_store",
-    "notice",
-    "tui",
-    "plugins",
-    "features",
-    "default_permissions",
-    "permissions",
-];
 
 pub(crate) fn config_source_op(
     source: Tree<'_>,
@@ -42,11 +23,6 @@ pub(crate) fn config_source_op(
         out,
         config_source_content(source, external_hooks)?,
     ))
-}
-
-pub(crate) fn sync_managed_config_ops(config: ConfigFiles<'_>) -> Result<Vec<FileOp>> {
-    let source = read_toml_document(config.files, config.generated)?;
-    sync_managed_document_ops(&source, config.target, config.files)
 }
 
 pub(crate) fn generated_config_source(
@@ -138,99 +114,6 @@ fn merge_tables(target: &mut dyn TableLike, source: &dyn TableLike) {
     for (key, item) in source.iter() {
         merge_item(target.entry(key).or_insert(Item::None), item);
     }
-}
-
-/// The config and its sidecar, both of which the sync rewrites.
-pub(crate) fn sync_managed_document_ops(
-    source: &DocumentMut,
-    target_path: &Path,
-    files: &Snapshot,
-) -> Result<Vec<FileOp>> {
-    let mut target = if files.exists(target_path) {
-        read_toml_document(files, target_path)?
-    } else {
-        DocumentMut::new()
-    };
-
-    sync_managed_keys(source, &mut target);
-    let state_path = managed_state_path(target_path);
-    let state = sync_env_keys(source, &mut target, &read_managed_state(files, &state_path))?;
-
-    Ok(vec![
-        FileOp::write(target_path, target.to_string()),
-        managed_state_op(&state_path, &state)?,
-    ])
-}
-
-fn sync_managed_keys(source: &DocumentMut, target: &mut DocumentMut) {
-    for key in MANAGED_KEYS {
-        sync_key(source, target, key);
-    }
-}
-
-fn sync_key(source: &DocumentMut, target: &mut DocumentMut, key: &str) {
-    match source.get(key) {
-        Some(item) => target[key] = item.clone(),
-        None => {
-            target.remove(key);
-        }
-    }
-}
-
-/// Writes every generated `shell_environment_policy.set` key and removes the ones the previous
-/// sync wrote that the source no longer has. Returns the keys now managed.
-fn sync_env_keys(
-    source: &DocumentMut,
-    target: &mut DocumentMut,
-    previous: &ManagedState,
-) -> Result<ManagedState> {
-    let generated = env_set_items(source);
-    let stale = previous
-        .shell_environment_policy_set
-        .iter()
-        .map(String::as_str)
-        .filter(|key| !generated.iter().any(|(name, _)| name == key));
-    remove_env_keys(target, stale);
-    for (key, item) in &generated {
-        env_set_table(target)?.insert(key, (*item).clone());
-    }
-    Ok(ManagedState {
-        shell_environment_policy_set: generated.iter().map(|(key, _)| key.to_string()).collect(),
-    })
-}
-
-fn env_set_table(target: &mut DocumentMut) -> Result<&mut dyn TableLike> {
-    target
-        .entry("shell_environment_policy")
-        .or_insert_with(toml_edit::table)
-        .as_table_like_mut()
-        .context("shell_environment_policy is not a table")?
-        .entry("set")
-        .or_insert_with(toml_edit::table)
-        .as_table_like_mut()
-        .context("shell_environment_policy.set is not a table")
-}
-
-fn env_set_items(source: &DocumentMut) -> Vec<(&str, &Item)> {
-    source
-        .get("shell_environment_policy")
-        .and_then(|policy| policy.get("set"))
-        .and_then(Item::as_table_like)
-        .map(|set| set.iter().collect())
-        .unwrap_or_default()
-}
-
-fn remove_env_keys<'a>(target: &mut DocumentMut, keys: impl Iterator<Item = &'a str>) {
-    let set = target
-        .get_mut("shell_environment_policy")
-        .and_then(|policy| policy.get_mut("set"))
-        .and_then(Item::as_table_like_mut);
-    let Some(set) = set else {
-        return;
-    };
-    keys.for_each(|key| {
-        set.remove(key);
-    });
 }
 
 fn read_toml_document(files: &Snapshot, path: &Path) -> Result<DocumentMut> {
