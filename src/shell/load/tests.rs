@@ -77,7 +77,11 @@ fn symlinks_are_recorded_as_their_target_kind_and_skipped_by_a_listing_of_their_
     assert!(snapshot.is_file(&root.path().join("linked.json")));
     assert!(!snapshot.is_regular_file(&root.path().join("linked.json")));
     assert!(!snapshot.is_file(&root.path().join("broken")));
-    assert!(snapshot.exists(&root.path().join("broken")));
+    assert!(!snapshot.exists(&root.path().join("broken")));
+    assert_eq!(
+        snapshot.read_text_if_present(&root.path().join("broken"))?,
+        None
+    );
     assert_eq!(
         snapshot.regular_files(root.path()),
         [root.path().join("real.json")]
@@ -163,14 +167,14 @@ fn a_path_named_as_probe_and_document_keeps_its_text() -> Result<()> {
 
 #[cfg(unix)]
 #[test]
-fn a_looping_symlink_is_recorded_as_other_instead_of_failing_the_walk() -> Result<()> {
+fn a_looping_symlink_is_recorded_as_unreachable_instead_of_failing_the_walk() -> Result<()> {
     let root = TemporaryDirectory::create()?;
     fixtures::symlink(root.path().join("loop"), root.path().join("loop"))?;
     fixtures::write(root.path().join("kept.json"), "{}")?;
 
     let snapshot = load_snapshot(&request(&[root.path()], &[]))?;
 
-    assert!(snapshot.exists(&root.path().join("loop")));
+    assert!(!snapshot.exists(&root.path().join("loop")));
     assert!(!snapshot.is_file(&root.path().join("loop")));
     assert!(snapshot.is_file(&root.path().join("kept.json")));
     Ok(())

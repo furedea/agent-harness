@@ -23,8 +23,11 @@ use anyhow::{Result, anyhow};
 pub(crate) enum EntryKind {
     File,
     Directory,
-    /// A socket, a broken symlink, or anything else that is neither file nor directory.
+    /// A socket or anything else that exists but is neither file nor directory.
     Other,
+    /// A symlink that cannot be followed (dangling, looping, or into a place it may not enter),
+    /// which `Path::exists` reports as absent.
+    Unreachable,
 }
 
 /// One path in a snapshot.
@@ -117,8 +120,10 @@ impl Snapshot {
             .is_some_and(|entry| entry.kind == EntryKind::File && !entry.is_symlink)
     }
 
+    /// Whether `path` exists, following symlinks like `Path::exists`.
     pub(crate) fn exists(&self, path: &Path) -> bool {
-        self.entries.contains_key(path)
+        self.kind(path)
+            .is_some_and(|kind| kind != EntryKind::Unreachable)
     }
 
     /// The text of `path`.
@@ -138,8 +143,8 @@ impl Snapshot {
     /// Returns an error when the path exists but was not loaded as UTF-8 text.
     pub(crate) fn read_text_if_present(&self, path: &Path) -> Result<Option<&str>> {
         match self.entries.get(path) {
-            None => Ok(None),
-            Some(entry) => entry.text(path).map(Some),
+            Some(entry) if entry.kind != EntryKind::Unreachable => entry.text(path).map(Some),
+            _ => Ok(None),
         }
     }
 

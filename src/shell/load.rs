@@ -181,13 +181,13 @@ fn list_directory(dir: &Path) -> Result<Vec<(PathBuf, bool)>> {
 
 /// What `path` resolves to, or `None` when it does not exist.
 ///
-/// A symlink that cannot be followed is `Other`; other failures are errors.
+/// A symlink that cannot be followed is `Unreachable`; other failures are errors.
 fn resolve_kind(path: &Path, is_symlink: bool) -> Result<Option<EntryKind>> {
     match std::fs::metadata(path) {
         Ok(metadata) => Ok(Some(kind_of(&metadata))),
         // A link that cannot be followed (broken, looping, or into a place it may not enter) is
-        // `Other`, as `Path::is_file` would answer for it.
-        Err(_) if is_symlink => Ok(Some(EntryKind::Other)),
+        // `Unreachable`, which `Path::exists` reports as absent.
+        Err(_) if is_symlink => Ok(Some(EntryKind::Unreachable)),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(error) => Err(error).with_context(|| format!("failed to inspect {}", path.display())),
     }

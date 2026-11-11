@@ -367,3 +367,18 @@ fn write_file(path: &Path, content: &str) -> Result<()> {
     crate::shell::fixtures::write(path, content)?;
     Ok(())
 }
+
+#[cfg(unix)]
+#[test]
+fn sync_managed_document_starts_from_an_empty_document_when_the_target_is_a_dangling_symlink()
+-> Result<()> {
+    let root = crate::shell::TemporaryDirectory::create()?;
+    let target = root.path().join("config.toml");
+    crate::shell::fixtures::symlink(root.path().join("gone.toml"), &target)?;
+
+    let files = load_documents(&[&target, &managed_state_path(&target)])?;
+    let operations = sync_managed_document_ops(&env_source(&[])?, &target, &files)?;
+
+    assert_eq!(operations[0].target(), target);
+    Ok(())
+}
