@@ -6,9 +6,9 @@
  * adapter's blocking output is translated back into pi result shapes.
  */
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { realpathSync, lstatSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve, dirname, basename, relative, isAbsolute, sep } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 const ADAPTER =
@@ -40,6 +40,7 @@ function dispatch(event: string, payload: unknown): Promise<AdapterRun> {
 		child.stderr.on("data", (data) => (run.stderr += data));
 		child.on("error", () => done(run));
 		child.on("close", (code) => done({ ...run, code: code ?? -1 }));
+		child.stdin.on("error", () => done(run));
 		child.stdin.end(JSON.stringify(payload));
 	});
 }
@@ -84,8 +85,40 @@ function sessionId(ctx: ExtensionContext): string {
 
 type RawEvent = Record<string, unknown>;
 
+// Resolve existing ancestors as well as targets that have not been created yet.
+function targetPath(path: string): string {
+	try {
+		return realpathSync(path);
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+		// A dangling symlink must never become an apparently safe missing file.
+		try {
+			if (lstatSync(path).isSymbolicLink()) throw new Error("Cannot resolve file target " + path + ": dangling symlink");
+		} catch (statError) {
+			if ((statError as NodeJS.ErrnoException).code !== "ENOENT") throw statError;
+		}
+		return join(targetPath(dirname(path)), basename(path));
+	}
+}
+
+function fileBoundary(tool: string, input: unknown, cwd: string): string | undefined {
+	if (!isRecord(input) || typeof input.path !== "string" || !input.path) return "Invalid file path";
+	try {
+		const root = realpathSync(cwd);
+		const lexical = resolve(root, input.path.replace(/^~\//, homedir() + "/"));
+		const target = targetPath(lexical);
+		if ([lexical, target].some(path => path.split(sep).includes(".git"))) return "File tools cannot access .git";
+		const path = relative(root, target);
+		if (tool !== "read" && (path === ".." || path.startsWith(".." + sep) || isAbsolute(path))) {
+			return "File writes must stay inside the worktree";
+		}
+	} catch {
+		return "Cannot resolve file target safely";
+	}
+	return undefined;
+}
+
 export default function (pi: ExtensionAPI) {
-	if (!existsSync(ADAPTER)) return;
 
 	const forward = (event: string, rawEvent: unknown, ctx: ExtensionContext, extra?: RawEvent) => {
 		const base = typeof rawEvent === "object" && rawEvent !== null ? (rawEvent as RawEvent) : {};
@@ -123,10 +156,18 @@ export default function (pi: ExtensionAPI) {
 	}
 
 	pi.on("tool_call", async (event, ctx) => {
+		const fileTool = ["read", "write", "edit"].includes(event.toolName);
+		if (fileTool) {
+			const reason = fileBoundary(event.toolName, event.input, ctx.cwd);
+			if (reason) return { block: true, reason };
+		}
 		const run = await forward("tool_call", event, ctx, {
 			tool_name: event.toolName,
 			tool_input: event.input,
 		});
+		if (fileTool && run.code !== 0 && run.code !== 2) {
+			return { block: true, reason: "File tool hook failed" };
+		}
 		const decision = hookDecision(run);
 		if (decision === undefined) return undefined;
 		const { reason } = decision;

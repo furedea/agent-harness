@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, rmSync, mkdirSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -8,6 +8,7 @@ try {
   const adapter = join(root, 'adapter.py');
   writeFileSync(adapter, '');
   process.env.AGENT_HARNESS_PI_ADAPTER = adapter;
+  process.env.AGENT_HARNESS_HOOK_TIMEOUT = "0.5";
   const { default: register } = await import('../src/generation/assets/pi/hook_bridge.ts');
   const listeners = new Map();
   register({ on(event, listener) { listeners.set(event, listener); } });
@@ -70,6 +71,43 @@ sys.exit(${code})
   output([allow]);
   assert.equal(await call(), undefined);
   assert.equal(prompts.length, 0);
+  output([]);
+  const fileCall = (toolName, path) => listeners.get('tool_call')({ toolName, input: { path } }, ctx);
+  mkdirSync(join(root, 'sub'));
+  symlinkSync(tmpdir(), join(root, 'escape'));
+  for (const tool of ['write', 'edit']) {
+    for (const path of ['../outside', join(tmpdir(), 'outside'), 'escape/new/file', '.git/config', 'sub/../../outside']) {
+      assert.equal((await fileCall(tool, path))?.block, true, tool + ': ' + path);
+    }
+    assert.equal(await fileCall(tool, 'sub/new/file'), undefined);
+  }
+  for (const tool of ['read', 'write', 'edit']) assert.equal((await fileCall(tool, '.git/config'))?.block, true);
+  assert.equal(await fileCall('read', tmpdir()), undefined);
+  symlinkSync(join(root, 'sub'), join(root, 'inside'));
+  assert.equal(await fileCall('write', 'inside/new'), undefined);
+  symlinkSync(join(root, 'missing'), join(root, 'dangling'));
+  assert.equal((await fileCall('write', 'dangling'))?.block, true);
+  for (const code of [1, 3]) {
+    output([], code);
+    for (const tool of ['read', 'write', 'edit']) assert.equal((await fileCall(tool, 'file'))?.block, true);
+    assert.equal(await call(), undefined);
+  }
+  writeFileSync(adapter, 'import os, signal\nos.kill(os.getpid(), signal.SIGTERM)\n');
+  for (const tool of ['read', 'write', 'edit']) assert.equal((await fileCall(tool, 'file'))?.block, true);
+  assert.equal(await call(), undefined);
+  writeFileSync(adapter, 'import time\ntime.sleep(10)\n');
+  for (const tool of ['read', 'write', 'edit']) assert.equal((await fileCall(tool, 'file'))?.block, true);
+  assert.equal(await call(), undefined);
+  const savedPath = process.env.PATH;
+  process.env.PATH = root;
+  for (const tool of ['read', 'write', 'edit']) assert.equal((await fileCall(tool, 'file'))?.block, true);
+  assert.equal(await call(), undefined);
+  process.env.PATH = savedPath;
+  rmSync(adapter);
+  assert.equal((await fileCall('write', 'file'))?.block, true);
+  const missingListeners = new Map();
+  register({ on(event, listener) { missingListeners.set(event, listener); } });
+  assert.equal((await missingListeners.get('tool_call')({ toolName: 'write', input: { path: 'file' } }, ctx))?.block, true);
   output([ask]);
   await listeners.get('tool_call')({ toolName: 'read', input: { path: 'README.md' } }, ctx);
   assert.ok(prompts[0].includes('read'));
