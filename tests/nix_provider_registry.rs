@@ -13,10 +13,18 @@ use serde_json::{Map, Value, json};
 mod id;
 
 #[allow(dead_code)]
+#[path = "../src/provider/ownership.rs"]
+mod ownership;
+
+#[allow(dead_code)]
+#[path = "../src/provider/registry.rs"]
+mod registry;
+
+#[allow(dead_code)]
 #[path = "../src/provider/spec.rs"]
 mod spec;
 
-use spec::{ConfigLocation, ConfigSpec, ConfigSync, ProviderSpec, SkillSource};
+use spec::{ConfigFormat, ConfigLocation, ConfigSpec, ProviderSpec, RenderedConfig, SkillSource};
 
 const UPDATE_VARIABLE: &str = "UPDATE_PROVIDERS_JSON";
 
@@ -127,17 +135,15 @@ fn skills_provider(source: SkillSource) -> &'static str {
 }
 
 fn sync_json(spec: &ProviderSpec, config: ConfigSpec) -> Value {
-    let noun = match config.sync {
-        ConfigSync::ReplaceGeneratedKeys => "Settings",
-        ConfigSync::MergeToml
-        | ConfigSync::ReplaceListedKeys
-        | ConfigSync::MergePermissionEntries
-        | ConfigSync::MergeYaml
-        | ConfigSync::RegisterBundle => "Config",
+    // Claude's config is the settings file its hooks live in.
+    let noun = if config.sync.replaces_every_key() {
+        "Settings"
+    } else {
+        "Config"
     };
     let mut sync = json!({
         "activation": format!("agentHarness{}{noun}", capitalized(spec.key)),
-        "command": if config.sync == ConfigSync::ReplaceListedKeys {
+        "command": if matches!(config.rendered, RenderedConfig::SourceFile(_)) {
             "sync-config --provider pi".to_owned()
         } else {
             format!("sync-{}-{}", spec.key, noun.to_lowercase())
@@ -145,7 +151,7 @@ fn sync_json(spec: &ProviderSpec, config: ConfigSpec) -> Value {
         "source": source_path(spec, config),
         "target": sync_target(spec, config),
     });
-    if config.sync == ConfigSync::MergeToml {
+    if config.rendered == RenderedConfig::SourceTomlWithProtection {
         // Codex's merge runs at the write boundary; the others run after link generation.
         sync["after"] = json!("writeBoundary");
     }
@@ -169,21 +175,18 @@ fn source_path(spec: &ProviderSpec, config: ConfigSpec) -> String {
 }
 
 fn sync_target(spec: &ProviderSpec, config: ConfigSpec) -> String {
-    match config.sync {
-        ConfigSync::MergeYaml => format!("{}/config.yaml", spec.home_dir),
-        ConfigSync::RegisterBundle => {
+    match (config.location, config.sync.format) {
+        (_, ConfigFormat::Yaml) => format!("{}/config.yaml", spec.home_dir),
+        (ConfigLocation::BundleDirectory(_), _) => {
             format!("{}/profiles/${{profile}}/package.json", spec.home_dir)
         }
-        ConfigSync::ReplaceGeneratedKeys
-        | ConfigSync::MergeToml
-        | ConfigSync::ReplaceListedKeys
-        | ConfigSync::MergePermissionEntries => source_path(spec, config),
+        _ => source_path(spec, config),
     }
 }
 
 fn extra_options(spec: &ProviderSpec) -> Value {
-    match spec.config.map(|config| config.sync) {
-        Some(ConfigSync::RegisterBundle) => json!({
+    match spec.config.map(|config| config.location) {
+        Some(ConfigLocation::BundleDirectory(_)) => json!({
             "profile": {
                 "default": "web",
                 "description": "User-owned dsh profile to register the hook bundle in.",

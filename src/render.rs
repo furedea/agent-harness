@@ -5,21 +5,24 @@ use std::path::{Path, PathBuf};
 use anyhow::{Result, bail, ensure};
 
 use crate::{
+    config_sync::{
+        Merge,
+        installed::{Installed, read_generated},
+    },
     file_op::FileOp,
     generation::{
-        GenerationContext, claude_config, command_permissions, external_hooks::ExternalHookBundle,
-        skills,
+        GenerationContext, command_permissions, external_hooks::ExternalHookBundle, skills,
     },
     layout::{InstalledLayout, SourceLayout},
     provider::{
         renderer::ProviderRenderer,
-        spec::{ConfigSync, PROVIDERS, ProviderSpec},
+        spec::{ConfigSpec, PROVIDERS, ProviderSpec},
     },
     runtime_root::RuntimeRoot,
     shell::{
         ExternalInputs, TemporaryDirectory, execute, load_snapshot, source_request, sync_documents,
     },
-    snapshot::{ConfigFiles, Snapshot, SnapshotRequest, Tree},
+    snapshot::{Snapshot, SnapshotRequest, Tree},
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -128,39 +131,37 @@ fn carry_over_mutable_configs(installed: &Path, staging: &Path) -> Result<()> {
 }
 
 fn merges_into_installed_config(spec: &ProviderSpec) -> bool {
-    let sync = spec.config.map(|config| config.sync);
-    matches!(
-        sync,
-        Some(ConfigSync::ReplaceListedKeys | ConfigSync::MergeToml)
-    )
+    spec.config
+        .is_some_and(|config| config.rendered.merges_into_installed())
 }
 
 /// Merges the generated Claude settings into the installed file.
 ///
 /// `~/` stays unexpanded: the prefix is not always the home, and the Home Manager sync expands it.
 fn preserve_claude_settings(installed: &Path, staging: &Path) -> Result<()> {
-    let Some(path) = PROVIDERS
-        .iter()
-        .find(|spec| {
-            spec.config
-                .is_some_and(|config| config.sync == ConfigSync::ReplaceGeneratedKeys)
-        })
-        .and_then(ProviderSpec::config_path)
-    else {
+    let Some((config, path)) = PROVIDERS.iter().find_map(settings_merged_whole) else {
         return Ok(());
     };
     let generated = staging.join(path);
     let target = installed.join(path);
-    let files = load_snapshot(&SnapshotRequest {
-        documents: vec![generated.clone(), target.clone()],
-        ..SnapshotRequest::default()
-    })?;
-    let config = ConfigFiles {
-        generated: &generated,
-        target: &target,
-        files: &files,
-    };
-    execute(&[claude_config::merge_settings_op(config, &generated)?])
+    let mut request = SnapshotRequest::default();
+    request.documents.push(generated.clone());
+    request
+        .documents
+        .extend(sync_documents(&config.sync, &target));
+    let files = load_snapshot(&request)?;
+    let document = read_generated(&config.sync, &files, &generated)?;
+    let existing = Installed::from_snapshot(&config.sync, &files, &target)?;
+    let merged = Merge::new(&config.sync, &document).apply(existing)?;
+    execute(&[FileOp::write(&generated, merged.config)])
+}
+
+/// The config whose every generated key replaces the installed one, and where it lives.
+fn settings_merged_whole(spec: &ProviderSpec) -> Option<(ConfigSpec, &'static str)> {
+    let config = spec
+        .config
+        .filter(|config| config.sync.replaces_every_key())?;
+    Some((config, spec.config_path()?))
 }
 
 fn render_installation(request: &RenderRequest<'_>, out: &Path) -> Result<()> {
@@ -213,7 +214,7 @@ fn installation_request(
         .filter_map(|spec| Some((spec.config?.sync, spec.config_file()?)));
     snapshot
         .documents
-        .extend(merged_configs.flat_map(|(sync, path)| sync_documents(sync, &out.join(path))));
+        .extend(merged_configs.flat_map(|(sync, path)| sync_documents(&sync, &out.join(path))));
     snapshot
 }
 

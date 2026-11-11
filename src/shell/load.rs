@@ -15,10 +15,8 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 
 use crate::{
-    generation::{
-        codex_managed_state::managed_state_path, external_hooks::ExternalHookBundle,
-        skills::ExternalSkill,
-    },
+    config_sync::installed::installed_files,
+    generation::{external_hooks::ExternalHookBundle, skills::ExternalSkill},
     provider::spec::ConfigSync,
     snapshot::{Entry, EntryKind, Snapshot, SnapshotRequest},
 };
@@ -51,12 +49,8 @@ pub(crate) fn source_request(source: &Path, external: ExternalInputs<'_>) -> Sna
 }
 
 /// The files a sync of `sync` reads from its user-owned `target`.
-pub(crate) fn sync_documents(sync: ConfigSync, target: &Path) -> Vec<PathBuf> {
-    let mut documents = vec![target.to_path_buf()];
-    if sync == ConfigSync::MergeToml {
-        documents.push(managed_state_path(target));
-    }
-    documents
+pub(crate) fn sync_documents(sync: &ConfigSync, target: &Path) -> Vec<PathBuf> {
+    installed_files(sync, target)
 }
 
 /// Reads what `request` names into a snapshot.

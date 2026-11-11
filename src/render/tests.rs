@@ -1,5 +1,12 @@
 use crate::shell::fixtures::{load_documents, load_tree};
-use crate::snapshot::ConfigFiles;
+use crate::{
+    config_sync::{
+        Merge,
+        installed::{Installed, read_generated},
+    },
+    file_op::FileOp,
+    provider::spec::ProviderId,
+};
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -360,15 +367,12 @@ fn install_matches_the_merge_the_home_manager_build_applies() -> Result<()> {
     }
     generate_claude_settings(&source, &generated)?;
 
+    let sync = ProviderId::Claude.spec().config.unwrap().sync;
     let files = load_documents(&[&generated, &synced])?;
-    let config = ConfigFiles {
-        generated: &generated,
-        target: &synced,
-        files: &files,
-    };
-    crate::shell::execute(&[crate::generation::claude_config::merge_settings_op(
-        config, &synced,
-    )?])?;
+    let document = read_generated(&sync, &files, &generated)?;
+    let existing = Installed::from_snapshot(&sync, &files, &synced)?;
+    let merged = Merge::new(&sync, &document).apply(existing)?;
+    crate::shell::execute(&[FileOp::write(&synced, merged.config)])?;
     install_home(&source, &out)?;
 
     assert_eq!(

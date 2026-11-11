@@ -1,7 +1,7 @@
 use super::spec::{
-    Asset, Bridge, CommandRuleSpec, ConfigLocation, ConfigSpec, ConfigSync, HookFormat,
-    HookRegistration, HookSection, HookSpec, PROVIDERS, ProviderId, ProviderSpec, SkillSource,
-    SkillSpec,
+    Asset, Bridge, CommandRuleSpec, ConfigFormat, ConfigLocation, ConfigSpec, EntryMatch,
+    HookFormat, HookRegistration, HookSection, HookSpec, KeyScope, Ownership, PROVIDERS,
+    ProviderId, ProviderSpec, RenderedConfig, SkillSource, SkillSpec, WhenAbsent,
 };
 use crate::{
     generation::{GenerationContext, protection},
@@ -46,7 +46,8 @@ fn extra_spec_flows_through_layout_protection_rendering_and_publication() -> Res
         }),
         config: Some(ConfigSpec {
             location: ConfigLocation::File(".example/managed.yaml"),
-            sync: ConfigSync::MergeYaml,
+            rendered: RenderedConfig::Fixed("plugins:\n  enabled:\n    - agent-harness-hooks\n"),
+            sync: ProviderId::Hermes.spec().config.unwrap().sync,
             directories: &[],
         }),
         ..ProviderId::Hermes.spec().clone()
@@ -213,27 +214,66 @@ fn a_provider_renders_after_the_provider_whose_skills_it_copies() {
 }
 
 #[test]
-fn every_provider_declares_the_sync_kind_of_its_mutable_config() {
+fn every_provider_declares_the_format_of_its_mutable_config() {
     let declared: Vec<_> = PROVIDERS
         .iter()
-        .map(|spec| {
-            (
-                spec.key,
-                spec.config.map(|config| format!("{:?}", config.sync)),
-            )
-        })
+        .map(|spec| (spec.key, spec.config.map(|config| config.sync.format)))
         .collect();
     assert_eq!(
         declared,
         [
-            ("codex", Some("MergeToml".to_owned())),
-            ("claude", Some("ReplaceGeneratedKeys".to_owned())),
-            ("devin", Some("MergePermissionEntries".to_owned())),
-            ("hermes", Some("MergeYaml".to_owned())),
-            ("pi", Some("ReplaceListedKeys".to_owned())),
-            ("dsh", Some("RegisterBundle".to_owned())),
+            ("codex", Some(ConfigFormat::Toml)),
+            ("claude", Some(ConfigFormat::Json)),
+            ("devin", Some(ConfigFormat::Json)),
+            ("hermes", Some(ConfigFormat::Yaml)),
+            ("pi", Some(ConfigFormat::Json)),
+            ("dsh", Some(ConfigFormat::Json)),
         ]
     );
+}
+
+#[test]
+fn claude_replaces_every_generated_key_and_devin_owns_only_exec_entries() {
+    let owned = |id: ProviderId| id.spec().config.unwrap().sync.ownership;
+
+    assert_eq!(
+        owned(ProviderId::Claude),
+        [Ownership::Keys {
+            scope: KeyScope::Every,
+            when_absent: WhenAbsent::Keep
+        }]
+    );
+    assert_eq!(
+        owned(ProviderId::Devin)[0],
+        Ownership::Entries {
+            path: &["permissions"],
+            owned: EntryMatch::StringPrefix("Exec(")
+        }
+    );
+}
+
+#[test]
+fn a_claim_never_overlaps_another_claim_of_the_same_config() {
+    for spec in PROVIDERS {
+        let claims = spec.config.unwrap().sync.ownership;
+        let paths: Vec<_> = claims.iter().filter_map(claim_path).collect();
+        for (index, path) in paths.iter().enumerate() {
+            let overlaps = paths[index + 1..]
+                .iter()
+                .any(|other| path.starts_with(other) || other.starts_with(path));
+            assert!(!overlaps, "{} claims {path:?} twice", spec.key);
+        }
+    }
+}
+
+fn claim_path(claim: &Ownership) -> Option<&'static [&'static str]> {
+    match claim {
+        Ownership::Entries { path, .. }
+        | Ownership::ListUnion { path }
+        | Ownership::MappingEntries { path }
+        | Ownership::TrackedKeys { path, .. } => Some(path),
+        Ownership::Keys { .. } => None,
+    }
 }
 
 #[test]
