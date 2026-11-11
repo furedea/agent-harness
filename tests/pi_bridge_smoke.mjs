@@ -76,7 +76,7 @@ sys.exit(${code})
   mkdirSync(join(root, 'sub'));
   symlinkSync(tmpdir(), join(root, 'escape'));
   for (const tool of ['write', 'edit']) {
-    for (const path of ['../outside', join(tmpdir(), 'outside'), 'escape/new/file', '.git/config', 'sub/../../outside']) {
+    for (const path of ['../outside', join(tmpdir(), 'outside'), 'escape/new/file', '.git/config', 'sub/../../outside', '.GIT/config', '.Git/hooks/x', '@../outside', '@.git/config', '~/../outside', '.git /config']) {
       assert.equal((await fileCall(tool, path))?.block, true, tool + ': ' + path);
     }
     assert.equal(await fileCall(tool, 'sub/new/file'), undefined);

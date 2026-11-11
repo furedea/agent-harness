@@ -101,13 +101,25 @@ function targetPath(path: string): string {
 	}
 }
 
+// Mirror how pi resolves a tool path so the check sees the file pi will open.
+function normalizeToolPath(path: string): string {
+	const plain = path.replace(/[\u00a0\u2000-\u200a\u202f\u205f\u3000]/g, " ").replace(/^@/, "");
+	if (plain === "~") return homedir();
+	return plain.startsWith("~/") ? join(homedir(), plain.slice(2)) : plain;
+}
+
+// Case-insensitive, and tolerant of trailing dots/spaces and the 8.3 alias that NTFS/HFS+ fold onto .git.
+function touchesGit(path: string): boolean {
+	return path.split(sep).some(part => /^(\.git|git~1)[. ]*$/i.test(part.normalize("NFC")));
+}
+
 function fileBoundary(tool: string, input: unknown, cwd: string): string | undefined {
 	if (!isRecord(input) || typeof input.path !== "string" || !input.path) return "Invalid file path";
 	try {
 		const root = realpathSync(cwd);
-		const lexical = resolve(root, input.path.replace(/^~\//, homedir() + "/"));
+		const lexical = resolve(root, normalizeToolPath(input.path));
 		const target = targetPath(lexical);
-		if ([lexical, target].some(path => path.split(sep).includes(".git"))) return "File tools cannot access .git";
+		if ([lexical, target].some(touchesGit)) return "File tools cannot access .git";
 		const path = relative(root, target);
 		if (tool !== "read" && (path === ".." || path.startsWith(".." + sep) || isAbsolute(path))) {
 			return "File writes must stay inside the worktree";
