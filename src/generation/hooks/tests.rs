@@ -54,7 +54,7 @@ fn write_devin_hooks_renders_the_devin_section_as_a_config_fragment() -> Result<
     write_command_policy(&root)?;
     let output = root.join("devin-hooks.json");
 
-    write_provider_hooks_for_runtime(
+    write_hooks_for_runtime(
         GenerationContext::home(&root, &[]),
         &output,
         ProviderId::Devin.spec(),
@@ -81,7 +81,7 @@ fn write_devin_hooks_includes_command_permissions() -> Result<()> {
     write_command_policy(&root)?;
     let output = root.join("devin-hooks.json");
 
-    write_provider_hooks_for_runtime(
+    write_hooks_for_runtime(
         GenerationContext::home(&root, &[]),
         &output,
         ProviderId::Devin.spec(),
@@ -111,7 +111,7 @@ fn write_devin_hooks_emits_empty_hooks_when_the_section_is_missing() -> Result<(
     write_command_policy(&root)?;
     let output = root.join("devin-hooks.json");
 
-    write_provider_hooks_for_runtime(
+    write_hooks_for_runtime(
         GenerationContext::home(&root, &[]),
         &output,
         ProviderId::Devin.spec(),
@@ -222,6 +222,19 @@ fn read_hooks_rejects_a_non_object_optional_section() -> Result<()> {
     let error = read_hooks(&root).unwrap_err().to_string();
 
     assert_eq!(error, "hook config pi section must be a JSON object");
+
+    std::fs::remove_dir_all(root)?;
+    Ok(())
+}
+
+#[test]
+fn read_hooks_rejects_a_missing_required_section() -> Result<()> {
+    let root = test_root("read_hooks_rejects_a_missing_required_section")?;
+    write_file(&root.join("hooks.json"), r#"{"version":1,"claude":{}}"#)?;
+
+    let error = read_hooks(&root).unwrap_err().to_string();
+
+    assert_eq!(error, "hook config codex section must be a JSON object");
 
     std::fs::remove_dir_all(root)?;
     Ok(())

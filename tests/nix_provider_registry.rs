@@ -12,7 +12,7 @@ use serde_json::{Map, Value, json};
 #[path = "../src/provider/spec.rs"]
 mod spec;
 
-use spec::{ConfigSpec, ConfigSync, ProviderSpec, SkillSource};
+use spec::{ConfigLocation, ConfigSpec, ConfigSync, ProviderSpec, SkillSource};
 
 const UPDATE_VARIABLE: &str = "UPDATE_PROVIDERS_JSON";
 
@@ -77,7 +77,7 @@ fn linked_destinations(spec: &ProviderSpec) -> BTreeSet<&'static str> {
     let mut links = BTreeSet::from([spec.hook.scripts_dir]);
     let registration_is_config = spec
         .config
-        .is_some_and(|config| config.path == registration);
+        .is_some_and(|config| config.location == ConfigLocation::SameAsHookRegistration);
     // When the registration is itself the mutable config, activation syncs it instead.
     if !registration_is_config && registration.starts_with(spec.home_dir) {
         links.insert(registration);
@@ -113,27 +113,32 @@ fn link_json(spec: &ProviderSpec, path: &str) -> Value {
 
 fn skills_provider(source: SkillSource) -> &'static str {
     match source {
-        SkillSource::RenderClaude => "claude",
-        SkillSource::RenderCodex | SkillSource::CopyCodex => "codex",
+        SkillSource::RenderFrontmatter => "claude",
+        SkillSource::RenderWithInvocationPolicy => "codex",
+        SkillSource::CopyRendered(from) => from
+            .spec()
+            .skill
+            .map_or("codex", |skill| skills_provider(skill.source)),
     }
 }
 
 fn sync_json(spec: &ProviderSpec, config: ConfigSpec) -> Value {
     let noun = match config.sync {
-        ConfigSync::MergeClaudeSettings => "Settings",
+        ConfigSync::ReplaceGeneratedKeys => "Settings",
         ConfigSync::MergeToml
-        | ConfigSync::MergeTopLevelJson
+        | ConfigSync::ReplaceListedKeys
+        | ConfigSync::MergePermissionEntries
         | ConfigSync::MergeYaml
         | ConfigSync::RegisterBundle => "Config",
     };
     let mut sync = json!({
         "activation": format!("agentHarness{}{noun}", capitalized(spec.key)),
-        "command": if spec.id == spec::ProviderId::Pi {
+        "command": if config.sync == ConfigSync::ReplaceListedKeys {
             "sync-config --provider pi".to_owned()
         } else {
             format!("sync-{}-{}", spec.key, noun.to_lowercase())
         },
-        "source": config.path,
+        "source": source_path(spec, config),
         "target": sync_target(spec, config),
     });
     if config.sync == ConfigSync::MergeToml {
@@ -151,15 +156,24 @@ fn capitalized(key: &str) -> String {
         .unwrap_or_default()
 }
 
+fn source_path(spec: &ProviderSpec, config: ConfigSpec) -> String {
+    let path = match config.location {
+        ConfigLocation::SameAsHookRegistration => spec.hook.registration.path(),
+        ConfigLocation::File(path) | ConfigLocation::BundleDirectory(path) => path,
+    };
+    path.to_owned()
+}
+
 fn sync_target(spec: &ProviderSpec, config: ConfigSpec) -> String {
     match config.sync {
         ConfigSync::MergeYaml => format!("{}/config.yaml", spec.home_dir),
         ConfigSync::RegisterBundle => {
             format!("{}/profiles/${{profile}}/package.json", spec.home_dir)
         }
-        ConfigSync::MergeClaudeSettings | ConfigSync::MergeToml | ConfigSync::MergeTopLevelJson => {
-            config.path.to_owned()
-        }
+        ConfigSync::ReplaceGeneratedKeys
+        | ConfigSync::MergeToml
+        | ConfigSync::ReplaceListedKeys
+        | ConfigSync::MergePermissionEntries => source_path(spec, config),
     }
 }
 

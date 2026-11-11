@@ -3,9 +3,13 @@
 /// A variant names the managed operation; `config_sync` owns the code that performs it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ConfigSync {
-    MergeClaudeSettings,
+    /// Every top-level key of the rendered config replaces the installed one.
+    ReplaceGeneratedKeys,
+    /// Only the top-level keys a fixed list names replace the installed ones.
+    ReplaceListedKeys,
+    /// Entries the harness owns inside a permissions list replace the installed ones.
+    MergePermissionEntries,
     MergeToml,
-    MergeTopLevelJson,
     MergeYaml,
     RegisterBundle,
 }
@@ -70,12 +74,33 @@ pub(crate) struct Bridge {
     pub(crate) assets: &'static [Asset],
 }
 
+/// How a provider's section of the shared hook config is shaped and merged with external bundles.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum HookFormat {
+    /// The section is the bare event map; a bundle keeps its events under `hooks` in the settings
+    /// file.
+    SettingsSection,
+    /// The section is `{"hooks": events}`; a bundle file also keeps its events under `hooks`.
+    WrappedEvents,
+    /// The section is `{"hooks": events}`; a bundle file is the event map itself.
+    BareEvents,
+}
+
+/// Whether the shared hook config must contain a section for the provider.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum HookSection {
+    Required,
+    Optional,
+}
+
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct HookSpec {
     /// Directory of the source tree that holds the hook scripts.
     pub(crate) source: &'static str,
     pub(crate) scripts_dir: &'static str,
     pub(crate) registration: HookRegistration,
+    pub(crate) format: HookFormat,
+    pub(crate) section: HookSection,
     /// File an external hook bundle writes its registration to.
     pub(crate) external_file: &'static str,
     pub(crate) bridge: Bridge,
@@ -83,9 +108,12 @@ pub(crate) struct HookSpec {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum SkillSource {
-    RenderClaude,
-    RenderCodex,
-    CopyCodex,
+    /// Rendered from the source skills with their frontmatter.
+    RenderFrontmatter,
+    /// Rendered with frontmatter plus a per-skill invocation policy file.
+    RenderWithInvocationPolicy,
+    /// Copied from the skills another provider rendered, which that provider must render first.
+    CopyRendered(ProviderId),
 }
 
 #[derive(Debug)]
@@ -98,53 +126,61 @@ pub(crate) struct SkillSpec {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum CommandRuleSpec {
     /// Rules are a `permissions` block inside the hook registration.
-    DevinHookBlock,
+    InHookRegistration,
     /// Rules are files inside the hooks directory.
-    ClaudeRules {
+    RuleFiles {
         permissions: &'static str,
         protected_paths: &'static str,
         /// Files the hooks directory takes from the source and verification requires.
         source_files: &'static [&'static str],
     },
     /// Rules are one execpolicy file published on its own.
-    CodexExecpolicy { rules_file: &'static str },
+    ExecpolicyFile { rules_file: &'static str },
 }
 
 impl CommandRuleSpec {
     /// The rules file published individually.
     pub(crate) fn published_file(self) -> Option<&'static str> {
         match self {
-            Self::CodexExecpolicy { rules_file } => Some(rules_file),
-            Self::DevinHookBlock | Self::ClaudeRules { .. } => None,
+            Self::ExecpolicyFile { rules_file } => Some(rules_file),
+            Self::InHookRegistration | Self::RuleFiles { .. } => None,
         }
     }
 
     /// Files rendered inside the hooks directory after it is synced.
     pub(crate) fn generated_files(self) -> Vec<&'static str> {
         match self {
-            Self::ClaudeRules {
+            Self::RuleFiles {
                 permissions,
                 protected_paths,
                 ..
             } => vec![permissions, protected_paths],
-            Self::DevinHookBlock | Self::CodexExecpolicy { .. } => Vec::new(),
+            Self::InHookRegistration | Self::ExecpolicyFile { .. } => Vec::new(),
         }
     }
 
     pub(crate) fn source_files(self) -> &'static [&'static str] {
         match self {
-            Self::ClaudeRules { source_files, .. } => source_files,
-            Self::DevinHookBlock | Self::CodexExecpolicy { .. } => &[],
+            Self::RuleFiles { source_files, .. } => source_files,
+            Self::InHookRegistration | Self::ExecpolicyFile { .. } => &[],
         }
     }
+}
+
+/// Where the rendered config the sync reads lives.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ConfigLocation {
+    /// The provider keeps its hook registration and config in one file.
+    SameAsHookRegistration,
+    File(&'static str),
+    /// The config is a directory published as a whole.
+    BundleDirectory(&'static str),
 }
 
 /// The provider's mutable config and how installation syncs the rendered one into it.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct ConfigSpec {
-    /// The rendered config the sync reads: a file, or the bundle directory for `RegisterBundle`.
-    /// It may be the hook registration itself when the provider keeps both in one file.
-    pub(crate) path: &'static str,
+    pub(crate) location: ConfigLocation,
     pub(crate) sync: ConfigSync,
     /// Source directories the config refers to, such as Claude's statusline command.
     pub(crate) directories: &'static [SyncedDirectory],
@@ -188,10 +224,18 @@ impl ProviderSpec {
     /// The rendered config file published on its own, when it is not the hook registration
     /// and not a bundle directory.
     pub(crate) fn config_file(&self) -> Option<&'static str> {
-        self.config
-            .filter(|config| config.sync != ConfigSync::RegisterBundle)
-            .map(|config| config.path)
-            .filter(|path| *path != self.hook.registration.path())
+        match self.config?.location {
+            ConfigLocation::File(path) => Some(path),
+            ConfigLocation::SameAsHookRegistration | ConfigLocation::BundleDirectory(_) => None,
+        }
+    }
+
+    /// The path of the rendered config, whichever role the file or directory also plays.
+    pub(crate) fn config_path(&self) -> Option<&'static str> {
+        match self.config?.location {
+            ConfigLocation::SameAsHookRegistration => Some(self.hook.registration.path()),
+            ConfigLocation::File(path) | ConfigLocation::BundleDirectory(path) => Some(path),
+        }
     }
 }
 
@@ -204,6 +248,8 @@ const CODEX: ProviderSpec = ProviderSpec {
         source: "codex/hooks",
         scripts_dir: ".codex/hooks",
         registration: HookRegistration::File(".codex/hooks.json"),
+        format: HookFormat::WrappedEvents,
+        section: HookSection::Required,
         external_file: ".codex/hooks.json",
         bridge: Bridge {
             directory: None,
@@ -212,14 +258,14 @@ const CODEX: ProviderSpec = ProviderSpec {
     },
     skill: Some(&SkillSpec {
         destination: ".codex/skills",
-        source: SkillSource::RenderCodex,
+        source: SkillSource::RenderWithInvocationPolicy,
     }),
     instructions: Some(".codex/AGENTS.md"),
-    command_rule: Some(CommandRuleSpec::CodexExecpolicy {
+    command_rule: Some(CommandRuleSpec::ExecpolicyFile {
         rules_file: ".codex/rules/default.rules",
     }),
     config: Some(ConfigSpec {
-        path: ".codex/config.toml",
+        location: ConfigLocation::File(".codex/config.toml"),
         sync: ConfigSync::MergeToml,
         directories: &[],
     }),
@@ -234,6 +280,8 @@ const CLAUDE: ProviderSpec = ProviderSpec {
         source: "hooks",
         scripts_dir: ".claude/hooks",
         registration: HookRegistration::InSettings(".claude/settings.json"),
+        format: HookFormat::SettingsSection,
+        section: HookSection::Required,
         external_file: ".claude/settings.json",
         bridge: Bridge {
             directory: None,
@@ -242,10 +290,10 @@ const CLAUDE: ProviderSpec = ProviderSpec {
     },
     skill: Some(&SkillSpec {
         destination: ".claude/skills",
-        source: SkillSource::RenderClaude,
+        source: SkillSource::RenderFrontmatter,
     }),
     instructions: Some(".claude/CLAUDE.md"),
-    command_rule: Some(CommandRuleSpec::ClaudeRules {
+    command_rule: Some(CommandRuleSpec::RuleFiles {
         permissions: ".claude/hooks/rules/command_permissions.json",
         protected_paths: ".claude/hooks/rules/protected_paths.json",
         source_files: &[
@@ -257,8 +305,8 @@ const CLAUDE: ProviderSpec = ProviderSpec {
     }),
     // settings.json is also the hook registration: one file, two roles.
     config: Some(ConfigSpec {
-        path: ".claude/settings.json",
-        sync: ConfigSync::MergeClaudeSettings,
+        location: ConfigLocation::SameAsHookRegistration,
+        sync: ConfigSync::ReplaceGeneratedKeys,
         directories: &[SyncedDirectory {
             source: "claude/statusline",
             destination: ".claude/statusline",
@@ -275,6 +323,8 @@ const DEVIN: ProviderSpec = ProviderSpec {
         source: "devin/hooks",
         scripts_dir: ".devin/hooks",
         registration: HookRegistration::File(".config/devin/config.json"),
+        format: HookFormat::BareEvents,
+        section: HookSection::Optional,
         external_file: ".devin/hooks.v1.json",
         bridge: Bridge {
             directory: None,
@@ -283,11 +333,11 @@ const DEVIN: ProviderSpec = ProviderSpec {
     },
     skill: None,
     instructions: None,
-    command_rule: Some(CommandRuleSpec::DevinHookBlock),
+    command_rule: Some(CommandRuleSpec::InHookRegistration),
     // config.json is also the hook registration: one file, two roles.
     config: Some(ConfigSpec {
-        path: ".config/devin/config.json",
-        sync: ConfigSync::MergeTopLevelJson,
+        location: ConfigLocation::SameAsHookRegistration,
+        sync: ConfigSync::MergePermissionEntries,
         directories: &[],
     }),
 };
@@ -301,6 +351,8 @@ const HERMES: ProviderSpec = ProviderSpec {
         source: "hermes/hooks",
         scripts_dir: ".hermes/hooks",
         registration: HookRegistration::File(".hermes/hooks.json"),
+        format: HookFormat::BareEvents,
+        section: HookSection::Optional,
         external_file: ".hermes/hooks.json",
         bridge: Bridge {
             directory: Some(".hermes/plugins/agent-harness-hooks"),
@@ -320,7 +372,7 @@ const HERMES: ProviderSpec = ProviderSpec {
     instructions: None,
     command_rule: None,
     config: Some(ConfigSpec {
-        path: ".hermes/managed-config.yaml",
+        location: ConfigLocation::File(".hermes/managed-config.yaml"),
         sync: ConfigSync::MergeYaml,
         directories: &[],
     }),
@@ -335,6 +387,8 @@ const PI: ProviderSpec = ProviderSpec {
         source: "pi/hooks",
         scripts_dir: ".pi/hooks",
         registration: HookRegistration::File(".pi/agent/hooks.json"),
+        format: HookFormat::BareEvents,
+        section: HookSection::Optional,
         external_file: ".pi/hooks.json",
         bridge: Bridge {
             directory: None,
@@ -346,13 +400,13 @@ const PI: ProviderSpec = ProviderSpec {
     },
     skill: Some(&SkillSpec {
         destination: ".pi/agent/skills",
-        source: SkillSource::RenderClaude,
+        source: SkillSource::RenderFrontmatter,
     }),
     instructions: Some(".pi/agent/AGENTS.md"),
     command_rule: None,
     config: Some(ConfigSpec {
-        path: ".pi/agent/settings.json",
-        sync: ConfigSync::MergeTopLevelJson,
+        location: ConfigLocation::File(".pi/agent/settings.json"),
+        sync: ConfigSync::ReplaceListedKeys,
         directories: &[],
     }),
 };
@@ -366,6 +420,8 @@ const DSH: ProviderSpec = ProviderSpec {
         source: "dsh/hooks",
         scripts_dir: ".dsh/hooks",
         registration: HookRegistration::File(".dsh/hooks.json"),
+        format: HookFormat::BareEvents,
+        section: HookSection::Optional,
         external_file: ".dsh/hooks.json",
         bridge: Bridge {
             directory: Some(".dsh/bridge"),
@@ -387,12 +443,12 @@ const DSH: ProviderSpec = ProviderSpec {
     },
     skill: Some(&SkillSpec {
         destination: ".dsh/skills",
-        source: SkillSource::CopyCodex,
+        source: SkillSource::CopyRendered(ProviderId::Codex),
     }),
     instructions: Some(".dsh/AGENTS.md"),
     command_rule: None,
     config: Some(ConfigSpec {
-        path: ".dsh/bridge",
+        location: ConfigLocation::BundleDirectory(".dsh/bridge"),
         sync: ConfigSync::RegisterBundle,
         directories: &[],
     }),
