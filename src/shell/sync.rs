@@ -59,3 +59,6 @@ fn rendered_source(sync: ConfigSync, source: &Path) -> Result<PathBuf> {
     }
     real_path(source)
 }
+
+#[cfg(test)]
+mod tests;
