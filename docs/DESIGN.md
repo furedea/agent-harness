@@ -107,8 +107,10 @@ flowchart LR
   subgraph C["Capabilities (I/O)"]
     EXEC["shell::execute"]
     FS["shell::io (port)"]
+    LOAD["shell::load (reader)"]
     SYNC["shell::sync"]
   end
+  SNAP["Snapshot: files read once"]
   DISK[("disk")]
   SPEC -- "ProviderSpec" --> RENDER
   SPEC -- "ProviderSpec" --> RENDERER
@@ -124,17 +126,31 @@ flowchart LR
   SYNC -- "FileOp list" --> EXEC
   EXEC --> FS
   FS --> DISK
+  DISK --> LOAD
+  LOAD --> SNAP
+  SNAP -- "Snapshot" --> RENDER
+  SNAP -- "Snapshot" --> RENDERER
+  SNAP -- "Snapshot" --> SYNC
 ```
 
-- Only values cross layers: `ProviderSpec` flows from Data to Functions and Capabilities, and
-    `FileOp` lists flow from generation, rendering, planning, and sync to the executor, the only
-    writer ([0028]).
+- Only values cross layers: `ProviderSpec` flows from Data to Functions and Capabilities, a
+    `Snapshot` of the files computation reads flows from the loader to Functions, and `FileOp` lists
+    flow from generation, rendering, planning, and sync to the executor, the only writer ([0028]).
 - Three layers keep computation from writing, in one crate. `clippy.toml` bans std's write APIs and
     lifts the ban only in `shell::io`; the port is `pub(in crate::shell)`, so computation cannot reach
-    it even through a wrapper; and `#![forbid(...)]` on `generation`, `provider::spec`, and
-    `install_plan` stops them from allowing the ban again. A crate split was rejected: `std::fs` is
-    callable from every crate, so the clippy ban stays necessary and the split would only replace
-    visibility ([0028]). Reads are not banned yet, and tests are outside the lint.
+    it even through a wrapper; and `#![forbid(...)]` on `generation`, `provider::spec`,
+    `provider::renderer`, `install_plan`, `file_op`, `snapshot`, `layout`, `manifest`, `inventory`, and
+    `render` stops them from allowing the ban again. A crate split was rejected: `std::fs` is callable
+    from every crate, so the clippy ban stays necessary and the split would only replace visibility
+    ([0028]). Tests are outside the lint.
+- The same ban covers reads, so a result depends only on the inputs it was given and not on the disk
+    at the moment it ran. `shell::load` reads the source tree, external bundles, and installed configs
+    once into a `Snapshot` (files, kinds, and the text of documents), and computation queries only
+    that. It bans `std::fs` reads, the `Path` probes (`exists`, `is_dir`, `read_dir`, `metadata`),
+    `std::env`, and `std::process::Command`. The modules that are the program's imperative edge (`cli`,
+    `source`, `runtime`, `github_app`, `shell::load`, `shell::hook_bundle`, and the build script) lift
+    the ban for themselves with `#![expect(...)]` and a reason, which fails to compile once it stops
+    being needed ([0028]).
 - Only secret files (GitHub App tokens) are written `0600`; other files use the process's default
     mode, copies keep their source's permission bits, and replacing an existing file keeps its bits.
 - Claude and Codex are declared in the registry like the other four providers; the registry declares
@@ -192,7 +208,8 @@ sequenceDiagram
 | `render`                                                                                  | Generates the staging tree and passes its publication plan to the executor.                                    |
 | `provider/spec`                                                                           | Data: provider metadata, asset destinations, and optional `ConfigSync`.                                        |
 | `install_plan`                                                                            | Functions: plan publication of rendered staging files and embedded assets.                                     |
-| `shell` (`io`, `executor`, `sync`, `hook_bundle`)                                         | Capabilities: the filesystem port, the `FileOp` executor, config sync, and hook bundle capture.                |
+| `shell` (`io`, `load`, `executor`, `sync`, `hook_bundle`)                                 | Capabilities: the filesystem port, the snapshot loader, the `FileOp` executor, config sync, and hook bundles.  |
+| `snapshot`                                                                                | Functions: the read-only `Snapshot` and `Tree` that computation queries instead of the disk.                   |
 | `nix/providers.json`, `nix/home_manager_module.nix`                                       | Nix provider list generated from the registry, and the Home Manager options, links, and sync built from it.    |
 | `generation/hooks`                                                                        | Render hook wiring.                                                                                            |
 | `generation/bridges`, `provider/spec`, `install_plan`                                     | Verify bridge asset contracts; declare embedded bridge assets and destinations in specs and plan their writes. |
