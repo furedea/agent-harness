@@ -64,6 +64,10 @@ fs.writeFileSync(${JSON.stringify(join(root, 'record.json'))}, JSON.stringify({ 
   for (const path of [join(realpathSync(repo), '.git/hooks'), join(realpathSync(repo), '.git/config'), join(realpathSync(repo), '.git/worktrees/*/config.worktree')]) {
     assert.ok(record.settings.filesystem.denyWrite.includes(path));
   }
+  // Files git reads to locate its config must not be repointable either.
+  for (const suffix of ['commondir', 'worktrees/*/commondir', 'worktrees/*/gitdir']) {
+    assert.ok(record.settings.filesystem.denyWrite.includes(join(realpathSync(repo), '.git', suffix)), suffix);
+  }
   // A linked worktree's .git gitfile must not be redirectable from inside the sandbox.
   assert.ok(record.settings.filesystem.denyWrite.includes(join(realpathSync(worktree), '.git')));
   // Pi supplies a per-call cwd; the policy must follow it, and non-git dirs must still run.
@@ -82,6 +86,11 @@ fs.writeFileSync(${JSON.stringify(join(root, 'record.json'))}, JSON.stringify({ 
   const initRecord = JSON.parse(readFileSync(join(root, 'record.json')));
   assert.ok(initRecord.settings.filesystem.denyWrite.some(path => path.endsWith('.git/hooks')));
   assert.ok(!initRecord.settings.filesystem.denyWrite.includes(join(realpathSync(plain), '.git')));
+  // When repository discovery fails, .git must stay protected rather than falling back to the plain cwd rule.
+  const broken = join(root, 'broken');
+  mkdirSync(join(broken, '.git'), { recursive: true });
+  await tool.execute('id', { command: 'true' }, undefined, undefined, { cwd: broken });
+  assert.ok(JSON.parse(readFileSync(join(root, 'record.json'))).settings.filesystem.denyWrite.includes(join(realpathSync(broken), '.git')));
   // The common git dir is pinned per cwd: repointing .git from inside the sandbox must not widen allowWrite.
   const victim = join(root, 'victim');
   mkdirSync(victim);

@@ -74,14 +74,13 @@ function quote(value: string): string {
 
 type Prepared = { settingsPath: string; content: string; common: string | undefined };
 
-// A directory outside any repository is fine; a missing or broken git is not.
+// Any failure (no repository, no git, unusable layout) reads as "no repository": the caller then denies .git.
 function gitCommonDir(cwd: string): string | undefined {
 	try {
 		const out = execFileSync("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
 		return canonical(out.trim());
-	} catch (error) {
-		if (typeof (error as { status?: unknown }).status === "number") return undefined;
-		throw error;
+	} catch {
+		return undefined;
 	}
 }
 
@@ -105,10 +104,12 @@ function buildPolicy(source: Policy, cwd: string, temporary: string, protectedFi
 	policy.filesystem.denyWrite.push(temporary, ...protectedFiles);
 	if (common) {
 		policy.filesystem.allowWrite.push(common);
-		policy.filesystem.denyWrite.push(join(common, "hooks"), join(common, "config"), join(common, "worktrees/*/config.worktree"));
+		policy.filesystem.denyWrite.push(join(common, "hooks"), join(common, "config"), join(common, "commondir"),
+			join(common, "worktrees/*/config.worktree"), join(common, "worktrees/*/commondir"), join(common, "worktrees/*/gitdir"),
+		);
 	}
 	// git runs outside the sandbox, so a .git the sandbox can create or rewrite would make it honour attacker config.
-	if (!isRealDirectory(join(cwd, ".git"))) policy.filesystem.denyWrite.push(join(cwd, ".git"));
+	if (!common || !isRealDirectory(join(cwd, ".git"))) policy.filesystem.denyWrite.push(join(cwd, ".git"));
 	validatePolicy(policy);
 	return policy;
 }

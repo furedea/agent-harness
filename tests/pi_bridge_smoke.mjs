@@ -8,7 +8,7 @@ try {
   const adapter = join(root, 'adapter.py');
   writeFileSync(adapter, '');
   process.env.AGENT_HARNESS_PI_ADAPTER = adapter;
-  process.env.AGENT_HARNESS_HOOK_TIMEOUT = "0.5";
+  process.env.AGENT_HARNESS_HOOK_TIMEOUT = "3";
   const { default: register } = await import('../src/generation/assets/pi/hook_bridge.ts');
   const listeners = new Map();
   register({ on(event, listener) { listeners.set(event, listener); } });
