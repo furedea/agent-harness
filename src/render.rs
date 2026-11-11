@@ -8,7 +8,7 @@ use crate::{
     layout::{InstalledLayout, SourceLayout},
     provider::{
         renderer::ProviderRenderer,
-        spec::{ConfigSync, PROVIDERS, ProviderSpec},
+        spec::{ConfigSync, PROVIDERS, ProviderId, ProviderSpec},
     },
 };
 
@@ -38,7 +38,7 @@ pub(crate) fn generate_skills(
 
 pub(crate) fn install(context: GenerationContext<'_>, out: &Path) -> Result<()> {
     let staging = TemporaryDirectory::create()?;
-    carry_over_mutable_toml_configs(out, staging.path())?;
+    carry_over_mutable_configs(out, staging.path())?;
     render_installation(context, staging.path())?;
     preserve_claude_settings(out, staging.path())?;
     let plan = crate::install_plan::plan_install(
@@ -49,12 +49,17 @@ pub(crate) fn install(context: GenerationContext<'_>, out: &Path) -> Result<()> 
     Ok(())
 }
 
-/// Seeds the staging tree with the installed TOML config, which rendering merges into.
-fn carry_over_mutable_toml_configs(installed: &Path, staging: &Path) -> Result<()> {
+/// Seeds mutable configs that rendering merges into with their installed state.
+fn carry_over_mutable_configs(installed: &Path, staging: &Path) -> Result<()> {
     PROVIDERS
         .iter()
+        .filter(|spec| {
+            spec.id == ProviderId::Pi
+                || spec
+                    .config
+                    .is_some_and(|config| config.sync == ConfigSync::MergeToml)
+        })
         .filter_map(|spec| spec.config)
-        .filter(|config| config.sync == ConfigSync::MergeToml)
         .map(|config| config.path)
         .filter(|path| installed.join(path).exists())
         .try_for_each(|path| RealFileSystem.copy_file(&installed.join(path), &staging.join(path)))

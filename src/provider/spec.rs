@@ -344,10 +344,17 @@ const PI: ProviderSpec = ProviderSpec {
             }],
         },
     },
-    skill: None,
-    instructions: None,
+    skill: Some(&SkillSpec {
+        destination: ".pi/agent/skills",
+        source: SkillSource::RenderClaude,
+    }),
+    instructions: Some(".pi/agent/AGENTS.md"),
     command_rule: None,
-    config: None,
+    config: Some(ConfigSpec {
+        path: ".pi/agent/settings.json",
+        sync: ConfigSync::MergeTopLevelJson,
+        directories: &[],
+    }),
 };
 
 const DSH: ProviderSpec = ProviderSpec {

@@ -506,6 +506,9 @@ Devin, Hermes Agent, and pi config directories.
 | `~/.hermes/hooks/`                       | Hermes Agent hook adapters                   |
 | `~/.hermes/plugins/agent-harness-hooks/` | Hermes Agent plugin that runs the manifest   |
 | `~/.hermes/managed-config.yaml`          | Hermes Agent keys to sync into `config.yaml` |
+| `~/.pi/agent/AGENTS.md`                  | Shared agent instructions                    |
+| `~/.pi/agent/skills/`                    | Skills with Claude-compatible frontmatter    |
+| `~/.pi/agent/settings.json`              | Managed model defaults merged with user keys |
 | `~/.pi/agent/hooks.json`                 | pi hook manifest                             |
 | `~/.pi/agent/extensions/hook_bridge.ts`  | pi extension that runs the manifest          |
 | `~/.pi/hooks/`                           | pi hook adapters                             |
@@ -599,7 +602,14 @@ The CLI also exposes lower-level generation commands for inspecting or composing
 | `generate-skills`                | Provider-specific built-in and external skill tree |
 
 `generate-hooks` supports `claude`, `codex`, `devin`, `hermes`, `pi`, and `dsh`.
-`sync-config` accepts the same provider IDs but rejects pi because it has no managed config.
+`sync-config` accepts the same provider IDs. For pi, it merges only
+`defaultProvider`, `defaultModel`, and `defaultThinkingLevel` from the generated settings,
+preserving user-owned keys. Optional source defaults belong in `pi/settings.json`.
+Pi skills use the Claude rendering, including `disable-model-invocation`, and install under
+`~/.pi/agent/skills/`; shared instructions install as `~/.pi/agent/AGENTS.md`.
+
+Pi hook decisions use deny > ask > allow precedence. An ask decision prompts for confirmation
+with the tool input when a UI is available; only "Yes" permits execution. Without a UI, asks block.
 The old `generate-<provider>-hooks`, `sync-claude-settings`, and
 `sync-{codex,devin,hermes,dsh}-config` commands still work as deprecated aliases hidden from help.
 

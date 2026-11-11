@@ -112,37 +112,6 @@ fn unified_sync_commands_match_legacy_files() -> Result<()> {
 }
 
 #[test]
-fn pi_sync_fails_without_writing_files() -> Result<()> {
-    let root = std::env::temp_dir().join(format!("registry-pi-sync-{}", std::process::id()));
-    std::fs::create_dir_all(&root)?;
-    let source = root.join("source.json");
-    std::fs::write(&source, "{\"hooks\":[]}")?;
-    let target = root.join("target.json");
-    for initial in [None, Some("{\"userKey\":true}")] {
-        if let Some(contents) = initial {
-            std::fs::write(&target, contents)?;
-        }
-        let output = Command::new(env!("CARGO_BIN_EXE_agent-harness"))
-            .args(["sync-config", "--provider", "pi", "--source"])
-            .arg(&source)
-            .arg("--target")
-            .arg(&target)
-            .output()?;
-        assert!(!output.status.success());
-        assert!(
-            String::from_utf8_lossy(&output.stderr).contains("pi has no managed config to sync")
-        );
-        assert_eq!(std::fs::read_to_string(&source)?, "{\"hooks\":[]}");
-        match initial {
-            Some(contents) => assert_eq!(std::fs::read_to_string(&target)?, contents),
-            None => assert!(!target.exists()),
-        }
-    }
-    std::fs::remove_dir_all(root)?;
-    Ok(())
-}
-
-#[test]
 fn invented_sync_commands_are_rejected() -> Result<()> {
     for command in ["sync-pi-config", "sync-claude-config"] {
         let output = Command::new(env!("CARGO_BIN_EXE_agent-harness"))
