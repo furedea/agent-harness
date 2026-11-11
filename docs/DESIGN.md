@@ -66,29 +66,32 @@ agent breaks in predictable ways:
 
 **5. Own only managed keys in mutable provider configs.**
 
-- Decision: sync commands replace harness-owned keys and preserve everything else. Source
+- Decision: sync commands replace the parts of a config the harness owns and preserve everything
+    else. Each provider declares what it owns in its spec (top-level keys, the list entries that
+    match a prefix, a list to union, a mapping's entries, or keys tracked by a sidecar), and one
+    engine applies any declaration to JSON, TOML, or YAML. Source
     permission rules are kept, deduplicated, and a rule in several lists stays only in the most
     restrictive one. The opt-in agent GitHub token is the one composition that overrides the source
     sandbox exclusions.
 - Reason: agents keep writing their own state, but a settings overlay must never weaken or remove
     generated enforcement.
-- ADRs: [0016], [0018], [0020].
+- ADRs: [0016], [0018], [0020], [0029].
 
 **6. Separate provider declarations, functions, and I/O capabilities.**
 
 - Decision: declare all six providers (Claude, Codex, Devin, Hermes, pi, and dsh) in
     `ProviderSpec`, with Data / Functions / Capabilities boundaries. Every field is one of five
     concepts most providers share: hook (`HookSpec`: scripts, registration, bridge files), skill,
-    instructions, command rule, and config (`ConfigSpec`: path and `ConfigSync` kind). Every
+    instructions, command rule, and config (`ConfigSpec`: path, how it is rendered, and the `ConfigSync` ownership declaration). Every
     provider has hooks; the other concepts are an `Option`. A provider difference is an enum
     variant, not a field only that provider has.
-- Reason: shared paths, asset destinations, and `ConfigSync` strategies prevent parallel lists
+- Reason: shared paths, asset destinations, and `ConfigSync` declarations prevent parallel lists
     from drifting, and variants such as `HookRegistration` and `CommandRuleSpec` keep the
     differences visible and exhaustively matched. Lists follow registry order. Rust is the single
     source: `nix/providers.json` is generated from it by a test that fails when the committed file
     differs (`UPDATE_PROVIDERS_JSON=1` regenerates it). Home Manager links explicit managed files
     and subdirectories to coexist with user-owned state.
-- ADRs: [0026], [0027], [0028].
+- ADRs: [0026], [0027], [0028], [0029].
 
 ```mermaid
 flowchart LR
@@ -97,7 +100,7 @@ flowchart LR
     CONCEPTS["five concepts: hooks, skills, instructions, command rules, config"]
     VARIANTS["variants: HookRegistration (InSettings, File), HookFormat (SettingsSection, WrappedEvents, BareEvents), CommandRuleSpec (InHookRegistration, RuleFiles, ExecpolicyFile), SkillSource (RenderFrontmatter, RenderWithInvocationPolicy, CopyRendered), ConfigLocation"]
     JSON["nix/providers.json (generated from PROVIDERS)"]
-    KINDS["ConfigSync kinds: ReplaceGeneratedKeys, ReplaceListedKeys, MergePermissionEntries, MergeToml, MergeYaml, RegisterBundle"]
+    KINDS["ConfigSync: ConfigFormat (Json, Toml, Yaml) and Ownership claims (Keys, Entries, ListUnion, MappingEntries, TrackedKeys)"]
   end
   subgraph F["Functions (computation, no I/O)"]
     RENDER["hook rendering: builds hook and config values"]
@@ -109,6 +112,7 @@ flowchart LR
     FS["shell::io (port)"]
     LOAD["shell::load (reader)"]
     SYNC["shell::sync"]
+    ENGINE["config_sync::Merge (one engine)"]
   end
   SNAP["Snapshot: files read once"]
   DISK[("disk")]
@@ -119,7 +123,9 @@ flowchart LR
   CONCEPTS --> VARIANTS
   CONCEPTS -- "config" --> KINDS
   SPEC -- "sourcegen test" --> JSON
-  KINDS -- "ConfigSync kind" --> SYNC
+  KINDS -- "ConfigSync declaration" --> ENGINE
+  ENGINE -- "Synced text" --> SYNC
+  ENGINE -- "Synced text" --> RENDERER
   RENDER -- "FileOp list" --> EXEC
   RENDERER -- "FileOp list" --> EXEC
   PLAN -- "FileOp list" --> EXEC
@@ -206,7 +212,8 @@ sequenceDiagram
 | `source`, `layout`, `manifest`                                                            | Resolve the source tree and validate its layout and required runtime commands.                                 |
 | `profile`                                                                                 | Names the packaged built-in source (`minimal`).                                                                |
 | `render`                                                                                  | Generates the staging tree and passes its publication plan to the executor.                                    |
-| `provider/spec`                                                                           | Data: provider metadata, asset destinations, and optional `ConfigSync`.                                        |
+| `provider/spec`, `provider/ownership`, `provider/registry`                                | Data: provider metadata, asset destinations, the `ConfigSync` ownership declaration, and the registry.         |
+| `config_sync` (`codec`, `engine`, `installed`)                                            | Functions: format codecs, the one engine that applies declared ownership, and the parsed `Installed` config.   |
 | `install_plan`                                                                            | Functions: plan publication of rendered staging files and embedded assets.                                     |
 | `shell` (`io`, `load`, `executor`, `sync`, `hook_bundle`)                                 | Capabilities: the filesystem port, the snapshot loader, the `FileOp` executor, config sync, and hook bundles.  |
 | `snapshot`                                                                                | Functions: the read-only `Snapshot` and `Tree` that computation queries instead of the disk.                   |
@@ -214,7 +221,7 @@ sequenceDiagram
 | `generation/hooks`                                                                        | Render hook wiring.                                                                                            |
 | `generation/bridges`, `provider/spec`, `install_plan`                                     | Verify bridge asset contracts; declare embedded bridge assets and destinations in specs and plan their writes. |
 | `generation/command_permissions`                                                          | Maps neutral rules to Claude, Codex, and Devin permission syntax.                                              |
-| `generation/claude_config`, `codex_config`, `devin_config`, `hermes_config`, `dsh_config` | Build and sync provider configs.                                                                               |
+| `generation/claude_config`, `codex_config`, `dsh_config`                                  | Build provider configs and the dsh bundle registration.                                                        |
 | `generation/protection`, `secret_path_policy`                                             | Compute protected paths and secret-file deny rules.                                                            |
 | `generation/skills`, `external_hooks`, `hook_bundle`                                      | Render skills and compose external bundles.                                                                    |
 | `inventory`                                                                               | Lists the skills and hooks a source provides.                                                                  |
@@ -290,3 +297,4 @@ CodeQL analysis is not a workflow file: it runs through GitHub's CodeQL default 
 [0026]: adr/0026_declare_providers_in_a_registry.md
 [0027]: adr/0027_declare_claude_and_codex_in_the_provider_registry.md
 [0028]: adr/0028_return_file_operations_as_values.md
+[0029]: adr/0029_declare_config_ownership_and_sync_with_one_engine.md
