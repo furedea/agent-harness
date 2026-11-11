@@ -82,6 +82,15 @@ fs.writeFileSync(${JSON.stringify(join(root, 'record.json'))}, JSON.stringify({ 
   const initRecord = JSON.parse(readFileSync(join(root, 'record.json')));
   assert.ok(initRecord.settings.filesystem.denyWrite.some(path => path.endsWith('.git/hooks')));
   assert.ok(!initRecord.settings.filesystem.denyWrite.includes(join(realpathSync(plain), '.git')));
+  // The common git dir is pinned per cwd: repointing .git from inside the sandbox must not widen allowWrite.
+  const victim = join(root, 'victim');
+  mkdirSync(victim);
+  const pinned = join(root, 'pinned');
+  execFileSync('git', ['init', pinned]);
+  await tool.execute('id', { command: 'true' }, undefined, undefined, { cwd: pinned });
+  rmSync(join(pinned, '.git'), { recursive: true });
+  writeFileSync(join(pinned, '.git'), 'gitdir: ' + victim + '\n');
+  await assert.rejects(() => tool.execute('id', { command: 'true' }, undefined, undefined, { cwd: pinned }), /git layout changed/);
   // Startup failures must still replace bash, and execution must refuse.
   for (const invalid of ['{}', '{', JSON.stringify({ ...policy, network: { ...policy.network, deniedDomains: undefined } }),
     ...['https://bad', '*.com', 'host', 'example.com:01', '*'].map(value => JSON.stringify({ ...policy, network: { ...policy.network, allowedDomains: [value] } }))]) {

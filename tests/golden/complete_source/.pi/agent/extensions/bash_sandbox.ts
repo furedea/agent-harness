@@ -72,7 +72,7 @@ function quote(value: string): string {
 	return "'" + value.replaceAll("'", "'\\''") + "'";
 }
 
-type Prepared = { settingsPath: string; content: string };
+type Prepared = { settingsPath: string; content: string; common: string | undefined };
 
 // A directory outside any repository is fine; a missing or broken git is not.
 function gitCommonDir(cwd: string): string | undefined {
@@ -95,7 +95,7 @@ function isRealDirectory(path: string): boolean {
 }
 
 // Policy for one worktree: the static source policy plus what only the runtime knows.
-function buildPolicy(source: Policy, cwd: string, temporary: string, protectedFiles: string[]): Policy {
+function buildPolicy(source: Policy, cwd: string, temporary: string, protectedFiles: string[], common: string | undefined): Policy {
 	const policy: Policy = structuredClone(source);
 	for (const key of ["denyRead", "allowWrite", "denyWrite"] as const) {
 		policy.filesystem[key] = policy.filesystem[key].map(path => policyPath(path, cwd));
@@ -103,7 +103,6 @@ function buildPolicy(source: Policy, cwd: string, temporary: string, protectedFi
 	policy.network.allowUnixSockets = policy.network.allowUnixSockets.map(path => policyPath(path, cwd));
 	policy.filesystem.allowWrite.push(cwd);
 	policy.filesystem.denyWrite.push(temporary, ...protectedFiles);
-	const common = gitCommonDir(cwd);
 	if (common) {
 		policy.filesystem.allowWrite.push(common);
 		policy.filesystem.denyWrite.push(join(common, "hooks"), join(common, "config"), join(common, "worktrees/*/config.worktree"));
@@ -138,10 +137,13 @@ export default function (pi: ExtensionAPI) {
 		const cwd = realpathSync(cwdInput);
 		const previous = prepared.get(cwd);
 		if (previous && readFileSync(previous.settingsPath, "utf8") !== previous.content) throw new Error("Sandbox settings changed");
-		const content = JSON.stringify(buildPolicy(source, cwd, temporary, protectedFiles));
+		// The sandbox can rewrite .git pointers, so a repository that was resolved once may never resolve elsewhere.
+		const common = gitCommonDir(cwd);
+		if (previous?.common && previous.common !== common) throw new Error("Sandbox git layout changed");
+		const content = JSON.stringify(buildPolicy(source, cwd, temporary, protectedFiles, common));
 		const settingsPath = previous?.settingsPath ?? join(temporary, prepared.size + ".json");
 		if (content !== previous?.content) writeFileSync(settingsPath, content, { mode: 0o600 });
-		const entry = { settingsPath, content };
+		const entry = { settingsPath, content, common };
 		prepared.set(cwd, entry);
 		return entry;
 	}
