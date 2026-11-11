@@ -88,7 +88,7 @@ sys.exit(${code})
   const policy = join(root, 'sandbox_policy.json');
   writeFileSync(policy, JSON.stringify({ filesystem: { denyRead: [join(root, 'secret'), '~/.ssh'], allowWrite: [], denyWrite: [join(root, 'sub/locked/**'), join(root, 'hooks-*')] } }));
   mkdirSync(join(root, 'secret'));
-  for (const [tool, path] of [['read', 'secret/key'], ['read', '~/.ssh/id_ed25519'], ['write', 'sub/locked/f'], ['edit', 'hooks-1/x'], ['write', 'secret/key']]) {
+  for (const [tool, path] of [['read', 'secret/key'], ['read', '~/.ssh/id_ed25519'], ['write', 'sub/locked/f'], ['edit', 'hooks-1/x'], ['write', 'secret/key'], ['read', 'SECRET/key'], ['write', 'sub/LOCKED/f'], ['edit', 'Hooks-1/x']]) {
     assert.equal((await fileCall(tool, path))?.block, true, tool + ': ' + path);
   }
   assert.equal(await fileCall('read', 'sub/locked/f'), undefined);
@@ -115,6 +115,12 @@ sys.exit(${code})
   linkSync(join(root, 'home/.pi/agent/auth.json'), join(root, 'alias'));
   for (const tool of ['read', 'write', 'edit']) assert.equal((await fileCall(tool, 'alias'))?.block, true, tool + ': hard link');
   process.env.HOME = savedHome;
+  // Pi's optional search tools read through the same in-process path as read.
+  for (const tool of ['grep', 'find', 'ls']) {
+    for (const path of ['.git', '~/.pi/agent/auth.json']) assert.equal((await fileCall(tool, path))?.block, true, tool + ': ' + path);
+    assert.equal(await fileCall(tool, 'sub'), undefined, tool + ': inside');
+    assert.equal(await listeners.get('tool_call')({ toolName: tool, input: {} }, ctx), undefined, tool + ': default path');
+  }
   // Pi's credential file is denied to the shell by srt, so the file tools must not hand it out either.
   for (const tool of ['read', 'write', 'edit']) {
     for (const path of ['~/.pi/agent/auth.json', join(homedir(), '.pi/agent/auth.json'), '@~/.pi/agent/auth.json', '~/.PI/Agent/AUTH.json', '~/.pi/agent/auth.json/']) {

@@ -16,6 +16,8 @@ const ADAPTER =
 	process.env.AGENT_HARNESS_PI_ADAPTER ?? join(homedir(), ".pi", "hooks", "hook_adapter.py");
 const SANDBOX_POLICY =
 	process.env.AGENT_HARNESS_PI_SANDBOX_POLICY ?? join(dirname(fileURLToPath(import.meta.url)), "sandbox_policy.json");
+const SEARCH_TOOLS = ["grep", "find", "ls"];
+const FILE_TOOLS = ["read", "write", "edit", ...SEARCH_TOOLS];
 const TIMEOUT_MS = Number(process.env.AGENT_HARNESS_HOOK_TIMEOUT ?? "30") * 1000;
 
 interface AdapterRun {
@@ -165,7 +167,8 @@ function denyRule(entry: string, root: string): DenyRule {
 		.split(/(\*\*\/|\*\*|\*|\?)/)
 		.map(part => ({ "**/": "(?:.*/)?", "**": ".*", "*": "[^/]*", "?": "[^/]" })[part] ?? part.replace(/[.+^${}()|[\]\\]/g, "\\$&"))
 		.join("");
-	return { pattern: new RegExp("^" + body + "(?:/.*)?$"), literal: glob < 0 ? absolute : undefined };
+	// Case-insensitive because default macOS volumes are; on case-sensitive ones this only denies more.
+	return { pattern: new RegExp("^" + body.normalize("NFC") + "(?:/.*)?$", "i"), literal: glob < 0 ? absolute : undefined };
 }
 
 // A missing or malformed policy blocks the file tools, as it does bash.
@@ -179,24 +182,35 @@ function denyRules(root: string): { read: DenyRule[]; write: DenyRule[] } | unde
 	return { read: denyRead.map(entry => denyRule(entry, root)), write: denyWrite.map(entry => denyRule(entry, root)) };
 }
 
+// The path and every ancestor, so a literal directory rule matches its descendants by identity too.
+function ancestry(path: string): string[] {
+	const entries = [path];
+	for (let parent = dirname(path); parent !== entries[entries.length - 1]; parent = dirname(parent)) entries.push(parent);
+	return entries;
+}
+
 function isDenied(rules: DenyRule[], paths: string[]): boolean {
-	return rules.some(rule => paths.some(path => rule.pattern.test(path) || (rule.literal !== undefined && sameFile(path, rule.literal))));
+	return rules.some(rule => paths.some(path => rule.pattern.test(path.normalize("NFC")) || (rule.literal !== undefined && ancestry(path).some(entry => sameFile(entry, rule.literal!)))));
 }
 
 function fileBoundary(tool: string, input: unknown, cwd: string): string | undefined {
-	if (!isRecord(input) || typeof input.path !== "string" || !input.path) return "Invalid file path";
+	if (!isRecord(input)) return "Invalid file path";
+	// grep, find and ls default to the working directory when no path is given.
+	const given = input.path ?? (SEARCH_TOOLS.includes(tool) ? "." : undefined);
+	if (typeof given !== "string" || !given) return "Invalid file path";
 	try {
+		const isWrite = tool === "write" || tool === "edit";
 		const root = realpathSync(cwd);
-		const lexical = resolve(root, normalizeToolPath(input.path));
+		const lexical = resolve(root, normalizeToolPath(given));
 		const target = targetPath(lexical);
 		if ([lexical, target].some(touchesGit)) return "File tools cannot access .git";
 		const rules = denyRules(root);
 		if (!rules) return "Invalid sandbox policy";
-		const denied = tool === "read" ? rules.read : [...rules.read, ...rules.write];
+		const denied = !isWrite ? rules.read : [...rules.read, ...rules.write];
 		if (isDenied(denied, [lexical, target])) return "Path is denied by the sandbox policy";
 		if ([lexical, target].some(isCredentialFile)) return "File tools cannot access Pi credentials";
 		const path = relative(root, target);
-		if (tool !== "read" && (path === ".." || path.startsWith(".." + sep) || isAbsolute(path))) {
+		if (isWrite && (path === ".." || path.startsWith(".." + sep) || isAbsolute(path))) {
 			return "File writes must stay inside the worktree";
 		}
 	} catch {
@@ -243,7 +257,7 @@ export default function (pi: ExtensionAPI) {
 	}
 
 	pi.on("tool_call", async (event, ctx) => {
-		const fileTool = ["read", "write", "edit"].includes(event.toolName);
+		const fileTool = FILE_TOOLS.includes(event.toolName);
 		if (fileTool) {
 			const reason = fileBoundary(event.toolName, event.input, ctx.cwd);
 			if (reason) return { block: true, reason };
