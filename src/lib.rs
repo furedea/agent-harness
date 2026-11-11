@@ -1,4 +1,5 @@
 mod cli;
+mod config_sync;
 mod file_op;
 mod generation;
 mod github_app;
