@@ -1,6 +1,6 @@
 use std::{
     cell::RefCell,
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
 };
 
@@ -22,6 +22,7 @@ enum FailureMode {
 struct MemoryFileSystem {
     files: RefCell<BTreeMap<PathBuf, Vec<u8>>>,
     failures: RefCell<Vec<(FailureMode, PathBuf)>>,
+    directories: RefCell<BTreeSet<PathBuf>>,
 }
 
 impl MemoryFileSystem {
@@ -87,6 +88,27 @@ impl FileSystem for MemoryFileSystem {
             .get(source)
             .cloned()
             .context("missing file")
+    }
+
+    fn create_parents(&self, target: &Path) -> Result<Vec<PathBuf>> {
+        let mut directories = self.directories.borrow_mut();
+        let mut missing: Vec<PathBuf> = target
+            .ancestors()
+            .skip(1)
+            .filter(|ancestor| !ancestor.as_os_str().is_empty())
+            .filter(|ancestor| !directories.contains(*ancestor))
+            .map(Path::to_path_buf)
+            .collect();
+        missing.reverse();
+        directories.extend(missing.iter().cloned());
+        Ok(missing)
+    }
+
+    fn remove_created(&self, created: &[PathBuf]) {
+        let mut directories = self.directories.borrow_mut();
+        created.iter().for_each(|directory| {
+            directories.remove(directory);
+        });
     }
 
     fn stage_directory(&self, source: &Path, target: &Path) -> Result<PathBuf> {
@@ -259,6 +281,7 @@ fn a_failure_midway_restores_every_installed_path() -> Result<()> {
     assert_eq!(fs.snapshot_under("home"), before);
     assert!(fs.snapshot_under("backup").is_empty());
     assert!(fs.snapshot_under("staged").is_empty());
+    assert!(fs.directories.borrow().is_empty());
     Ok(())
 }
 
@@ -272,6 +295,7 @@ fn a_failure_while_staging_leaves_every_live_path_untouched() -> Result<()> {
 
     assert_eq!(fs.snapshot_under("home"), before);
     assert!(fs.snapshot_under("staged").is_empty());
+    assert!(fs.directories.borrow().is_empty());
     Ok(())
 }
 

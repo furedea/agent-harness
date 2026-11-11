@@ -16,104 +16,120 @@ struct Swapped<'a> {
     backup: Option<PathBuf>,
 }
 
+/// Everything an execution changed on disk before its swaps are final.
+struct Transaction<'a, F: FileSystem> {
+    filesystem: &'a F,
+    created_parents: Vec<PathBuf>,
+    staged: Vec<Staged<'a>>,
+    swapped: Vec<Swapped<'a>>,
+}
+
 /// Applies the plan all-or-nothing.
 ///
 /// Every replacement is staged before any live path is touched, so a failure while preparing
 /// changes nothing. The swaps that follow are renames, and a failing one restores every path
-/// already swapped.
+/// already swapped. Directories created for the targets are removed again on failure.
 pub(crate) fn execute(filesystem: &impl FileSystem, plan: &[FileOp]) -> Result<()> {
-    let staged = stage_all(filesystem, plan)?;
-    let mut swapped = Vec::new();
-    let result = staged
-        .iter()
-        .try_for_each(|replacement| swap(filesystem, replacement, &mut swapped));
-    match result {
+    let mut transaction = Transaction {
+        filesystem,
+        created_parents: Vec::new(),
+        staged: Vec::new(),
+        swapped: Vec::new(),
+    };
+    match run(&mut transaction, plan) {
         Ok(()) => {
-            commit(filesystem, &swapped);
+            discard_backups(&transaction);
             Ok(())
         }
-        Err(error) => {
-            discard_staged(filesystem, &staged);
-            Err(roll_back(filesystem, &swapped, error))
-        }
+        Err(error) => Err(abort(&transaction, error)),
     }
 }
 
-fn stage_all<'a>(filesystem: &impl FileSystem, plan: &'a [FileOp]) -> Result<Vec<Staged<'a>>> {
-    let mut staged = Vec::new();
-    let result = plan.iter().try_for_each(|operation| {
-        staged.push(stage(filesystem, operation)?);
-        Ok(())
-    });
-    if let Err(error) = result {
-        discard_staged(filesystem, &staged);
-        return Err(error);
+fn run<'a, F: FileSystem>(transaction: &mut Transaction<'a, F>, plan: &'a [FileOp]) -> Result<()> {
+    for operation in plan {
+        stage(transaction, operation)?;
     }
-    Ok(staged)
+    for index in 0..transaction.staged.len() {
+        swap(transaction, index)?;
+    }
+    Ok(())
 }
 
-fn stage<'a>(filesystem: &impl FileSystem, operation: &'a FileOp) -> Result<Staged<'a>> {
+fn stage<'a, F: FileSystem>(
+    transaction: &mut Transaction<'a, F>,
+    operation: &'a FileOp,
+) -> Result<()> {
     let target = operation.target();
-    let path = match operation {
-        FileOp::WriteFile { content, .. } => filesystem.stage_file(target, content),
-        FileOp::ReplaceDirectory { source, .. } => filesystem.stage_directory(source, target),
-        FileOp::InstallFile { source, .. } => {
+    let created = transaction.filesystem.create_parents(target)?;
+    transaction.created_parents.extend(created);
+    let path = stage_path(transaction.filesystem, operation)?;
+    transaction.staged.push(Staged { target, path });
+    Ok(())
+}
+
+fn stage_path(filesystem: &impl FileSystem, operation: &FileOp) -> Result<PathBuf> {
+    match operation {
+        FileOp::WriteFile { target, content } => filesystem.stage_file(target, content),
+        FileOp::ReplaceDirectory { source, target } => filesystem.stage_directory(source, target),
+        FileOp::InstallFile { source, target } => {
             let content = filesystem
                 .read_file(source)
                 .with_context(|| format!("failed to read {}", source.display()))?;
             filesystem.stage_file(target, &content)
         }
-    }?;
-    Ok(Staged { target, path })
-}
-
-fn swap<'a>(
-    filesystem: &impl FileSystem,
-    replacement: &Staged<'a>,
-    swapped: &mut Vec<Swapped<'a>>,
-) -> Result<()> {
-    let backup = filesystem.swap(&replacement.path, replacement.target)?;
-    swapped.push(Swapped {
-        target: replacement.target,
-        backup,
-    });
-    Ok(())
-}
-
-/// Backups are leftovers once every swap succeeded, so failing to delete one is not a failure.
-fn commit(filesystem: &impl FileSystem, swapped: &[Swapped<'_>]) {
-    for backup in swapped
-        .iter()
-        .filter_map(|published| published.backup.as_deref())
-    {
-        let _ = filesystem.discard(backup);
     }
 }
 
-fn discard_staged(filesystem: &impl FileSystem, staged: &[Staged<'_>]) {
-    for replacement in staged {
-        let _ = filesystem.discard(&replacement.path);
+fn swap<F: FileSystem>(transaction: &mut Transaction<'_, F>, index: usize) -> Result<()> {
+    let Some(replacement) = transaction.staged.get(index) else {
+        return Ok(());
+    };
+    let target = replacement.target;
+    let backup = transaction.filesystem.swap(&replacement.path, target)?;
+    transaction.swapped.push(Swapped { target, backup });
+    Ok(())
+}
+
+/// Backups are leftovers once every swap succeeded, so failing to delete one is harmless.
+fn discard_backups<F: FileSystem>(transaction: &Transaction<'_, F>) {
+    for swapped in &transaction.swapped {
+        let _ = swapped
+            .backup
+            .as_deref()
+            .map(|backup| transaction.filesystem.discard(backup));
     }
 }
 
 /// Restores every swapped path, newest first, and reports every restore that failed.
-fn roll_back(
-    filesystem: &impl FileSystem,
-    swapped: &[Swapped<'_>],
-    cause: anyhow::Error,
-) -> anyhow::Error {
-    let failures: Vec<String> = swapped
+fn abort<F: FileSystem>(transaction: &Transaction<'_, F>, cause: anyhow::Error) -> anyhow::Error {
+    for replacement in &transaction.staged {
+        let _ = transaction.filesystem.discard(&replacement.path);
+    }
+    let failures = restore_failures(transaction);
+    if !failures.is_empty() {
+        return cause.context(format!("rollback also failed: {}", failures.join("; ")));
+    }
+    transaction
+        .filesystem
+        .remove_created(&transaction.created_parents);
+    cause.context("install failed; previous files were restored")
+}
+
+fn restore_failures<F: FileSystem>(transaction: &Transaction<'_, F>) -> Vec<String> {
+    let restore = |swapped: &Swapped<'_>| {
+        transaction
+            .filesystem
+            .restore(swapped.target, swapped.backup.as_deref())
+            .err()
+    };
+    transaction
+        .swapped
         .iter()
         .rev()
-        .filter_map(|published| {
-            filesystem
-                .restore(published.target, published.backup.as_deref())
-                .err()
-        })
+        .filter_map(restore)
         .map(|error| format!("{error:#}"))
-        .collect();
-    if failures.is_empty() {
-        return cause.context("install failed; previous files were restored");
-    }
-    cause.context(format!("rollback also failed: {}", failures.join("; ")))
+        .collect()
 }
+
+#[cfg(all(test, unix))]
+mod tests;

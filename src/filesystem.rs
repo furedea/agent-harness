@@ -9,6 +9,10 @@ pub(crate) trait FileSystem {
     fn copy_file(&self, source: &Path, target: &Path) -> Result<()>;
     fn replace_directory(&self, source: &Path, target: &Path) -> Result<()>;
     fn read_file(&self, source: &Path) -> Result<Vec<u8>>;
+    /// Creates the missing parent directories of `target` and returns them, outermost first.
+    fn create_parents(&self, target: &Path) -> Result<Vec<PathBuf>>;
+    /// Removes directories made by `create_parents`, innermost first, if they are still empty.
+    fn remove_created(&self, directories: &[PathBuf]);
     /// Prepares a replacement next to `target` without touching it.
     fn stage_directory(&self, source: &Path, target: &Path) -> Result<PathBuf>;
     fn stage_file(&self, target: &Path, content: &[u8]) -> Result<PathBuf>;
@@ -33,6 +37,14 @@ impl FileSystem for RealFileSystem {
     fn read_file(&self, source: &Path) -> Result<Vec<u8>> {
         std::fs::read(source)
             .with_context(|| format!("failed to read rendered file {}", source.display()))
+    }
+
+    fn create_parents(&self, target: &Path) -> Result<Vec<PathBuf>> {
+        fs_ops::create_missing_parents(target)
+    }
+
+    fn remove_created(&self, directories: &[PathBuf]) {
+        fs_ops::remove_created_parents(directories);
     }
 
     fn stage_directory(&self, source: &Path, target: &Path) -> Result<PathBuf> {

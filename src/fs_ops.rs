@@ -9,20 +9,20 @@ use anyhow::{Context, Result, ensure};
 
 /// Copies a source directory over `target` so that a failure leaves `target` untouched.
 pub(crate) fn copy_dir(source: &Path, target: &Path) -> Result<()> {
+    create_parent(target)?;
     let staged = stage_directory(source, target)?;
     let backup = swap_in(&staged, target);
     let _ = remove_path(&staged);
     backup?.as_deref().map_or(Ok(()), discard)
 }
 
-/// Copies `source` into a fresh sibling of `target`, ready to be swapped in.
+/// Copies `source` into a fresh sibling of `target`, which must already have its parent.
 pub(crate) fn stage_directory(source: &Path, target: &Path) -> Result<PathBuf> {
     ensure!(
         source.is_dir(),
         "source directory does not exist: {}",
         source.display()
     );
-    create_parent(target)?;
     let staged = sibling_path(target, "tmp")?;
     let copied = copy_tree(source, &staged);
     if copied.is_err() {
@@ -43,9 +43,8 @@ fn copy_tree(source: &Path, staged: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Writes `content` into a fresh sibling of `target`, ready to be swapped in.
+/// Writes `content` into a fresh sibling of `target`, which must already have its parent.
 pub(crate) fn stage_file(target: &Path, content: &[u8]) -> Result<PathBuf> {
-    create_parent(target)?;
     let (path, mut file) = create_temporary_file(target)?;
     let written = file
         .write_all(content)
@@ -58,13 +57,48 @@ pub(crate) fn stage_file(target: &Path, content: &[u8]) -> Result<PathBuf> {
 
 /// Renames `staged` over `target`, returning the backup of what was there.
 pub(crate) fn swap_in(staged: &Path, target: &Path) -> Result<Option<PathBuf>> {
-    let backup = move_aside(target)?;
+    let backup = back_up(target)?;
     let renamed = std::fs::rename(staged, target)
         .with_context(|| format!("failed to replace {}", target.display()));
     if renamed.is_err() {
         restore(target, backup.as_deref())?;
     }
     renamed.map(|()| backup)
+}
+
+/// Backs up a regular file with a hard link so it stays in place until the rename replaces it.
+fn back_up(target: &Path) -> Result<Option<PathBuf>> {
+    let is_file = std::fs::symlink_metadata(target).is_ok_and(|metadata| metadata.is_file());
+    if !is_file {
+        return move_aside(target);
+    }
+    let backup = sibling_path(target, "bak")?;
+    std::fs::hard_link(target, &backup)
+        .or_else(|_| std::fs::copy(target, &backup).map(drop))
+        .with_context(|| format!("failed to back up {}", target.display()))?;
+    Ok(Some(backup))
+}
+
+/// Creates the missing parent directories of `target` and returns them, outermost first.
+pub(crate) fn create_missing_parents(target: &Path) -> Result<Vec<PathBuf>> {
+    let Some(parent) = target.parent() else {
+        return Ok(Vec::new());
+    };
+    let mut missing: Vec<PathBuf> = parent
+        .ancestors()
+        .take_while(|ancestor| !ancestor.exists())
+        .map(Path::to_path_buf)
+        .collect();
+    missing.reverse();
+    create_parent(target)?;
+    Ok(missing)
+}
+
+/// Removes directories `create_missing_parents` made, innermost first, if they are still empty.
+pub(crate) fn remove_created_parents(created: &[PathBuf]) {
+    for directory in created.iter().rev() {
+        let _ = std::fs::remove_dir(directory);
+    }
 }
 
 fn create_parent(target: &Path) -> Result<()> {
@@ -88,10 +122,12 @@ pub(crate) fn move_aside(target: &Path) -> Result<Option<PathBuf>> {
 
 /// Puts `backup` back at `target`, discarding whatever was published there meanwhile.
 pub(crate) fn restore(target: &Path, backup: Option<&Path>) -> Result<()> {
-    remove_path(target)?;
     let Some(backup) = backup else {
-        return Ok(());
+        return remove_path(target);
     };
+    if std::fs::symlink_metadata(target).is_ok_and(|metadata| metadata.is_dir()) {
+        remove_path(target)?;
+    }
     std::fs::rename(backup, target)
         .with_context(|| format!("failed to restore {}", target.display()))
 }
