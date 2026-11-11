@@ -1,3 +1,8 @@
+#![expect(
+    clippy::disallowed_methods,
+    reason = "the command line is the imperative edge: it reads the environment for HOME"
+)]
+
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -16,9 +21,11 @@ use crate::{
     inventory::Inventory,
     profile::Profile,
     provider::spec::ProviderId,
-    render, runtime,
+    render::{self, RenderRequest},
+    runtime,
     runtime_root::RuntimeRoot,
-    shell::{self, hook_bundle, sync::SyncPaths},
+    shell::{self, ExternalInputs, hook_bundle, load_snapshot, source_request, sync::SyncPaths},
+    snapshot::{Snapshot, Tree},
     source,
 };
 
@@ -299,8 +306,9 @@ pub fn run() -> Result<()> {
 
 fn generate_claude_settings(args: GenerateFileArgs, profile: Profile) -> Result<()> {
     let source = source::resolve_source(args.source, profile)?;
+    let files = load_source(source.as_path(), &args.extra_hook)?;
     shell::execute(&[claude_config::settings_op(
-        source.as_path(),
+        Tree::new(source.as_path(), &files),
         &args.output,
         &args.extra_hook,
     )?])
@@ -308,8 +316,9 @@ fn generate_claude_settings(args: GenerateFileArgs, profile: Profile) -> Result<
 
 fn generate_codex_config_source(args: GenerateFileArgs, profile: Profile) -> Result<()> {
     let source = source::resolve_source(args.source, profile)?;
+    let files = load_source(source.as_path(), &args.extra_hook)?;
     shell::execute(&[codex_config::config_source_op(
-        source.as_path(),
+        Tree::new(source.as_path(), &files),
         &args.output,
         &args.extra_hook,
     )?])
@@ -317,8 +326,9 @@ fn generate_codex_config_source(args: GenerateFileArgs, profile: Profile) -> Res
 
 fn write_codex_config_fragment(args: GenerateFileArgs, profile: Profile) -> Result<()> {
     let source = source::resolve_source(args.source, profile)?;
+    let files = load_source(source.as_path(), &args.extra_hook)?;
     shell::execute(&[protection::codex_config_fragment_op(
-        source.as_path(),
+        Tree::new(source.as_path(), &files),
         &args.extra_hook,
         &args.output,
     )?])
@@ -326,11 +336,21 @@ fn write_codex_config_fragment(args: GenerateFileArgs, profile: Profile) -> Resu
 
 fn write_hooks(provider: ProviderId, args: GenerateFileArgs, profile: Profile) -> Result<()> {
     let source = source::resolve_source(args.source, profile)?;
+    let files = load_source(source.as_path(), &args.extra_hook)?;
     shell::execute(&[hooks::hooks_op_for_runtime(
-        GenerationContext::home(source.as_path(), &args.extra_hook),
+        GenerationContext::home(Tree::new(source.as_path(), &files), &args.extra_hook),
         &args.output,
         provider.spec(),
     )?])
+}
+
+/// The source tree and the external hook bundles a command renders from, read once.
+fn load_source(source: &Path, hook_bundles: &[ExternalHookBundle]) -> Result<Snapshot> {
+    let external = ExternalInputs {
+        hook_bundles,
+        ..ExternalInputs::default()
+    };
+    load_snapshot(&source_request(source, external))
 }
 
 fn sync_config(provider: ProviderId, args: &SyncConfigArgs) -> Result<()> {
@@ -356,10 +376,11 @@ fn write_forbidden_commands(args: GenerateFileArgs, profile: Profile) -> Result<
 fn generate_file(
     args: GenerateFileArgs,
     profile: Profile,
-    generate: impl FnOnce(&Path, &Path) -> Result<FileOp>,
+    generate: impl FnOnce(Tree<'_>, &Path) -> Result<FileOp>,
 ) -> Result<()> {
     let source = source::resolve_source(args.source, profile)?;
-    shell::execute(&[generate(source.as_path(), &args.output)?])
+    let files = load_source(source.as_path(), &[])?;
+    shell::execute(&[generate(Tree::new(source.as_path(), &files), &args.output)?])
 }
 
 // Skills and install stay explicit because they add provider and prefix handling
@@ -384,13 +405,13 @@ fn install(args: InstallArgs, profile: Profile) -> Result<()> {
         .map(RuntimeRoot::directory)
         .transpose()?
         .unwrap_or_else(RuntimeRoot::home);
-    let context = GenerationContext {
+    let request = RenderRequest {
         dsh_profile: &args.dsh_profile,
         source: source.as_path(),
         external_hooks: &args.extra_hook,
         runtime_root: &runtime_root,
     };
-    render::install(context, &prefix)
+    render::install(&request, &prefix)
 }
 
 fn github_app_token(command: GithubAppTokenCommand) -> Result<()> {
@@ -417,7 +438,8 @@ fn github_app_token(command: GithubAppTokenCommand) -> Result<()> {
 
 fn list(args: ListArgs, profile: Profile) -> Result<()> {
     let source = source::resolve_source(args.source, profile)?;
-    let inventory = Inventory::load(source.as_path())?;
+    let files = load_source(source.as_path(), &[])?;
+    let inventory = Inventory::load(Tree::new(source.as_path(), &files))?;
     let output = match args.command {
         Some(ListCommand::Hooks(hook_args)) => inventory.hooks(hook_args.provider),
         Some(ListCommand::Skills) => inventory.skills(),

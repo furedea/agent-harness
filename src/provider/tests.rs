@@ -9,7 +9,9 @@ use crate::{
     inventory::shorten_hook_path_for,
     layout::{InstalledLayout, SourceLayout},
     provider::renderer::ProviderRenderer,
-    render,
+    render::{self, RenderRequest},
+    runtime_root::RuntimeRoot,
+    shell::fixtures::load_tree,
 };
 use anyhow::Result;
 use clap::ValueEnum;
@@ -55,7 +57,8 @@ fn extra_spec_flows_through_layout_protection_rendering_and_publication() -> Res
     let destination = crate::shell::TemporaryDirectory::create()?;
     let layout = InstalledLayout::new(staging.path());
     let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/complete-source");
-    let context = GenerationContext::home(&source, &[]);
+    let loaded = load_tree(&source)?;
+    let context = GenerationContext::home(loaded.tree(), &[]);
     assert!(
         layout
             .managed_directories_for(&providers)
@@ -93,7 +96,14 @@ fn extra_spec_flows_through_layout_protection_rendering_and_publication() -> Res
         shorten_hook_path_for("$HOME/.example/hooks/guard.sh", &providers),
         "guard.sh"
     );
-    render::render_installation_for(context, staging.path(), &providers)?;
+    let runtime_root = RuntimeRoot::home();
+    let request = RenderRequest {
+        dsh_profile: "web",
+        source: &source,
+        external_hooks: &[],
+        runtime_root: &runtime_root,
+    };
+    render::render_installation_for(&request, staging.path(), &providers)?;
     let policy = std::fs::read_to_string(
         staging
             .path()
@@ -322,8 +332,9 @@ fn claude_and_codex_declare_their_instructions_skills_and_statusline() {
 fn rendering_writes_command_rules_where_the_provider_declares_them() -> Result<()> {
     let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/complete-source");
     let out = crate::shell::TemporaryDirectory::create()?;
+    let loaded = load_tree(&source)?;
     let renderer = ProviderRenderer {
-        context: GenerationContext::home(&source, &[]),
+        context: GenerationContext::home(loaded.tree(), &[]),
         providers: PROVIDERS,
         out: out.path(),
     };

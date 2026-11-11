@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
-use crate::file_op::FileOp;
+use crate::{file_op::FileOp, snapshot::Snapshot};
 
 /// Sidecar next to the Codex config recording the `shell_environment_policy.set` keys last
 /// written, so a key dropped from the source is removed while keys Codex or the user added stay.
@@ -29,16 +29,18 @@ impl ManagedState {
     }
 }
 
-pub(super) fn managed_state_path(target_path: &Path) -> PathBuf {
+pub(crate) fn managed_state_path(target_path: &Path) -> PathBuf {
     target_path.with_file_name(MANAGED_STATE_FILE)
 }
 
 // A missing or unreadable sidecar must not block the sync; it only forgoes removals, apart from
 // the keys managed before the sidecar existed.
-pub(super) fn read_managed_state(path: &Path) -> ManagedState {
-    std::fs::read_to_string(path)
+pub(super) fn read_managed_state(files: &Snapshot, path: &Path) -> ManagedState {
+    files
+        .read_text_if_present(path)
         .ok()
-        .and_then(|content| serde_json::from_str(&content).ok())
+        .flatten()
+        .and_then(|content| serde_json::from_str(content).ok())
         .unwrap_or_else(ManagedState::legacy)
 }
 

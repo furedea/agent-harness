@@ -3,7 +3,12 @@ use std::path::Path;
 use anyhow::{Context, Result, bail, ensure};
 use serde::{Deserialize, Serialize};
 
-use crate::{file_op::FileOp, generation::permission_rule::PrefixRule, layout::SourceLayout};
+use crate::{
+    file_op::FileOp,
+    generation::permission_rule::PrefixRule,
+    layout::SourceLayout,
+    snapshot::{Snapshot, Tree},
+};
 
 #[derive(Debug, Deserialize, Serialize)]
 struct CommandPermissions {
@@ -42,28 +47,28 @@ struct RegexRule {
     justification: String,
 }
 
-pub(crate) fn codex_rules_op(source: &Path, path: &Path) -> Result<FileOp> {
+pub(crate) fn codex_rules_op(source: Tree<'_>, path: &Path) -> Result<FileOp> {
     let policy = read_policy(source)?;
     Ok(FileOp::write(path, codex_rules(&policy)?))
 }
 
-pub(crate) fn runtime_policy_op(source: &Path, path: &Path) -> Result<FileOp> {
+pub(crate) fn runtime_policy_op(source: Tree<'_>, path: &Path) -> Result<FileOp> {
     FileOp::write_json(path, &read_policy(source)?)
 }
 
-pub(crate) fn forbidden_commands_op(source: &Path, path: &Path) -> Result<FileOp> {
-    let policy_path = SourceLayout::new(source).forbidden_command_rules();
-    FileOp::write_json(path, &read_regex_policy(&policy_path)?)
+pub(crate) fn forbidden_commands_op(source: Tree<'_>, path: &Path) -> Result<FileOp> {
+    let policy_path = SourceLayout::new(source.root()).forbidden_command_rules();
+    FileOp::write_json(path, &read_regex_policy(source.files(), &policy_path)?)
 }
 
-pub(crate) fn validate_regex_policies(source: &Path) -> Result<()> {
-    let layout = SourceLayout::new(source);
-    read_regex_policy(&layout.allowed_command_rules())?;
-    read_regex_policy(&layout.forbidden_command_rules())?;
+pub(crate) fn validate_regex_policies(source: Tree<'_>) -> Result<()> {
+    let layout = SourceLayout::new(source.root());
+    read_regex_policy(source.files(), &layout.allowed_command_rules())?;
+    read_regex_policy(source.files(), &layout.forbidden_command_rules())?;
     Ok(())
 }
 
-pub(crate) fn claude_allow_permissions(source: &Path) -> Result<Vec<String>> {
+pub(crate) fn claude_allow_permissions(source: Tree<'_>) -> Result<Vec<String>> {
     Ok(read_policy(source)?
         .rules
         .iter()
@@ -72,7 +77,7 @@ pub(crate) fn claude_allow_permissions(source: &Path) -> Result<Vec<String>> {
         .collect())
 }
 
-pub(crate) fn claude_ask_permissions(source: &Path) -> Result<Vec<String>> {
+pub(crate) fn claude_ask_permissions(source: Tree<'_>) -> Result<Vec<String>> {
     Ok(read_policy(source)?
         .rules
         .iter()
@@ -81,7 +86,7 @@ pub(crate) fn claude_ask_permissions(source: &Path) -> Result<Vec<String>> {
         .collect())
 }
 
-pub(crate) fn claude_deny_permissions(source: &Path) -> Result<Vec<String>> {
+pub(crate) fn claude_deny_permissions(source: Tree<'_>) -> Result<Vec<String>> {
     Ok(read_policy(source)?
         .rules
         .iter()
@@ -90,7 +95,7 @@ pub(crate) fn claude_deny_permissions(source: &Path) -> Result<Vec<String>> {
         .collect())
 }
 
-pub(crate) fn devin_permissions(source: &Path) -> Result<serde_json::Value> {
+pub(crate) fn devin_permissions(source: Tree<'_>) -> Result<serde_json::Value> {
     let policy = read_policy(source)?;
     Ok(serde_json::json!({
         "allow": devin_permissions_for(&policy, Decision::Allow),
@@ -108,20 +113,23 @@ fn devin_permissions_for(policy: &CommandPermissions, decision: Decision) -> Vec
         .collect()
 }
 
-fn read_policy(source: &Path) -> Result<CommandPermissions> {
-    let path = SourceLayout::new(source).command_permissions();
-    let content = std::fs::read_to_string(&path)
+fn read_policy(source: Tree<'_>) -> Result<CommandPermissions> {
+    let path = SourceLayout::new(source.root()).command_permissions();
+    let content = source
+        .files()
+        .read_text(&path)
         .with_context(|| format!("failed to read command permissions {}", path.display()))?;
-    let policy: CommandPermissions = serde_json::from_str(&content)
+    let policy: CommandPermissions = serde_json::from_str(content)
         .with_context(|| format!("failed to parse command permissions {}", path.display()))?;
     validate_policy(&policy)?;
     Ok(policy)
 }
 
-fn read_regex_policy(path: &Path) -> Result<RegexPolicy> {
-    let content = std::fs::read_to_string(path)
+fn read_regex_policy(files: &Snapshot, path: &Path) -> Result<RegexPolicy> {
+    let content = files
+        .read_text(path)
         .with_context(|| format!("failed to read command regex policy {}", path.display()))?;
-    let policy: RegexPolicy = serde_json::from_str(&content)
+    let policy: RegexPolicy = serde_json::from_str(content)
         .with_context(|| format!("failed to parse command regex policy {}", path.display()))?;
     validate_regex_policy(&policy)?;
     Ok(policy)
@@ -204,9 +212,11 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::*;
+    use crate::shell::fixtures::load_tree;
 
     fn write_forbidden_commands(source: &Path, path: &Path) -> Result<()> {
-        crate::shell::execute(&[forbidden_commands_op(source, path)?])
+        let files = load_tree(source)?;
+        crate::shell::execute(&[forbidden_commands_op(files.tree(), path)?])
     }
 
     #[test]
@@ -214,7 +224,7 @@ mod tests {
         let root = test_root("codex_rules_include_allow_and_deny_prefixes")?;
         write_policy(&root)?;
 
-        let content = codex_rules(&read_policy(&root)?)?;
+        let content = codex_rules(&read_policy(load_tree(&root)?.tree())?)?;
 
         assert!(content.contains(r#"pattern = ["cargo"]"#));
         assert!(content.contains(r#"decision = "allow""#));
@@ -234,7 +244,10 @@ mod tests {
             r#"{"version":1,"rules":[{"patterns":["^git add \\.$"],"justification":"No bulk staging."}]}"#,
         )?;
 
-        let policy = read_regex_policy(&SourceLayout::new(&root).forbidden_command_rules())?;
+        let policy = read_regex_policy(
+            load_tree(&root)?.files(),
+            &SourceLayout::new(&root).forbidden_command_rules(),
+        )?;
 
         assert_eq!(policy.rules[0].patterns, [r"^git add \.$"]);
         assert_eq!(policy.rules[0].justification, "No bulk staging.");
@@ -286,7 +299,7 @@ mod tests {
         let root = test_root("runtime_command_permissions_contains_allow_and_deny_prefixes")?;
         write_policy(&root)?;
 
-        let policy = read_policy(&root)?;
+        let policy = read_policy(load_tree(&root)?.tree())?;
         let value = serde_json::to_value(&policy)?;
 
         assert_eq!(value["version"], 1);
@@ -310,8 +323,14 @@ mod tests {
         let root = test_root("claude_permissions_use_bash_prefix_syntax")?;
         write_policy(&root)?;
 
-        assert!(claude_allow_permissions(&root)?.contains(&"Bash(cargo:*)".to_string()));
-        assert!(claude_deny_permissions(&root)?.contains(&"Bash(curl:*)".to_string()));
+        assert!(
+            claude_allow_permissions(load_tree(&root)?.tree())?
+                .contains(&"Bash(cargo:*)".to_string())
+        );
+        assert!(
+            claude_deny_permissions(load_tree(&root)?.tree())?
+                .contains(&"Bash(curl:*)".to_string())
+        );
 
         crate::shell::fixtures::remove_dir_all(root)?;
         Ok(())
@@ -333,7 +352,7 @@ mod tests {
 "#,
         )?;
 
-        let permissions = claude_ask_permissions(&root)?;
+        let permissions = claude_ask_permissions(load_tree(&root)?.tree())?;
 
         assert_eq!(permissions, ["Bash(git push:*)"]);
 
@@ -346,7 +365,7 @@ mod tests {
         let root = test_root("devin_permissions_use_exec_prefix_syntax")?;
         write_policy(&root)?;
 
-        let permissions = devin_permissions(&root)?;
+        let permissions = devin_permissions(load_tree(&root)?.tree())?;
 
         assert_eq!(permissions["allow"], serde_json::json!(["Exec(cargo)"]));
         assert_eq!(permissions["deny"], serde_json::json!(["Exec(curl)"]));
@@ -371,7 +390,7 @@ mod tests {
 "#,
         )?;
 
-        let permissions = devin_permissions(&root)?;
+        let permissions = devin_permissions(load_tree(&root)?.tree())?;
 
         assert_eq!(permissions["ask"], serde_json::json!(["Exec(git push)"]));
 
@@ -395,7 +414,7 @@ mod tests {
 "#,
         )?;
 
-        let rules = codex_rules(&read_policy(&root)?)?;
+        let rules = codex_rules(&read_policy(load_tree(&root)?.tree())?)?;
 
         assert!(rules.contains(r#"decision = "prompt""#));
         assert!(!rules.contains("match ="));
@@ -412,7 +431,7 @@ mod tests {
             r#"{"version":1,"rules":[{"decision":"allow","prefix":[],"justification":"x"}]}"#,
         )?;
 
-        let error = format!("{:#}", read_policy(&root).unwrap_err());
+        let error = format!("{:#}", read_policy(load_tree(&root)?.tree()).unwrap_err());
 
         assert!(error.contains("non-empty"));
 
@@ -428,7 +447,7 @@ mod tests {
             r#"{"version":1,"rules":[{"decision":"allow","prefix":["rm -rf"],"justification":"x"}]}"#,
         )?;
 
-        let error = format!("{:#}", read_policy(&root).unwrap_err());
+        let error = format!("{:#}", read_policy(load_tree(&root)?.tree()).unwrap_err());
 
         assert!(error.contains("whitespace"));
 

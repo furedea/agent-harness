@@ -9,7 +9,9 @@ mod executor;
 pub(crate) mod fixtures;
 pub(crate) mod hook_bundle;
 mod io;
+mod load;
 pub(crate) mod sync;
 
 pub(crate) use executor::execute;
 pub(crate) use io::TemporaryDirectory;
+pub(crate) use load::{ExternalInputs, load_snapshot, real_path, source_request, sync_documents};

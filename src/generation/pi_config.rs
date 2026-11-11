@@ -3,19 +3,26 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use serde_json::{Map, Value};
 
-use crate::file_op::FileOp;
+use crate::{
+    file_op::FileOp,
+    snapshot::{ConfigFiles, Snapshot, Tree},
+};
 
 const MANAGED_KEYS: &[&str] = &["defaultProvider", "defaultModel", "defaultThinkingLevel"];
 
-pub(crate) fn managed_config_op(source: &Path, target: &Path) -> Result<FileOp> {
-    sync_config_op(&source.join("pi/settings.json"), target)
+pub(crate) fn managed_config_op(source: Tree<'_>, target: &Path) -> Result<FileOp> {
+    sync_config_op(ConfigFiles {
+        generated: &source.root().join("pi/settings.json"),
+        target,
+        files: source.files(),
+    })
 }
 
-pub(crate) fn sync_config_op(source: &Path, target: &Path) -> Result<FileOp> {
-    let generated = managed_settings(read_settings(source)?);
-    let mut existing = read_settings(target)?;
+pub(crate) fn sync_config_op(config: ConfigFiles<'_>) -> Result<FileOp> {
+    let generated = managed_settings(read_settings(config.files, config.generated)?);
+    let mut existing = read_settings(config.files, config.target)?;
     existing.extend(generated);
-    FileOp::write_json(target, &existing)
+    FileOp::write_json(config.target, &existing)
 }
 
 fn managed_settings(mut settings: Map<String, Value>) -> Map<String, Value> {
@@ -23,13 +30,10 @@ fn managed_settings(mut settings: Map<String, Value>) -> Map<String, Value> {
     settings
 }
 
-fn read_settings(path: &Path) -> Result<Map<String, Value>> {
-    match std::fs::read_to_string(path) {
-        Ok(content) => serde_json::from_str(&content)
-            .with_context(|| format!("failed to parse Pi settings {}", path.display())),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Map::new()),
-        Err(error) => {
-            Err(error).with_context(|| format!("failed to read Pi settings {}", path.display()))
-        }
-    }
+fn read_settings(files: &Snapshot, path: &Path) -> Result<Map<String, Value>> {
+    let Some(content) = files.read_text_if_present(path)? else {
+        return Ok(Map::new());
+    };
+    serde_json::from_str(content)
+        .with_context(|| format!("failed to parse Pi settings {}", path.display()))
 }
