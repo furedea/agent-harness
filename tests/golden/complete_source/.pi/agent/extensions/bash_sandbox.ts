@@ -138,9 +138,9 @@ export default function (pi: ExtensionAPI) {
 		const cwd = realpathSync(cwdInput);
 		const previous = prepared.get(cwd);
 		if (previous && readFileSync(previous.settingsPath, "utf8") !== previous.content) throw new Error("Sandbox settings changed");
-		// The sandbox can rewrite .git pointers, so a repository that was resolved once may never resolve elsewhere.
+		// The sandbox can rewrite .git pointers, so a cwd's first resolution (repository or not) is final for the session.
 		const common = gitCommonDir(cwd);
-		if (previous?.common && previous.common !== common) throw new Error("Sandbox git layout changed");
+		if (previous && previous.common !== common) throw new Error("Sandbox git layout changed");
 		const content = JSON.stringify(buildPolicy(source, cwd, temporary, protectedFiles, common));
 		const settingsPath = previous?.settingsPath ?? join(temporary, prepared.size + ".json");
 		if (content !== previous?.content) writeFileSync(settingsPath, content, { mode: 0o600 });

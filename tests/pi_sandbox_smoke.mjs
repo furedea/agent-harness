@@ -80,12 +80,9 @@ fs.writeFileSync(${JSON.stringify(join(root, 'record.json'))}, JSON.stringify({ 
   assert.ok(plainRecord.settings.filesystem.denyWrite.every(path => !path.endsWith('config.worktree')));
   // A .git planted later would make git run attacker config outside the sandbox, so it is denied even when absent.
   assert.ok(plainRecord.settings.filesystem.denyWrite.includes(join(realpathSync(plain), '.git')));
-  // The policy is rebuilt per call: a directory that becomes a repository gets the repository rules.
+  // The first resolution is final: a directory that becomes a repository mid-session is refused, not re-trusted.
   execFileSync('git', ['init', plain]);
-  await tool.execute('id', { command: 'true' }, undefined, undefined, { cwd: plain });
-  const initRecord = JSON.parse(readFileSync(join(root, 'record.json')));
-  assert.ok(initRecord.settings.filesystem.denyWrite.some(path => path.endsWith('.git/hooks')));
-  assert.ok(!initRecord.settings.filesystem.denyWrite.includes(join(realpathSync(plain), '.git')));
+  await assert.rejects(() => tool.execute('id', { command: 'true' }, undefined, undefined, { cwd: plain }), /git layout changed/);
   // When repository discovery fails, .git must stay protected rather than falling back to the plain cwd rule.
   const broken = join(root, 'broken');
   mkdirSync(join(broken, '.git'), { recursive: true });

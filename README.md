@@ -523,7 +523,8 @@ declare `srt` in the source manifest's `runtime_commands` to have verify require
 For each command's working directory the extension resolves the worktree and, inside a Git
 repository, the common Git directory, grants them write access, and denies writes to Git hooks,
 configuration, and a linked worktree's `.git` pointer file. Outside a repository only the base
-policy and the directory itself apply. Invalid settings or unavailable
+policy and the directory itself apply. A directory's first resolution is fixed for the session; if its
+Git layout changes afterwards, bash refuses to run until Pi restarts. Invalid settings or unavailable
 srt block bash execution. Pi itself, hooks, and user `!` commands run outside this wrapper.
 File-tool writes stay inside the worktree, file tools cannot access `.git`, and file-hook
 failures block read, write, and edit calls.
