@@ -110,6 +110,8 @@ function buildPolicy(source: Policy, cwd: string, temporary: string, protectedFi
 			join(common, "worktrees/*/config.worktree"), join(common, "worktrees/*/commondir"), join(common, "worktrees/*/gitdir"),
 		);
 	}
+	// Pi loads project-local extensions and settings from here, unsandboxed, on its next start.
+	policy.filesystem.denyWrite.push(join(cwd, ".pi"));
 	// Nested repositories and submodule gitfiles; "*/" keeps the worktree's own .git out of this pattern.
 	policy.filesystem.denyWrite.push(join(cwd, "*/**/.git"));
 	// git runs outside the sandbox, so a .git the sandbox can create or rewrite would make it honour attacker config.

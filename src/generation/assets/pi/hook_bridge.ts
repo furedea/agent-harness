@@ -153,6 +153,8 @@ function sameFile(a: string, b: string): boolean {
 interface DenyRule {
 	pattern: RegExp;
 	literal?: string;
+	// The literal part before any glob: a recursive search of one of its parents would reach the rule's files.
+	prefix: string;
 }
 
 function denyRule(entry: string, root: string): DenyRule {
@@ -162,13 +164,18 @@ function denyRule(entry: string, root: string): DenyRule {
 	// Resolve symlinks (macOS /var) in the literal part only, as targets are compared in resolved form.
 	const glob = lexical.search(/[*?]/);
 	const split = glob < 0 ? lexical.length : lexical.lastIndexOf("/", glob);
-	const absolute = join(targetPath(lexical.slice(0, split) || "/"), lexical.slice(split));
+	const head = targetPath(lexical.slice(0, split) || "/");
+	const absolute = join(head, lexical.slice(split));
 	const body = absolute
 		.split(/(\*\*\/|\*\*|\*|\?)/)
 		.map(part => ({ "**/": "(?:.*/)?", "**": ".*", "*": "[^/]*", "?": "[^/]" })[part] ?? part.replace(/[.+^${}()|[\]\\]/g, "\\$&"))
 		.join("");
 	// Case-insensitive because default macOS volumes are; on case-sensitive ones this only denies more.
-	return { pattern: new RegExp("^" + body.normalize("NFC") + "(?:/.*)?$", "i"), literal: glob < 0 ? absolute : undefined };
+	return {
+		pattern: new RegExp("^" + body.normalize("NFC") + "(?:/.*)?$", "i"),
+		literal: glob < 0 ? absolute : undefined,
+		prefix: glob < 0 ? absolute : head,
+	};
 }
 
 // A missing or malformed policy blocks the file tools, as it does bash.
@@ -187,6 +194,16 @@ function ancestry(path: string): string[] {
 	const entries = [path];
 	for (let parent = dirname(path); parent !== entries[entries.length - 1]; parent = dirname(parent)) entries.push(parent);
 	return entries;
+}
+
+// A recursive search of a directory above a denied path would read the denied files.
+function exposesDenied(rules: DenyRule[], paths: string[]): boolean {
+	const credential = [homedir()].map(home => join(home, ".pi", "agent", "auth.json"));
+	const protectedPaths = [...rules.map(rule => rule.prefix), ...credential].map(path => path.normalize("NFC").toLowerCase());
+	return paths.some(path => {
+		const parent = path.normalize("NFC").toLowerCase().replace(/\/+$/, "") + sep;
+		return protectedPaths.some(denied => denied.startsWith(parent));
+	});
 }
 
 function isDenied(rules: DenyRule[], paths: string[]): boolean {
@@ -208,8 +225,11 @@ function fileBoundary(tool: string, input: unknown, cwd: string): string | undef
 		if (!rules) return "Invalid sandbox policy";
 		const denied = !isWrite ? rules.read : [...rules.read, ...rules.write];
 		if (isDenied(denied, [lexical, target])) return "Path is denied by the sandbox policy";
+		if (tool === "grep" && exposesDenied(rules.read, [lexical, target])) return "Search would reach paths denied by the sandbox policy";
 		if ([lexical, target].some(isCredentialFile)) return "File tools cannot access Pi credentials";
 		const path = relative(root, target);
+		// Pi loads project-local extensions and settings from .pi unsandboxed on its next start.
+		if (isWrite && path.split(sep)[0] === ".pi") return "File writes cannot touch the project .pi directory";
 		if (isWrite && (path === ".." || path.startsWith(".." + sep) || isAbsolute(path))) {
 			return "File writes must stay inside the worktree";
 		}

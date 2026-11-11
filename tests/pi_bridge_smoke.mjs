@@ -115,6 +115,12 @@ sys.exit(${code})
   linkSync(join(root, 'home/.pi/agent/auth.json'), join(root, 'alias'));
   for (const tool of ['read', 'write', 'edit']) assert.equal((await fileCall(tool, 'alias'))?.block, true, tool + ': hard link');
   process.env.HOME = savedHome;
+  // grep recurses, so a parent of a denied file would hand its contents out.
+  assert.equal((await fileCall('grep', '~/.pi/agent'))?.block, true, 'grep parent of credentials');
+  assert.equal((await fileCall('grep', '~/.pi'))?.block, true, 'grep grandparent of credentials');
+  // Project-local Pi config is loaded unsandboxed on the next start, so it is not writable.
+  for (const tool of ['write', 'edit']) assert.equal((await fileCall(tool, '.pi/extensions/x.ts'))?.block, true, tool + ': project .pi');
+  assert.equal((await fileCall('read', '.pi/settings.json')), undefined);
   // Pi's optional search tools read through the same in-process path as read.
   for (const tool of ['grep', 'find', 'ls']) {
     for (const path of ['.git', '~/.pi/agent/auth.json']) assert.equal((await fileCall(tool, path))?.block, true, tool + ': ' + path);
