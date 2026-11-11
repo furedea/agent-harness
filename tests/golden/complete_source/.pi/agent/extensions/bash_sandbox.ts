@@ -85,9 +85,10 @@ function gitCommonDir(cwd: string): string | undefined {
 	}
 }
 
-function isGitfile(path: string): boolean {
+// Anything but a real directory (pointer file, absent, symlink) could later be planted to repoint git.
+function isRealDirectory(path: string): boolean {
 	try {
-		return lstatSync(path).isFile();
+		return lstatSync(path).isDirectory();
 	} catch {
 		return false;
 	}
@@ -107,8 +108,8 @@ function buildPolicy(source: Policy, cwd: string, temporary: string, protectedFi
 		policy.filesystem.allowWrite.push(common);
 		policy.filesystem.denyWrite.push(join(common, "hooks"), join(common, "config"), join(common, "worktrees/*/config.worktree"));
 	}
-	// In a linked worktree .git is a pointer file; redirecting it would repoint git at attacker-owned config.
-	if (isGitfile(join(cwd, ".git"))) policy.filesystem.denyWrite.push(join(cwd, ".git"));
+	// git runs outside the sandbox, so a .git the sandbox can create or rewrite would make it honour attacker config.
+	if (!isRealDirectory(join(cwd, ".git"))) policy.filesystem.denyWrite.push(join(cwd, ".git"));
 	validatePolicy(policy);
 	return policy;
 }
@@ -131,14 +132,15 @@ export default function (pi: ExtensionAPI) {
 		failure = error;
 	}
 
+	// Rebuilt on every call because the repository layout can change between commands.
 	function prepare(cwdInput: string): Prepared {
 		if (failure || !source || !temporary) throw new Error("Sandbox unavailable: " + String(failure));
 		const cwd = realpathSync(cwdInput);
-		const known = prepared.get(cwd);
-		if (known) return known;
+		const previous = prepared.get(cwd);
+		if (previous && readFileSync(previous.settingsPath, "utf8") !== previous.content) throw new Error("Sandbox settings changed");
 		const content = JSON.stringify(buildPolicy(source, cwd, temporary, protectedFiles));
-		const settingsPath = join(temporary, prepared.size + ".json");
-		writeFileSync(settingsPath, content, { mode: 0o600 });
+		const settingsPath = previous?.settingsPath ?? join(temporary, prepared.size + ".json");
+		if (content !== previous?.content) writeFileSync(settingsPath, content, { mode: 0o600 });
 		const entry = { settingsPath, content };
 		prepared.set(cwd, entry);
 		return entry;
@@ -147,8 +149,7 @@ export default function (pi: ExtensionAPI) {
 	function toolFor(cwd: string) {
 		return createBashTool(cwd, {
 			spawnHook: ({ command, cwd, env }) => {
-				const { settingsPath, content } = prepare(cwd);
-				if (readFileSync(settingsPath, "utf8") !== content) throw new Error("Sandbox settings changed");
+				const { settingsPath } = prepare(cwd);
 				return { command: "exec srt --settings " + quote(settingsPath) + " -c " + quote(command), cwd, env };
 			},
 		});

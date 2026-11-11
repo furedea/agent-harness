@@ -38,11 +38,12 @@ try {
   writeFileSync(policyPath, JSON.stringify(policy));
   const bin = join(root, 'bin');
   mkdirSync(bin);
-  writeFileSync(join(bin, 'srt'), `#!/usr/bin/env python3
-import sys,json
-args=sys.argv[1:]
-with open(args[1]) as f: settings=json.load(f)
-with open(${JSON.stringify(join(root, 'record.json'))},'w') as f: json.dump(dict(args=args,settings=settings),f)
+  // Absolute interpreter: build sandboxes may have no /usr/bin/env for the shebang to resolve.
+  writeFileSync(join(bin, 'srt'), `#!${process.execPath}
+const fs = require('node:fs');
+const args = process.argv.slice(2);
+const settings = JSON.parse(fs.readFileSync(args[1], 'utf8'));
+fs.writeFileSync(${JSON.stringify(join(root, 'record.json'))}, JSON.stringify({ args, settings }));
 `, { mode: 0o755 });
   process.env.PATH = bin + ':' + process.env.PATH;
   process.chdir(worktree);
@@ -73,6 +74,14 @@ with open(${JSON.stringify(join(root, 'record.json'))},'w') as f: json.dump(dict
   assert.ok(plainRecord.settings.filesystem.allowWrite.includes(realpathSync(plain)));
   assert.ok(!plainRecord.settings.filesystem.allowWrite.includes(realpathSync(worktree)));
   assert.ok(plainRecord.settings.filesystem.denyWrite.every(path => !path.endsWith('config.worktree')));
+  // A .git planted later would make git run attacker config outside the sandbox, so it is denied even when absent.
+  assert.ok(plainRecord.settings.filesystem.denyWrite.includes(join(realpathSync(plain), '.git')));
+  // The policy is rebuilt per call: a directory that becomes a repository gets the repository rules.
+  execFileSync('git', ['init', plain]);
+  await tool.execute('id', { command: 'true' }, undefined, undefined, { cwd: plain });
+  const initRecord = JSON.parse(readFileSync(join(root, 'record.json')));
+  assert.ok(initRecord.settings.filesystem.denyWrite.some(path => path.endsWith('.git/hooks')));
+  assert.ok(!initRecord.settings.filesystem.denyWrite.includes(join(realpathSync(plain), '.git')));
   // Startup failures must still replace bash, and execution must refuse.
   for (const invalid of ['{}', '{', JSON.stringify({ ...policy, network: { ...policy.network, deniedDomains: undefined } }),
     ...['https://bad', '*.com', 'host', 'example.com:01', '*'].map(value => JSON.stringify({ ...policy, network: { ...policy.network, allowedDomains: [value] } }))]) {
