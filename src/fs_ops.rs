@@ -9,24 +9,70 @@ use anyhow::{Context, Result, ensure};
 
 /// Copies a source directory over `target` so that a failure leaves `target` untouched.
 pub(crate) fn copy_dir(source: &Path, target: &Path) -> Result<()> {
+    let staged = stage_directory(source, target)?;
+    let backup = swap_in(&staged, target);
+    let _ = remove_path(&staged);
+    backup?.as_deref().map_or(Ok(()), discard)
+}
+
+/// Copies `source` into a fresh sibling of `target`, ready to be swapped in.
+pub(crate) fn stage_directory(source: &Path, target: &Path) -> Result<PathBuf> {
     ensure!(
         source.is_dir(),
         "source directory does not exist: {}",
         source.display()
     );
-    if let Some(parent) = target.parent() {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("failed to create directory {}", parent.display()))?;
+    create_parent(target)?;
+    let staged = sibling_path(target, "tmp")?;
+    let copied = copy_tree(source, &staged);
+    if copied.is_err() {
+        let _ = remove_path(&staged);
     }
+    copied.map(|()| staged)
+}
 
-    let staged = SiblingDirectory::create(target)?;
+fn copy_tree(source: &Path, staged: &Path) -> Result<()> {
+    std::fs::create_dir(staged)
+        .with_context(|| format!("failed to create directory {}", staged.display()))?;
     for file in regular_files(source)? {
         let relative = file
             .strip_prefix(source)
             .with_context(|| format!("failed to strip prefix {}", source.display()))?;
-        copy_file(&file, &staged.path.join(relative))?;
+        copy_file(&file, &staged.join(relative))?;
     }
-    staged.publish_as(target)
+    Ok(())
+}
+
+/// Writes `content` into a fresh sibling of `target`, ready to be swapped in.
+pub(crate) fn stage_file(target: &Path, content: &[u8]) -> Result<PathBuf> {
+    create_parent(target)?;
+    let (path, mut file) = create_temporary_file(target)?;
+    let written = file
+        .write_all(content)
+        .with_context(|| format!("failed to write temporary file for {}", target.display()));
+    if written.is_err() {
+        let _ = remove_path(&path);
+    }
+    written.map(|()| path)
+}
+
+/// Renames `staged` over `target`, returning the backup of what was there.
+pub(crate) fn swap_in(staged: &Path, target: &Path) -> Result<Option<PathBuf>> {
+    let backup = move_aside(target)?;
+    let renamed = std::fs::rename(staged, target)
+        .with_context(|| format!("failed to replace {}", target.display()));
+    if renamed.is_err() {
+        restore(target, backup.as_deref())?;
+    }
+    renamed.map(|()| backup)
+}
+
+fn create_parent(target: &Path) -> Result<()> {
+    let Some(parent) = target.parent() else {
+        return Ok(());
+    };
+    std::fs::create_dir_all(parent)
+        .with_context(|| format!("failed to create directory {}", parent.display()))
 }
 
 /// Renames an existing `target` to a sibling backup, or returns `None` when nothing exists.
@@ -64,41 +110,6 @@ fn remove_path(path: &Path) -> Result<()> {
         std::fs::remove_file(path)
     };
     removal.with_context(|| format!("failed to remove {}", path.display()))
-}
-
-/// A directory next to its eventual target, so that publishing it is a same-filesystem rename.
-struct SiblingDirectory {
-    path: PathBuf,
-}
-
-impl SiblingDirectory {
-    fn create(target: &Path) -> Result<Self> {
-        let path = sibling_path(target, "tmp")?;
-        std::fs::create_dir(&path)
-            .with_context(|| format!("failed to create directory {}", path.display()))?;
-        Ok(Self { path })
-    }
-
-    fn publish_as(self, target: &Path) -> Result<()> {
-        publish_directory(&self.path, target)
-    }
-}
-
-fn publish_directory(staged: &Path, target: &Path) -> Result<()> {
-    let backup = move_aside(target)?;
-    let renamed = std::fs::rename(staged, target)
-        .with_context(|| format!("failed to replace {}", target.display()));
-    if renamed.is_err() {
-        restore(target, backup.as_deref())?;
-    }
-    renamed?;
-    backup.as_deref().map_or(Ok(()), discard)
-}
-
-impl Drop for SiblingDirectory {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.path);
-    }
 }
 
 fn sibling_path(target: &Path, label: &str) -> Result<PathBuf> {

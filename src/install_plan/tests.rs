@@ -9,28 +9,40 @@ use anyhow::{Context, Result};
 use super::*;
 use crate::{filesystem::FileSystem, install_executor::execute};
 
-/// In-memory files with an optional injected failure on publishing to one path.
+/// Where a `MemoryFileSystem` fails: staging or swapping a path in, or restoring it.
+#[derive(Clone, Copy, PartialEq)]
+enum FailureMode {
+    Stage,
+    Swap,
+    Restore,
+}
+
+/// In-memory files with an optional injected failure on one path.
 #[derive(Default)]
 struct MemoryFileSystem {
     files: RefCell<BTreeMap<PathBuf, Vec<u8>>>,
-    fail_publishing_to: RefCell<Option<PathBuf>>,
+    failures: RefCell<Vec<(FailureMode, PathBuf)>>,
 }
 
 impl MemoryFileSystem {
-    fn failing_at(path: &str) -> Self {
-        Self {
-            fail_publishing_to: RefCell::new(Some(PathBuf::from(path))),
-            ..Self::default()
-        }
+    fn fail(&self, mode: FailureMode, path: &str) {
+        self.failures.borrow_mut().push((mode, PathBuf::from(path)));
     }
 
-    fn check_failure(&self, target: &Path) -> Result<()> {
-        let injected = self.fail_publishing_to.borrow();
+    fn check_failure(&self, mode: FailureMode, target: &Path) -> Result<()> {
+        let injected = self.failures.borrow();
         anyhow::ensure!(
-            injected.as_deref() != Some(target),
+            !injected.contains(&(mode, target.to_owned())),
             "injected failure at {}",
             target.display()
         );
+        Ok(())
+    }
+
+    fn write_file(&self, target: &Path, content: &[u8]) -> Result<()> {
+        self.files
+            .borrow_mut()
+            .insert(target.to_owned(), content.to_vec());
         Ok(())
     }
 
@@ -41,6 +53,22 @@ impl MemoryFileSystem {
             .retain(|path, _| !path.starts_with(from));
         self.files.borrow_mut().extend(moved);
     }
+
+    fn has_files_under(&self, path: &Path) -> bool {
+        self.files
+            .borrow()
+            .keys()
+            .any(|file| file.starts_with(path))
+    }
+
+    fn snapshot_under(&self, prefix: &str) -> BTreeMap<PathBuf, Vec<u8>> {
+        self.files
+            .borrow()
+            .iter()
+            .filter(|(path, _)| path.starts_with(prefix))
+            .map(|(path, bytes)| (path.clone(), bytes.clone()))
+            .collect()
+    }
 }
 
 impl FileSystem for MemoryFileSystem {
@@ -49,22 +77,8 @@ impl FileSystem for MemoryFileSystem {
     }
 
     fn replace_directory(&self, source: &Path, target: &Path) -> Result<()> {
-        self.check_failure(target)?;
-        let files = relocated_files(&self.files.borrow(), source, target);
-        anyhow::ensure!(!files.is_empty(), "missing source directory");
-        self.files
-            .borrow_mut()
-            .retain(|path, _| !path.starts_with(target));
-        self.files.borrow_mut().extend(files);
-        Ok(())
-    }
-
-    fn write_file(&self, target: &Path, content: &[u8]) -> Result<()> {
-        self.check_failure(target)?;
-        self.files
-            .borrow_mut()
-            .insert(target.to_owned(), content.to_vec());
-        Ok(())
+        let staged = self.stage_directory(source, target)?;
+        self.swap(&staged, target).map(drop)
     }
 
     fn read_file(&self, source: &Path) -> Result<Vec<u8>> {
@@ -75,20 +89,35 @@ impl FileSystem for MemoryFileSystem {
             .context("missing file")
     }
 
-    fn move_aside(&self, target: &Path) -> Result<Option<PathBuf>> {
+    fn stage_directory(&self, source: &Path, target: &Path) -> Result<PathBuf> {
+        self.check_failure(FailureMode::Stage, target)?;
+        let staged = PathBuf::from("staged").join(target);
+        let files = relocated_files(&self.files.borrow(), source, &staged);
+        anyhow::ensure!(!files.is_empty(), "missing source directory");
+        self.files.borrow_mut().extend(files);
+        Ok(staged)
+    }
+
+    fn stage_file(&self, target: &Path, content: &[u8]) -> Result<PathBuf> {
+        self.check_failure(FailureMode::Stage, target)?;
+        let staged = PathBuf::from("staged").join(target);
+        self.write_file(&staged, content)?;
+        Ok(staged)
+    }
+
+    fn swap(&self, staged: &Path, target: &Path) -> Result<Option<PathBuf>> {
+        self.check_failure(FailureMode::Swap, target)?;
         let backup = PathBuf::from("backup").join(target);
-        let exists = self
-            .files
-            .borrow()
-            .keys()
-            .any(|path| path.starts_with(target));
-        if exists {
+        let existed = self.has_files_under(target);
+        if existed {
             self.relocate(target, &backup);
         }
-        Ok(exists.then_some(backup))
+        self.relocate(staged, target);
+        Ok(existed.then_some(backup))
     }
 
     fn restore(&self, target: &Path, backup: Option<&Path>) -> Result<()> {
+        self.check_failure(FailureMode::Restore, target)?;
         self.files
             .borrow_mut()
             .retain(|path, _| !path.starts_with(target));
@@ -98,10 +127,10 @@ impl FileSystem for MemoryFileSystem {
         Ok(())
     }
 
-    fn discard(&self, backup: &Path) -> Result<()> {
+    fn discard(&self, path: &Path) -> Result<()> {
         self.files
             .borrow_mut()
-            .retain(|path, _| !path.starts_with(backup));
+            .retain(|file, _| !file.starts_with(path));
         Ok(())
     }
 }
@@ -211,7 +240,9 @@ fn installed_state() -> Result<(MemoryFileSystem, Vec<FileOp>)> {
     for path in rendered.managed_files_for(crate::provider::spec::PROVIDERS) {
         fs.write_file(&path, b"generated\n")?;
     }
-    fs.write_file(Path::new("staging/.claude/hooks/new.sh"), b"new\n")?;
+    for directory in rendered.managed_directories_for(crate::provider::spec::PROVIDERS) {
+        fs.write_file(&directory.join("keep"), b"keep\n")?;
+    }
     fs.write_file(Path::new("home/.claude/hooks/old.sh"), b"old\n")?;
     fs.write_file(Path::new("home/.claude/CLAUDE.md"), b"old instructions\n")?;
     Ok((fs, plan_install(&rendered, &installed)))
@@ -220,28 +251,48 @@ fn installed_state() -> Result<(MemoryFileSystem, Vec<FileOp>)> {
 #[test]
 fn a_failure_midway_restores_every_installed_path() -> Result<()> {
     let (fs, plan) = installed_state()?;
-    *fs.fail_publishing_to.borrow_mut() = Some(PathBuf::from("home/.codex/hooks.json"));
-    let before = fs.files.borrow().clone();
-    let before: BTreeMap<_, _> = before
-        .into_iter()
-        .filter(|(path, _)| path.starts_with("home"))
-        .collect();
+    fs.fail(FailureMode::Swap, "home/.codex/hooks.json");
+    let before = fs.snapshot_under("home");
 
     assert!(execute(&fs, &plan).is_err());
 
-    let after: BTreeMap<_, _> = fs
-        .files
-        .borrow()
-        .iter()
-        .filter(|(path, _)| path.starts_with("home"))
-        .map(|(path, bytes)| (path.clone(), bytes.clone()))
-        .collect();
-    assert_eq!(after, before);
-    assert!(
-        !fs.files
-            .borrow()
-            .keys()
-            .any(|path| path.starts_with("backup"))
+    assert_eq!(fs.snapshot_under("home"), before);
+    assert!(fs.snapshot_under("backup").is_empty());
+    assert!(fs.snapshot_under("staged").is_empty());
+    Ok(())
+}
+
+#[test]
+fn a_failure_while_staging_leaves_every_live_path_untouched() -> Result<()> {
+    let (fs, plan) = installed_state()?;
+    fs.fail(FailureMode::Stage, "home/.codex/hooks.json");
+    let before = fs.snapshot_under("home");
+
+    assert!(execute(&fs, &plan).is_err());
+
+    assert_eq!(fs.snapshot_under("home"), before);
+    assert!(fs.snapshot_under("staged").is_empty());
+    Ok(())
+}
+
+#[test]
+fn rollback_restores_the_remaining_paths_when_one_restore_fails() -> Result<()> {
+    let (fs, plan) = installed_state()?;
+    let first = plan.first().context("empty plan")?.target();
+    let last = plan.last().context("empty plan")?.target();
+    fs.fail(FailureMode::Swap, &last.to_string_lossy());
+    fs.fail(FailureMode::Restore, &first.to_string_lossy());
+
+    let error = execute(&fs, &plan).unwrap_err();
+
+    assert!(format!("{error:#}").contains("rollback also failed"));
+    assert_eq!(
+        fs.read_file(Path::new("home/.claude/CLAUDE.md"))?,
+        b"old instructions\n"
+    );
+    assert_eq!(
+        fs.read_file(Path::new("home/.claude/hooks/old.sh"))?,
+        b"old\n"
     );
     Ok(())
 }
@@ -266,7 +317,8 @@ fn a_missing_source_directory_keeps_the_installed_directory() -> Result<()> {
 
 #[test]
 fn injected_failures_name_the_failing_path() {
-    let fs = MemoryFileSystem::failing_at("home/file");
+    let fs = MemoryFileSystem::default();
+    fs.fail(FailureMode::Stage, "home/file");
     let plan = vec![FileOp::WriteFile {
         target: "home/file".into(),
         content: b"x".to_vec(),

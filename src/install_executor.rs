@@ -4,67 +4,110 @@ use anyhow::{Context, Result};
 
 use crate::{filesystem::FileSystem, install_plan::FileOp};
 
-/// A path an operation is about to replace and the original it can be restored from.
-struct Publication<'a> {
+/// A replacement prepared next to the path it will replace.
+struct Staged<'a> {
+    target: &'a Path,
+    path: PathBuf,
+}
+
+/// A path that now holds its replacement and the original it can be restored from.
+struct Swapped<'a> {
     target: &'a Path,
     backup: Option<PathBuf>,
 }
 
-/// Applies the plan all-or-nothing: a failing operation restores every path already touched.
+/// Applies the plan all-or-nothing.
+///
+/// Every replacement is staged before any live path is touched, so a failure while preparing
+/// changes nothing. The swaps that follow are renames, and a failing one restores every path
+/// already swapped.
 pub(crate) fn execute(filesystem: &impl FileSystem, plan: &[FileOp]) -> Result<()> {
-    let mut publications = Vec::new();
-    let published = plan
+    let staged = stage_all(filesystem, plan)?;
+    let mut swapped = Vec::new();
+    let result = staged
         .iter()
-        .try_for_each(|operation| publish(filesystem, operation, &mut publications));
-    match published {
-        Ok(()) => commit(filesystem, &publications),
-        Err(error) => Err(roll_back(filesystem, &publications, error)),
+        .try_for_each(|replacement| swap(filesystem, replacement, &mut swapped));
+    match result {
+        Ok(()) => commit(filesystem, &swapped),
+        Err(error) => {
+            discard_staged(filesystem, &staged);
+            Err(roll_back(filesystem, &swapped, error))
+        }
     }
 }
 
-fn commit(filesystem: &impl FileSystem, publications: &[Publication<'_>]) -> Result<()> {
-    publications
-        .iter()
-        .filter_map(|publication| publication.backup.as_deref())
-        .try_for_each(|backup| filesystem.discard(backup))
-}
-
-fn publish<'a>(
-    filesystem: &impl FileSystem,
-    operation: &'a FileOp,
-    publications: &mut Vec<Publication<'a>>,
-) -> Result<()> {
-    let target = operation.target();
-    let backup = filesystem.move_aside(target)?;
-    publications.push(Publication { target, backup });
-    apply(filesystem, operation)
-}
-
-fn roll_back(
-    filesystem: &impl FileSystem,
-    publications: &[Publication<'_>],
-    cause: anyhow::Error,
-) -> anyhow::Error {
-    let failure = publications.iter().rev().find_map(|publication| {
-        filesystem
-            .restore(publication.target, publication.backup.as_deref())
-            .err()
+fn stage_all<'a>(filesystem: &impl FileSystem, plan: &'a [FileOp]) -> Result<Vec<Staged<'a>>> {
+    let mut staged = Vec::new();
+    let result = plan.iter().try_for_each(|operation| {
+        staged.push(stage(filesystem, operation)?);
+        Ok(())
     });
-    match failure {
-        Some(restore_error) => cause.context(format!("rollback also failed: {restore_error:#}")),
-        None => cause.context("install failed; previous files were restored"),
+    if let Err(error) = result {
+        discard_staged(filesystem, &staged);
+        return Err(error);
     }
+    Ok(staged)
 }
 
-fn apply(filesystem: &impl FileSystem, operation: &FileOp) -> Result<()> {
-    match operation {
-        FileOp::WriteFile { target, content } => filesystem.write_file(target, content),
-        FileOp::ReplaceDirectory { source, target } => filesystem.replace_directory(source, target),
-        FileOp::InstallFile { source, target } => {
+fn stage<'a>(filesystem: &impl FileSystem, operation: &'a FileOp) -> Result<Staged<'a>> {
+    let target = operation.target();
+    let path = match operation {
+        FileOp::WriteFile { content, .. } => filesystem.stage_file(target, content),
+        FileOp::ReplaceDirectory { source, .. } => filesystem.stage_directory(source, target),
+        FileOp::InstallFile { source, .. } => {
             let content = filesystem
                 .read_file(source)
                 .with_context(|| format!("failed to read {}", source.display()))?;
-            filesystem.write_file(target, &content)
+            filesystem.stage_file(target, &content)
         }
+    }?;
+    Ok(Staged { target, path })
+}
+
+fn swap<'a>(
+    filesystem: &impl FileSystem,
+    replacement: &Staged<'a>,
+    swapped: &mut Vec<Swapped<'a>>,
+) -> Result<()> {
+    let backup = filesystem.swap(&replacement.path, replacement.target)?;
+    swapped.push(Swapped {
+        target: replacement.target,
+        backup,
+    });
+    Ok(())
+}
+
+fn commit(filesystem: &impl FileSystem, swapped: &[Swapped<'_>]) -> Result<()> {
+    swapped
+        .iter()
+        .filter_map(|published| published.backup.as_deref())
+        .try_for_each(|backup| filesystem.discard(backup))
+}
+
+fn discard_staged(filesystem: &impl FileSystem, staged: &[Staged<'_>]) {
+    for replacement in staged {
+        let _ = filesystem.discard(&replacement.path);
     }
+}
+
+/// Restores every swapped path, newest first, and reports every restore that failed.
+fn roll_back(
+    filesystem: &impl FileSystem,
+    swapped: &[Swapped<'_>],
+    cause: anyhow::Error,
+) -> anyhow::Error {
+    let failures: Vec<String> = swapped
+        .iter()
+        .rev()
+        .filter_map(|published| {
+            filesystem
+                .restore(published.target, published.backup.as_deref())
+                .err()
+        })
+        .map(|error| format!("{error:#}"))
+        .collect();
+    if failures.is_empty() {
+        return cause.context("install failed; previous files were restored");
+    }
+    cause.context(format!("rollback also failed: {}", failures.join("; ")))
 }

@@ -8,12 +8,15 @@ pub(crate) use crate::fs_ops::TemporaryDirectory;
 pub(crate) trait FileSystem {
     fn copy_file(&self, source: &Path, target: &Path) -> Result<()>;
     fn replace_directory(&self, source: &Path, target: &Path) -> Result<()>;
-    fn write_file(&self, target: &Path, content: &[u8]) -> Result<()>;
     fn read_file(&self, source: &Path) -> Result<Vec<u8>>;
-    /// Moves an existing path to a backup location so that a failed publication can undo it.
-    fn move_aside(&self, target: &Path) -> Result<Option<PathBuf>>;
+    /// Prepares a replacement next to `target` without touching it.
+    fn stage_directory(&self, source: &Path, target: &Path) -> Result<PathBuf>;
+    fn stage_file(&self, target: &Path, content: &[u8]) -> Result<PathBuf>;
+    /// Renames a staged path over `target`, returning the backup of what it replaced.
+    fn swap(&self, staged: &Path, target: &Path) -> Result<Option<PathBuf>>;
     fn restore(&self, target: &Path, backup: Option<&Path>) -> Result<()>;
-    fn discard(&self, backup: &Path) -> Result<()>;
+    /// Removes a staged path or a backup; a path that is already gone is not an error.
+    fn discard(&self, path: &Path) -> Result<()>;
 }
 
 pub(crate) struct RealFileSystem;
@@ -27,24 +30,28 @@ impl FileSystem for RealFileSystem {
         fs_ops::copy_dir(source, target)
     }
 
-    fn write_file(&self, target: &Path, content: &[u8]) -> Result<()> {
-        fs_ops::write_file_atomically(target, content)
-    }
-
     fn read_file(&self, source: &Path) -> Result<Vec<u8>> {
         std::fs::read(source)
             .with_context(|| format!("failed to read rendered file {}", source.display()))
     }
 
-    fn move_aside(&self, target: &Path) -> Result<Option<PathBuf>> {
-        fs_ops::move_aside(target)
+    fn stage_directory(&self, source: &Path, target: &Path) -> Result<PathBuf> {
+        fs_ops::stage_directory(source, target)
+    }
+
+    fn stage_file(&self, target: &Path, content: &[u8]) -> Result<PathBuf> {
+        fs_ops::stage_file(target, content)
+    }
+
+    fn swap(&self, staged: &Path, target: &Path) -> Result<Option<PathBuf>> {
+        fs_ops::swap_in(staged, target)
     }
 
     fn restore(&self, target: &Path, backup: Option<&Path>) -> Result<()> {
         fs_ops::restore(target, backup)
     }
 
-    fn discard(&self, backup: &Path) -> Result<()> {
-        fs_ops::discard(backup)
+    fn discard(&self, path: &Path) -> Result<()> {
+        fs_ops::discard(path)
     }
 }
