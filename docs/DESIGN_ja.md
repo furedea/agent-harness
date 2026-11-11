@@ -52,7 +52,7 @@
 
 - 判断：Claude，Codex，Devin，Hermes，pi，dsh の 6 つすべてを `ProviderSpec` に宣言し，Data / Functions / Capabilities に分ける．すべてのフィールドは，多くの provider が共有する 5 つの概念のどれかに属する．hook（`HookSpec`：スクリプト，登録先，ブリッジファイル），skill，instructions，コマンドルール，config（`ConfigSpec`：パスと `ConfigSync` の種類）である．hook はすべての provider が持つので必須とし，ほかの概念は `Option` にする．provider ごとの違いは，その provider だけのフィールドではなく enum の variant で表す．
 - 理由：パス，資産の出力先，同期方式を共有して一覧のずれを防ぎ，`HookRegistration` や `CommandRuleSpec` などの variant で違いを見える形にして網羅的に match する．一覧の並びは registry の順序に従う．Rust を唯一の source とし，`nix/providers.json` はそこから生成する．コミット済みのファイルと差があるとテストが失敗し，`UPDATE_PROVIDERS_JSON=1` で再生成できる．Home Manager は管理対象のファイルとサブディレクトリを明示してリンクする．
-- ADR: [0026]，[0027]．
+- ADR: [0026]，[0027]，[0028]．
 
 ```mermaid
 flowchart LR
@@ -69,9 +69,9 @@ flowchart LR
     PLAN["install_plan: what goes where"]
   end
   subgraph C["Capabilities (I/O)"]
-    EXEC["install_executor"]
-    FS["FileSystem (trait)"]
-    SYNC["config_sync"]
+    EXEC["shell::execute"]
+    FS["shell::io (port)"]
+    SYNC["shell::sync"]
   end
   DISK[("disk")]
   SPEC -- "ProviderSpec" --> RENDER
@@ -82,14 +82,17 @@ flowchart LR
   CONCEPTS -- "config" --> KINDS
   SPEC -- "sourcegen test" --> JSON
   KINDS -- "ConfigSync kind" --> SYNC
+  RENDER -- "FileOp list" --> EXEC
+  RENDERER -- "FileOp list" --> EXEC
   PLAN -- "FileOp list" --> EXEC
+  SYNC -- "FileOp list" --> EXEC
   EXEC --> FS
   FS --> DISK
-  SYNC --> DISK
 ```
 
-- 層をまたぐのは値だけである．`ProviderSpec` が Data から Functions と Capabilities へ渡り，`FileOp` の一覧が `install_plan` から executor へ渡る．
-- `tests/provider_spec_layering.rs` が，spec，インストール計画，hook と bridge の生成モジュールが `fs_ops` や `std::fs` を参照しないことを検査する．これはソース文字列の検査であり，推移的な依存解析ではない．ステージング生成は従来の生成経路で書き込む（[0026]）．
+- 層をまたぐのは値だけである．`ProviderSpec` が Data から Functions と Capabilities へ渡り，`FileOp` の一覧が生成，レンダリング，計画，同期から唯一の書き込み口である executor へ渡る（[0028]）．
+- 計算の層が書き込めないことを，1 つの crate の中で 3 つの仕組みで保証する．`clippy.toml` が `std` の書き込み API を禁止し，`shell::io` だけが禁止を外す．ポートは `pub(in crate::shell)` なので，計算の層は自前のラッパー経由でも到達できない．`generation`，`provider::spec`，`install_plan` の `#![forbid(...)]` が，禁止を再び許可することを防ぐ．crate の分割は採らなかった．`std::fs` はどの crate からも呼べるので clippy の禁止は結局必要で，分割で置き換わるのは可視性だけだからである（[0028]）．読み込みはまだ禁止しておらず，テストは検査の対象外である．
+- 秘密のファイル（GitHub App のトークン）だけを `0600` で書く．それ以外はプロセスの既定のモードで書き，コピーは元のファイルの権限ビットを保つ．
 - Claude と Codex も他の 4 つと同じく registry に宣言する．registry は各 provider が持つものを宣言し，中身は provider ごとの関数が生成する（[0027]）．
 
 ## 検討した代替案
@@ -103,6 +106,7 @@ flowchart LR
 | 個人のプロファイルを同梱しないのはなぜか                                 | 作者名の組み込みプロファイル，必須のプロファイル用リポジトリ                              | 個人のポリシー変更のたびに製品のリリースが必要になる（[0015]）．                                                           |
 | Claude 専用のルールを中立なファイルに書かないのはなぜか                  | `command_permissions.json` にプロバイダの構文を入れる，プレフィックス形のルールだけを除く | ソースの Claude 設定を Claude 専用ルールの正式な置き場所にする（[0018]）．                                                 |
 | プロジェクトローカルのインストールを `--prefix` から推測しないのはなぜか | 出力先のパスから実行時のスコープを推測する                                                | ファイルを別の場所に書いてもフックが `$HOME` を前提にしていた．明示した実行時ルートなら自己完結する（[0017]）．            |
+| 計算の層を別の crate に分けないのはなぜか                                | I/O を持たない core crate を含む workspace                                                | `std::fs` はどの crate からも呼べるので clippy の禁止は結局必要で，分割で置き換わるのは可視性だけである（[0028]）．        |
 
 ## アーキテクチャ
 
@@ -134,26 +138,26 @@ sequenceDiagram
 
 `sync-config --provider <id>` コマンドは，エージェントも書き込む設定ファイルに管理対象のキーをマージする．
 
-| モジュール                                                                                | 責務                                                                                    |
-| ----------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| `cli`                                                                                     | サブコマンドを解析し，生成，同期，一覧，検証に振り分ける．                              |
-| `source`，`layout`，`manifest`                                                            | ソースツリーを解決し，そのレイアウトと必要な実行時コマンドを検証する．                  |
-| `profile`                                                                                 | 同梱の組み込みソース（`minimal`）の名前を定める．                                       |
-| `render`                                                                                  | ステージング生成を実行し，公開計画を executor に渡す．                                  |
-| `provider/spec`                                                                           | Data: プロバイダのメタデータ，資産の出力先，任意の `ConfigSync` を宣言する．            |
-| `install_plan`                                                                            | Functions: 生成済み staging の公開と埋め込み資産の配置を計画する．                      |
-| `filesystem`，`install_executor`，`config_sync`                                           | Capabilities: ファイル操作と設定同期を実行する．                                        |
-| `nix/providers.json`，`nix/home_manager_module.nix`                                       | registry から生成する Nix の一覧と，そこから作る Home Manager の option，リンク，同期． |
-| `generation/hooks`                                                                        | フックの配線を描画する．                                                                |
-| `generation/bridges`，`provider/spec`，`install_plan`                                     | ブリッジ asset の契約を検証し，spec の埋め込み asset と出力先から書き込みを計画する．   |
-| `generation/command_permissions`                                                          | 中立なルールを Claude，Codex，Devin の権限の構文に対応させる．                          |
-| `generation/claude_config`，`codex_config`，`devin_config`，`hermes_config`，`dsh_config` | プロバイダの設定を組み立て，同期する．                                                  |
-| `generation/protection`，`secret_path_policy`                                             | 保護パスと，秘密ファイルの deny ルールを計算する．                                      |
-| `generation/skills`，`external_hooks`，`hook_bundle`                                      | スキルを生成し，外部のバンドルを合成する．                                              |
-| `inventory`                                                                               | ソースが提供するスキルとフックを一覧にする．                                            |
-| `runtime_root`                                                                            | プロジェクトローカルのインストール向けにフックのコマンドを移し替える．                  |
-| `github_app`                                                                              | エージェント用トークンのために GitHub App のインストールトークンを発行する（[0021]）．  |
-| `runtime`                                                                                 | manifest の実行時コマンドが `PATH` にあるかを確認する．                                 |
+| モジュール                                                                                | 責務                                                                                          |
+| ----------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `cli`                                                                                     | サブコマンドを解析し，生成，同期，一覧，検証に振り分ける．                                    |
+| `source`，`layout`，`manifest`                                                            | ソースツリーを解決し，そのレイアウトと必要な実行時コマンドを検証する．                        |
+| `profile`                                                                                 | 同梱の組み込みソース（`minimal`）の名前を定める．                                             |
+| `render`                                                                                  | ステージング生成を実行し，公開計画を executor に渡す．                                        |
+| `provider/spec`                                                                           | Data: プロバイダのメタデータ，資産の出力先，任意の `ConfigSync` を宣言する．                  |
+| `install_plan`                                                                            | Functions: 生成済み staging の公開と埋め込み資産の配置を計画する．                            |
+| `shell`（`io`，`executor`，`sync`，`hook_bundle`）                                        | Capabilities: ファイル I/O のポート，`FileOp` の executor，設定同期，hook bundle の取り込み． |
+| `nix/providers.json`，`nix/home_manager_module.nix`                                       | registry から生成する Nix の一覧と，そこから作る Home Manager の option，リンク，同期．       |
+| `generation/hooks`                                                                        | フックの配線を描画する．                                                                      |
+| `generation/bridges`，`provider/spec`，`install_plan`                                     | ブリッジ asset の契約を検証し，spec の埋め込み asset と出力先から書き込みを計画する．         |
+| `generation/command_permissions`                                                          | 中立なルールを Claude，Codex，Devin の権限の構文に対応させる．                                |
+| `generation/claude_config`，`codex_config`，`devin_config`，`hermes_config`，`dsh_config` | プロバイダの設定を組み立て，同期する．                                                        |
+| `generation/protection`，`secret_path_policy`                                             | 保護パスと，秘密ファイルの deny ルールを計算する．                                            |
+| `generation/skills`，`external_hooks`，`hook_bundle`                                      | スキルを生成し，外部のバンドルを合成する．                                                    |
+| `inventory`                                                                               | ソースが提供するスキルとフックを一覧にする．                                                  |
+| `runtime_root`                                                                            | プロジェクトローカルのインストール向けにフックのコマンドを移し替える．                        |
+| `github_app`                                                                              | エージェント用トークンのために GitHub App のインストールトークンを発行する（[0021]）．        |
+| `runtime`                                                                                 | manifest の実行時コマンドが `PATH` にあるかを確認する．                                       |
 
 ## 検証
 
@@ -205,3 +209,4 @@ CodeQL による解析はワークフローファイルではなく，GitHub の
 [0021]: adr/0021_refresh_the_agent_token_from_a_github_app.md
 [0026]: adr/0026_declare_providers_in_a_registry.md
 [0027]: adr/0027_declare_claude_and_codex_in_the_provider_registry.md
+[0028]: adr/0028_return_file_operations_as_values.md
