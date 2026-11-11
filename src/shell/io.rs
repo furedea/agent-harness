@@ -8,8 +8,9 @@
 //!   the target. `swap` then renames the replacement over it, which is atomic for one path, and
 //!   keeps a backup so `restore` can undo it. Nothing here writes a target in place.
 //! - File mode: `FileMode::Private` files are `0600` and the directories made for them `0700`.
-//!   Every other file and directory is created with the process's default mode, and copies keep
-//!   the permission bits of their source.
+//!   A new file or directory otherwise gets the process's default mode, and a copy keeps the
+//!   permission bits of its source. A regular file that already exists keeps its own bits when it
+//!   is replaced, so rewriting a config the user restricted never widens it.
 #![expect(
     clippy::disallowed_methods,
     clippy::disallowed_types,
@@ -70,6 +71,7 @@ impl FileSystem for RealFileSystem {
     fn stage_file(&self, target: &Path, file: &NewFile<'_>) -> Result<PathBuf> {
         let (path, handle) = create_temporary_file(target, file.mode)?;
         let written = fill(handle, file)
+            .and_then(|()| keep_existing_mode(&path, target, file.mode))
             .with_context(|| format!("failed to write temporary file for {}", target.display()));
         discard_unless_ok(written, &path)?;
         Ok(path)
@@ -77,7 +79,8 @@ impl FileSystem for RealFileSystem {
 
     fn stage_copy(&self, source: &Path, target: &Path) -> Result<PathBuf> {
         let staged = sibling_path(target, "tmp")?;
-        discard_unless_ok(copy_file(source, &staged), &staged)?;
+        let copied = copy_keeping_existing_mode(source, &staged, target);
+        discard_unless_ok(copied, &staged)?;
         Ok(staged)
     }
 
@@ -210,6 +213,33 @@ fn write_new_file(target: &Path, file: &NewFile<'_>) -> Result<()> {
     let handle = open_file(target, file.mode, false)
         .with_context(|| format!("failed to create {}", target.display()))?;
     fill(handle, file).with_context(|| format!("failed to write {}", target.display()))
+}
+
+/// Gives a replacement the permission bits of the regular file it will replace.
+///
+/// Explicit modes win; the point is that a `Standard` write never widens a file someone restricted.
+#[cfg(unix)]
+fn keep_existing_mode(staged: &Path, target: &Path, mode: FileMode) -> std::io::Result<()> {
+    if mode != FileMode::Standard {
+        return Ok(());
+    }
+    match std::fs::symlink_metadata(target) {
+        Ok(existing) if existing.is_file() => {
+            std::fs::set_permissions(staged, existing.permissions())
+        }
+        _ => Ok(()),
+    }
+}
+
+#[cfg(not(unix))]
+fn keep_existing_mode(_staged: &Path, _target: &Path, _mode: FileMode) -> std::io::Result<()> {
+    Ok(())
+}
+
+fn copy_keeping_existing_mode(source: &Path, staged: &Path, target: &Path) -> Result<()> {
+    copy_file(source, staged)?;
+    keep_existing_mode(staged, target, FileMode::Standard)
+        .with_context(|| format!("failed to keep the mode of {}", target.display()))
 }
 
 fn fill(mut handle: File, file: &NewFile<'_>) -> std::io::Result<()> {

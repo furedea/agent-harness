@@ -136,7 +136,7 @@ flowchart LR
     callable from every crate, so the clippy ban stays necessary and the split would only replace
     visibility ([0028]). Reads are not banned yet, and tests are outside the lint.
 - Only secret files (GitHub App tokens) are written `0600`; other files use the process's default
-    mode, and copies keep their source's permission bits.
+    mode, copies keep their source's permission bits, and replacing an existing file keeps its bits.
 - Claude and Codex are declared in the registry like the other four providers; the registry declares
     what each owns, and provider functions render the content ([0027]).
 

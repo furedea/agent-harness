@@ -81,6 +81,30 @@ fn only_private_files_are_owner_only() -> Result<()> {
 }
 
 #[test]
+fn replacing_a_restricted_file_never_widens_it() -> Result<()> {
+    let root = root("io-keep-mode")?;
+    std::fs::write(root.join("config"), "old\n")?;
+    std::fs::set_permissions(root.join("config"), std::fs::Permissions::from_mode(0o600))?;
+    std::fs::write(root.join("generated"), "generated\n")?;
+
+    execute(&[write_op(
+        root.join("config"),
+        "written\n",
+        FileMode::Standard,
+    )])?;
+    assert_eq!(mode_of(&root.join("config"))?, 0o600);
+    execute(&[FileOp::CopyFile {
+        source: root.join("generated"),
+        target: root.join("config"),
+    }])?;
+
+    assert_eq!(mode_of(&root.join("config"))?, 0o600);
+    assert_eq!(std::fs::read_to_string(root.join("config"))?, "generated\n");
+    std::fs::remove_dir_all(root)?;
+    Ok(())
+}
+
+#[test]
 fn a_replaced_private_file_stays_private() -> Result<()> {
     let root = root("io-private-replace")?;
     std::fs::write(root.join("token"), "old\n")?;
