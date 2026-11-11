@@ -3,12 +3,15 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use serde_json::{Value, json};
 
-use super::{GenerationContext, claude_config};
+use super::{GenerationContext, claude_config, json_documents::read_json};
 use crate::{file_op::FileOp, layout::SourceLayout};
 
 pub(crate) fn policy_op(context: GenerationContext<'_>, out: &Path) -> Result<FileOp> {
-    let base = std::fs::read(SourceLayout::new(context.source).claude_settings())?;
-    let settings = claude_config::build_settings(context, serde_json::from_slice(&base)?)?;
+    let base = read_json(
+        context.source.files(),
+        &SourceLayout::new(context.source.root()).claude_settings(),
+    )?;
+    let settings = claude_config::build_settings(context, base)?;
     let sandbox = settings.get("sandbox").context("missing sandbox")?;
     let network = sandbox.get("network").unwrap_or(&Value::Null);
     let filesystem = sandbox.get("filesystem").context("missing filesystem")?;
