@@ -101,18 +101,21 @@ fn discard_backups<F: FileSystem>(transaction: &Transaction<'_, F>) {
 }
 
 /// Restores every swapped path, newest first, and reports every restore that failed.
+///
+/// Directories this execution created are removed again only when they are empty, so they are
+/// cleaned up even after a failed restore without touching anything that restore left behind.
 fn abort<F: FileSystem>(transaction: &Transaction<'_, F>, cause: anyhow::Error) -> anyhow::Error {
     for replacement in &transaction.staged {
         let _ = transaction.filesystem.discard(&replacement.path);
     }
     let failures = restore_failures(transaction);
-    if !failures.is_empty() {
-        return cause.context(format!("rollback also failed: {}", failures.join("; ")));
-    }
     transaction
         .filesystem
         .remove_created(&transaction.created_parents);
-    cause.context("install failed; previous files were restored")
+    if failures.is_empty() {
+        return cause.context("install failed; previous files were restored");
+    }
+    cause.context(format!("rollback also failed: {}", failures.join("; ")))
 }
 
 fn restore_failures<F: FileSystem>(transaction: &Transaction<'_, F>) -> Vec<String> {

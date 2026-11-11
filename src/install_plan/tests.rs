@@ -310,6 +310,7 @@ fn rollback_restores_the_remaining_paths_when_one_restore_fails() -> Result<()> 
     let error = execute(&fs, &plan).unwrap_err();
 
     assert!(format!("{error:#}").contains("rollback also failed"));
+    assert!(fs.directories.borrow().is_empty());
     assert_eq!(
         fs.read_file(Path::new("home/.claude/CLAUDE.md"))?,
         b"old instructions\n"

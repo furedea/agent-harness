@@ -72,10 +72,20 @@ pub(crate) fn swap_in(staged: &Path, target: &Path) -> Result<Option<PathBuf>> {
     let backup = back_up(target)?;
     let renamed = std::fs::rename(staged, target)
         .with_context(|| format!("failed to replace {}", target.display()));
-    if renamed.is_err() {
-        restore(target, backup.as_deref())?;
+    let Err(error) = renamed else {
+        return Ok(backup);
+    };
+    match restore(target, backup.as_deref()) {
+        Ok(()) => Err(error),
+        Err(restore_error) => Err(error.context(format!(
+            "could not restore {} from {}: {restore_error:#}",
+            target.display(),
+            backup.as_deref().map_or_else(
+                || "nothing (it did not exist)".to_owned(),
+                |path| path.display().to_string()
+            )
+        ))),
     }
-    renamed.map(|()| backup)
 }
 
 /// Backs up a regular file with a hard link so it stays in place until the rename replaces it.
