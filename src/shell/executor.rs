@@ -1,8 +1,9 @@
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 
-use crate::{filesystem::FileSystem, install_plan::FileOp};
+use super::io::{FileSystem, NewFile, RealFileSystem};
+use crate::file_op::{FileMode, FileOp};
 
 /// A replacement prepared next to the path it will replace.
 struct Staged<'a> {
@@ -24,12 +25,17 @@ struct Transaction<'a, F: FileSystem> {
     swapped: Vec<Swapped<'a>>,
 }
 
+/// Applies the plan on the real filesystem, all-or-nothing. This is the only way to write.
+pub(crate) fn execute(plan: &[FileOp]) -> Result<()> {
+    execute_on(&RealFileSystem, plan)
+}
+
 /// Applies the plan all-or-nothing.
 ///
 /// Every replacement is staged before any live path is touched, so a failure while preparing
 /// changes nothing. The swaps that follow are renames, and a failing one restores every path
 /// already swapped. Directories created for the targets are removed again on failure.
-pub(crate) fn execute(filesystem: &impl FileSystem, plan: &[FileOp]) -> Result<()> {
+fn execute_on(filesystem: &impl FileSystem, plan: &[FileOp]) -> Result<()> {
     let mut transaction = Transaction {
         filesystem,
         created_parents: Vec::new(),
@@ -60,23 +66,44 @@ fn stage<'a, F: FileSystem>(
     operation: &'a FileOp,
 ) -> Result<()> {
     let target = operation.target();
-    let created = transaction.filesystem.create_parents(target)?;
+    let created = transaction
+        .filesystem
+        .create_parents(target, mode_of(operation))?;
     transaction.created_parents.extend(created);
     let path = stage_path(transaction.filesystem, operation)?;
     transaction.staged.push(Staged { target, path });
     Ok(())
 }
 
+fn mode_of(operation: &FileOp) -> FileMode {
+    match operation {
+        FileOp::WriteFile {
+            mode: FileMode::Private,
+            ..
+        } => FileMode::Private,
+        FileOp::WriteFile { .. }
+        | FileOp::CopyFile { .. }
+        | FileOp::CopyTree { .. }
+        | FileOp::ReplaceTree { .. } => FileMode::Standard,
+    }
+}
+
 fn stage_path(filesystem: &impl FileSystem, operation: &FileOp) -> Result<PathBuf> {
     match operation {
-        FileOp::WriteFile { target, content } => filesystem.stage_file(target, content),
-        FileOp::ReplaceDirectory { source, target } => filesystem.stage_directory(source, target),
-        FileOp::InstallFile { source, target } => {
-            let content = filesystem
-                .read_file(source)
-                .with_context(|| format!("failed to read {}", source.display()))?;
-            filesystem.stage_file(target, &content)
-        }
+        FileOp::WriteFile {
+            target,
+            content,
+            mode,
+        } => filesystem.stage_file(
+            target,
+            &NewFile {
+                content,
+                mode: *mode,
+            },
+        ),
+        FileOp::CopyFile { source, target } => filesystem.stage_copy(source, target),
+        FileOp::CopyTree { source, target } => filesystem.stage_directory(source, target),
+        FileOp::ReplaceTree { target, contents } => filesystem.stage_tree(target, contents),
     }
 }
 
@@ -134,5 +161,7 @@ fn restore_failures<F: FileSystem>(transaction: &Transaction<'_, F>) -> Vec<Stri
         .collect()
 }
 
+#[cfg(test)]
+mod memory_tests;
 #[cfg(all(test, unix))]
 mod tests;

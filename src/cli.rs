@@ -5,11 +5,11 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
 
 use crate::{
-    config_sync::SyncPaths,
+    file_op::FileOp,
     generation::{
-        GenerationContext, codex_config, command_permissions,
+        GenerationContext, claude_config, codex_config, command_permissions,
         external_hooks::ExternalHookBundle,
-        hook_bundle, hooks, protection,
+        hooks, protection,
         skills::{ExternalSkill, SkillTarget},
     },
     github_app::{self, GitHubRestApi, RefreshRequest},
@@ -18,6 +18,7 @@ use crate::{
     provider::spec::ProviderId,
     render, runtime,
     runtime_root::RuntimeRoot,
+    shell::{self, hook_bundle, sync::SyncPaths},
     source,
 };
 
@@ -298,30 +299,38 @@ pub fn run() -> Result<()> {
 
 fn generate_claude_settings(args: GenerateFileArgs, profile: Profile) -> Result<()> {
     let source = source::resolve_source(args.source, profile)?;
-    crate::generation::claude_config::write_settings(
+    shell::execute(&[claude_config::settings_op(
         source.as_path(),
         &args.output,
         &args.extra_hook,
-    )
+    )?])
 }
 
 fn generate_codex_config_source(args: GenerateFileArgs, profile: Profile) -> Result<()> {
     let source = source::resolve_source(args.source, profile)?;
-    codex_config::write_config_source(source.as_path(), &args.output, &args.extra_hook)
+    shell::execute(&[codex_config::config_source_op(
+        source.as_path(),
+        &args.output,
+        &args.extra_hook,
+    )?])
 }
 
 fn write_codex_config_fragment(args: GenerateFileArgs, profile: Profile) -> Result<()> {
     let source = source::resolve_source(args.source, profile)?;
-    protection::write_codex_config_fragment(source.as_path(), &args.extra_hook, &args.output)
+    shell::execute(&[protection::codex_config_fragment_op(
+        source.as_path(),
+        &args.extra_hook,
+        &args.output,
+    )?])
 }
 
 fn write_hooks(provider: ProviderId, args: GenerateFileArgs, profile: Profile) -> Result<()> {
     let source = source::resolve_source(args.source, profile)?;
-    hooks::write_hooks_for_runtime(
+    shell::execute(&[hooks::hooks_op_for_runtime(
         GenerationContext::home(source.as_path(), &args.extra_hook),
         &args.output,
         provider.spec(),
-    )
+    )?])
 }
 
 fn sync_config(provider: ProviderId, args: &SyncConfigArgs) -> Result<()> {
@@ -329,28 +338,28 @@ fn sync_config(provider: ProviderId, args: &SyncConfigArgs) -> Result<()> {
         source: &args.source,
         target: &args.target,
     };
-    crate::config_sync::sync(provider.spec(), &paths, &home_dir()?)
+    shell::sync::sync(provider.spec(), &paths, &home_dir()?)
 }
 
 fn write_codex_rules(args: GenerateFileArgs, profile: Profile) -> Result<()> {
-    generate_file(args, profile, command_permissions::write_codex_rules)
+    generate_file(args, profile, command_permissions::codex_rules_op)
 }
 
 fn write_command_permissions(args: GenerateFileArgs, profile: Profile) -> Result<()> {
-    generate_file(args, profile, command_permissions::write_runtime_policy)
+    generate_file(args, profile, command_permissions::runtime_policy_op)
 }
 
 fn write_forbidden_commands(args: GenerateFileArgs, profile: Profile) -> Result<()> {
-    generate_file(args, profile, command_permissions::write_forbidden_commands)
+    generate_file(args, profile, command_permissions::forbidden_commands_op)
 }
 
 fn generate_file(
     args: GenerateFileArgs,
     profile: Profile,
-    generate: impl FnOnce(&Path, &Path) -> Result<()>,
+    generate: impl FnOnce(&Path, &Path) -> Result<FileOp>,
 ) -> Result<()> {
     let source = source::resolve_source(args.source, profile)?;
-    generate(source.as_path(), &args.output)
+    shell::execute(&[generate(source.as_path(), &args.output)?])
 }
 
 // Skills and install stay explicit because they add provider and prefix handling

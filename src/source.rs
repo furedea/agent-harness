@@ -1,10 +1,14 @@
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result, bail};
 
 use crate::{
-    layout::SourceLayout, manifest::Manifest, profile::Profile, provider::spec::PROVIDERS,
+    file_op::{FileMode, FileOp},
+    layout::SourceLayout,
+    manifest::Manifest,
+    profile::Profile,
+    provider::spec::PROVIDERS,
+    shell::{self, TemporaryDirectory},
 };
 
 const ENV_SOURCE: &str = "AGENT_HARNESS_SOURCE";
@@ -21,25 +25,20 @@ include!(concat!(env!("OUT_DIR"), "/packaged_assets.rs"));
 #[derive(Debug)]
 pub(crate) struct SourceRoot {
     path: PathBuf,
-    cleanup: Option<PathBuf>,
+    /// Keeps a materialized packaged source alive; it is removed when the root is dropped.
+    _materialized: Option<TemporaryDirectory>,
 }
 
 impl SourceRoot {
     fn external(path: PathBuf) -> Self {
         Self {
             path,
-            cleanup: None,
+            _materialized: None,
         }
     }
 
     pub(crate) fn as_path(&self) -> &Path {
         &self.path
-    }
-}
-
-impl Drop for SourceRoot {
-    fn drop(&mut self) {
-        let _ = self.cleanup.as_deref().map(std::fs::remove_dir_all);
     }
 }
 
@@ -108,19 +107,10 @@ fn installed_source_dirs_for_executable(executable: &Path) -> Vec<PathBuf> {
 }
 
 fn materialize_packaged_source(profile: Profile) -> Result<SourceRoot> {
-    let root = std::env::temp_dir().join(format!(
-        "agent-harness-source-{}-{}",
-        std::process::id(),
-        unique_suffix()
-    ));
-    std::fs::create_dir_all(&root)
-        .with_context(|| format!("failed to create {}", root.display()))?;
+    let root = TemporaryDirectory::create()?;
+    shell::execute(&packaged_file_ops(root.path()))?;
 
-    for file in PACKAGED_FILES {
-        write_packaged_file(&root, file)?;
-    }
-
-    let profile_source = profile_source(&root, profile).ok_or_else(|| {
+    let profile_source = profile_source(root.path(), profile).ok_or_else(|| {
         anyhow::anyhow!(
             "packaged assets do not contain the {} profile",
             profile.directory_name(),
@@ -129,39 +119,19 @@ fn materialize_packaged_source(profile: Profile) -> Result<SourceRoot> {
     validate_source_tree(&profile_source)?;
     Ok(SourceRoot {
         path: profile_source,
-        cleanup: Some(root),
+        _materialized: Some(root),
     })
 }
 
-fn write_packaged_file(root: &Path, file: &PackagedFile) -> Result<()> {
-    let path = root.join(file.path);
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("failed to create {}", parent.display()))?;
-    }
-    std::fs::write(&path, file.content)
-        .with_context(|| format!("failed to write {}", path.display()))?;
-    set_file_mode(&path, file.mode)
-}
-
-#[cfg(unix)]
-fn set_file_mode(path: &Path, mode: u32) -> Result<()> {
-    use std::os::unix::fs::PermissionsExt;
-
-    let permissions = std::fs::Permissions::from_mode(mode);
-    std::fs::set_permissions(path, permissions)
-        .with_context(|| format!("failed to set permissions on {}", path.display()))
-}
-
-#[cfg(not(unix))]
-fn set_file_mode(_path: &Path, _mode: u32) -> Result<()> {
-    Ok(())
-}
-
-fn unique_suffix() -> u128 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |duration| duration.as_nanos())
+fn packaged_file_ops(root: &Path) -> Vec<FileOp> {
+    PACKAGED_FILES
+        .iter()
+        .map(|file| FileOp::WriteFile {
+            target: root.join(file.path),
+            content: file.content.to_vec(),
+            mode: FileMode::Bits(file.mode),
+        })
+        .collect()
 }
 
 fn profile_source(root: &Path, profile: Profile) -> Option<PathBuf> {

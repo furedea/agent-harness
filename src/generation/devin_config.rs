@@ -3,14 +3,13 @@ use std::path::Path;
 use anyhow::{Context, Result, bail};
 use serde_json::{Map, Value};
 
-use crate::fs_ops;
+use crate::file_op::FileOp;
 
-pub(crate) fn sync_config(source_path: &Path, target_path: &Path) -> Result<()> {
+pub(crate) fn sync_config_op(source_path: &Path, target_path: &Path) -> Result<FileOp> {
     let generated = read_json(source_path)?;
     let mut existing = read_json_or_empty(target_path)?;
     merge_managed_config(&mut existing, generated)?;
-    let content = serde_json::to_string_pretty(&existing)? + "\n";
-    fs_ops::write_file_atomically(target_path, content.as_bytes())
+    FileOp::write_json(target_path, &existing)
 }
 
 fn merge_managed_config(existing: &mut Value, generated: Value) -> Result<()> {
@@ -109,6 +108,10 @@ mod tests {
 
     use super::*;
 
+    fn sync_config(source: &Path, target: &Path) -> Result<()> {
+        crate::shell::execute(&[sync_config_op(source, target)?])
+    }
+
     #[test]
     fn sync_config_applies_generated_top_level_ownership() -> Result<()> {
         let root = test_root("sync-devin-config")?;
@@ -137,7 +140,7 @@ mod tests {
                 "hooks": {"SessionStart": ["generated-hook"]}
             }),
         );
-        std::fs::remove_dir_all(root)?;
+        crate::shell::fixtures::remove_dir_all(root)?;
         Ok(())
     }
 
@@ -180,7 +183,7 @@ mod tests {
                 }
             }),
         );
-        std::fs::remove_dir_all(root)?;
+        crate::shell::fixtures::remove_dir_all(root)?;
         Ok(())
     }
 
@@ -204,7 +207,7 @@ mod tests {
 
         assert_eq!(read_json(&target)?, first);
         assert_eq!(first["permissions"]["allow"], json!(["Exec(cargo)"]),);
-        std::fs::remove_dir_all(root)?;
+        crate::shell::fixtures::remove_dir_all(root)?;
         Ok(())
     }
 
@@ -226,7 +229,7 @@ mod tests {
             read_json(&target)?["permissions"],
             json!({"allow": ["Exec(ls)", "Read(**)"]}),
         );
-        std::fs::remove_dir_all(root)?;
+        crate::shell::fixtures::remove_dir_all(root)?;
         Ok(())
     }
 
@@ -241,20 +244,22 @@ mod tests {
         sync_config(&source, &target)?;
 
         assert_eq!(read_json(&target)?, generated);
-        std::fs::remove_dir_all(root)?;
+        crate::shell::fixtures::remove_dir_all(root)?;
         Ok(())
     }
 
     fn test_root(name: &str) -> Result<PathBuf> {
         let nanos = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
         let root = std::env::temp_dir().join(format!("agent-harness-{name}-{nanos}"));
-        std::fs::create_dir_all(&root)?;
+        crate::shell::fixtures::create_dir_all(&root)?;
         Ok(root)
     }
 
     fn write_file(path: &Path, content: &str) -> Result<()> {
-        path.parent().map(std::fs::create_dir_all).transpose()?;
-        std::fs::write(path, content)?;
+        path.parent()
+            .map(crate::shell::fixtures::create_dir_all)
+            .transpose()?;
+        crate::shell::fixtures::write(path, content)?;
         Ok(())
     }
 }

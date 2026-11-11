@@ -9,6 +9,10 @@ use std::path::PathBuf;
 use serde_json::{Map, Value, json};
 
 #[allow(dead_code)]
+#[path = "../src/provider/id.rs"]
+mod id;
+
+#[allow(dead_code)]
 #[path = "../src/provider/spec.rs"]
 mod spec;
 

@@ -4,9 +4,8 @@ use super::spec::{
     SkillSpec,
 };
 use crate::{
-    filesystem::RealFileSystem,
     generation::{GenerationContext, protection},
-    install_executor, install_plan,
+    install_plan,
     inventory::shorten_hook_path_for,
     layout::{InstalledLayout, SourceLayout},
     provider::renderer::ProviderRenderer,
@@ -52,8 +51,8 @@ fn extra_spec_flows_through_layout_protection_rendering_and_publication() -> Res
     };
     let mut providers = PROVIDERS.to_vec();
     providers.push(extra);
-    let staging = crate::filesystem::TemporaryDirectory::create()?;
-    let destination = crate::filesystem::TemporaryDirectory::create()?;
+    let staging = crate::shell::TemporaryDirectory::create()?;
+    let destination = crate::shell::TemporaryDirectory::create()?;
     let layout = InstalledLayout::new(staging.path());
     let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/complete-source");
     let context = GenerationContext::home(&source, &[]);
@@ -106,7 +105,7 @@ fn extra_spec_flows_through_layout_protection_rendering_and_publication() -> Res
         &InstalledLayout::new(destination.path()),
         &providers,
     );
-    install_executor::execute(&RealFileSystem, &plan)?;
+    crate::shell::execute(&plan)?;
     for root in [staging.path(), destination.path()] {
         for path in [
             ".example/hooks/guard.sh",
@@ -319,7 +318,7 @@ fn claude_and_codex_declare_their_instructions_skills_and_statusline() {
 #[test]
 fn rendering_writes_command_rules_where_the_provider_declares_them() -> Result<()> {
     let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/complete-source");
-    let out = crate::filesystem::TemporaryDirectory::create()?;
+    let out = crate::shell::TemporaryDirectory::create()?;
     let renderer = ProviderRenderer {
         context: GenerationContext::home(&source, &[]),
         providers: PROVIDERS,
@@ -336,15 +335,19 @@ fn rendering_writes_command_rules_where_the_provider_declares_them() -> Result<(
         ..ProviderId::Codex.spec().clone()
     };
 
-    renderer.render(&codex_elsewhere)?;
+    crate::shell::execute(&renderer.render(&codex_elsewhere)?)?;
     assert!(out.path().join(".codex/rules/elsewhere.rules").is_file());
     assert!(!out.path().join(".codex/rules/default.rules").exists());
-    let rendered = crate::filesystem::TemporaryDirectory::create()?;
-    ProviderRenderer {
+    let rendered = crate::shell::TemporaryDirectory::create()?;
+    let without_rules = ProviderRenderer {
         out: rendered.path(),
         ..renderer
     }
     .render(&codex_without_rules)?;
-    assert!(!rendered.path().join(".codex/rules").exists());
+    assert!(without_rules.iter().all(|operation| {
+        !operation
+            .target()
+            .starts_with(rendered.path().join(".codex/rules"))
+    }));
     Ok(())
 }

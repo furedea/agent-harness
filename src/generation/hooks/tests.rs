@@ -3,6 +3,14 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::*;
 
+fn write_hooks_for_runtime(
+    context: GenerationContext<'_>,
+    path: &Path,
+    spec: &ProviderSpec,
+) -> Result<()> {
+    crate::shell::execute(&[hooks_op_for_runtime(context, path, spec)?])
+}
+
 #[test]
 fn write_claude_hooks_reads_shared_hook_config() -> Result<()> {
     let root = test_root("write_claude_hooks_reads_shared_hook_config")?;
@@ -21,7 +29,7 @@ fn write_claude_hooks_reads_shared_hook_config() -> Result<()> {
         Some("$HOME/.claude/hooks/guard_forbidden_commands.sh"),
     );
 
-    std::fs::remove_dir_all(root)?;
+    crate::shell::fixtures::remove_dir_all(root)?;
     Ok(())
 }
 
@@ -43,7 +51,7 @@ fn write_codex_hooks_reads_shared_hook_config() -> Result<()> {
         Some("^(Bash|exec_command|functions\\.exec_command)$"),
     );
 
-    std::fs::remove_dir_all(root)?;
+    crate::shell::fixtures::remove_dir_all(root)?;
     Ok(())
 }
 
@@ -70,7 +78,7 @@ fn write_devin_hooks_renders_the_devin_section_as_a_config_fragment() -> Result<
         Some("$HOME/.devin/hooks/hook_adapter.py shell forbidden"),
     );
 
-    std::fs::remove_dir_all(root)?;
+    crate::shell::fixtures::remove_dir_all(root)?;
     Ok(())
 }
 
@@ -97,7 +105,7 @@ fn write_devin_hooks_includes_command_permissions() -> Result<()> {
         })
     );
 
-    std::fs::remove_dir_all(root)?;
+    crate::shell::fixtures::remove_dir_all(root)?;
     Ok(())
 }
 
@@ -120,7 +128,7 @@ fn write_devin_hooks_emits_empty_hooks_when_the_section_is_missing() -> Result<(
     let hooks: Value = serde_json::from_str(&std::fs::read_to_string(&output)?)?;
     assert_eq!(hooks["hooks"], serde_json::json!({}));
 
-    std::fs::remove_dir_all(root)?;
+    crate::shell::fixtures::remove_dir_all(root)?;
     Ok(())
 }
 
@@ -136,7 +144,7 @@ fn read_hooks_rejects_unsupported_version() -> Result<()> {
 
     assert!(error.contains("unsupported hook config version"));
 
-    std::fs::remove_dir_all(root)?;
+    crate::shell::fixtures::remove_dir_all(root)?;
     Ok(())
 }
 
@@ -161,7 +169,7 @@ fn claude_hooks_for_runtime_relocates_nested_commands_under_a_directory_root() -
         ),
     );
 
-    std::fs::remove_dir_all(root)?;
+    crate::shell::fixtures::remove_dir_all(root)?;
     Ok(())
 }
 
@@ -207,7 +215,7 @@ fn built_in_hook_metadata_orders_providers_and_events() -> Result<()> {
         ]
     );
 
-    std::fs::remove_dir_all(root)?;
+    crate::shell::fixtures::remove_dir_all(root)?;
     Ok(())
 }
 
@@ -223,7 +231,7 @@ fn read_hooks_rejects_a_non_object_optional_section() -> Result<()> {
 
     assert_eq!(error, "hook config pi section must be a JSON object");
 
-    std::fs::remove_dir_all(root)?;
+    crate::shell::fixtures::remove_dir_all(root)?;
     Ok(())
 }
 
@@ -236,7 +244,7 @@ fn read_hooks_rejects_a_missing_required_section() -> Result<()> {
 
     assert_eq!(error, "hook config codex section must be a JSON object");
 
-    std::fs::remove_dir_all(root)?;
+    crate::shell::fixtures::remove_dir_all(root)?;
     Ok(())
 }
 
@@ -252,14 +260,14 @@ fn read_hooks_rejects_an_unknown_provider_key() -> Result<()> {
 
     assert_eq!(error, "hook config contains unknown provider key: hermse");
 
-    std::fs::remove_dir_all(root)?;
+    crate::shell::fixtures::remove_dir_all(root)?;
     Ok(())
 }
 
 fn test_root(name: &str) -> Result<PathBuf> {
     let nanos = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
     let root = std::env::temp_dir().join(format!("agent-harness-{name}-{nanos}"));
-    std::fs::create_dir_all(&root)?;
+    crate::shell::fixtures::create_dir_all(&root)?;
     Ok(root)
 }
 
@@ -347,7 +355,7 @@ fn write_hook_config(root: &Path) -> Result<()> {
 
 fn write_file(path: &Path, content: &str) -> Result<()> {
     let parent = path.parent().context("test file path must have a parent")?;
-    std::fs::create_dir_all(parent)?;
-    std::fs::write(path, content)?;
+    crate::shell::fixtures::create_dir_all(parent)?;
+    crate::shell::fixtures::write(path, content)?;
     Ok(())
 }

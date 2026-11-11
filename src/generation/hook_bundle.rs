@@ -1,43 +1,45 @@
 use std::fs::DirEntry;
 use std::path::{Path, PathBuf};
-use std::process::Command;
-use std::time::{SystemTime, UNIX_EPOCH};
 
-use anyhow::{Context, Result, bail, ensure};
+use anyhow::{Context, Result, ensure};
 use serde::Deserialize;
 use serde_json::{Map, Value};
 
 use crate::{
-    fs_ops,
-    generation::io,
+    file_op::FileOp,
     provider::spec::{PROVIDERS, ProviderId},
 };
 
 const SUPPORTED_SPEC_VERSION: u64 = 1;
 const BUNDLE_VERSION: u64 = 1;
-pub(crate) fn generate(spec_path: &Path, output: &Path) -> Result<()> {
-    let spec = read_spec(spec_path)?;
-    spec.validate(spec_path)?;
-    if output.exists() {
-        bail!("hook bundle output already exists: {}", output.display());
-    }
-
-    let staging = TemporaryHome::create()?;
-    run_installers(&spec.installers, staging.path())?;
-    capture_supported_files(staging.path(), output, &spec.command_replacements)?;
-    write_manifest(output)
-}
-
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct HookBundleSpec {
+pub(crate) struct HookBundleSpec {
     version: u64,
-    installers: Vec<Installer>,
+    pub(crate) installers: Vec<Installer>,
     #[serde(default)]
     command_replacements: Vec<CommandReplacement>,
 }
 
 impl HookBundleSpec {
+    /// Reads and validates the spec at `path`.
+    pub(crate) fn read(path: &Path) -> Result<Self> {
+        let spec = read_spec(path)?;
+        spec.validate(path)?;
+        Ok(spec)
+    }
+
+    /// The files of a finished installer run in `staging` that the bundle `output` holds.
+    pub(crate) fn capture_ops(&self, staging: &Path, output: &Path) -> Result<Vec<FileOp>> {
+        let mut operations = capture_supported_files(staging, output, &self.command_replacements)?;
+        ensure!(
+            !operations.is_empty(),
+            "hook installers did not generate any supported artifacts"
+        );
+        operations.push(manifest_op(output)?);
+        Ok(operations)
+    }
+
     fn validate(&self, path: &Path) -> Result<()> {
         ensure!(
             self.version == SUPPORTED_SPEC_VERSION,
@@ -58,10 +60,10 @@ impl HookBundleSpec {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Installer {
-    executable: PathBuf,
+pub(crate) struct Installer {
+    pub(crate) executable: PathBuf,
     #[serde(default)]
-    arguments: Vec<String>,
+    pub(crate) arguments: Vec<String>,
 }
 
 impl Installer {
@@ -96,100 +98,29 @@ impl CommandReplacement {
     }
 }
 
-struct TemporaryHome {
-    path: PathBuf,
-}
-
-impl TemporaryHome {
-    fn create() -> Result<Self> {
-        let nanos = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
-        let path = std::env::temp_dir().join(format!(
-            "agent-harness-hook-bundle-{}-{nanos}",
-            std::process::id(),
-        ));
-        std::fs::create_dir(&path)
-            .with_context(|| format!("failed to create temporary home {}", path.display()))?;
-        create_provider_dirs(&path)?;
-        Ok(Self { path })
-    }
-
-    fn path(&self) -> &Path {
-        &self.path
-    }
-}
-
-impl Drop for TemporaryHome {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.path);
-    }
-}
-
-fn create_provider_dirs(home: &Path) -> Result<()> {
-    PROVIDERS
-        .iter()
-        .try_for_each(|spec| create_provider_dir(home, spec.home_dir))
-}
-
-fn create_provider_dir(home: &Path, provider: &str) -> Result<()> {
-    std::fs::create_dir(home.join(provider))
-        .with_context(|| format!("failed to create temporary provider directory {provider}"))
-}
-
-fn run_installers(installers: &[Installer], staging: &Path) -> Result<()> {
-    installers
-        .iter()
-        .try_for_each(|installer| run_installer(installer, staging))
-}
-
-fn run_installer(installer: &Installer, staging: &Path) -> Result<()> {
-    let result = Command::new(&installer.executable)
-        .args(&installer.arguments)
-        .current_dir(staging)
-        .env("HOME", staging)
-        .env("XDG_CACHE_HOME", staging.join(".cache"))
-        .env("XDG_CONFIG_HOME", staging.join(".config"))
-        .env("XDG_DATA_HOME", staging.join(".local/share"))
-        .env("XDG_STATE_HOME", staging.join(".local/state"))
-        .env_remove("CLAUDE_CONFIG_DIR")
-        .env_remove("CODEX_HOME")
-        .output()
-        .with_context(|| format!("failed to execute {}", installer.executable.display()))?;
-    ensure!(
-        result.status.success(),
-        "hook installer {} failed: {}",
-        installer.executable.display(),
-        String::from_utf8_lossy(&result.stderr).trim(),
-    );
-    Ok(())
-}
-
 fn capture_supported_files(
     staging: &Path,
     output: &Path,
     replacements: &[CommandReplacement],
-) -> Result<()> {
+) -> Result<Vec<FileOp>> {
     let normalization = CommandNormalization {
         staging,
         output,
         replacements,
     };
-    let mut captured = false;
+    let mut operations = Vec::new();
     for relative in PROVIDERS
         .iter()
         .map(|spec| spec.hook.external_file)
         .chain(ProviderId::Codex.spec().config_file())
     {
-        captured |= normalization.capture_file(relative)?;
+        operations.extend(normalization.capture_file(relative)?);
     }
     for relative in PROVIDERS.iter().map(|spec| spec.hook.scripts_dir) {
-        captured |= capture_dir(relative, staging, output)?;
+        operations.extend(capture_dir(relative, staging, output));
     }
-    captured |= copy_codex_scripts(staging, output)?;
-    ensure!(
-        captured,
-        "hook installers did not generate any supported artifacts"
-    );
-    Ok(())
+    operations.extend(codex_script_ops(staging, output)?);
+    Ok(operations)
 }
 
 /// Rewrites staged hook commands so they point at the bundle output.
@@ -200,25 +131,24 @@ struct CommandNormalization<'a> {
 }
 
 impl CommandNormalization<'_> {
-    fn capture_file(&self, relative: &str) -> Result<bool> {
+    fn capture_file(&self, relative: &str) -> Result<Option<FileOp>> {
         let source = self.staging.join(relative);
         let target = self.output.join(relative);
         match (source.is_file(), is_json(&source)) {
-            (false, _) => return Ok(false),
-            (true, true) => self.copy_normalized_json(&source, &target)?,
-            (true, false) => fs_ops::copy_file(&source, &target)?,
+            (false, _) => Ok(None),
+            (true, true) => self.normalized_json_op(&source, &target).map(Some),
+            (true, false) => Ok(Some(FileOp::CopyFile { source, target })),
         }
-        Ok(true)
     }
 
-    fn copy_normalized_json(&self, source: &Path, target: &Path) -> Result<()> {
+    fn normalized_json_op(&self, source: &Path, target: &Path) -> Result<FileOp> {
         let mut value: Value = serde_json::from_str(
             &std::fs::read_to_string(source)
                 .with_context(|| format!("failed to read {}", source.display()))?,
         )
         .with_context(|| format!("failed to parse {}", source.display()))?;
         self.normalize_commands(&mut value);
-        io::write_json(target, &value)
+        FileOp::write_json(target, &value)
     }
 
     fn normalize_commands(&self, value: &mut Value) {
@@ -259,49 +189,47 @@ fn rewrite_command(object: &mut Map<String, Value>, rewrite: impl FnOnce(&str) -
     }
 }
 
-fn capture_dir(relative: &str, staging: &Path, output: &Path) -> Result<bool> {
+fn capture_dir(relative: &str, staging: &Path, output: &Path) -> Option<FileOp> {
     let source = staging.join(relative);
-    if !source.is_dir() {
-        return Ok(false);
-    }
-    fs_ops::copy_dir(&source, &output.join(relative))?;
-    Ok(true)
+    source.is_dir().then(|| FileOp::CopyTree {
+        source,
+        target: output.join(relative),
+    })
 }
 
-fn copy_codex_scripts(staging: &Path, output: &Path) -> Result<bool> {
+fn codex_script_ops(staging: &Path, output: &Path) -> Result<Vec<FileOp>> {
     let source = staging.join(".codex");
     if !source.is_dir() {
-        return Ok(false);
+        return Ok(Vec::new());
     }
 
-    let mut copied = false;
+    let mut operations = Vec::new();
     for entry in std::fs::read_dir(&source)
         .with_context(|| format!("failed to read {}", source.display()))?
     {
         let entry =
             entry.with_context(|| format!("failed to read entry in {}", source.display()))?;
-        copied |= copy_shell_script(&entry, output)?;
+        operations.extend(shell_script_op(&entry, output)?);
     }
-    Ok(copied)
+    Ok(operations)
 }
 
-fn copy_shell_script(entry: &DirEntry, output: &Path) -> Result<bool> {
+fn shell_script_op(entry: &DirEntry, output: &Path) -> Result<Option<FileOp>> {
     let path = entry.path();
     let is_file = entry
         .file_type()
         .with_context(|| format!("failed to inspect {}", path.display()))?
         .is_file();
     let is_shell = path.extension().and_then(|extension| extension.to_str()) == Some("sh");
-    if !(is_file && is_shell) {
-        return Ok(false);
-    }
-    fs_ops::copy_file(&path, &output.join(".codex").join(entry.file_name()))?;
-    Ok(true)
+    Ok((is_file && is_shell).then(|| FileOp::CopyFile {
+        target: output.join(".codex").join(entry.file_name()),
+        source: path,
+    }))
 }
 
-fn write_manifest(output: &Path) -> Result<()> {
-    io::write_json(
-        &output.join("hook_bundle.json"),
+fn manifest_op(output: &Path) -> Result<FileOp> {
+    FileOp::write_json(
+        output.join("hook_bundle.json"),
         &serde_json::json!({"version": BUNDLE_VERSION}),
     )
 }
