@@ -33,9 +33,12 @@ impl Synced {
 }
 
 fn sidecar_op(sync: &ConfigSync, target: &Path, content: String) -> Result<FileOp> {
-    let file = sync
-        .sidecar_file()
-        .context("a sidecar needs the config to declare one")?;
+    let file = sync.sidecar_file().with_context(|| {
+        format!(
+            "write the sidecar for {}: the config declares no sidecar file",
+            target.display()
+        )
+    })?;
     Ok(FileOp::write(sidecar_path(target, file), content))
 }
 
@@ -158,4 +161,35 @@ pub(crate) fn parse_generated(
 ) -> Result<ConfigDocument> {
     ConfigDocument::parse(sync.format, text, Role::Generated)
         .with_context(|| format!("failed to parse {}", path.display()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::provider::ownership::{ConfigFormat, WhenMissing};
+
+    #[test]
+    fn sidecar_without_a_declared_file_names_the_operation_and_target() {
+        let sync = ConfigSync {
+            format: ConfigFormat::Json,
+            ownership: &[],
+            when_missing: WhenMissing::Create,
+            home_command_lists: &[],
+        };
+        let synced = Synced {
+            config: String::new(),
+            sidecar: Some(String::new()),
+        };
+
+        let error = synced
+            .into_ops(&sync, Path::new("/home/.pi/agent/settings.json"))
+            .unwrap_err();
+
+        let message = format!("{error:#}");
+        assert!(message.contains("write the sidecar"), "{message}");
+        assert!(
+            message.contains("/home/.pi/agent/settings.json"),
+            "{message}"
+        );
+    }
 }
