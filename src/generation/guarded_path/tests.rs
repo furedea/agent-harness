@@ -321,3 +321,16 @@ fn a_leading_backslash_stays_literal_in_a_unix_absolute_path() -> Result<()> {
     assert_eq!(pairs(&entries), []);
     Ok(())
 }
+
+#[test]
+fn a_unc_path_is_not_a_unix_path_with_the_same_segments() -> Result<()> {
+    let entries = [deny("/host/share")?, read("\\\\host\\share\\x")?];
+    let hosted = GuardedPath::absolute_on("//host/share", true)?;
+    let unc = GuardedPath::absolute_on("\\\\host\\share\\x", false)?;
+    let unix = GuardedPath::absolute_on("//host/share", false)?;
+
+    assert_eq!(pairs(&entries), []);
+    assert!(hosted.covers(&unc, None));
+    assert!(!unix.covers(&unc, None));
+    Ok(())
+}

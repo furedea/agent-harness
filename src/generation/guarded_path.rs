@@ -39,6 +39,7 @@ impl Access {
 pub(crate) enum Root {
     Everything,
     Absolute,
+    Unc,
     Home,
     Workspace,
 }
@@ -83,7 +84,7 @@ impl GuardedPath {
     /// Every path is Windows-form on a Windows host, where Codex resolves `~` and `/` paths with
     /// Windows rules too; a `~\...` key is Windows-form on any host.
     fn absolute_on(text: &str, host_is_windows: bool) -> Result<Self> {
-        let (root, windows, rest) = split_root(text)?;
+        let (root, windows, rest) = split_root(text, host_is_windows)?;
         let backslash_home = root == Root::Home && rest.starts_with('\\');
         let windows = windows || host_is_windows || backslash_home;
         let mut segments = Vec::new();
@@ -131,7 +132,7 @@ impl GuardedPath {
         match self.root {
             Root::Everything => true,
             Root::Absolute => root == Root::Absolute || holds_home,
-            Root::Home | Root::Workspace => self.root == root,
+            Root::Unc | Root::Home | Root::Workspace => self.root == root,
         }
     }
 
@@ -157,7 +158,7 @@ impl GuardedPath {
         match self.root {
             Root::Workspace => Some(self.below(workspace)),
             Root::Absolute => self.relative_to(workspace),
-            Root::Everything | Root::Home => None,
+            Root::Everything | Root::Unc | Root::Home => None,
         }
     }
 
@@ -183,20 +184,27 @@ impl GuardedPath {
     }
 }
 
-fn split_root(text: &str) -> Result<(Root, bool, &str)> {
+fn split_root(text: &str, host_is_windows: bool) -> Result<(Root, bool, &str)> {
     if let Some(rest) = text.strip_prefix('~') {
         return Ok((Root::Home, false, rest));
     }
     if has_drive_prefix(text) {
         return Ok((Root::Absolute, true, text));
     }
-    if let Some(rest) = text.strip_prefix("\\\\") {
-        return Ok((Root::Absolute, true, rest));
+    if let Some(rest) = unc_rest(text, host_is_windows) {
+        return Ok((Root::Unc, true, rest));
     }
     match text.strip_prefix('/') {
         Some(rest) => Ok((Root::Absolute, false, rest)),
         None => bail!("guarded path {text:?} must be absolute or start with ~"),
     }
+}
+
+/// The part of a UNC path after its prefix: `\\\\host\\share`, or on a Windows host also the
+/// `//host/share` a runtime root renders.
+fn unc_rest(text: &str, host_is_windows: bool) -> Option<&str> {
+    let slashes = host_is_windows.then(|| text.strip_prefix("//")).flatten();
+    text.strip_prefix("\\\\").or(slashes)
 }
 
 /// Whether a table key names an absolute location: `~`, `/...`, a Windows drive path or a UNC
