@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { registerHooks } from 'node:module';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, copyFileSync, symlinkSync, writeFileSync, readFileSync, realpathSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, copyFileSync, symlinkSync, writeFileSync, readFileSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { delimiter, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 // Model only Pi's documented spawnHook boundary; the fake srt records actual argv.
@@ -201,6 +201,8 @@ if (args[3].includes('file_operations.mjs')) {
   writeFileSync(policyPath, JSON.stringify(policy));
   register({ getAllTools() { return [...tools.values()]; }, registerTool(value) { tools.set(value.name, value); if (value.name === 'bash') tool = value; }, on(event, fn) { if (event === 'session_shutdown') cleanups.push(fn); } });
   rmSync(join(bin, 'srt'));
+  // A host may install a real srt; the missing-srt case must not resolve it.
+  process.env.PATH = process.env.PATH.split(delimiter).filter(dir => !existsSync(join(dir, 'srt'))).join(delimiter);
   await assert.rejects(() => tool.execute('id', { command: 'touch escaped' }));
   for (const name of ['read', 'write', 'edit', 'grep', 'find', 'ls']) {
     await assert.rejects(() => tools.get(name).execute('missing-srt', { path: file, content: 'escape' }), undefined, name);
