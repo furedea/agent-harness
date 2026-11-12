@@ -11,6 +11,10 @@
 
 use anyhow::{Result, anyhow, bail};
 
+use self::pattern::{Segment, push_segments};
+
+mod pattern;
+
 /// How much of a path Codex lets a command touch; a later variant is stricter.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum Access {
@@ -35,44 +39,37 @@ impl Access {
 pub(crate) enum Root {
     Everything,
     Absolute,
+    Unc,
     Home,
     Workspace,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum Segment {
-    Literal(String),
-    DoubleStar,
-    Glob(Vec<Token>),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum Token {
-    Star,
-    AnyChar,
-    Char(char),
-    Class {
-        negated: bool,
-        ranges: Vec<(char, char)>,
-    },
-    Alternatives(Vec<Vec<Token>>),
-}
-
 /// A normalized path under one root; its segments may be globs.
+///
+/// `windows` marks a Windows-form path (a drive letter or a UNC prefix): `\` separates its
+/// segments and its names compare without regard to case.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct GuardedPath {
     root: Root,
+    windows: bool,
     segments: Vec<Segment>,
 }
 
 impl GuardedPath {
     /// The whole filesystem, for `:root`.
     pub(crate) fn everything() -> Self {
-        Self::at(Root::Everything, Vec::new())
+        Self::at(Root::Everything, false, Vec::new())
     }
 
-    pub(crate) fn workspace() -> Self {
-        Self::at(Root::Workspace, Vec::new())
+    /// The workspace, for `:workspace_roots`; Windows-form when `root`, the absolute path the
+    /// workspace is installed at, is, or when the harness runs on Windows.
+    pub(crate) fn workspace(root: Option<&Self>) -> Self {
+        Self::workspace_on(root, cfg!(windows))
+    }
+
+    fn workspace_on(root: Option<&Self>, host_is_windows: bool) -> Self {
+        let windows = host_is_windows || root.is_some_and(|root| root.windows);
+        Self::at(Root::Workspace, windows, Vec::new())
     }
 
     /// Parses a `~/...` or absolute key.
@@ -81,11 +78,19 @@ impl GuardedPath {
     ///
     /// Returns an error when `text` is neither, or climbs above its root with `..`.
     pub(crate) fn absolute(text: &str) -> Result<Self> {
-        let (root, rest) = split_root(text)?;
+        Self::absolute_on(text, cfg!(windows))
+    }
+
+    /// Every path is Windows-form on a Windows host, where Codex resolves `~` and `/` paths with
+    /// Windows rules too; a `~\...` key is Windows-form on any host.
+    fn absolute_on(text: &str, host_is_windows: bool) -> Result<Self> {
+        let (root, windows, rest) = split_root(text, host_is_windows)?;
+        let backslash_home = root == Root::Home && rest.starts_with('\\');
+        let windows = windows || host_is_windows || backslash_home;
         let mut segments = Vec::new();
-        push_segments(&mut segments, rest)
+        push_segments(&mut segments, rest, windows)
             .ok_or_else(|| anyhow!("guarded path {text:?} climbs above its root"))?;
-        Ok(Self::at(root, segments))
+        Ok(Self::at(root, windows, segments))
     }
 
     /// The path of `child` under this path.
@@ -95,13 +100,17 @@ impl GuardedPath {
     /// Returns an error when `child` climbs above this path with `..`.
     pub(crate) fn join(&self, child: &str) -> Result<Self> {
         let mut segments = self.segments.clone();
-        push_segments(&mut segments, child)
+        push_segments(&mut segments, child, self.windows)
             .ok_or_else(|| anyhow!("guarded path {child:?} climbs above its scope"))?;
-        Ok(Self::at(self.root, segments))
+        Ok(Self::at(self.root, self.windows, segments))
     }
 
-    fn at(root: Root, segments: Vec<Segment>) -> Self {
-        Self { root, segments }
+    fn at(root: Root, windows: bool, segments: Vec<Segment>) -> Self {
+        Self {
+            root,
+            windows,
+            segments,
+        }
     }
 
     fn without_trailing_double_star(mut self) -> Self {
@@ -123,32 +132,85 @@ impl GuardedPath {
         match self.root {
             Root::Everything => true,
             Root::Absolute => root == Root::Absolute || holds_home,
-            Root::Home | Root::Workspace => self.root == root,
+            Root::Unc | Root::Home | Root::Workspace => self.root == root,
         }
     }
 
-    /// Whether this path is, or is an ancestor of, or matches an ancestor of, `path`.
-    fn covers(&self, path: &Self) -> bool {
-        self.covers_root(path.root) && covers_segments(&self.segments, &path.segments)
+    /// Whether this path is, or is an ancestor of, or matches an ancestor of, `path`; with the
+    /// `workspace` root, also when it does so for `path` written the other way, absolute or
+    /// relative to the workspace.
+    fn covers(&self, path: &Self, workspace: Option<&Self>) -> bool {
+        self.covers_as_written(path)
+            || workspace
+                .and_then(|workspace| path.rewritten_for(workspace))
+                .is_some_and(|rewritten| self.covers_as_written(&rewritten))
+    }
+
+    fn covers_as_written(&self, path: &Self) -> bool {
+        let ignore_case = self.windows || path.windows;
+        self.covers_root(path.root) && pattern::covers(ignore_case, &self.segments, &path.segments)
+    }
+
+    /// The same location for a project-local install, where the workspace is the runtime root:
+    /// an absolute path inside `workspace` becomes a workspace path, and a workspace path
+    /// becomes an absolute one. `None` when the path is neither.
+    fn rewritten_for(&self, workspace: &Self) -> Option<Self> {
+        match self.root {
+            Root::Workspace => Some(self.below(workspace)),
+            Root::Absolute => self.relative_to(workspace),
+            Root::Everything | Root::Unc | Root::Home => None,
+        }
+    }
+
+    fn below(&self, workspace: &Self) -> Self {
+        let segments = workspace.segments.iter().chain(&self.segments).cloned();
+        Self::at(
+            Root::Absolute,
+            self.windows || workspace.windows,
+            segments.collect(),
+        )
+    }
+
+    fn relative_to(&self, workspace: &Self) -> Option<Self> {
+        let inside = self
+            .segments
+            .get(workspace.segments.len()..)
+            .filter(|_| workspace.covers_as_written(self))?;
+        Some(Self::at(
+            Root::Workspace,
+            self.windows || workspace.windows,
+            inside.to_vec(),
+        ))
     }
 }
 
-fn split_root(text: &str) -> Result<(Root, &str)> {
+fn split_root(text: &str, host_is_windows: bool) -> Result<(Root, bool, &str)> {
     if let Some(rest) = text.strip_prefix('~') {
-        return Ok((Root::Home, rest));
+        return Ok((Root::Home, false, rest));
     }
     if has_drive_prefix(text) {
-        return Ok((Root::Absolute, text));
+        return Ok((Root::Absolute, true, text));
+    }
+    if let Some(rest) = unc_rest(text, host_is_windows) {
+        return Ok((Root::Unc, true, rest));
     }
     match text.strip_prefix('/') {
-        Some(rest) => Ok((Root::Absolute, rest)),
+        Some(rest) => Ok((Root::Absolute, false, rest)),
         None => bail!("guarded path {text:?} must be absolute or start with ~"),
     }
 }
 
-/// Whether a table key names an absolute location: `~`, `/...` or a Windows drive path.
+/// The part of a UNC path after its prefix: `\\\\host\\share`, or on a Windows host also the
+/// `//host/share` a runtime root renders.
+fn unc_rest(text: &str, host_is_windows: bool) -> Option<&str> {
+    let slashes = host_is_windows.then(|| text.strip_prefix("//")).flatten();
+    text.strip_prefix("\\\\").or(slashes)
+}
+
+/// Whether a table key names an absolute location: `~`, `/...`, a Windows drive path or a UNC
+/// path.
 pub(crate) fn is_absolute_key(key: &str) -> bool {
-    key.starts_with(['/', '~']) || has_drive_prefix(key)
+    key.starts_with(['/', '~']) || key.starts_with("\\\\") || has_drive_prefix(key)
 }
 
 /// `C:/...`, as a runtime root on Windows writes it; the drive stays the first segment.
@@ -156,166 +218,6 @@ fn has_drive_prefix(text: &str) -> bool {
     let mut chars = text.chars();
     let drive = chars.next().is_some_and(|ch| ch.is_ascii_alphabetic());
     drive && chars.next() == Some(':') && matches!(chars.next(), Some('/' | '\\'))
-}
-
-/// Splits `text` into segments, dropping empty and `.` parts and resolving `..` lexically.
-fn push_segments(segments: &mut Vec<Segment>, text: &str) -> Option<()> {
-    widen_braces(text)
-        .split(['/', '\\'])
-        .try_for_each(|part| apply_part(segments, part))
-}
-
-/// A `{a/b}` group spans segments, so everything from its segment on is widened to `**`, which
-/// only ever makes the pattern cover more paths.
-fn widen_braces(text: &str) -> String {
-    let Some(open) = text.find('{') else {
-        return text.to_owned();
-    };
-    let group = text.get(open..).unwrap_or_default();
-    let group = group.split_once('}').map_or(group, |(inside, _)| inside);
-    if !group.contains('/') {
-        return text.to_owned();
-    }
-    let keep = text.get(..open).unwrap_or_default();
-    let directory = keep
-        .rfind('/')
-        .map_or("", |slash| keep.get(..=slash).unwrap_or(""));
-    format!("{directory}**")
-}
-
-fn apply_part(segments: &mut Vec<Segment>, part: &str) -> Option<()> {
-    match part {
-        "" | "." => Some(()),
-        ".." => segments.pop().map(drop),
-        _ => Some(()).inspect(|()| segments.push(segment_of(part))),
-    }
-}
-
-fn segment_of(part: &str) -> Segment {
-    if part == "**" {
-        return Segment::DoubleStar;
-    }
-    if !part.contains(['*', '?', '[', '{']) {
-        return Segment::Literal(part.to_owned());
-    }
-    Segment::Glob(tokens_of(part))
-}
-
-fn tokens_of(part: &str) -> Vec<Token> {
-    let mut tokens = Vec::new();
-    let mut rest = part;
-    while let Some(ch) = rest.chars().next() {
-        let tail = rest.get(ch.len_utf8()..).unwrap_or("");
-        let (token, remaining) = match ch {
-            '*' => (Token::Star, tail),
-            '?' => (Token::AnyChar, tail),
-            '[' => class_token(tail).unwrap_or((Token::Char(ch), tail)),
-            '{' => alternatives_token(tail).unwrap_or((Token::Char(ch), tail)),
-            _ => (Token::Char(ch), tail),
-        };
-        push_token(&mut tokens, token);
-        rest = remaining;
-    }
-    tokens
-}
-
-/// `[abc]`, `[a-z]` and `[!x]`; `None` when the class is not closed, so `[` is a plain character.
-fn class_token(tail: &str) -> Option<(Token, &str)> {
-    let (inside, after) = tail.split_once(']')?;
-    let negated = inside.starts_with(['!', '^']);
-    let body = inside.strip_prefix(['!', '^']).unwrap_or(inside);
-    Some((
-        Token::Class {
-            negated,
-            ranges: ranges_of(body),
-        },
-        after,
-    ))
-}
-
-fn ranges_of(body: &str) -> Vec<(char, char)> {
-    let mut ranges = Vec::new();
-    let mut chars = body.chars().peekable();
-    while let Some(low) = chars.next() {
-        let high = take_range_end(&mut chars).unwrap_or(low);
-        ranges.push((low, high));
-    }
-    ranges
-}
-
-/// The `z` of `a-z`, consuming the `-z`; `None` when `-` is last or does not follow a range.
-fn take_range_end(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) -> Option<char> {
-    chars.next_if_eq(&'-')?;
-    chars.next()
-}
-
-/// `{a,b}`; `None` when the group is not closed, so `{` is a plain character.
-fn alternatives_token(tail: &str) -> Option<(Token, &str)> {
-    let (inside, after) = tail.split_once('}')?;
-    Some((
-        Token::Alternatives(inside.split(',').map(tokens_of).collect()),
-        after,
-    ))
-}
-
-fn push_token(tokens: &mut Vec<Token>, token: Token) {
-    let repeats_star = token == Token::Star && tokens.last() == Some(&Token::Star);
-    if !repeats_star {
-        tokens.push(token);
-    }
-}
-
-fn covers_segments(pattern: &[Segment], path: &[Segment]) -> bool {
-    let Some((first, rest)) = pattern.split_first() else {
-        return true;
-    };
-    if *first == Segment::DoubleStar {
-        let skips_one = path
-            .split_first()
-            .is_some_and(|(_, tail)| covers_segments(pattern, tail));
-        return covers_segments(rest, path) || skips_one;
-    }
-    let Some((head, tail)) = path.split_first() else {
-        return false;
-    };
-    segment_matches(first, head) && covers_segments(rest, tail)
-}
-
-fn segment_matches(pattern: &Segment, concrete: &Segment) -> bool {
-    let Segment::Literal(text) = concrete else {
-        return false;
-    };
-    match pattern {
-        Segment::Literal(literal) => literal == text,
-        Segment::Glob(tokens) => tokens_match(tokens, &text.chars().collect::<Vec<_>>()),
-        Segment::DoubleStar => true,
-    }
-}
-
-fn tokens_match(tokens: &[Token], text: &[char]) -> bool {
-    let Some((first, rest)) = tokens.split_first() else {
-        return text.is_empty();
-    };
-    match first {
-        Token::Star => (0..=text.len()).any(|skipped| {
-            text.get(skipped..)
-                .is_some_and(|tail| tokens_match(rest, tail))
-        }),
-        Token::AnyChar => text
-            .split_first()
-            .is_some_and(|(_, tail)| tokens_match(rest, tail)),
-        Token::Char(expected) => text
-            .split_first()
-            .is_some_and(|(ch, tail)| ch == expected && tokens_match(rest, tail)),
-        Token::Class { negated, ranges } => text.split_first().is_some_and(|(ch, tail)| {
-            let inside = ranges.iter().any(|(low, high)| (low..=high).contains(&ch));
-            inside != *negated && tokens_match(rest, tail)
-        }),
-        Token::Alternatives(alternatives) => alternatives.iter().any(|alternative| {
-            let joined: Vec<Token> = alternative.iter().chain(rest).cloned().collect();
-            tokens_match(&joined, text)
-        }),
-    }
 }
 
 /// A guarded entry. Only a denial may hold a pattern; a looser entry is one concrete path.
@@ -366,45 +268,80 @@ pub(crate) struct Conflict {
     pub(crate) looser: usize,
 }
 
-/// Every pair of `entries` in which one entry covers a looser one that no entry in between
-/// decides.
+/// Every pair of `entries` in which the entry covering a looser one most closely is stricter.
 ///
-/// Codex uses the most specific matching entry. A third entry that is covered by the stricter one,
-/// covers the looser one, and has the looser one's access is an explicit exception, so the looser
-/// entry resolves through it and nothing is reopened.
-pub(crate) fn conflicts(entries: &[GuardedEntry]) -> Vec<Conflict> {
-    let mut found = Vec::new();
-    for (stricter, outer) in entries.iter().enumerate() {
-        found.extend(
-            entries
-                .iter()
-                .enumerate()
-                .filter(|(_, inner)| outer.access() > inner.access() && outer.covers(inner))
-                .filter(|(_, inner)| !has_exception_between(entries, outer, inner))
-                .map(|(looser, _)| Conflict { stricter, looser }),
-        );
-    }
+/// Codex lets the most specific entry win, so a path resolves through the nearest entry that
+/// covers it, never through every ancestor. An entry `near` covers `path` most closely when no
+/// other entry covers `path` from inside `near`. Entries that cover each other, such as equal
+/// paths, are equally near.
+///
+/// So a denial of `:root` and a grant of `~` leave `~/.codex/hooks.json = "read"` alone: the
+/// grant is the nearest entry above it and is looser. The grant itself is a conflict with the
+/// denial above it, but it is the author's choice only when the source declares both; that is
+/// for the caller to judge.
+///
+/// With `workspace`, the runtime root of a project-local install, an absolute path inside it and
+/// the same path relative to `:workspace_roots` are one location.
+pub(crate) fn conflicts(
+    entries: &[GuardedEntry],
+    workspace: Option<&GuardedPath>,
+) -> Vec<Conflict> {
+    let relation = Relation { entries, workspace };
+    let mut found: Vec<Conflict> = (0..entries.len())
+        .flat_map(|looser| relation.conflicts_of(looser))
+        .collect();
+    found.sort_by_key(|conflict| (conflict.stricter, conflict.looser));
     found
 }
 
-fn has_exception_between(
-    entries: &[GuardedEntry],
-    outer: &GuardedEntry,
-    inner: &GuardedEntry,
-) -> bool {
-    entries.iter().any(|between| {
-        between != outer
-            && between != inner
-            && between.access() == inner.access()
-            && outer.covers(between)
-            && !between.covers(outer)
-            && between.covers(inner)
-    })
+struct Relation<'a> {
+    entries: &'a [GuardedEntry],
+    workspace: Option<&'a GuardedPath>,
+}
+
+impl Relation<'_> {
+    fn conflicts_of(&self, looser: usize) -> Vec<Conflict> {
+        let access = self.access(looser);
+        self.nearest_covering(looser)
+            .into_iter()
+            .filter(|&stricter| self.access(stricter) > access)
+            .map(|stricter| Conflict { stricter, looser })
+            .collect()
+    }
+
+    fn nearest_covering(&self, inner: usize) -> Vec<usize> {
+        let covering: Vec<usize> = (0..self.entries.len())
+            .filter(|&outer| outer != inner && self.covers(outer, inner))
+            .collect();
+        covering
+            .iter()
+            .copied()
+            .filter(|&outer| !self.has_nearer(outer, &covering))
+            .collect()
+    }
+
+    /// Whether another covering entry lies strictly inside `outer`.
+    fn has_nearer(&self, outer: usize, covering: &[usize]) -> bool {
+        covering
+            .iter()
+            .any(|&other| other != outer && self.covers(outer, other) && !self.covers(other, outer))
+    }
+
+    fn covers(&self, outer: usize, inner: usize) -> bool {
+        let entries = self.entries.get(outer).zip(self.entries.get(inner));
+        entries.is_some_and(|(outer, inner)| outer.covers(inner, self.workspace))
+    }
+
+    fn access(&self, index: usize) -> Access {
+        self.entries
+            .get(index)
+            .map_or(Access::Write, GuardedEntry::access)
+    }
 }
 
 impl GuardedEntry {
-    fn covers(&self, other: &Self) -> bool {
-        self.path().covers(other.path())
+    fn covers(&self, other: &Self, workspace: Option<&GuardedPath>) -> bool {
+        self.path().covers(other.path(), workspace)
     }
 }
 

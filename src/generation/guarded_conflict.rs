@@ -29,14 +29,24 @@ pub(crate) struct SourceConfig<'a> {
 ///
 /// Returns an error naming both entries, their accesses and where each is declared when one
 /// covers a looser one and at least one of them is generated.
-pub(crate) fn check(generated: &DocumentMut, source: Option<SourceConfig<'_>>) -> Result<()> {
-    let mut entries = located_entries(generated, &Origin::Generated)?;
+///
+/// `workspace_root` is the runtime root of a project-local install. Codex then sees an absolute
+/// path inside it and the same path under `:workspace_roots` as one location.
+pub(crate) fn check(
+    generated: &DocumentMut,
+    source: Option<SourceConfig<'_>>,
+    workspace_root: Option<&str>,
+) -> Result<()> {
+    let workspace = workspace_root.map(GuardedPath::absolute).transpose()?;
+    let generated_reading = Reading::new(&Origin::Generated, workspace.as_ref());
+    let mut entries = located_entries(generated, &generated_reading)?;
     if let Some(source) = source {
         let origin = Origin::Source(source.path.display().to_string());
-        entries.extend(located_entries(source.document, &origin)?);
+        let reading = Reading::new(&origin, workspace.as_ref());
+        entries.extend(located_entries(source.document, &reading)?);
     }
     let guarded: Vec<GuardedEntry> = entries.iter().map(|entry| entry.entry.clone()).collect();
-    let conflict = conflicts(&guarded)
+    let conflict = conflicts(&guarded, workspace.as_ref())
         .into_iter()
         .find(|conflict| !both_from_source(&entries, conflict.stricter, conflict.looser));
     let Some(conflict) = conflict else {
@@ -87,15 +97,37 @@ impl Located {
     }
 }
 
-fn located_entries(document: &DocumentMut, origin: &Origin) -> Result<Vec<Located>> {
+/// One document being read: where it came from, and the workspace root its keys resolve against.
+struct Reading<'a> {
+    origin: &'a Origin,
+    workspace: Option<&'a GuardedPath>,
+}
+
+impl<'a> Reading<'a> {
+    fn new(origin: &'a Origin, workspace: Option<&'a GuardedPath>) -> Self {
+        Self { origin, workspace }
+    }
+
+    fn base_path(&self, key: &str) -> Result<Option<GuardedPath>> {
+        match key {
+            ":root" => Ok(Some(GuardedPath::everything())),
+            _ if WORKSPACE_KEYS.contains(&key) => Ok(Some(GuardedPath::workspace(self.workspace))),
+            ":slash_tmp" => GuardedPath::absolute("/tmp").map(Some),
+            _ if is_absolute_key(key) => GuardedPath::absolute(key).map(Some),
+            _ => Ok(None),
+        }
+    }
+}
+
+fn located_entries(document: &DocumentMut, reading: &Reading<'_>) -> Result<Vec<Located>> {
     let Some(table) = guarded_filesystem(document) else {
         return Ok(Vec::new());
     };
     let mut located = Vec::new();
     for (key, item) in table.iter() {
         match item.as_table_like() {
-            Some(scoped) => located.extend(scoped_entries(key, scoped, origin)?),
-            None => located.extend(plain_entry(key, item, origin)?),
+            Some(scoped) => located.extend(scoped_entries(key, scoped, reading)?),
+            None => located.extend(plain_entry(key, item, reading)?),
         }
     }
     Ok(located)
@@ -109,20 +141,24 @@ fn guarded_filesystem(document: &DocumentMut) -> Option<&dyn TableLike> {
         .as_table_like()
 }
 
-fn plain_entry(key: &str, item: &Item, origin: &Origin) -> Result<Option<Located>> {
-    let Some(base) = base_path(key)? else {
+fn plain_entry(key: &str, item: &Item, reading: &Reading<'_>) -> Result<Option<Located>> {
+    let Some(base) = reading.base_path(key)? else {
         return Ok(None);
     };
-    Ok(entry_of(base, item, Site::new(key, origin)))
+    Ok(entry_of(base, item, Site::new(key, reading.origin)))
 }
 
-fn scoped_entries(scope: &str, table: &dyn TableLike, origin: &Origin) -> Result<Vec<Located>> {
-    let Some(base) = base_path(scope)? else {
+fn scoped_entries(
+    scope: &str,
+    table: &dyn TableLike,
+    reading: &Reading<'_>,
+) -> Result<Vec<Located>> {
+    let Some(base) = reading.base_path(scope)? else {
         return Ok(Vec::new());
     };
     let mut located = Vec::new();
     for (child, item) in table.iter() {
-        let site = Site::new(&format!("{scope} / {child}"), origin);
+        let site = Site::new(&format!("{scope} / {child}"), reading.origin);
         located.extend(entry_of(base.join(child)?, item, site));
     }
     Ok(located)
@@ -152,15 +188,4 @@ fn entry_of(path: GuardedPath, item: &Item, site: Site<'_>) -> Option<Located> {
         origin: site.origin.clone(),
         entry,
     })
-}
-
-/// The path a table key names; `None` for a key the model does not cover, such as `:tmpdir`.
-fn base_path(key: &str) -> Result<Option<GuardedPath>> {
-    match key {
-        ":root" => Ok(Some(GuardedPath::everything())),
-        _ if WORKSPACE_KEYS.contains(&key) => Ok(Some(GuardedPath::workspace())),
-        ":slash_tmp" => GuardedPath::absolute("/tmp").map(Some),
-        _ if is_absolute_key(key) => GuardedPath::absolute(key).map(Some),
-        _ => Ok(None),
-    }
 }

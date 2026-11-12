@@ -246,12 +246,16 @@ Codex applies the more specific entry, so a looser entry under a stricter one (a
 `~/.codex/hooks/adapt.sh = "read"` under `~/.codex/** = "none"`) reopens a denied path. The harness
 never rewrites guarded entries to guess which side was meant. It compares the generated entries
 with each other and with the source `codex/config.toml` and fails, naming both entries, when one
-covers a looser one. Only denials may be patterns; the looser entry is always a concrete path, so
+covers a looser one. A path resolves through the nearest entry that covers it, not every ancestor,
+so a looser intermediate entry (`~ = "write"` under `:root = "deny"`) is the exception for the
+entries below it. Only denials may be patterns; the looser entry is always a concrete path, so
 two globs are never compared with each other and a glob looser than another glob is not detected.
 A rule that denies reads with a brace pattern fails generation, because Codex does not expand
-braces. Paths are compared by root: `~`, absolute paths and the workspace are separate, so a
-project-local install (`--runtime-root` is the project) is not matched against
-`:workspace_roots`. Conflict detection is a safety net; hooks still enforce the secret policy at
+braces. Paths are compared by root: `~`, absolute paths, UNC paths and the workspace are separate,
+except that a project-local install (`--runtime-root` is the project) matches an absolute path
+inside the project against `:workspace_roots` too. Windows-form paths (a drive letter, a UNC
+prefix, or any path on a Windows host) take `\` as a separator and compare without regard to
+case; elsewhere `\` is a filename character. Conflict detection is a safety net; hooks still enforce the secret policy at
 runtime.
 
 On platforms that expand unreadable globs before the sandbox starts, Codex caps `**` at

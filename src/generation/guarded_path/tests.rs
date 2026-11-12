@@ -11,7 +11,7 @@ fn read(path: &str) -> Result<GuardedEntry> {
 
 /// The (stricter, looser) index pairs.
 fn pairs(entries: &[GuardedEntry]) -> Vec<(usize, usize)> {
-    conflicts(entries)
+    conflicts(entries, None)
         .into_iter()
         .map(|conflict| (conflict.stricter, conflict.looser))
         .collect()
@@ -129,12 +129,12 @@ fn an_explicit_exception_between_the_two_entries_resolves_the_looser_one() -> Re
 #[test]
 fn a_path_cannot_climb_above_its_root() {
     assert!(GuardedPath::absolute("~/../x").is_err());
-    assert!(GuardedPath::workspace().join("a/../../x").is_err());
+    assert!(GuardedPath::workspace(None).join("a/../../x").is_err());
 }
 
 #[test]
 fn roots_do_not_cover_each_other_except_everything() -> Result<()> {
-    let workspace = GuardedEntry::Deny(GuardedPath::workspace().join("secrets")?);
+    let workspace = GuardedEntry::Deny(GuardedPath::workspace(None).join("secrets")?);
     let home = read("~/secrets/x")?;
     let everything = GuardedEntry::Deny(GuardedPath::everything());
 
@@ -178,5 +178,159 @@ fn a_backslash_separates_segments() -> Result<()> {
     let entries = [deny("C:\\work")?, read("C:/work/.codex/hooks.json")?];
 
     assert_eq!(pairs(&entries), [(0, 1)]);
+    Ok(())
+}
+
+fn grant(path: &str, access: Access) -> Result<GuardedEntry> {
+    GuardedEntry::new(GuardedPath::absolute(path)?, access)
+        .ok_or_else(|| anyhow::anyhow!("{path} is not concrete"))
+}
+
+#[test]
+fn a_looser_intermediate_entry_is_the_exception_for_the_entries_below_it() -> Result<()> {
+    let entries = [
+        GuardedEntry::Deny(GuardedPath::everything()),
+        grant("~", Access::Write)?,
+        read("~/.codex/hooks/adapt.sh")?,
+    ];
+
+    assert_eq!(pairs(&entries), [(0, 1)]);
+    Ok(())
+}
+
+#[test]
+fn a_stricter_intermediate_entry_is_the_one_that_conflicts() -> Result<()> {
+    let entries = [
+        GuardedEntry::Deny(GuardedPath::everything()),
+        read("~")?,
+        grant("~/x", Access::Write)?,
+    ];
+
+    assert_eq!(pairs(&entries), [(0, 1), (1, 2)]);
+    Ok(())
+}
+
+#[test]
+fn windows_drive_paths_compare_case_insensitively() -> Result<()> {
+    let entries = [
+        deny("C:/Work")?,
+        read("c:/work/.codex/hooks.json")?,
+        deny("C:/Proj/[A-Z]x")?,
+        read("c:/proj/bx/f")?,
+    ];
+
+    assert_eq!(pairs(&entries), [(0, 1), (2, 3)]);
+    Ok(())
+}
+
+#[test]
+fn unix_paths_stay_case_sensitive() -> Result<()> {
+    let entries = [deny("/Work")?, read("/work/x")?];
+
+    assert_eq!(pairs(&entries), []);
+    Ok(())
+}
+
+#[test]
+fn a_backslash_is_a_filename_character_in_a_unix_path() -> Result<()> {
+    let entries = [deny("/work/a")?, read("/work/a\\b")?, deny("/v/a\\b")?];
+
+    assert_eq!(pairs(&entries), []);
+    assert_ne!(
+        GuardedPath::absolute("/w/a\\b")?,
+        GuardedPath::absolute("/w/a/b")?
+    );
+    Ok(())
+}
+
+#[test]
+fn a_backslash_separates_the_segments_of_a_unc_path() -> Result<()> {
+    let entries = [deny("\\\\host\\share")?, read("\\\\host\\share\\x\\y")?];
+
+    assert!(is_absolute_key("\\\\host\\share"));
+    assert_eq!(pairs(&entries), [(0, 1)]);
+    Ok(())
+}
+
+#[test]
+fn a_trailing_hyphen_in_a_class_is_a_member() -> Result<()> {
+    let entries = [
+        deny("/w/[a-]x")?,
+        read("/w/-x")?,
+        read("/w/ax")?,
+        read("/w/bx")?,
+    ];
+
+    assert_eq!(pairs(&entries), [(0, 1), (0, 2)]);
+    Ok(())
+}
+
+#[test]
+fn a_leading_hyphen_in_a_class_is_a_member() -> Result<()> {
+    let entries = [deny("/w/[-a]x")?, read("/w/-x")?, read("/w/bx")?];
+
+    assert_eq!(pairs(&entries), [(0, 1)]);
+    Ok(())
+}
+
+#[test]
+fn an_absolute_path_under_the_workspace_root_is_also_a_workspace_path() -> Result<()> {
+    let root = GuardedPath::absolute("/work/proj")?;
+    let secrets = GuardedEntry::Deny(GuardedPath::workspace(None).join("secrets/**")?);
+    let hook = read("/work/proj/secrets/hook.sh")?;
+    let outside = read("/work/other/secrets/hook.sh")?;
+
+    let found = conflicts(&[secrets, hook, outside], Some(&root));
+
+    let found: Vec<_> = found.iter().map(|c| (c.stricter, c.looser)).collect();
+    assert_eq!(found, [(0, 1)]);
+    Ok(())
+}
+
+#[test]
+fn a_home_path_is_windows_form_when_written_so_or_on_a_windows_host() -> Result<()> {
+    let written = GuardedPath::absolute_on("~\\.codex", false)?;
+    let hosted = GuardedPath::absolute_on("~/.Codex", true)?;
+    let unix = GuardedPath::absolute_on("~/.Codex", false)?;
+    let file = GuardedPath::absolute_on("~/.codex/hooks.json", false)?;
+
+    assert!(written.covers(&file, None));
+    assert!(hosted.covers(&file, None));
+    assert!(!unix.covers(&file, None));
+    Ok(())
+}
+
+#[test]
+fn a_workspace_is_windows_form_on_a_windows_host() -> Result<()> {
+    let hosted = GuardedPath::workspace_on(None, true).join("Secrets\\key")?;
+    let file = GuardedPath::workspace_on(None, false).join("secrets/key")?;
+
+    assert!(hosted.covers(&file, None));
+    assert!(
+        !GuardedPath::workspace_on(None, false)
+            .join("Secrets/key")?
+            .covers(&file, None)
+    );
+    Ok(())
+}
+
+#[test]
+fn a_leading_backslash_stays_literal_in_a_unix_absolute_path() -> Result<()> {
+    let entries = [deny("/\\secret/**")?, read("/secret/key")?];
+
+    assert_eq!(pairs(&entries), []);
+    Ok(())
+}
+
+#[test]
+fn a_unc_path_is_not_a_unix_path_with_the_same_segments() -> Result<()> {
+    let entries = [deny("/host/share")?, read("\\\\host\\share\\x")?];
+    let hosted = GuardedPath::absolute_on("//host/share", true)?;
+    let unc = GuardedPath::absolute_on("\\\\host\\share\\x", false)?;
+    let unix = GuardedPath::absolute_on("//host/share", false)?;
+
+    assert_eq!(pairs(&entries), []);
+    assert!(hosted.covers(&unc, None));
+    assert!(!unix.covers(&unc, None));
     Ok(())
 }
