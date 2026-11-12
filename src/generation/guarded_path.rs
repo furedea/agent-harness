@@ -107,6 +107,12 @@ impl GuardedPath {
         Self { root, segments }
     }
 
+    fn without_trailing_double_star(mut self) -> Self {
+        self.segments
+            .pop_if(|segment| *segment == Segment::DoubleStar);
+        self
+    }
+
     fn is_concrete(&self) -> bool {
         self.segments
             .iter()
@@ -124,10 +130,20 @@ fn split_root(text: &str) -> Result<(Root, &str)> {
     if let Some(rest) = text.strip_prefix('~') {
         return Ok((Root::Home, rest));
     }
+    if has_drive_prefix(text) {
+        return Ok((Root::Absolute, text));
+    }
     match text.strip_prefix('/') {
         Some(rest) => Ok((Root::Absolute, rest)),
         None => bail!("guarded path {text:?} must be absolute or start with ~"),
     }
+}
+
+/// `C:/...`, as a runtime root on Windows writes it; the drive stays the first segment.
+fn has_drive_prefix(text: &str) -> bool {
+    let mut chars = text.chars();
+    let drive = chars.next().is_some_and(|ch| ch.is_ascii_alphabetic());
+    drive && chars.next() == Some(':') && matches!(chars.next(), Some('/' | '\\'))
 }
 
 /// Splits `text` into segments, dropping empty and `.` parts and resolving `..` lexically.
@@ -261,8 +277,14 @@ impl GuardedEntry {
     pub(crate) fn new(path: GuardedPath, access: Access) -> Option<Self> {
         match access {
             Access::Deny => Some(Self::Deny(path)),
-            _ => path.is_concrete().then_some(Self::Looser { path, access }),
+            _ => Self::looser(path.without_trailing_double_star(), access),
         }
+    }
+
+    /// Codex reads a trailing `/**` on a looser entry as the whole subtree, so the entry is the
+    /// directory itself, which covers what is below it just the same.
+    fn looser(path: GuardedPath, access: Access) -> Option<Self> {
+        path.is_concrete().then_some(Self::Looser { path, access })
     }
 
     fn path(&self) -> &GuardedPath {
@@ -409,6 +431,16 @@ mod tests {
             required(&entries),
             [Access::Deny, Access::Deny, Access::Deny, Access::Read]
         );
+        Ok(())
+    }
+
+    #[test]
+    fn a_looser_subtree_entry_is_the_directory_and_a_drive_path_is_absolute() -> Result<()> {
+        let subtree = GuardedEntry::new(GuardedPath::absolute("~/.ssh/**")?, Access::Read);
+        let entries = [deny("~/.ssh/**")?, subtree.expect("a subtree is concrete")];
+
+        assert_eq!(required(&entries), [Access::Deny, Access::Deny]);
+        assert!(GuardedPath::absolute("C:/proj/.claude/hooks/guard.sh").is_ok());
         Ok(())
     }
 

@@ -308,6 +308,18 @@ fn a_source_path_that_climbs_above_its_root_is_rejected() {
     assert!(format!("{error:#}").contains("~/../x"));
 }
 
+#[test]
+fn a_source_subtree_read_entry_is_raised_to_the_generated_denial() -> Result<()> {
+    let document = merged_filesystem(
+        "[permissions.guarded.filesystem]\n\"~/.ssh/**\" = \"read\"\n",
+        r#"{"version":1,"rules":[{"pattern":"~/.ssh/**","access":["read"]}]}"#,
+    )?;
+
+    let filesystem = &document["permissions"]["guarded"]["filesystem"];
+    assert_eq!(filesystem["~/.ssh/**"].as_str(), Some("none"));
+    Ok(())
+}
+
 fn test_root(name: &str) -> Result<std::path::PathBuf> {
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)?
