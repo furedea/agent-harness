@@ -128,7 +128,7 @@ function buildPolicy(source: Policy, cwd: string, temporary: string, protectedFi
 	if (common) {
 		policy.filesystem.allowWrite.push(common);
 		policy.filesystem.denyWrite.push(join(common, "hooks"), join(common, "config"), join(common, "commondir"), join(common, "config.worktree"),
-			join(common, "modules/**/config"), join(common, "modules/**/hooks"),
+			join(common, "modules/**/config"), join(common, "modules/**/config.worktree"), join(common, "modules/**/hooks"),
 			join(common, "worktrees/*/config.worktree"), join(common, "worktrees/*/commondir"), join(common, "worktrees/*/gitdir"),
 		);
 	}

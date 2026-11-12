@@ -110,7 +110,7 @@ if (args[3].includes('file_operations.mjs')) {
   for (const path of [join(realpathSync(repo), '.git/hooks'), join(realpathSync(repo), '.git/config'), join(realpathSync(repo), '.git/worktrees/*/config.worktree')]) {
     assert.ok(record.settings.filesystem.denyWrite.includes(path));
   }
-  for (const suffix of ['config.worktree', 'modules/**/config', 'modules/**/hooks']) {
+  for (const suffix of ['config.worktree', 'modules/**/config', 'modules/**/config.worktree', 'modules/**/hooks']) {
     assert.ok(record.settings.filesystem.denyWrite.includes(join(realpathSync(repo), '.git', suffix)), suffix);
   }
   // Nested repositories and submodule gitfiles inside the worktree are denied; the worktree's own .git is not.
