@@ -8,7 +8,7 @@ use crate::{
     file_op::FileOp,
     generation::{
         GenerationContext,
-        guarded_path::{GuardedEntry, required_accesses},
+        guarded_path::required_accesses,
         permission_rule::{CodexAccess, CodexFilesystemEntry, CodexScope},
         secret_path_policy,
     },
@@ -86,20 +86,12 @@ fn guarded_filesystem_entries(context: GenerationContext<'_>) -> Result<Vec<Code
 }
 
 fn raise_covered(entries: &mut [CodexFilesystemEntry]) -> Result<()> {
-    let modeled = entries
+    let guarded = entries
         .iter()
         .map(CodexFilesystemEntry::guarded)
         .collect::<Result<Vec<_>>>()?;
-    let (indexes, guarded): (Vec<usize>, Vec<GuardedEntry>) = modeled
-        .into_iter()
-        .enumerate()
-        .filter_map(|(index, entry)| Some((index, entry?)))
-        .unzip();
-    for (index, access) in indexes.into_iter().zip(required_accesses(&guarded)) {
-        entries
-            .get_mut(index)
-            .into_iter()
-            .for_each(|entry| entry.access = CodexAccess::from(access));
+    for (entry, access) in entries.iter_mut().zip(required_accesses(&guarded)) {
+        entry.access = CodexAccess::from(access);
     }
     Ok(())
 }

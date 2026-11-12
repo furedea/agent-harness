@@ -187,17 +187,18 @@ pub(crate) struct CodexFilesystemEntry {
 }
 
 impl CodexFilesystemEntry {
-    /// The entry in the guarded path model; `None` when it is a looser entry on a pattern.
+    /// The entry in the guarded path model.
     ///
     /// # Errors
     ///
-    /// Returns an error when the path climbs above its root.
-    pub(crate) fn guarded(&self) -> Result<Option<GuardedEntry>> {
+    /// Returns an error when the path climbs above its root or is a looser entry on a pattern.
+    pub(crate) fn guarded(&self) -> Result<GuardedEntry> {
         let path = match self.scope {
             CodexScope::Absolute => GuardedPath::absolute(&self.path)?,
             CodexScope::WorkspaceRoots => GuardedPath::workspace().join(&self.path)?,
         };
-        Ok(GuardedEntry::new(path, self.access.guarded()))
+        GuardedEntry::new(path, self.access.guarded())
+            .ok_or_else(|| anyhow::anyhow!("Codex cannot loosen the pattern {:?}", self.path))
     }
 
     /// A protected installed path: readable, never writable.
@@ -217,7 +218,7 @@ fn read_only_path(pattern: &str) -> Result<&str> {
     );
     let path = pattern.strip_suffix("/**").unwrap_or(pattern);
     ensure!(
-        !path.contains(['*', '?', '[', ']']),
+        !path.contains(['*', '?', '[', ']', '{', '}']),
         "Codex cannot deny writes only for glob pattern {pattern:?}; deny reads too or use an exact path or a trailing /**"
     );
     Ok(path)
@@ -371,6 +372,7 @@ mod tests {
             ("~/.config", CodexAccess::Read)
         );
         assert!(codex_rule("~/.config/*.json", PathAccess::Write).is_err());
+        assert!(codex_rule("~/.config/{a,b}", PathAccess::Write).is_err());
         Ok(())
     }
 }

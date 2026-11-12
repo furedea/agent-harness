@@ -132,8 +132,27 @@ fn split_root(text: &str) -> Result<(Root, &str)> {
 
 /// Splits `text` into segments, dropping empty and `.` parts and resolving `..` lexically.
 fn push_segments(segments: &mut Vec<Segment>, text: &str) -> Option<()> {
-    text.split('/')
+    widen_braces(text)
+        .split('/')
         .try_for_each(|part| apply_part(segments, part))
+}
+
+/// A `{a/b}` group spans segments, so everything from its segment on is widened to `**`, which
+/// only ever makes the pattern cover more paths.
+fn widen_braces(text: &str) -> String {
+    let Some(open) = text.find('{') else {
+        return text.to_owned();
+    };
+    let group = text.get(open..).unwrap_or_default();
+    let group = group.split_once('}').map_or(group, |(inside, _)| inside);
+    if !group.contains('/') {
+        return text.to_owned();
+    }
+    let keep = text.get(..open).unwrap_or_default();
+    let directory = keep
+        .rfind('/')
+        .map_or("", |slash| keep.get(..=slash).unwrap_or(""));
+    format!("{directory}**")
 }
 
 fn apply_part(segments: &mut Vec<Segment>, part: &str) -> Option<()> {
@@ -374,6 +393,22 @@ mod tests {
         let entries = [deny("~/.config/../.aws//")?, read("~/./.aws/credentials")?];
 
         assert_eq!(required(&entries), [Access::Deny, Access::Deny]);
+        Ok(())
+    }
+
+    #[test]
+    fn a_brace_group_spanning_a_slash_is_widened_to_everything_below() -> Result<()> {
+        let entries = [
+            deny("/w/{a/b,c}")?,
+            read("/w/a/b")?,
+            read("/w/z/deep")?,
+            read("/v/a")?,
+        ];
+
+        assert_eq!(
+            required(&entries),
+            [Access::Deny, Access::Deny, Access::Deny, Access::Read]
+        );
         Ok(())
     }
 
