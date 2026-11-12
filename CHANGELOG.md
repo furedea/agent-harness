@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.9.13](https://github.com/furedea/agent-harness/compare/agent-harness-v0.9.12...agent-harness-v0.9.13) (2026-11-12)
+
+
+### Features
+
+* **codex:** apply the secret path policy to the guarded filesystem ([#233](https://github.com/furedea/agent-harness/issues/233)) ([0830fd9](https://github.com/furedea/agent-harness/commit/0830fd91242c7be251ffbde7f8e0350788df96b1))
+* **pi:** run Pi shell and file tools inside srt ([#228](https://github.com/furedea/agent-harness/issues/228)) ([37de3ac](https://github.com/furedea/agent-harness/commit/37de3ac34cf41d26de1bcdd101a1b6c043c85545))
+
+
+### Bug Fixes
+
+* dedupe the Nix socket in Pi's srt policy and name the failed sidecar write ([#237](https://github.com/furedea/agent-harness/issues/237)) ([1ccafe0](https://github.com/furedea/agent-harness/commit/1ccafe0492afb81b920effb76d91a25d13c9e734))
+* fail on missing HOME, bound GitHub API waits, reject unknown hook keys ([#218](https://github.com/furedea/agent-harness/issues/218)) ([c0b936d](https://github.com/furedea/agent-harness/commit/c0b936d71d287f700ec931f2c2d69b54c4534338))
+* **install:** publish atomically and keep Claude settings keys the harness does not own ([#219](https://github.com/furedea/agent-harness/issues/219)) ([c914c76](https://github.com/furedea/agent-harness/commit/c914c7645e294b8836aa0a2e8d1fcc1d6a52549a))
+* **pi:** confirm ask decisions and deliver skills, instructions, and settings ([#223](https://github.com/furedea/agent-harness/issues/223)) ([2e755af](https://github.com/furedea/agent-harness/commit/2e755aff63eda2ff3460a117005ea871ff22ee29))
+
 ## [0.9.12](https://github.com/furedea/agent-harness/compare/agent-harness-v0.9.11...agent-harness-v0.9.12) (2026-11-11)
 
 
