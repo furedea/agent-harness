@@ -9,7 +9,8 @@ use crate::file_op::FileOp;
 const NIX_DAEMON_SOCKET: &str = "/nix/var/nix/daemon-socket/socket";
 
 pub(crate) fn policy_op(context: GenerationContext<'_>, out: &Path) -> Result<FileOp> {
-    let settings = claude_config::settings_for_runtime(context)?;
+    let settings = claude_config::settings_for_runtime(context)
+        .context("generate the Pi srt policy: render the Claude settings it derives from")?;
     let sandbox = settings
         .get("sandbox")
         .context("generate the Pi srt policy: the Claude settings have no sandbox")?;
@@ -43,10 +44,9 @@ pub(crate) fn policy_op(context: GenerationContext<'_>, out: &Path) -> Result<Fi
             "denyWrite": strings(filesystem, "denyWrite")?
         }
     });
-    FileOp::write_json(
-        out.join(".pi/agent/extensions/sandbox_policy.json"),
-        &policy,
-    )
+    let path = out.join(".pi/agent/extensions/sandbox_policy.json");
+    FileOp::write_json(path.clone(), &policy)
+        .with_context(|| format!("generate the Pi srt policy: write {}", path.display()))
 }
 
 fn push_unique(values: &mut Vec<Value>, value: Value) {
