@@ -118,7 +118,7 @@ pub(crate) fn srt_denied_read_paths(source: &Source) -> Result<Vec<String>> {
 /// Claude reads `//x` as absolute and `/x` as relative to the project, and matches a bare name or
 /// a single-segment directory (`secrets/**`) at any depth. srt reads `/x` as absolute and a
 /// relative entry only beneath the working directory, so `/x` is rejected as ambiguous and a
-/// pattern Claude matches at any depth gets a `**/` prefix. srt has no escapes, braces, or negation, and on Linux ignores an
+/// pattern Claude matches at any depth gets a `**/` prefix. srt has no escapes, braces, negation, or negated character classes, and on Linux ignores an
 /// absolute pattern whose first component has a wildcard, so those are rejected too.
 fn srt_path(pattern: &str) -> Result<String> {
     ensure!(
@@ -128,6 +128,10 @@ fn srt_path(pattern: &str) -> Result<String> {
     ensure!(
         !pattern.contains(['{', '}']),
         "srt does not expand braces, so {pattern:?} would match a literal name; list each path as its own rule"
+    );
+    ensure!(
+        !pattern.contains("[!") && !pattern.contains("[^"),
+        "srt does not negate character classes, so {pattern:?} would match a literal ! or ^; list the allowed characters instead"
     );
     let trimmed = pattern.trim_end_matches('/');
     let path =
@@ -275,6 +279,8 @@ mod tests {
             "!sample.env",
             "//**/.env",
             "//opt*/keys/**",
+            "keys/[!a]*",
+            "[^a-z].env",
         ] {
             let error = srt_path(pattern).unwrap_err().to_string();
 

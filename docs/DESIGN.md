@@ -239,7 +239,7 @@ because srt's restrictions apply to every process the agent starts. srt reads ea
 (`*`, `**`, `?`, `[...]`, no escapes, no braces, no negation) and expands `~` and `~/`; a relative
 entry is anchored at the working directory. A bare name or single-segment directory (`.env`, `secrets/**`) therefore becomes `**/pattern` so
 it matches at any depth as in Claude, while other relative patterns (`src/keys/*`) stay anchored, and `//x` becomes `/x`. Generation fails, naming the pattern, for
-a leading `/`, `.` or `..` parts, backslashes, braces, a leading `!`, or a wildcard in the first
+a leading `/`, `.` or `..` parts, backslashes, braces, a leading `!`, a negated character class (`[!a]`, `[^a]`), or a wildcard in the first
 component of an absolute pattern (srt on Linux skips it). A `**/` pattern guards only beneath the
 working directory, as `:workspace_roots` does for Codex.
 
