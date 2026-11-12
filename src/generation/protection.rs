@@ -6,7 +6,11 @@ use serde::Serialize;
 
 use crate::{
     file_op::FileOp,
-    generation::GenerationContext,
+    generation::{
+        GenerationContext,
+        permission_rule::{CodexFilesystemEntry, CodexScope},
+        secret_path_policy,
+    },
     layout::{InstalledLayout, SourceLayout},
     runtime_root::RuntimeRoot,
     source_model::Source,
@@ -42,14 +46,56 @@ pub(crate) fn codex_config_fragment(source: &Source) -> Result<String> {
 }
 
 pub(crate) fn codex_config_fragment_for_runtime(context: GenerationContext<'_>) -> Result<String> {
+    let entries = guarded_filesystem_entries(context)?;
     let mut fragment = String::from("[permissions.guarded.filesystem]\n");
 
-    for path in protected_paths_for_runtime(context)? {
-        writeln!(fragment, "{} = \"read\"", toml_edit::Key::new(path))?;
-    }
+    write_entries(&mut fragment, &entries, CodexScope::Absolute)?;
     writeln!(fragment, "glob_scan_max_depth = {GLOB_SCAN_MAX_DEPTH}")?;
+    if entries
+        .iter()
+        .any(|entry| entry.scope == CodexScope::WorkspaceRoots)
+    {
+        fragment.push_str("\n[permissions.guarded.filesystem.\":workspace_roots\"]\n");
+        write_entries(&mut fragment, &entries, CodexScope::WorkspaceRoots)?;
+    }
 
     Ok(fragment)
+}
+
+/// Protected harness paths first, then secret paths; the stricter access wins on one path.
+fn guarded_filesystem_entries(context: GenerationContext<'_>) -> Result<Vec<CodexFilesystemEntry>> {
+    let protected = protected_paths_for_runtime(context)?
+        .into_iter()
+        .map(CodexFilesystemEntry::protected);
+    let secret = secret_path_policy::codex_filesystem_entries(context.source)?;
+
+    let mut entries: Vec<CodexFilesystemEntry> = Vec::new();
+    for entry in protected.chain(secret) {
+        match entries
+            .iter_mut()
+            .find(|known| known.scope == entry.scope && known.path == entry.path)
+        {
+            Some(known) => known.access = known.access.max(entry.access),
+            None => entries.push(entry),
+        }
+    }
+    Ok(entries)
+}
+
+fn write_entries(
+    fragment: &mut String,
+    entries: &[CodexFilesystemEntry],
+    scope: CodexScope,
+) -> Result<()> {
+    for entry in entries.iter().filter(|entry| entry.scope == scope) {
+        writeln!(
+            fragment,
+            "{} = \"{}\"",
+            toml_edit::Key::new(&entry.path),
+            entry.access.as_str()
+        )?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -211,6 +257,71 @@ mod tests {
         assert!(content.contains("\"~/.claude/hooks/guard.sh\" = \"read\""));
         assert!(content.contains("glob_scan_max_depth = 5"));
 
+        crate::shell::fixtures::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn codex_config_fragment_applies_the_secret_path_policy() -> Result<()> {
+        let root = test_root("codex_config_fragment_applies_the_secret_path_policy")?;
+        write_minimal_source(&root)?;
+        write_file(
+            &root.join("hooks/rules/secret_path_policy.json"),
+            r#"{"version":1,"rules":[
+{"pattern":"~/.ssh/**","access":["read","write"]},
+{"pattern":"**/secrets/**","access":["read"]},
+{"pattern":"~/.aws/credentials","access":["write"]},
+{"pattern":"~/.claude/hooks/guard.sh","access":["read"]},
+{"pattern":"~/.codex/hooks.json","access":["write"]}
+]}"#,
+        )?;
+
+        let content = codex_config_fragment(&load_source(&root)?)?;
+
+        let (table, scoped) = content.split_once("\n[").unwrap();
+        let lines: Vec<&str> = table.lines().collect();
+
+        assert!(lines.contains(&"\"~/.codex/hooks/adapt.sh\" = \"read\""));
+        assert!(lines.contains(&"\"~/.codex/hooks.json\" = \"read\""));
+        assert_eq!(
+            lines
+                .iter()
+                .filter(|line| line.starts_with("\"~/.claude/hooks/guard.sh\""))
+                .collect::<Vec<_>>(),
+            [&"\"~/.claude/hooks/guard.sh\" = \"none\""],
+        );
+        assert_eq!(
+            lines[lines.len() - 3..],
+            [
+                "\"~/.ssh/**\" = \"none\"",
+                "\"~/.aws/credentials\" = \"read\"",
+                "glob_scan_max_depth = 5",
+            ],
+        );
+        assert_eq!(
+            scoped,
+            "permissions.guarded.filesystem.\":workspace_roots\"]\n\"**/secrets/**\" = \"none\"\n",
+        );
+        content.parse::<toml_edit::DocumentMut>()?;
+        crate::shell::fixtures::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn codex_config_fragment_rejects_a_write_only_glob_codex_cannot_express() -> Result<()> {
+        let root = test_root("codex_config_fragment_rejects_write_only_glob")?;
+        write_minimal_source(&root)?;
+        write_file(
+            &root.join("hooks/rules/secret_path_policy.json"),
+            r#"{"version":1,"rules":[{"pattern":".env*","access":["write"]}]}"#,
+        )?;
+
+        let error = format!(
+            "{:#}",
+            codex_config_fragment(&load_source(&root)?).unwrap_err()
+        );
+
+        assert!(error.contains(".env*"));
         crate::shell::fixtures::remove_dir_all(root)?;
         Ok(())
     }
