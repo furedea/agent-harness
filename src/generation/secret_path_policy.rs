@@ -115,11 +115,16 @@ pub(crate) fn srt_denied_read_paths(source: &Source) -> Result<Vec<String>> {
 
 /// Resolves a Claude-style pattern to the entry srt reads the same way.
 ///
-/// Claude reads `//x` as absolute, `/x` as relative to the project, and a slash-free pattern as
-/// matching at any depth. srt reads `/x` as absolute and a relative entry only beneath the
-/// working directory, so `/x` is rejected as ambiguous and a slash-free pattern gets a `**/`
-/// prefix. srt does not expand braces, so they are rejected too.
+/// Claude reads `//x` as absolute and `/x` as relative to the project, and matches a relative
+/// pattern at any depth. srt reads `/x` as absolute and a relative entry only beneath the working
+/// directory, so `/x` is rejected as ambiguous and a relative pattern gets a `**/` prefix (the
+/// prefix can only deny more). srt has no escapes and does not expand braces, so a backslash or a
+/// brace is rejected too.
 fn srt_path(pattern: &str) -> Result<String> {
+    ensure!(
+        !pattern.contains('\\'),
+        "srt has no escape syntax, so {pattern:?} would match a name with a backslash; list each path as its own rule"
+    );
     ensure!(
         !pattern.contains(['{', '}']),
         "srt does not expand braces, so {pattern:?} would match a literal name; list each path as its own rule"
@@ -145,7 +150,7 @@ fn srt_path(pattern: &str) -> Result<String> {
                 .any(|part| matches!(part, "" | "." | "..")),
         "srt needs {path:?} to be absolute, start with ~/, or stay inside the project without . or .. parts"
     );
-    if !is_home && !path.contains('/') {
+    if !is_home && !path.starts_with("**/") {
         return Ok(format!("**/{path}"));
     }
     Ok(path.to_owned())
@@ -219,6 +224,7 @@ mod tests {
     {"pattern": "~/.ssh/**", "access": ["read"]},
     {"pattern": "**/secrets/**", "access": ["read"]},
     {"pattern": "//etc/secret/", "access": ["read"]},
+    {"pattern": "src/keys/*", "access": ["read"]},
     {"pattern": "**/audit/**", "access": ["write"]}
   ]
 }
@@ -229,7 +235,13 @@ mod tests {
 
         assert_eq!(
             paths,
-            ["**/.env", "~/.ssh/**", "**/secrets/**", "/etc/secret"],
+            [
+                "**/.env",
+                "~/.ssh/**",
+                "**/secrets/**",
+                "/etc/secret",
+                "**/src/keys/*"
+            ],
         );
 
         crate::shell::fixtures::remove_dir_all(root)?;
@@ -238,11 +250,11 @@ mod tests {
 
     #[test]
     fn srt_rejects_patterns_it_would_read_differently() -> Result<()> {
-        for pattern in ["a/{b,c}", "/project/x", "a/../b", "./"] {
+        for pattern in ["a/{b,c}", "/project/x", "a/../b", "./", "a/key\\[1\\]"] {
             let error = srt_path(pattern).unwrap_err().to_string();
 
             assert!(
-                error.contains(pattern.trim_end_matches('/')),
+                error.contains(&format!("{:?}", pattern.trim_end_matches('/'))),
                 "{pattern}: {error}"
             );
         }
