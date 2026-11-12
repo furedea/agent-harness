@@ -139,6 +139,11 @@ fn split_root(text: &str) -> Result<(Root, &str)> {
     }
 }
 
+/// Whether a table key names an absolute location: `~`, `/...` or a Windows drive path.
+pub(crate) fn is_absolute_key(key: &str) -> bool {
+    key.starts_with(['/', '~']) || has_drive_prefix(key)
+}
+
 /// `C:/...`, as a runtime root on Windows writes it; the drive stays the first segment.
 fn has_drive_prefix(text: &str) -> bool {
     let mut chars = text.chars();
@@ -305,11 +310,16 @@ impl GuardedEntry {
 ///
 /// A denial already has the strictest access, so only looser entries are raised.
 pub(crate) fn required_accesses(entries: &[GuardedEntry]) -> Vec<Access> {
-    entries
+    raised_by(entries, entries)
+}
+
+/// The access each of `targets` needs once the `coverers` that cover it are taken into account.
+pub(crate) fn raised_by(targets: &[GuardedEntry], coverers: &[GuardedEntry]) -> Vec<Access> {
+    targets
         .iter()
         .map(|entry| match entry {
             GuardedEntry::Deny(_) => Access::Deny,
-            GuardedEntry::Looser { path, access } => strictest_cover(entries, path).max(*access),
+            GuardedEntry::Looser { path, access } => strictest_cover(coverers, path).max(*access),
         })
         .collect()
 }
@@ -321,6 +331,12 @@ fn strictest_cover(entries: &[GuardedEntry], path: &GuardedPath) -> Access {
         .map(GuardedEntry::access)
         .max()
         .unwrap_or(Access::Write)
+}
+
+impl GuardedEntry {
+    pub(crate) fn is_denial(&self) -> bool {
+        matches!(self, Self::Deny(_))
+    }
 }
 
 #[cfg(test)]
@@ -441,6 +457,7 @@ mod tests {
 
         assert_eq!(required(&entries), [Access::Deny, Access::Deny]);
         assert!(GuardedPath::absolute("C:/proj/.claude/hooks/guard.sh").is_ok());
+        assert!(is_absolute_key("C:/work") && !is_absolute_key("work/C:"));
         Ok(())
     }
 

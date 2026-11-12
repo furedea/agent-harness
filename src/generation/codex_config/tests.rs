@@ -320,6 +320,32 @@ fn a_source_subtree_read_entry_is_raised_to_the_generated_denial() -> Result<()>
     Ok(())
 }
 
+#[test]
+fn a_source_exception_under_a_broader_source_entry_is_left_alone() -> Result<()> {
+    let document = merged_filesystem(
+        "[permissions.guarded.filesystem]\n\":root\" = \"read\"\n\":workspace_roots\" = \"write\"\n\"/tmp\" = \"write\"\n",
+        r#"{"version":1,"rules":[]}"#,
+    )?;
+
+    let filesystem = &document["permissions"]["guarded"]["filesystem"];
+    assert_eq!(filesystem[":root"].as_str(), Some("read"));
+    assert_eq!(filesystem[":workspace_roots"].as_str(), Some("write"));
+    assert_eq!(filesystem["/tmp"].as_str(), Some("write"));
+    Ok(())
+}
+
+#[test]
+fn a_source_slash_tmp_denial_covers_a_generated_path_under_tmp() -> Result<()> {
+    let document = merged_filesystem(
+        "[permissions.guarded.filesystem]\n\":slash_tmp\" = \"deny\"\n",
+        r#"{"version":1,"rules":[{"pattern":"//tmp/secret","access":["write"]}]}"#,
+    )?;
+
+    let filesystem = &document["permissions"]["guarded"]["filesystem"];
+    assert_eq!(filesystem["/tmp/secret"].as_str(), Some("none"));
+    Ok(())
+}
+
 fn test_root(name: &str) -> Result<std::path::PathBuf> {
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)?

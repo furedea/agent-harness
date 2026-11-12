@@ -8,7 +8,9 @@
 use anyhow::Result;
 use toml_edit::{DocumentMut, Item, Table, TableLike, value};
 
-use crate::generation::guarded_path::{Access, GuardedEntry, GuardedPath, required_accesses};
+use crate::generation::guarded_path::{
+    Access, GuardedEntry, GuardedPath, is_absolute_key, raised_by,
+};
 
 pub(super) fn guarded_filesystem(
     source: &mut DocumentMut,
@@ -23,16 +25,31 @@ pub(super) fn guarded_filesystem(
     keep_scalar_workspace_grants(source, generated);
     let declared = located_entries(source)?;
     let produced = located_entries(generated)?;
-    let entries: Vec<GuardedEntry> = declared
+    let declared_entries = entries_of(&declared);
+    let produced_entries = entries_of(&produced);
+    let all: Vec<GuardedEntry> = declared_entries
         .iter()
-        .chain(&produced)
-        .map(|located| located.entry.clone())
+        .chain(&produced_entries)
+        .cloned()
         .collect();
-    let required = required_accesses(&entries);
-    let (for_source, for_generated) = required.split_at(declared.len());
-    raise(source, &declared, for_source);
-    raise(generated, &produced, for_generated);
+    let denials: Vec<GuardedEntry> = produced_entries
+        .iter()
+        .filter(|entry| entry.is_denial())
+        .cloned()
+        .collect();
+    // A generated entry must not weaken anything, but a source entry changes only when a
+    // generated denial covers it: the source may deliberately open a path under a broader one,
+    // such as `:workspace_roots = "write"` under `:root = "read"`.
+    raise(source, &declared, &raised_by(&declared_entries, &denials));
+    raise(generated, &produced, &raised_by(&produced_entries, &all));
     Ok(())
+}
+
+fn entries_of(located: &[Located]) -> Vec<GuardedEntry> {
+    located
+        .iter()
+        .map(|located| located.entry.clone())
+        .collect()
 }
 
 fn guarded_filesystem_mut(document: &mut DocumentMut) -> Option<&mut dyn TableLike> {
@@ -127,7 +144,8 @@ fn base_path(key: &str) -> Result<Option<GuardedPath>> {
     match key {
         ":root" => Ok(Some(GuardedPath::everything())),
         _ if WORKSPACE_KEYS.contains(&key) => Ok(Some(GuardedPath::workspace())),
-        _ if key.starts_with('/') || key.starts_with('~') => GuardedPath::absolute(key).map(Some),
+        ":slash_tmp" => GuardedPath::absolute("/tmp").map(Some),
+        _ if is_absolute_key(key) => GuardedPath::absolute(key).map(Some),
         _ => Ok(None),
     }
 }
