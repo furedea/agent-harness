@@ -233,15 +233,21 @@ sequenceDiagram
 
 ### Codex guarded filesystem
 
-The secret path policy reaches Codex as `[permissions.guarded.filesystem]` entries: a denied read
-is `"none"`, a write-only denial is `"read"`. Codex applies the more specific entry, so a looser
-entry under a stricter one (`secrets/key = "read"` under `secrets/** = "none"`) reopens a denied
-path. The harness never rewrites guarded entries to guess which side was meant. It compares the
-generated entries with each other and with the source `codex/config.toml` and fails, naming both
-entries, when one covers a looser one. Only denials may be patterns; the looser entry is always a
-concrete path, so two globs are never compared with each other and a glob looser than another glob
-is not detected. A write-only denial with a glob (other than a trailing `/**`) has no Codex form
-and fails too.
+The secret path policy reaches Codex as `[permissions.guarded.filesystem]` entries: a rule that
+denies reads is `"none"`. A rule that only denies writes is not rendered for Codex at all. Codex's
+filesystem permissions apply to every process the agent starts, while Claude's `Edit(...)` deny
+applies only to the Edit tool, and the write-only rules guard harness state that harness scripts
+write themselves (`verification_session.py` writes under `**/agent-harness/{verification,
+trusted-owners,audit}/**`). Denying those writes in Codex's sandbox would break the scripts; hooks
+keep enforcing them. This matches the Claude Code sandbox, which denies reading such paths but
+allows writing to `~/.local/state/agent-harness`.
+
+Codex applies the more specific entry, so a looser entry under a stricter one (a protected
+`~/.codex/hooks/adapt.sh = "read"` under `~/.codex/** = "none"`) reopens a denied path. The harness
+never rewrites guarded entries to guess which side was meant. It compares the generated entries
+with each other and with the source `codex/config.toml` and fails, naming both entries, when one
+covers a looser one. Only denials may be patterns; the looser entry is always a concrete path, so
+two globs are never compared with each other and a glob looser than another glob is not detected.
 
 On platforms that expand unreadable globs before the sandbox starts, Codex caps `**` at
 `glob_scan_max_depth` (5), so a secret nested deeper stays readable by a command that bypasses the

@@ -64,6 +64,27 @@ impl PathPattern {
     pub(crate) fn as_str(&self) -> &str {
         &self.0
     }
+
+    /// Renders the pattern as a Codex `[permissions.<profile>.filesystem]` entry denying all
+    /// access (`none`), for a rule that denies reads.
+    ///
+    /// Codex accepts a glob key only with `none`, and only as an absolute or `~/` key or as a
+    /// subpath under `:workspace_roots`, so a pattern it cannot express is an error instead of
+    /// a config Codex would reject. A rule that only denies writes has no Codex entry: Codex's
+    /// permissions apply to every process the agent starts, and the harness's own scripts write
+    /// those paths.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the pattern is not a path Codex can address.
+    pub(crate) fn codex_denied_read(&self) -> Result<CodexFilesystemEntry> {
+        let (scope, path) = codex_location(self.as_str())?;
+        Ok(CodexFilesystemEntry {
+            scope,
+            path,
+            access: CodexAccess::None,
+        })
+    }
 }
 
 impl TryFrom<String> for PathPattern {
@@ -113,30 +134,6 @@ impl PathRule {
         };
         format!("{tool}({})", self.pattern.as_str())
     }
-
-    /// Renders the rule as a Codex `[permissions.<profile>.filesystem]` entry.
-    ///
-    /// Codex has no write-only deny: a denied read becomes `none` and a denied write becomes
-    /// `read`. It accepts glob keys only with `none` (or a trailing `/**` on a subtree), and
-    /// only as absolute or `~/` keys or as subpaths under `:workspace_roots`, so a rule it
-    /// cannot express is an error instead of a config Codex would reject.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error when the pattern is not a Codex path or a write-only rule uses a glob.
-    pub(crate) fn codex(&self) -> Result<CodexFilesystemEntry> {
-        let pattern = self.pattern.as_str();
-        let (path, access) = match self.access {
-            PathAccess::Read => (pattern, CodexAccess::None),
-            PathAccess::Write => (read_only_path(pattern)?, CodexAccess::Read),
-        };
-        let (scope, path) = codex_location(path, matches!(self.access, PathAccess::Read))?;
-        Ok(CodexFilesystemEntry {
-            scope,
-            path,
-            access,
-        })
-    }
 }
 
 /// How much of a path Codex lets a command touch; a later variant is stricter.
@@ -180,27 +177,13 @@ impl CodexFilesystemEntry {
     }
 }
 
-fn read_only_path(pattern: &str) -> Result<&str> {
-    ensure!(
-        pattern.contains('/') || pattern.starts_with('~'),
-        "Codex cannot deny writes only to {pattern:?} at any depth; give a path with a directory or deny reads too"
-    );
-    let path = pattern.strip_suffix("/**").unwrap_or(pattern);
-    ensure!(
-        !path.contains(['*', '?', '[', ']', '{', '}']),
-        "Codex cannot deny writes only for glob pattern {pattern:?}; deny reads too or use an exact path or a trailing /**"
-    );
-    Ok(path)
-}
-
 /// Resolves a Claude-style pattern to where and how Codex matches it.
 ///
 /// Claude reads `//x` as absolute, `/x` as relative to the project, and a slash-free relative
 /// pattern as matching at any depth. Codex only has absolute and `~/` keys and
 /// `:workspace_roots` subpaths, so `/x` is rejected as ambiguous and a slash-free pattern gets a
-/// `**/` prefix when `match_any_depth` is set. A path whose directory part was stripped is
-/// slash-free but stays anchored at the workspace root.
-fn codex_location(path: &str, match_any_depth: bool) -> Result<(CodexScope, String)> {
+/// `**/` prefix so it still matches at any depth.
+fn codex_location(path: &str) -> Result<(CodexScope, String)> {
     if let Some(absolute) = path.strip_prefix("//") {
         return Ok((CodexScope::Absolute, format!("/{absolute}")));
     }
@@ -215,7 +198,7 @@ fn codex_location(path: &str, match_any_depth: bool) -> Result<(CodexScope, Stri
         !path.split('/').any(|part| matches!(part, "" | "." | "..")),
         "Codex needs {path:?} to be absolute, start with ~/, or be a descendant of the workspace without . or .. parts"
     );
-    if path.contains('/') || !match_any_depth {
+    if path.contains('/') {
         return Ok((CodexScope::WorkspaceRoots, path.to_owned()));
     }
     Ok((CodexScope::WorkspaceRoots, format!("**/{path}")))
@@ -292,56 +275,32 @@ mod tests {
         Ok(())
     }
 
-    fn codex_rule(pattern: &str, access: PathAccess) -> Result<CodexFilesystemEntry> {
-        PathRule::new(PathPattern::try_from(pattern.to_owned())?, access).codex()
+    fn codex_entry(pattern: &str) -> Result<CodexFilesystemEntry> {
+        PathPattern::try_from(pattern.to_owned())?.codex_denied_read()
     }
 
     #[test]
-    fn codex_denied_read_is_none_and_denied_write_is_read() -> Result<()> {
-        let read = codex_rule("~/.ssh/**", PathAccess::Read)?;
-        let write = codex_rule("//etc/hosts", PathAccess::Write)?;
+    fn codex_denied_read_is_none() -> Result<()> {
+        let entry = codex_entry("~/.ssh/**")?;
 
         assert_eq!(
-            (read.scope, read.path.as_str(), read.access),
+            (entry.scope, entry.path.as_str(), entry.access),
             (CodexScope::Absolute, "~/.ssh/**", CodexAccess::None)
         );
-        assert_eq!(
-            (write.path.as_str(), write.access),
-            ("/etc/hosts", CodexAccess::Read)
-        );
-        assert!(CodexAccess::None > CodexAccess::Read);
+        assert_eq!(codex_entry("//etc/hosts")?.path, "/etc/hosts");
         Ok(())
     }
 
     #[test]
     fn codex_relative_patterns_scope_to_the_workspace() -> Result<()> {
-        let nested = codex_rule("secrets/**", PathAccess::Read)?;
-        let any_depth = codex_rule(".env*", PathAccess::Read)?;
+        let nested = codex_entry("secrets/**")?;
+        let any_depth = codex_entry(".env*")?;
 
         assert_eq!(nested.scope, CodexScope::WorkspaceRoots);
         assert_eq!(nested.path, "secrets/**");
         assert_eq!(any_depth.path, "**/.env*");
-        assert!(codex_rule("../x", PathAccess::Read).is_err());
-        assert!(codex_rule("/x", PathAccess::Read).is_err());
-        assert!(codex_rule(".env", PathAccess::Write).is_err());
-        let subtree = codex_rule("secrets/**", PathAccess::Write)?;
-        assert_eq!(
-            (subtree.scope, subtree.path.as_str(), subtree.access),
-            (CodexScope::WorkspaceRoots, "secrets", CodexAccess::Read)
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn codex_write_only_subtree_drops_the_trailing_glob() -> Result<()> {
-        let entry = codex_rule("~/.config/**", PathAccess::Write)?;
-
-        assert_eq!(
-            (entry.path.as_str(), entry.access),
-            ("~/.config", CodexAccess::Read)
-        );
-        assert!(codex_rule("~/.config/*.json", PathAccess::Write).is_err());
-        assert!(codex_rule("~/.config/{a,b}", PathAccess::Write).is_err());
+        assert!(codex_entry("../x").is_err());
+        assert!(codex_entry("/x").is_err());
         Ok(())
     }
 }

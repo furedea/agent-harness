@@ -138,11 +138,12 @@ fn conflict_message(source_config: &str, policy: &str) -> String {
     format!("{error:#}")
 }
 
-const WRITE_ONLY_SECRETS_FILE: &str =
-    r#"{"version":1,"rules":[{"pattern":"secrets/file","access":["write"]}]}"#;
-const WRITE_ONLY_AWS_CREDENTIALS: &str =
-    r#"{"version":1,"rules":[{"pattern":"~/.aws/credentials","access":["write"]}]}"#;
 const NO_RULES: &str = r#"{"version":1,"rules":[]}"#;
+const DENY_AWS: &str = r#"{"version":1,"rules":[{"pattern":"~/.aws/**","access":["read"]}]}"#;
+const DENY_BASH_HISTORY: &str =
+    r#"{"version":1,"rules":[{"pattern":"~/.bash_history","access":["read"]}]}"#;
+const DENY_SECRETS: &str =
+    r#"{"version":1,"rules":[{"pattern":"**/secrets/**","access":["read"]}]}"#;
 
 fn assert_conflict(message: &str, stricter: &str, looser: &str) {
     assert!(message.contains("guarded filesystem conflict"), "{message}");
@@ -153,71 +154,57 @@ fn assert_conflict(message: &str, stricter: &str, looser: &str) {
 #[test]
 fn a_source_entry_on_the_same_path_with_another_access_is_a_conflict() {
     let message = conflict_message(
-        "[permissions.guarded.filesystem]\n\"~/.aws/credentials\" = \"none\"\n",
-        WRITE_ONLY_AWS_CREDENTIALS,
+        "[permissions.guarded.filesystem]\n\"~/.bash_history\" = \"read\"\n",
+        DENY_BASH_HISTORY,
     );
 
     assert_conflict(
         &message,
-        "~/.aws/credentials = \"none\" (",
-        "~/.aws/credentials = \"read\" (generated)",
+        "~/.bash_history = \"none\" (generated)",
+        "~/.bash_history = \"read\" (",
     );
     assert!(message.contains("codex/config.toml"), "{message}");
 }
 
 #[test]
-fn a_source_ancestor_denial_over_a_generated_entry_is_a_conflict() {
+fn a_source_ancestor_denial_over_a_generated_protected_path_is_a_conflict() {
     let message = conflict_message(
-        "[permissions.guarded.filesystem]\n\"~/.config/../.aws\" = \"deny\"\n",
-        WRITE_ONLY_AWS_CREDENTIALS,
+        "[permissions.guarded.filesystem]\n\"~/.config/../.codex\" = \"deny\"\n",
+        NO_RULES,
     );
 
     assert_conflict(
         &message,
         "= \"deny\" (",
-        "~/.aws/credentials = \"read\" (generated)",
+        "~/.codex/hooks/adapt.sh = \"read\" (generated)",
     );
 }
 
 #[test]
-fn a_source_glob_denial_over_a_generated_concrete_path_is_a_conflict() {
+fn a_generated_glob_denial_over_a_source_concrete_path_is_a_conflict() {
     let message = conflict_message(
-        "[permissions.guarded.filesystem]\n\"~/.aws/**\" = \"deny\"\n",
-        WRITE_ONLY_AWS_CREDENTIALS,
+        "[permissions.guarded.filesystem]\n\"~/.aws/config\" = \"write\"\n",
+        DENY_AWS,
     );
 
     assert_conflict(
         &message,
-        "~/.aws/** = \"deny\" (",
-        "~/.aws/credentials = \"read\" (generated)",
+        "~/.aws/** = \"none\" (generated)",
+        "~/.aws/config = \"write\" (",
     );
 }
 
 #[test]
-fn a_scoped_workspace_denial_over_a_generated_child_is_a_conflict() {
+fn a_generated_workspace_denial_over_a_scoped_source_entry_is_a_conflict() {
     let message = conflict_message(
-        "[permissions.guarded.filesystem.\":workspace_roots\"]\n\"secrets\" = \"deny\"\n",
-        WRITE_ONLY_SECRETS_FILE,
+        "[permissions.guarded.filesystem.\":workspace_roots\"]\n\"secrets/key\" = \"read\"\n",
+        DENY_SECRETS,
     );
 
     assert_conflict(
         &message,
-        ":workspace_roots / secrets = \"deny\" (",
-        "secrets/file = \"read\" (generated)",
-    );
-}
-
-#[test]
-fn a_generated_read_over_a_more_specific_source_write_is_a_conflict() {
-    let message = conflict_message(
-        "[permissions.guarded.filesystem]\n\"~/.config/gh\" = \"write\"\n",
-        r#"{"version":1,"rules":[{"pattern":"~/.config/**","access":["write"]}]}"#,
-    );
-
-    assert_conflict(
-        &message,
-        "~/.config = \"read\" (generated)",
-        "~/.config/gh = \"write\" (",
+        "**/secrets/** = \"none\" (generated)",
+        ":workspace_roots / secrets/key = \"read\" (",
     );
 }
 
@@ -250,10 +237,11 @@ fn entries_that_do_not_overlap_or_agree_on_access_pass() -> Result<()> {
     let document = merged_filesystem(
         "[permissions.guarded.filesystem]\n\
          \":root\" = \"read\"\n\":workspace_roots\" = \"write\"\n\"/tmp\" = \"write\"\n\
-         \"~/.aws\" = \"read\"\n\"~/.kube\" = \"deny\"\n",
+         \"~/.docker\" = \"read\"\n\"~/.kube\" = \"deny\"\n",
         r#"{"version":1,"rules":[
-{"pattern":"~/.aws/credentials","access":["write"]},
-{"pattern":"**/secrets/**","access":["read"]}
+{"pattern":"~/.docker/config.json","access":["read"]},
+{"pattern":"**/secrets/**","access":["read","write"]},
+{"pattern":"**/agent-harness/verification/**","access":["write"]}
 ]}"#,
     )?;
 
@@ -263,8 +251,9 @@ fn entries_that_do_not_overlap_or_agree_on_access_pass() -> Result<()> {
         filesystem[":workspace_roots"]["**/secrets/**"].as_str(),
         Some("none")
     );
-    assert_eq!(filesystem["~/.aws/credentials"].as_str(), Some("read"));
+    assert_eq!(filesystem["~/.docker/config.json"].as_str(), Some("none"));
     assert_eq!(filesystem[":root"].as_str(), Some("read"));
+    assert!(!document.to_string().contains("verification"));
     Ok(())
 }
 

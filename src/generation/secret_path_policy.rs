@@ -22,14 +22,10 @@ struct SecretPathRule {
 }
 
 impl SecretPathRule {
-    /// Read outranks write: denying reads in Codex also denies writes.
-    fn strictest_access(&self) -> PathAccess {
+    fn denies_read(&self) -> bool {
         self.access
             .iter()
-            .copied()
-            .map(PathAccess::from)
-            .find(|access| *access == PathAccess::Read)
-            .unwrap_or(PathAccess::Write)
+            .any(|access| matches!(access, SecretPathAccess::Read))
     }
 }
 
@@ -76,19 +72,22 @@ pub(crate) fn claude_deny_permissions(source: &Source) -> Vec<String> {
         .collect()
 }
 
-/// The Codex filesystem entries the policy requires, one per rule, in rule order.
+/// The Codex filesystem entries the policy requires, one per rule that denies reads.
 ///
-/// Codex `none` already blocks writes, so a rule that denies reads needs no write entry.
+/// A rule that only denies writes has no Codex entry: Codex's permissions apply to every process
+/// the agent starts, and the harness scripts write the paths such rules guard. Hooks keep
+/// enforcing them.
 ///
 /// # Errors
 ///
-/// Returns an error when a rule has no Codex equivalent.
+/// Returns an error when a rule's pattern is not a path Codex can address.
 pub(crate) fn codex_filesystem_entries(source: &Source) -> Result<Vec<CodexFilesystemEntry>> {
     source
         .secret_paths
         .rules
         .iter()
-        .map(|rule| PathRule::new(rule.pattern.clone(), rule.strictest_access()).codex())
+        .filter(|rule| rule.denies_read())
+        .map(|rule| rule.pattern.codex_denied_read())
         .collect()
 }
 

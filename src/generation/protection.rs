@@ -284,6 +284,7 @@ mod tests {
 {"pattern":"~/.ssh/**","access":["read","write"]},
 {"pattern":"**/secrets/**","access":["read"]},
 {"pattern":"~/.aws/credentials","access":["write"]},
+{"pattern":"**/agent-harness/verification/**","access":["write"]},
 {"pattern":"~/.codex/hooks.json","access":["write"]}
 ]}"#,
         )?;
@@ -295,13 +296,11 @@ mod tests {
         assert!(lines.contains(&"\"~/.codex/hooks/adapt.sh\" = \"read\""));
         assert!(lines.contains(&"\"~/.codex/hooks.json\" = \"read\""));
         assert_eq!(
-            lines[lines.len() - 3..],
-            [
-                "\"~/.ssh/**\" = \"none\"",
-                "\"~/.aws/credentials\" = \"read\"",
-                "glob_scan_max_depth = 5",
-            ],
+            lines[lines.len() - 2..],
+            ["\"~/.ssh/**\" = \"none\"", "glob_scan_max_depth = 5",],
         );
+        assert!(!content.contains("~/.aws/credentials"));
+        assert!(!content.contains("verification"));
         assert_eq!(
             scoped,
             "permissions.guarded.filesystem.\":workspace_roots\"]\n\"**/secrets/**\" = \"none\"\n",
@@ -332,20 +331,17 @@ mod tests {
     }
 
     #[test]
-    fn a_generated_denial_over_a_narrower_generated_entry_is_a_conflict() -> Result<()> {
+    fn a_generated_denial_over_a_protected_path_is_a_conflict() -> Result<()> {
         let message = fragment_error(
-            r#"{"version":1,"rules":[
-{"pattern":"secrets/**","access":["read"]},
-{"pattern":"secrets/key","access":["write"]}
-]}"#,
+            r#"{"version":1,"rules":[{"pattern":"~/.codex/**","access":["read"]}]}"#,
         )?;
 
         assert!(
-            message.contains("secrets/** = \"none\" (generated)"),
+            message.contains("~/.codex/** = \"none\" (generated)"),
             "{message}"
         );
         assert!(
-            message.contains("secrets/key = \"read\" (generated)"),
+            message.contains("~/.codex/hooks/adapt.sh = \"read\" (generated)"),
             "{message}"
         );
         Ok(())
@@ -359,8 +355,7 @@ mod tests {
             &root.join("hooks/rules/secret_path_policy.json"),
             r#"{"version":1,"rules":[
 {"pattern":"secrets/**","access":["read"]},
-{"pattern":"secrets/key","access":["read"]},
-{"pattern":"~/.codex/hooks.json","access":["write"]}
+{"pattern":"secrets/key","access":["read"]}
 ]}"#,
         )?;
 
@@ -372,20 +367,25 @@ mod tests {
     }
 
     #[test]
-    fn codex_config_fragment_rejects_a_write_only_glob_codex_cannot_express() -> Result<()> {
-        let root = test_root("codex_config_fragment_rejects_write_only_glob")?;
+    fn a_write_only_rule_produces_no_codex_entry() -> Result<()> {
+        let root = test_root("a_write_only_rule_produces_no_codex_entry")?;
         write_minimal_source(&root)?;
         write_file(
             &root.join("hooks/rules/secret_path_policy.json"),
-            r#"{"version":1,"rules":[{"pattern":".env*","access":["write"]}]}"#,
+            r#"{"version":1,"rules":[
+{"pattern":".env*","access":["write"]},
+{"pattern":"**/agent-harness/audit/**","access":["write"]}
+]}"#,
         )?;
 
-        let error = format!(
-            "{:#}",
-            codex_config_fragment(&load_source(&root)?).unwrap_err()
-        );
+        let with_rules = codex_config_fragment(&load_source(&root)?)?;
+        write_file(
+            &root.join("hooks/rules/secret_path_policy.json"),
+            r#"{"version":1,"rules":[]}"#,
+        )?;
+        let without_rules = codex_config_fragment(&load_source(&root)?)?;
 
-        assert!(error.contains(".env*"));
+        assert_eq!(with_rules, without_rules);
         crate::shell::fixtures::remove_dir_all(root)?;
         Ok(())
     }
