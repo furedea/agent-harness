@@ -286,3 +286,30 @@ fn an_absolute_path_under_the_workspace_root_is_also_a_workspace_path() -> Resul
     assert_eq!(found, [(0, 1)]);
     Ok(())
 }
+
+#[test]
+fn a_home_path_is_windows_form_when_written_so_or_on_a_windows_host() -> Result<()> {
+    let written = GuardedPath::absolute_on("~\\.codex", false)?;
+    let hosted = GuardedPath::absolute_on("~/.Codex", true)?;
+    let unix = GuardedPath::absolute_on("~/.Codex", false)?;
+    let file = GuardedPath::absolute_on("~/.codex/hooks.json", false)?;
+
+    assert!(written.covers(&file, None));
+    assert!(hosted.covers(&file, None));
+    assert!(!unix.covers(&file, None));
+    Ok(())
+}
+
+#[test]
+fn a_workspace_is_windows_form_on_a_windows_host() -> Result<()> {
+    let hosted = GuardedPath::workspace_on(None, true).join("Secrets\\key")?;
+    let file = GuardedPath::workspace_on(None, false).join("secrets/key")?;
+
+    assert!(hosted.covers(&file, None));
+    assert!(
+        !GuardedPath::workspace_on(None, false)
+            .join("Secrets/key")?
+            .covers(&file, None)
+    );
+    Ok(())
+}

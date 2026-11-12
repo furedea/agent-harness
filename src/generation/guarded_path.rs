@@ -61,13 +61,14 @@ impl GuardedPath {
     }
 
     /// The workspace, for `:workspace_roots`; Windows-form when `root`, the absolute path the
-    /// workspace is installed at, is.
+    /// workspace is installed at, is, or when the harness runs on Windows.
     pub(crate) fn workspace(root: Option<&Self>) -> Self {
-        Self::at(
-            Root::Workspace,
-            root.is_some_and(|root| root.windows),
-            Vec::new(),
-        )
+        Self::workspace_on(root, cfg!(windows))
+    }
+
+    fn workspace_on(root: Option<&Self>, host_is_windows: bool) -> Self {
+        let windows = host_is_windows || root.is_some_and(|root| root.windows);
+        Self::at(Root::Workspace, windows, Vec::new())
     }
 
     /// Parses a `~/...` or absolute key.
@@ -76,7 +77,14 @@ impl GuardedPath {
     ///
     /// Returns an error when `text` is neither, or climbs above its root with `..`.
     pub(crate) fn absolute(text: &str) -> Result<Self> {
+        Self::absolute_on(text, cfg!(windows))
+    }
+
+    /// Every path is Windows-form on a Windows host, where Codex resolves `~` and `/` paths with
+    /// Windows rules too; a `~\...` key is Windows-form on any host.
+    fn absolute_on(text: &str, host_is_windows: bool) -> Result<Self> {
         let (root, windows, rest) = split_root(text)?;
+        let windows = windows || host_is_windows || rest.starts_with('\\');
         let mut segments = Vec::new();
         push_segments(&mut segments, rest, windows)
             .ok_or_else(|| anyhow!("guarded path {text:?} climbs above its root"))?;
