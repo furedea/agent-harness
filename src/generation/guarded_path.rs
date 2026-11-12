@@ -200,11 +200,11 @@ fn split_root(text: &str, host_is_windows: bool) -> Result<(Root, bool, &str)> {
     }
 }
 
-/// The part of a UNC path after its prefix: `\\\\host\\share`, or on a Windows host also the
-/// `//host/share` a runtime root renders.
+/// The part of a UNC path after its two-separator prefix: `\\host\share` anywhere, and on a
+/// Windows host any mix of `\` and `/`, such as the `//host/share` a runtime root renders.
 fn unc_rest(text: &str, host_is_windows: bool) -> Option<&str> {
-    let slashes = host_is_windows.then(|| text.strip_prefix("//")).flatten();
-    text.strip_prefix("\\\\").or(slashes)
+    let is_separator = |ch: char| ch == '\\' || (host_is_windows && ch == '/');
+    text.strip_prefix(is_separator)?.strip_prefix(is_separator)
 }
 
 /// Whether a table key names an absolute location: `~`, `/...`, a Windows drive path or a UNC

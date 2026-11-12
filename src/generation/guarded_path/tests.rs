@@ -6,7 +6,9 @@ fn deny(path: &str) -> Result<GuardedEntry> {
 
 fn read(path: &str) -> Result<GuardedEntry> {
     let entry = GuardedEntry::new(GuardedPath::absolute(path)?, Access::Read);
-    entry.ok_or_else(|| anyhow::anyhow!("{path} is not concrete"))
+    entry.ok_or_else(|| {
+        anyhow::anyhow!("cannot build a looser guarded entry from the pattern {path}")
+    })
 }
 
 /// The (stricter, looser) index pairs.
@@ -181,16 +183,17 @@ fn a_backslash_separates_segments() -> Result<()> {
     Ok(())
 }
 
-fn grant(path: &str, access: Access) -> Result<GuardedEntry> {
-    GuardedEntry::new(GuardedPath::absolute(path)?, access)
-        .ok_or_else(|| anyhow::anyhow!("{path} is not concrete"))
+fn entry_with(path: &str, access: Access) -> Result<GuardedEntry> {
+    GuardedEntry::new(GuardedPath::absolute(path)?, access).ok_or_else(|| {
+        anyhow::anyhow!("cannot build a looser guarded entry from the pattern {path}")
+    })
 }
 
 #[test]
 fn a_looser_intermediate_entry_is_the_exception_for_the_entries_below_it() -> Result<()> {
     let entries = [
         GuardedEntry::Deny(GuardedPath::everything()),
-        grant("~", Access::Write)?,
+        entry_with("~", Access::Write)?,
         read("~/.codex/hooks/adapt.sh")?,
     ];
 
@@ -203,7 +206,7 @@ fn a_stricter_intermediate_entry_is_the_one_that_conflicts() -> Result<()> {
     let entries = [
         GuardedEntry::Deny(GuardedPath::everything()),
         read("~")?,
-        grant("~/x", Access::Write)?,
+        entry_with("~/x", Access::Write)?,
     ];
 
     assert_eq!(pairs(&entries), [(0, 1), (1, 2)]);
@@ -332,5 +335,16 @@ fn a_unc_path_is_not_a_unix_path_with_the_same_segments() -> Result<()> {
     assert_eq!(pairs(&entries), []);
     assert!(hosted.covers(&unc, None));
     assert!(!unix.covers(&unc, None));
+    Ok(())
+}
+
+#[test]
+fn every_spelling_of_a_unc_prefix_is_one_root_on_a_windows_host() -> Result<()> {
+    let share = GuardedPath::absolute_on("\\\\host\\share", true)?;
+
+    for spelling in ["//host/share/x", "\\/host/share/x", "/\\host\\share\\x"] {
+        let path = GuardedPath::absolute_on(spelling, true)?;
+        assert!(share.covers(&path, None), "{spelling}");
+    }
     Ok(())
 }
