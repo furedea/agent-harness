@@ -8,12 +8,14 @@ use std::process::Command;
 
 use anyhow::{Context, Result, bail, ensure};
 
-use super::{TemporaryDirectory, execute, load_snapshot};
+use super::{TemporaryDirectory, execute, load::shell_scripts};
 use crate::{
     file_op::FileOp,
-    generation::hook_bundle::{HookBundleSpec, Installer},
+    generation::hook_bundle::{
+        HookBundleSpec, Installer, Staged, StagedContent, StagedDirectory, StagedFile,
+        is_json_file, supported_files,
+    },
     provider::spec::PROVIDERS,
-    snapshot::{SnapshotRequest, Tree},
 };
 
 /// Runs a spec's installers in an isolated home and captures what they wrote as a bundle.
@@ -28,20 +30,53 @@ pub(crate) fn generate(spec_path: &Path, output: &Path) -> Result<()> {
     spec.installers
         .iter()
         .try_for_each(|installer| run_installer(installer, home.path()))?;
-    let staged = load_snapshot(&HookBundleSpec::capture_request(home.path()))?;
-    execute(&spec.capture_ops(Tree::new(home.path(), &staged), output)?)
+    let staged = load_staged(home.path())?;
+    execute(&spec.capture_ops(&staged, output)?)
 }
 
 fn read_spec(path: &Path) -> Result<HookBundleSpec> {
-    let request = SnapshotRequest {
-        documents: vec![path.to_path_buf()],
-        ..SnapshotRequest::default()
-    };
-    let files = load_snapshot(&request)?;
-    let content = files
-        .read_text(path)
+    let content = std::fs::read_to_string(path)
         .with_context(|| format!("failed to read {}", path.display()))?;
-    HookBundleSpec::parse(path, content)
+    HookBundleSpec::parse(path, &content)
+}
+
+/// What the installers left in `home`: the supported files, the hook directories, and the Codex
+/// scripts, with every JSON document parsed.
+fn load_staged(home: &Path) -> Result<Staged> {
+    let files = supported_files()
+        .filter(|relative| home.join(relative).is_file())
+        .map(|relative| staged_file(home, relative))
+        .collect::<Result<Vec<_>>>()?;
+    let directories = PROVIDERS
+        .iter()
+        .map(|spec| spec.hook.scripts_dir)
+        .filter(|relative| home.join(relative).is_dir())
+        .map(|relative| StagedDirectory { relative })
+        .collect();
+    Ok(Staged {
+        root: home.to_path_buf(),
+        files,
+        directories,
+        codex_scripts: shell_scripts(&home.join(".codex"))?,
+    })
+}
+
+fn staged_file(home: &Path, relative: &'static str) -> Result<StagedFile> {
+    Ok(StagedFile {
+        relative,
+        content: staged_content(relative, &home.join(relative))?,
+    })
+}
+
+fn staged_content(relative: &str, path: &Path) -> Result<StagedContent> {
+    if !is_json_file(relative) {
+        return Ok(StagedContent::Other);
+    }
+    let text = std::fs::read_to_string(path)
+        .with_context(|| format!("failed to read {}", path.display()))?;
+    let value = serde_json::from_str(&text)
+        .with_context(|| format!("failed to parse {}", path.display()))?;
+    Ok(StagedContent::Json(value))
 }
 
 fn provider_directories(home: &Path) -> Vec<FileOp> {

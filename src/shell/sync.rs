@@ -2,17 +2,13 @@ use std::path::Path;
 
 use anyhow::{Result, bail};
 
-use super::{execute, load_snapshot, real_path, sync_documents};
+use super::execute;
+use super::load::{read_generated_config, read_installed_config, real_path};
 use crate::{
-    config_sync::{
-        Merge,
-        codec::ConfigDocument,
-        installed::{Installed, read_generated},
-    },
+    config_sync::{Merge, codec::ConfigDocument},
     file_op::FileOp,
     generation::dsh_config,
     provider::spec::{ConfigLocation, ConfigSpec, ProviderSpec},
-    snapshot::{Snapshot, SnapshotRequest},
 };
 
 /// The rendered config to read and the user-owned config to update.
@@ -42,15 +38,8 @@ pub(crate) fn sync(spec: &ProviderSpec, paths: &SyncPaths<'_>, home: &Path) -> R
 /// Returns `None` when the provider has not created its config yet and the sync leaves it alone.
 fn sync_ops(config: ConfigSpec, paths: &SyncPaths<'_>, home: &Path) -> Result<Option<Vec<FileOp>>> {
     let sync = &config.sync;
-    let rendered = rendered_input(config.location, paths.source)?;
-    let mut request = SnapshotRequest::default();
-    request.documents.extend(sync_documents(sync, paths.target));
-    request
-        .documents
-        .extend(rendered.document().map(Path::to_path_buf));
-    let files = load_snapshot(&request)?;
-    let generated = rendered.parse(&config, &files)?;
-    let installed = Installed::from_snapshot(sync, &files, paths.target)?;
+    let generated = rendered_input(config.location, paths.source)?.parse(&config)?;
+    let installed = read_installed_config(&config, paths.target)?;
     let merge = Merge::new(sync, &generated).expanding_home(home);
     if merge.skips(&installed) {
         return Ok(None);
@@ -70,16 +59,9 @@ enum Rendered<'a> {
 }
 
 impl Rendered<'_> {
-    fn document(&self) -> Option<&Path> {
+    fn parse(&self, config: &ConfigSpec) -> Result<ConfigDocument> {
         match self {
-            Self::File(path) => Some(path),
-            Self::Bundle(_) => None,
-        }
-    }
-
-    fn parse(&self, config: &ConfigSpec, files: &Snapshot) -> Result<ConfigDocument> {
-        match self {
-            Self::File(path) => read_generated(&config.sync, files, path),
+            Self::File(path) => read_generated_config(config, path),
             Self::Bundle(directory) => dsh_config::bundle_registration(directory),
         }
     }

@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::*;
-use crate::shell::fixtures::load_tree;
+use crate::shell::fixtures::load_source;
 
 fn write_hooks_for_runtime(
     context: GenerationContext<'_>,
@@ -19,7 +19,7 @@ fn write_claude_hooks_reads_shared_hook_config() -> Result<()> {
     let output = root.join("claude-hooks.json");
 
     write_hooks_for_runtime(
-        GenerationContext::home(load_tree(&root)?.tree(), &[]),
+        GenerationContext::home(&load_source(&root)?),
         &output,
         ProviderId::Claude.spec(),
     )?;
@@ -41,7 +41,7 @@ fn write_codex_hooks_reads_shared_hook_config() -> Result<()> {
     let output = root.join("codex-hooks.json");
 
     write_hooks_for_runtime(
-        GenerationContext::home(load_tree(&root)?.tree(), &[]),
+        GenerationContext::home(&load_source(&root)?),
         &output,
         ProviderId::Codex.spec(),
     )?;
@@ -64,7 +64,7 @@ fn write_devin_hooks_renders_the_devin_section_as_a_config_fragment() -> Result<
     let output = root.join("devin-hooks.json");
 
     write_hooks_for_runtime(
-        GenerationContext::home(load_tree(&root)?.tree(), &[]),
+        GenerationContext::home(&load_source(&root)?),
         &output,
         ProviderId::Devin.spec(),
     )?;
@@ -91,7 +91,7 @@ fn write_devin_hooks_includes_command_permissions() -> Result<()> {
     let output = root.join("devin-hooks.json");
 
     write_hooks_for_runtime(
-        GenerationContext::home(load_tree(&root)?.tree(), &[]),
+        GenerationContext::home(&load_source(&root)?),
         &output,
         ProviderId::Devin.spec(),
     )?;
@@ -121,7 +121,7 @@ fn write_devin_hooks_emits_empty_hooks_when_the_section_is_missing() -> Result<(
     let output = root.join("devin-hooks.json");
 
     write_hooks_for_runtime(
-        GenerationContext::home(load_tree(&root)?.tree(), &[]),
+        GenerationContext::home(&load_source(&root)?),
         &output,
         ProviderId::Devin.spec(),
     )?;
@@ -141,9 +141,7 @@ fn read_hooks_rejects_unsupported_version() -> Result<()> {
         r#"{"version":2,"claude":{},"codex":{}}"#,
     )?;
 
-    let error = read_hooks(load_tree(&root)?.tree())
-        .unwrap_err()
-        .to_string();
+    let error = format!("{:#}", load_source(&root).unwrap_err());
 
     assert!(error.contains("unsupported hook config version"));
 
@@ -156,11 +154,10 @@ fn claude_hooks_for_runtime_relocates_nested_commands_under_a_directory_root() -
     let root = test_root("claude_hooks_for_runtime_relocates_nested_commands")?;
     write_hook_config(&root)?;
     let runtime_root = RuntimeRoot::directory(PathBuf::from("/opt/agents"))?;
-    let loaded = load_tree(&root)?;
+    let loaded = load_source(&root)?;
     let context = GenerationContext {
         dsh_profile: "web",
-        source: loaded.tree(),
-        external_hooks: &[],
+        source: &loaded,
         runtime_root: &runtime_root,
     };
 
@@ -194,7 +191,7 @@ fn built_in_hook_metadata_orders_providers_and_events() -> Result<()> {
 }"#,
     )?;
 
-    let metadata = built_in_hook_metadata(load_tree(&root)?.tree())?;
+    let metadata = built_in_hook_metadata(&load_source(&root)?)?;
 
     let summary = metadata
         .iter()
@@ -231,9 +228,7 @@ fn read_hooks_rejects_a_non_object_optional_section() -> Result<()> {
         r#"{"version":1,"claude":{},"codex":{},"pi":[]}"#,
     )?;
 
-    let error = read_hooks(load_tree(&root)?.tree())
-        .unwrap_err()
-        .to_string();
+    let error = format!("{:#}", load_source(&root).unwrap_err());
 
     assert_eq!(error, "hook config pi section must be a JSON object");
 
@@ -246,9 +241,7 @@ fn read_hooks_rejects_a_missing_required_section() -> Result<()> {
     let root = test_root("read_hooks_rejects_a_missing_required_section")?;
     write_file(&root.join("hooks.json"), r#"{"version":1,"claude":{}}"#)?;
 
-    let error = read_hooks(load_tree(&root)?.tree())
-        .unwrap_err()
-        .to_string();
+    let error = format!("{:#}", load_source(&root).unwrap_err());
 
     assert_eq!(error, "hook config codex section must be a JSON object");
 
@@ -264,9 +257,7 @@ fn read_hooks_rejects_an_unknown_provider_key() -> Result<()> {
         r#"{"version":1,"claude":{},"codex":{},"hermse":{}}"#,
     )?;
 
-    let error = read_hooks(load_tree(&root)?.tree())
-        .unwrap_err()
-        .to_string();
+    let error = format!("{:#}", load_source(&root).unwrap_err());
 
     assert_eq!(error, "hook config contains unknown provider key: hermse");
 

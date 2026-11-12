@@ -4,30 +4,25 @@ use anyhow::{Context, Result, bail};
 use serde_json::{Map, Value};
 
 use crate::generation::{
-    GenerationContext, claude_permissions::PermissionRules, command_permissions,
-    external_hooks::ExternalHookBundle, hooks, json_documents::read_json,
+    GenerationContext, claude_permissions::PermissionRules, command_permissions, hooks,
     permission_rule::PathRule, protection, secret_path_policy,
 };
-use crate::{file_op::FileOp, layout::SourceLayout, runtime_root::RuntimeRoot, snapshot::Tree};
+use crate::{file_op::FileOp, runtime_root::RuntimeRoot, source_model::Source};
 
-pub(crate) fn settings_op(
-    source: Tree<'_>,
-    out: &Path,
-    external_hooks: &[ExternalHookBundle],
-) -> Result<FileOp> {
-    settings_op_for_runtime(GenerationContext::home(source, external_hooks), out)
+pub(crate) fn settings_op(source: &Source, out: &Path) -> Result<FileOp> {
+    settings_op_for_runtime(GenerationContext::home(source), out)
 }
 
 pub(crate) fn settings_op_for_runtime(
     context: GenerationContext<'_>,
     out: &Path,
 ) -> Result<FileOp> {
-    let base = read_json(
-        context.source.files(),
-        &SourceLayout::new(context.source.root()).claude_settings(),
-    )?;
-    let settings = build_settings(context, base)?;
-    FileOp::write_json(out, &settings)
+    FileOp::write_json(out, &settings_for_runtime(context)?)
+}
+
+/// The Claude settings: the source's base settings with the generated parts merged in.
+pub(crate) fn settings_for_runtime(context: GenerationContext<'_>) -> Result<Value> {
+    build_settings(context, context.source.claude_settings.clone())
 }
 
 fn build_settings(context: GenerationContext<'_>, mut settings: Value) -> Result<Value> {
@@ -50,10 +45,10 @@ fn merge_permissions(root: &mut Map<String, Value>, context: GenerationContext<'
     let permissions = object_entry(root, "permissions")?;
     let mut rules = PermissionRules::parse(permissions)?;
 
-    rules.extend_allow(command_permissions::claude_allow_permissions(source)?);
-    rules.extend_ask(command_permissions::claude_ask_permissions(source)?);
-    rules.extend_deny(secret_path_policy::claude_deny_permissions(source)?);
-    rules.extend_deny(command_permissions::claude_deny_permissions(source)?);
+    rules.extend_allow(command_permissions::claude_allow_permissions(source));
+    rules.extend_ask(command_permissions::claude_ask_permissions(source));
+    rules.extend_deny(secret_path_policy::claude_deny_permissions(source));
+    rules.extend_deny(command_permissions::claude_deny_permissions(source));
     rules.extend_deny(
         protected_paths(context)?
             .into_iter()
@@ -143,7 +138,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::shell::fixtures::load_tree;
+    use crate::shell::fixtures::load_source;
 
     #[test]
     fn build_settings_merges_hooks_command_permissions_and_protected_paths() -> Result<()> {
@@ -164,9 +159,9 @@ mod tests {
             }
         });
 
-        let loaded = load_tree(&root)?;
+        let loaded = load_source(&root)?;
 
-        let settings = build_settings(GenerationContext::home(loaded.tree(), &[]), base)?;
+        let settings = build_settings(GenerationContext::home(&loaded), base)?;
 
         assert_eq!(
             settings["hooks"]["PreToolUse"][0]["hooks"][1]["command"].as_str(),
@@ -223,9 +218,9 @@ mod tests {
             }
         });
 
-        let loaded = load_tree(&root)?;
+        let loaded = load_source(&root)?;
 
-        let settings = build_settings(GenerationContext::home(loaded.tree(), &[]), base)?;
+        let settings = build_settings(GenerationContext::home(&loaded), base)?;
 
         let deny_write = array_strings(&settings["sandbox"]["filesystem"]["denyWrite"]);
         assert_eq!(
@@ -253,9 +248,9 @@ mod tests {
         write_minimal_source(&root)?;
         let base = json!({"sandbox": {"filesystem": {"denyWrite": "~/x"}}});
 
-        let loaded = load_tree(&root)?;
+        let loaded = load_source(&root)?;
 
-        let error = build_settings(GenerationContext::home(loaded.tree(), &[]), base)
+        let error = build_settings(GenerationContext::home(&loaded), base)
             .unwrap_err()
             .to_string();
 
@@ -276,9 +271,9 @@ mod tests {
             }
         });
 
-        let loaded = load_tree(&root)?;
+        let loaded = load_source(&root)?;
 
-        let settings = build_settings(GenerationContext::home(loaded.tree(), &[]), base)?;
+        let settings = build_settings(GenerationContext::home(&loaded), base)?;
 
         let allow = array_strings(&settings["permissions"]["allow"]);
         let ask = array_strings(&settings["permissions"]["ask"]);

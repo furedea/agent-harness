@@ -1,148 +1,222 @@
-//! The loader: reads the disk once and hands computation a [`Snapshot`].
+//! The loader: reads the disk once and hands computation a typed [`Source`].
 //!
-//! Computation never reads files, so everything it decides on is gathered here first. A tree is
-//! walked following a symlinked directory one hop (a profile may share a `hooks` directory), never
-//! a symlink met inside that one, so a link cycle cannot loop. Each symlink is recorded as the kind
-//! it points to, as `Path::is_file` would answer, and the snapshot's `regular_files` skips what
-//! lies behind one, as the directory walk it replaces did.
+//! Computation never reads files, so everything it decides on is read and parsed here first. Every
+//! document is parsed and validated at this boundary and an error names the file it came from; a
+//! directory that is only copied is recorded as a location and a list of files, never read.
+//!
+//! A tree is walked following a symlinked directory one hop (a profile may share a `hooks`
+//! directory), never a symlink met inside that one, so a link cycle cannot loop and a copy never
+//! reaches outside its directory.
 #![expect(
     clippy::disallowed_methods,
-    reason = "this module is the read side of the shell; computation only sees the snapshot"
+    reason = "this module is the read side of the shell; computation only sees the Source"
 )]
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail, ensure};
 
 use crate::{
-    config_sync::installed::installed_files,
-    generation::{external_hooks::ExternalHookBundle, skills::ExternalSkill},
-    provider::spec::ConfigSync,
-    snapshot::{Entry, EntryKind, Snapshot, SnapshotRequest},
+    config_sync::{
+        codec::ConfigDocument,
+        installed::{Installed, InstalledConfigs, InstalledText, parse_generated},
+    },
+    generation::{
+        command_permissions::{CommandPermissions, RegexPolicy},
+        external_hooks::ExternalHookBundle,
+        hooks::HookConfig,
+        secret_path_policy::SecretPathPolicy,
+        skills::{ExternalSkill, SkillFiles, SourceSkills, SupportEntry},
+    },
+    layout::SourceLayout,
+    manifest::Manifest,
+    provider::spec::{ConfigSpec, ProviderSpec, RenderedConfig},
+    source_model::{Source, SourceDir},
 };
 
-/// Extensions whose content a walked tree records as text: the documents computation parses.
-const TEXT_EXTENSIONS: &[&str] = &["json", "toml", "yaml", "yml", "md"];
-
-/// Extra inputs a generation run takes besides the source tree.
-#[derive(Clone, Copy, Debug, Default)]
-pub(crate) struct ExternalInputs<'a> {
+/// What a run adds to the source tree: the providers it renders and the external inputs.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct LoadInputs<'a> {
+    pub(crate) providers: &'a [ProviderSpec],
     pub(crate) hook_bundles: &'a [ExternalHookBundle],
     pub(crate) skills: &'a [ExternalSkill],
 }
 
-/// The source tree, every external hook bundle, and the skill file of every external skill.
-pub(crate) fn source_request(source: &Path, external: ExternalInputs<'_>) -> SnapshotRequest {
-    let bundles = external.hook_bundles.iter().map(ExternalHookBundle::source);
-    SnapshotRequest {
-        trees: std::iter::once(source)
-            .chain(bundles)
-            .map(Path::to_path_buf)
-            .collect(),
-        probes: external
-            .skills
-            .iter()
-            .map(ExternalSkill::skill_file)
-            .collect(),
-        ..SnapshotRequest::default()
-    }
-}
-
-/// The files a sync of `sync` reads from its user-owned `target`.
-pub(crate) fn sync_documents(sync: &ConfigSync, target: &Path) -> Vec<PathBuf> {
-    installed_files(sync, target)
-}
-
-/// Reads what `request` names into a snapshot.
-///
-/// # Errors
-///
-/// Returns an error when a listed directory or a text file cannot be read.
-pub(crate) fn load_snapshot(request: &SnapshotRequest) -> Result<Snapshot> {
-    let mut snapshot = Snapshot::default();
-    // Each pass records at least what the one before did, so a path named twice keeps its text.
-    for probe in &request.probes {
-        record_single(&mut snapshot, probe, false)?;
-    }
-    for listing in &request.listings {
-        record_listing(&mut snapshot, listing)?;
-    }
-    for tree in &request.trees {
-        record_tree(&mut snapshot, tree)?;
-    }
-    for document in &request.documents {
-        record_single(&mut snapshot, document, true)?;
-    }
-    Ok(snapshot)
-}
-
-fn record_tree(snapshot: &mut Snapshot, root: &Path) -> Result<()> {
-    record_path(snapshot, root, Visit::default())
-}
-
-fn record_single(snapshot: &mut Snapshot, path: &Path, wants_text: bool) -> Result<()> {
-    let is_symlink = std::fs::symlink_metadata(path).is_ok_and(|metadata| metadata.is_symlink());
-    let Some(kind) = resolve_kind(path, is_symlink)? else {
-        return Ok(());
-    };
-    let entry = entry_of(path, Entry::new(kind, is_symlink), wants_text)?;
-    snapshot.insert(path.to_path_buf(), entry);
-    Ok(())
-}
-
-/// How a path was reached, which decides whether the walk goes into it.
-#[derive(Clone, Copy, Debug, Default)]
-struct Visit {
-    is_symlink: bool,
-    /// Whether the walk already crossed a symlink to get here.
-    inside_link: bool,
-}
-
-impl Visit {
-    fn descends_into_directory(self) -> bool {
-        !(self.is_symlink && self.inside_link)
-    }
-
-    fn child(self, is_symlink: bool) -> Self {
+impl<'a> LoadInputs<'a> {
+    pub(crate) fn new(providers: &'a [ProviderSpec]) -> Self {
         Self {
-            is_symlink,
-            inside_link: self.inside_link || self.is_symlink,
+            providers,
+            hook_bundles: &[],
+            skills: &[],
         }
     }
 }
 
-/// Records `path`, and what is under it when it is a directory the walk goes into.
-fn record_path(snapshot: &mut Snapshot, path: &Path, visit: Visit) -> Result<()> {
-    let Some(kind) = resolve_kind(path, visit.is_symlink)? else {
-        return Ok(());
-    };
-    let wants_text = has_text_extension(path);
-    let entry = Entry::new(kind, visit.is_symlink);
-    snapshot.insert(path.to_path_buf(), entry_of(path, entry, wants_text)?);
-    if kind == EntryKind::Directory && visit.descends_into_directory() {
-        return record_children(snapshot, path, visit);
+/// Reads and parses the source tree at `root` and the external inputs.
+///
+/// # Errors
+///
+/// Returns an error naming the file that cannot be read or is invalid.
+pub(crate) fn load_source(root: &Path, inputs: &LoadInputs<'_>) -> Result<Source> {
+    let layout = SourceLayout::new(root);
+    let skills = load_skills(&layout)?;
+    let external_skills = inputs.skills.to_vec();
+    skills.validate_external(&external_skills, &external_skill_files(&external_skills))?;
+    let directories = load_directories(&layout, inputs.providers)?;
+    require_directories(&layout, inputs.providers, &directories)?;
+    validate_allowed_commands(&layout)?;
+    Ok(Source {
+        root: root.to_path_buf(),
+        manifest: read_manifest(root)?,
+        hooks: HookConfig::parse(&layout.hook_config(), &read_text(&layout.hook_config())?)?,
+        command_permissions: load_command_permissions(&layout)?,
+        forbidden_commands: load_regex_policy(&layout.forbidden_command_rules())?,
+        secret_paths: load_secret_paths(&layout)?,
+        skills,
+        claude_settings: read_json(&layout.claude_settings())?,
+        codex_config: read_toml(&layout.codex_config())?,
+        provider_configs: load_provider_configs(root, inputs.providers)?,
+        directories,
+        hook_bundles: load_bundles(inputs)?,
+        external_skills,
+    })
+}
+
+/// The manifest of the source tree at `root`.
+///
+/// # Errors
+///
+/// Returns an error when the manifest cannot be read or is not supported.
+pub(crate) fn read_manifest(root: &Path) -> Result<Manifest> {
+    let path = SourceLayout::new(root).manifest();
+    let text = std::fs::read_to_string(&path)
+        .with_context(|| format!("failed to read source manifest {}", path.display()))?;
+    Manifest::parse(&path, &text)
+}
+
+/// Whether every file a source tree must hold is in `root`.
+pub(crate) fn has_required_files(root: &Path) -> bool {
+    missing_required_files(root).is_empty()
+}
+
+/// Checks that `root` is a complete source tree: its files, the directories `providers` need, and
+/// a supported manifest.
+///
+/// # Errors
+///
+/// Returns an error naming what is missing or invalid.
+pub(crate) fn validate_source_layout(root: &Path, providers: &[ProviderSpec]) -> Result<()> {
+    let missing_files = missing_required_files(root);
+    if !missing_files.is_empty() {
+        bail!(
+            "missing required harness source files under {}: {}",
+            root.display(),
+            missing_files.join(", ")
+        )
     }
+    let layout = SourceLayout::new(root);
+    let missing_directories: Vec<_> = layout
+        .required_directories_for(providers)
+        .into_iter()
+        .filter(|path| !path.is_dir())
+        .collect();
+    if !missing_directories.is_empty() {
+        bail!(
+            "missing required harness source directories: {}",
+            missing_directories
+                .iter()
+                .map(|directory| directory.display().to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    }
+    read_manifest(root)?;
     Ok(())
 }
 
-/// Records `dir` and its direct entries, going into none of them.
-fn record_listing(snapshot: &mut Snapshot, dir: &Path) -> Result<()> {
-    record_single(snapshot, dir, false)?;
-    if !snapshot.is_dir(dir) {
-        return Ok(());
-    }
-    for (path, is_symlink) in list_directory(dir)? {
-        record_shallow(snapshot, path, is_symlink)?;
-    }
-    Ok(())
+fn missing_required_files(root: &Path) -> Vec<&'static str> {
+    SourceLayout::new(root)
+        .required_files()
+        .filter(|(_, path)| !path.is_file())
+        .map(|(relative, _)| relative)
+        .collect()
 }
 
-fn record_shallow(snapshot: &mut Snapshot, path: PathBuf, is_symlink: bool) -> Result<()> {
-    let Some(kind) = resolve_kind(&path, is_symlink)? else {
-        return Ok(());
+/// The configs `providers` merge into, as they are installed under `prefix`.
+///
+/// A config that cannot be parsed is an error here, at the boundary. The sidecar is left unread:
+/// installation has always merged into the config alone, and the sidecar it would write sits in the
+/// staging directory, which is never published.
+///
+/// # Errors
+///
+/// Returns an error naming an installed config that exists and cannot be parsed.
+pub(crate) fn load_installed(
+    prefix: &Path,
+    providers: &[ProviderSpec],
+) -> Result<InstalledConfigs> {
+    let mut installed = InstalledConfigs::default();
+    for (config, relative) in merged_configs(providers) {
+        installed.insert(
+            relative,
+            read_unsynced_config(&config, &prefix.join(relative))?,
+        );
+    }
+    Ok(installed)
+}
+
+/// The configs rendering merges into the installed ones, with the path the registry names them by.
+fn merged_configs(providers: &[ProviderSpec]) -> impl Iterator<Item = (ConfigSpec, &'static str)> {
+    providers
+        .iter()
+        .filter_map(|spec| spec.config.zip(spec.config_path()))
+        .filter(|(config, _)| merges_installed(config))
+}
+
+fn read_unsynced_config(config: &ConfigSpec, path: &Path) -> Result<Installed> {
+    let text = read_text_if_present(path)?;
+    let text = InstalledText {
+        config: text.as_deref(),
+        sidecar: None,
     };
-    snapshot.insert(path, Entry::new(kind, is_symlink));
-    Ok(())
+    Installed::parse(&config.sync, path, text)
+}
+
+fn merges_installed(config: &ConfigSpec) -> bool {
+    config.rendered.merges_into_installed() || config.sync.replaces_every_key()
+}
+
+/// The rendered config at `path`, parsed for `config`.
+///
+/// # Errors
+///
+/// Returns an error naming `path` when it cannot be read or parsed.
+pub(crate) fn read_generated_config(config: &ConfigSpec, path: &Path) -> Result<ConfigDocument> {
+    let text = read_text(path)?;
+    parse_generated(&config.sync, path, &text)
+}
+
+/// The installed config at `path` and its sidecar, parsed for `config`.
+///
+/// # Errors
+///
+/// Returns an error naming `path` when it exists and cannot be parsed.
+pub(crate) fn read_installed_config(config: &ConfigSpec, path: &Path) -> Result<Installed> {
+    let config_text = read_text_if_present(path)?;
+    let sidecar_text = config
+        .sync
+        .sidecar_file()
+        .map(|file| crate::config_sync::installed::sidecar_path(path, file))
+        .and_then(|path| read_text_if_present(&path).ok().flatten());
+    Installed::parse(
+        &config.sync,
+        path,
+        InstalledText {
+            config: config_text.as_deref(),
+            sidecar: sidecar_text.as_deref(),
+        },
+    )
 }
 
 /// The real path of `path`, which must exist.
@@ -150,71 +224,188 @@ pub(crate) fn real_path(path: &Path) -> Result<PathBuf> {
     std::fs::canonicalize(path).with_context(|| format!("failed to resolve {}", path.display()))
 }
 
-fn record_children(snapshot: &mut Snapshot, dir: &Path, visit: Visit) -> Result<()> {
-    for (path, is_symlink) in list_directory(dir)? {
-        record_path(snapshot, &path, visit.child(is_symlink))?;
+/// Checks that `files` are files and `directories` are directories, reporting the first that is
+/// not.
+///
+/// # Errors
+///
+/// Returns an error naming the first missing or invalid path.
+pub(crate) fn verify_paths(files: &[PathBuf], directories: &[PathBuf]) -> Result<()> {
+    for path in files {
+        ensure!(
+            path.is_file(),
+            "missing or invalid harness file: {}",
+            path.display()
+        );
+    }
+    for path in directories {
+        ensure!(
+            path.is_dir(),
+            "missing or invalid harness directory: {}",
+            path.display()
+        );
     }
     Ok(())
 }
 
-/// The entries of `dir` with whether each is a symlink, which `read_dir` reports without
-/// following.
-fn list_directory(dir: &Path) -> Result<Vec<(PathBuf, bool)>> {
-    std::fs::read_dir(dir)
-        .with_context(|| format!("failed to read directory {}", dir.display()))?
-        .map(|entry| {
-            let entry =
-                entry.with_context(|| format!("failed to read entry in {}", dir.display()))?;
-            let file_type = entry
-                .file_type()
-                .with_context(|| format!("failed to inspect {}", entry.path().display()))?;
-            Ok((entry.path(), file_type.is_symlink()))
+fn load_command_permissions(layout: &SourceLayout<'_>) -> Result<CommandPermissions> {
+    let path = layout.command_permissions();
+    let text = std::fs::read_to_string(&path)
+        .with_context(|| format!("failed to read command permissions {}", path.display()))?;
+    CommandPermissions::parse(&path, &text)
+}
+
+fn load_regex_policy(path: &Path) -> Result<RegexPolicy> {
+    let text = std::fs::read_to_string(path)
+        .with_context(|| format!("failed to read command regex policy {}", path.display()))?;
+    RegexPolicy::parse(path, &text)
+}
+
+/// The allowed-commands policy is read by the hooks at run time; installation only copies it, but a
+/// malformed one is refused here.
+fn validate_allowed_commands(layout: &SourceLayout<'_>) -> Result<()> {
+    load_regex_policy(&layout.allowed_command_rules()).map(drop)
+}
+
+fn load_secret_paths(layout: &SourceLayout<'_>) -> Result<SecretPathPolicy> {
+    let path = layout.secret_path_policy();
+    SecretPathPolicy::parse(&path, &read_text(&path)?)
+}
+
+fn load_provider_configs(
+    root: &Path,
+    providers: &[ProviderSpec],
+) -> Result<BTreeMap<String, ConfigDocument>> {
+    providers
+        .iter()
+        .filter_map(|spec| spec.config)
+        .filter_map(|config| source_config_path(&config).map(|relative| (config, relative)))
+        .map(|(config, relative)| {
+            let document = load_source_config(&config, &root.join(relative))?;
+            Ok((relative.to_owned(), document))
         })
         .collect()
 }
 
-/// What `path` resolves to, or `None` when it does not exist.
-///
-/// A symlink that cannot be followed is `Unreachable`; other failures are errors.
-fn resolve_kind(path: &Path, is_symlink: bool) -> Result<Option<EntryKind>> {
-    match std::fs::metadata(path) {
-        Ok(metadata) => Ok(Some(kind_of(&metadata))),
-        // A link that cannot be followed (broken, looping, or into a place it may not enter) is
-        // `Unreachable`, which `Path::exists` reports as absent.
-        Err(_) if is_symlink => Ok(Some(EntryKind::Unreachable)),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(error) => Err(error).with_context(|| format!("failed to inspect {}", path.display())),
+fn source_config_path(config: &ConfigSpec) -> Option<&'static str> {
+    match config.rendered {
+        RenderedConfig::SourceFile(relative) => Some(relative),
+        RenderedConfig::WithHooks
+        | RenderedConfig::Fixed(_)
+        | RenderedConfig::SourceTomlWithProtection => None,
     }
 }
 
-fn kind_of(metadata: &std::fs::Metadata) -> EntryKind {
-    if metadata.is_dir() {
-        EntryKind::Directory
-    } else if metadata.is_file() {
-        EntryKind::File
-    } else {
-        EntryKind::Other
+/// The source file of a provider config, or a blank document when the source has none.
+fn load_source_config(config: &ConfigSpec, path: &Path) -> Result<ConfigDocument> {
+    match read_text_if_present(path)? {
+        Some(text) => parse_generated(&config.sync, path, &text),
+        None => Ok(ConfigDocument::blank(config.sync.format)),
     }
 }
 
-/// The entry for `path`, with its text when wanted and the file is UTF-8.
-fn entry_of(path: &Path, entry: Entry, wants_text: bool) -> Result<Entry> {
-    if !wants_text || !entry.is_file_kind() {
-        return Ok(entry);
+fn load_directories(
+    layout: &SourceLayout<'_>,
+    providers: &[ProviderSpec],
+) -> Result<BTreeMap<PathBuf, SourceDir>> {
+    layout
+        .synced_directories_for(providers)
+        .into_iter()
+        .map(|path| Ok((path.clone(), source_dir(path)?)))
+        .collect()
+}
+
+fn require_directories(
+    layout: &SourceLayout<'_>,
+    providers: &[ProviderSpec],
+    directories: &BTreeMap<PathBuf, SourceDir>,
+) -> Result<()> {
+    let missing = layout
+        .required_directories_for(providers)
+        .into_iter()
+        .find(|path| !directories.get(path).is_some_and(|dir| dir.present));
+    match missing {
+        Some(path) => bail!(
+            "missing required harness source directory: {}",
+            path.display()
+        ),
+        None => Ok(()),
     }
-    let bytes =
-        std::fs::read(path).with_context(|| format!("failed to read {}", path.display()))?;
-    Ok(match String::from_utf8(bytes) {
-        Ok(text) => entry.with_text(text),
-        Err(_) => entry,
+}
+
+fn source_dir(path: PathBuf) -> Result<SourceDir> {
+    if !path.is_dir() {
+        return Ok(SourceDir::absent(path));
+    }
+    let files = regular_files(&path)?;
+    Ok(SourceDir {
+        path,
+        present: true,
+        files,
     })
 }
 
-fn has_text_extension(path: &Path) -> bool {
-    path.extension()
-        .and_then(|extension| extension.to_str())
-        .is_some_and(|extension| TEXT_EXTENSIONS.contains(&extension))
+fn load_skills(layout: &SourceLayout<'_>) -> Result<SourceSkills> {
+    let rendering_path = layout.skill_rendering();
+    let rendering = read_text_if_present(&rendering_path)?;
+    let files = children(&layout.skills())?
+        .into_iter()
+        .filter(Child::is_real_directory)
+        .filter(|child| child.path.join("SKILL.md").is_file())
+        .map(|child| skill_files(child.path))
+        .collect::<Result<Vec<_>>>()?;
+    SourceSkills::parse(
+        rendering
+            .as_deref()
+            .map(|text| (rendering_path.as_path(), text)),
+        files,
+    )
 }
+
+fn skill_files(directory: PathBuf) -> Result<SkillFiles> {
+    let skill_text = read_text(&directory.join("SKILL.md"))?;
+    let support = children(&directory)?
+        .into_iter()
+        .filter(|child| child.name != "SKILL.md")
+        .filter_map(support_entry)
+        .collect();
+    Ok(SkillFiles {
+        directory,
+        skill_text,
+        support,
+    })
+}
+
+/// A skill's support file or directory; symlinks are skipped, so a skill never reaches outside its
+/// own directory.
+fn support_entry(child: Child) -> Option<SupportEntry> {
+    if child.is_real_directory() {
+        return Some(SupportEntry::Directory {
+            name: child.name,
+            path: child.path,
+        });
+    }
+    child.is_regular_file().then_some(SupportEntry::File {
+        name: child.name,
+        path: child.path,
+    })
+}
+
+fn external_skill_files(skills: &[ExternalSkill]) -> Vec<bool> {
+    skills
+        .iter()
+        .map(|skill| is_regular_file(&skill.skill_file()))
+        .collect()
+}
+
+mod bundle;
+mod files;
+
+use bundle::load_bundles;
+use files::{
+    Child, children, is_regular_file, read_json, read_text, read_text_if_present, read_toml,
+};
+pub(crate) use files::{regular_files, shell_scripts};
 
 #[cfg(test)]
 mod tests;

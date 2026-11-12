@@ -1,7 +1,6 @@
 #![forbid(clippy::disallowed_methods, clippy::disallowed_types)]
 
 use crate::provider::spec::{CommandRuleSpec, ProviderId, ProviderSpec, SkillSource};
-use crate::snapshot::Snapshot;
 use std::path::{Path, PathBuf};
 
 const MANIFEST_PATH: &str = "manifest.json";
@@ -39,16 +38,11 @@ impl<'a> SourceLayout<'a> {
         Self { root }
     }
 
-    pub(crate) fn is_complete(self, files: &Snapshot) -> bool {
-        self.missing_required_files(files).is_empty()
-    }
-
-    pub(crate) fn missing_required_files(self, files: &Snapshot) -> Vec<&'static str> {
+    /// The files every source tree holds, with their path relative to the root.
+    pub(crate) fn required_files(self) -> impl Iterator<Item = (&'static str, PathBuf)> {
         REQUIRED_SOURCE_FILES
             .iter()
-            .copied()
-            .filter(|relative| !files.is_file(&self.root.join(relative)))
-            .collect()
+            .map(move |relative| (*relative, self.root.join(relative)))
     }
 
     /// Source directories the installation cannot do without: those holding the hook rule files.
@@ -60,25 +54,20 @@ impl<'a> SourceLayout<'a> {
             .collect()
     }
 
-    pub(crate) fn missing_required_directories(
-        self,
-        providers: &[ProviderSpec],
-        files: &Snapshot,
-    ) -> Vec<PathBuf> {
-        self.required_directories_for(providers)
-            .into_iter()
-            .filter(|path| !files.is_dir(path))
-            .collect()
-    }
-
-    /// Every path whose presence completeness depends on, for a loader to look at.
-    pub(crate) fn required_paths_for(self, providers: &[ProviderSpec]) -> Vec<PathBuf> {
-        let files = REQUIRED_SOURCE_FILES
+    /// Source directories installation replaces from the source tree, without repeats.
+    pub(crate) fn synced_directories_for(self, providers: &[ProviderSpec]) -> Vec<PathBuf> {
+        let hooks = providers.iter().map(|spec| spec.hook.source);
+        let directories = providers
             .iter()
-            .map(|relative| self.root.join(relative));
-        files
-            .chain(self.required_directories_for(providers))
-            .collect()
+            .flat_map(ProviderSpec::config_directories)
+            .map(|directory| directory.source);
+        let mut paths: Vec<PathBuf> = hooks
+            .chain(directories)
+            .map(|relative| self.root.join(relative))
+            .collect();
+        paths.sort();
+        paths.dedup();
+        paths
     }
 
     pub(crate) fn manifest(self) -> PathBuf {

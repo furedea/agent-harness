@@ -4,11 +4,7 @@ use anyhow::{Context, Result, ensure};
 use serde::Deserialize;
 use serde_json::{Map, Value};
 
-use crate::{
-    file_op::FileOp,
-    provider::spec::{PROVIDERS, ProviderId},
-    snapshot::{Child, SnapshotRequest, Tree},
-};
+use crate::{file_op::FileOp, provider::spec::PROVIDERS};
 
 const SUPPORTED_SPEC_VERSION: u64 = 1;
 const BUNDLE_VERSION: u64 = 1;
@@ -30,27 +26,8 @@ impl HookBundleSpec {
         Ok(spec)
     }
 
-    /// What `capture_ops` reads from `staging`, for the loader.
-    pub(crate) fn capture_request(staging: &Path) -> SnapshotRequest {
-        let codex = ProviderId::Codex.spec();
-        SnapshotRequest {
-            trees: PROVIDERS
-                .iter()
-                .map(|spec| staging.join(spec.hook.scripts_dir))
-                .collect(),
-            listings: vec![staging.join(".codex")],
-            documents: PROVIDERS
-                .iter()
-                .map(|spec| spec.hook.external_file)
-                .chain(codex.config_file())
-                .map(|relative| staging.join(relative))
-                .collect(),
-            probes: Vec::new(),
-        }
-    }
-
     /// The files of a finished installer run in `staging` that the bundle `output` holds.
-    pub(crate) fn capture_ops(&self, staging: Tree<'_>, output: &Path) -> Result<Vec<FileOp>> {
+    pub(crate) fn capture_ops(&self, staging: &Staged, output: &Path) -> Result<Vec<FileOp>> {
         let mut operations = capture_supported_files(staging, output, &self.command_replacements)?;
         ensure!(
             !operations.is_empty(),
@@ -118,8 +95,57 @@ impl CommandReplacement {
     }
 }
 
+/// What a finished installer run left in its isolated home, read by the loader.
+#[derive(Debug)]
+pub(crate) struct Staged {
+    pub(crate) root: PathBuf,
+    /// The supported hook and config files that exist, in the order they are captured.
+    pub(crate) files: Vec<StagedFile>,
+    /// The provider hook directories that exist.
+    pub(crate) directories: Vec<StagedDirectory>,
+    /// The shell scripts that sit directly in `.codex`.
+    pub(crate) codex_scripts: Vec<PathBuf>,
+}
+
+#[derive(Debug)]
+pub(crate) struct StagedFile {
+    pub(crate) relative: &'static str,
+    pub(crate) content: StagedContent,
+}
+
+#[derive(Debug)]
+pub(crate) enum StagedContent {
+    /// A JSON document, parsed.
+    Json(Value),
+    /// Any other file, which is copied as it is.
+    Other,
+}
+
+#[derive(Debug)]
+pub(crate) struct StagedDirectory {
+    pub(crate) relative: &'static str,
+}
+
+/// The supported files of a bundle, relative to the home: each provider's external hook file and
+/// the Codex config.
+pub(crate) fn supported_files() -> impl Iterator<Item = &'static str> {
+    PROVIDERS.iter().map(|spec| spec.hook.external_file).chain(
+        crate::provider::spec::ProviderId::Codex
+            .spec()
+            .config_file(),
+    )
+}
+
+/// Whether the file at `relative` is a JSON document.
+pub(crate) fn is_json_file(relative: &str) -> bool {
+    Path::new(relative)
+        .extension()
+        .and_then(|extension| extension.to_str())
+        == Some("json")
+}
+
 fn capture_supported_files(
-    staging: Tree<'_>,
+    staging: &Staged,
     output: &Path,
     replacements: &[CommandReplacement],
 ) -> Result<Vec<FileOp>> {
@@ -129,46 +155,43 @@ fn capture_supported_files(
         replacements,
     };
     let mut operations = Vec::new();
-    for relative in PROVIDERS
-        .iter()
-        .map(|spec| spec.hook.external_file)
-        .chain(ProviderId::Codex.spec().config_file())
-    {
-        operations.extend(normalization.capture_file(relative)?);
+    for file in &staging.files {
+        operations.push(normalization.capture_file(file)?);
     }
-    for relative in PROVIDERS.iter().map(|spec| spec.hook.scripts_dir) {
-        operations.extend(capture_dir(relative, staging, output));
-    }
+    operations.extend(
+        staging
+            .directories
+            .iter()
+            .map(|directory| FileOp::CopyTree {
+                source: staging.root.join(directory.relative),
+                target: output.join(directory.relative),
+            }),
+    );
     operations.extend(codex_script_ops(staging, output));
     Ok(operations)
 }
 
 /// Rewrites staged hook commands so they point at the bundle output.
 struct CommandNormalization<'a> {
-    staging: Tree<'a>,
+    staging: &'a Staged,
     output: &'a Path,
     replacements: &'a [CommandReplacement],
 }
 
 impl CommandNormalization<'_> {
-    fn capture_file(&self, relative: &str) -> Result<Option<FileOp>> {
-        let source = self.staging.root().join(relative);
-        let target = self.output.join(relative);
-        match (self.staging.files().is_file(&source), is_json(&source)) {
-            (false, _) => Ok(None),
-            (true, true) => self.normalized_json_op(&source, &target).map(Some),
-            (true, false) => Ok(Some(FileOp::CopyFile { source, target })),
+    fn capture_file(&self, file: &StagedFile) -> Result<FileOp> {
+        let target = self.output.join(file.relative);
+        match &file.content {
+            StagedContent::Json(value) => self.normalized_json_op(value, target),
+            StagedContent::Other => Ok(FileOp::CopyFile {
+                source: self.staging.root.join(file.relative),
+                target,
+            }),
         }
     }
 
-    fn normalized_json_op(&self, source: &Path, target: &Path) -> Result<FileOp> {
-        let mut value: Value = serde_json::from_str(
-            self.staging
-                .files()
-                .read_text(source)
-                .with_context(|| format!("failed to read {}", source.display()))?,
-        )
-        .with_context(|| format!("failed to parse {}", source.display()))?;
+    fn normalized_json_op(&self, value: &Value, target: PathBuf) -> Result<FileOp> {
+        let mut value = value.clone();
         self.normalize_commands(&mut value);
         FileOp::write_json(target, &value)
     }
@@ -192,7 +215,7 @@ impl CommandNormalization<'_> {
 
     fn normalize_command(&self, command: &str) -> String {
         let command = command.replace(
-            self.staging.root().to_string_lossy().as_ref(),
+            self.staging.root.to_string_lossy().as_ref(),
             self.output.to_string_lossy().as_ref(),
         );
         self.replacements
@@ -201,44 +224,23 @@ impl CommandNormalization<'_> {
     }
 }
 
-fn is_json(path: &Path) -> bool {
-    path.extension().and_then(|extension| extension.to_str()) == Some("json")
-}
-
 fn rewrite_command(object: &mut Map<String, Value>, rewrite: impl FnOnce(&str) -> String) {
     if let Some(Value::String(command)) = object.get_mut("command") {
         *command = rewrite(command);
     }
 }
 
-fn capture_dir(relative: &str, staging: Tree<'_>, output: &Path) -> Option<FileOp> {
-    let source = staging.root().join(relative);
-    staging.files().is_dir(&source).then(|| FileOp::CopyTree {
-        source,
-        target: output.join(relative),
-    })
-}
-
-fn codex_script_ops(staging: Tree<'_>, output: &Path) -> Vec<FileOp> {
-    let source = staging.root().join(".codex");
+fn codex_script_ops(staging: &Staged, output: &Path) -> Vec<FileOp> {
     staging
-        .files()
-        .children(&source)
-        .into_iter()
-        .filter_map(|child| shell_script_op(child, output))
+        .codex_scripts
+        .iter()
+        .filter_map(|script| {
+            Some(FileOp::CopyFile {
+                target: output.join(".codex").join(script.file_name()?),
+                source: script.clone(),
+            })
+        })
         .collect()
-}
-
-fn shell_script_op(child: Child, output: &Path) -> Option<FileOp> {
-    let is_shell = child
-        .path
-        .extension()
-        .and_then(|extension| extension.to_str())
-        == Some("sh");
-    (child.is_regular_file() && is_shell).then(|| FileOp::CopyFile {
-        target: output.join(".codex").join(&child.name),
-        source: child.path,
-    })
 }
 
 fn manifest_op(output: &Path) -> Result<FileOp> {

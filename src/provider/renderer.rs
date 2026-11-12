@@ -8,7 +8,7 @@ use crate::{
     config_sync::{
         Merge,
         codec::{ConfigDocument, Toml},
-        installed::{Installed, read_optional_generated},
+        installed::{InstalledConfigs, parse_generated},
     },
     file_op::FileOp,
     generation::{
@@ -28,17 +28,18 @@ use crate::{
 /// The registry declares which files a provider owns and which kind of each it is; this renders
 /// them. Every `match` is exhaustive over a registry enum, so adding a variant fails to compile
 /// until it is rendered.
+///
+/// A provider that reuses another's output (copied skills) computes it again from the same
+/// `Source`, so no provider reads what an earlier one wrote and the whole installation is one plan.
 pub(crate) struct ProviderRenderer<'a> {
     pub(crate) context: GenerationContext<'a>,
     pub(crate) providers: &'a [ProviderSpec],
+    pub(crate) installed: &'a InstalledConfigs,
     pub(crate) out: &'a Path,
 }
 
 impl ProviderRenderer<'_> {
     /// The files a provider declares, as operations to apply in order.
-    ///
-    /// Operations of one provider may read what an earlier provider's operations wrote, so apply
-    /// each provider's before rendering the next.
     pub(crate) fn render(&self, spec: &ProviderSpec) -> Result<Vec<FileOp>> {
         let mut operations = Vec::new();
         operations.extend(self.copy_instructions(spec));
@@ -60,48 +61,71 @@ impl ProviderRenderer<'_> {
     fn write_hook_registration(&self, spec: &ProviderSpec) -> Result<FileOp> {
         let path = self.out.join(spec.hook.registration.path());
         match spec.hook.registration {
-            HookRegistration::InSettings(_) => self.write_settings(&path),
+            HookRegistration::InSettings(_) => self.write_settings(spec, &path),
             HookRegistration::File(_) => hooks::hooks_op_for_runtime(self.context, &path, spec),
         }
     }
 
-    fn write_settings(&self, path: &Path) -> Result<FileOp> {
-        claude_config::settings_op_for_runtime(self.context, path)
+    /// The settings with the installed ones merged in, when the provider's config claims the
+    /// whole settings file.
+    ///
+    /// `~/` stays unexpanded: the prefix is not always the home, and the Home Manager sync expands
+    /// it.
+    fn write_settings(&self, spec: &ProviderSpec, path: &Path) -> Result<FileOp> {
+        match spec
+            .config
+            .filter(|config| config.sync.replaces_every_key())
+        {
+            Some(config) => self.merge_settings_into_installed(InstalledConfig {
+                sync: &config.sync,
+                relative: spec.hook.registration.path(),
+                path,
+            }),
+            None => claude_config::settings_op_for_runtime(self.context, path),
+        }
+    }
+
+    fn merge_settings_into_installed(&self, target: InstalledConfig<'_>) -> Result<FileOp> {
+        let settings = claude_config::settings_for_runtime(self.context)?;
+        let text = serde_json::to_string_pretty(&settings)? + "\n";
+        let generated = parse_generated(target.sync, target.path, &text)?;
+        let installed = self.installed.get(target.relative);
+        let merged = Merge::new(target.sync, &generated).apply(installed)?;
+        Ok(FileOp::write(target.path, merged.config))
     }
 
     fn render_skill(&self, spec: &ProviderSpec) -> Result<Option<FileOp>> {
         spec.skill
-            .map(|skill| self.render_declared_skill(skill))
+            .map(|skill| self.render_declared_skill(skill, &self.out.join(skill.destination)))
             .transpose()
     }
 
-    fn render_declared_skill(&self, skill: &SkillSpec) -> Result<FileOp> {
-        let target = self.out.join(skill.destination);
-        let render = |provider| self.generate_skills(provider, &target);
+    fn render_declared_skill(&self, skill: &SkillSpec, target: &Path) -> Result<FileOp> {
         match skill.source {
-            SkillSource::RenderFrontmatter => render(Provider::Claude),
-            SkillSource::RenderWithInvocationPolicy => render(Provider::Codex),
-            SkillSource::CopyRendered(from) => self.copy_rendered_skills(from, target),
+            SkillSource::RenderFrontmatter => self.skills_for(Provider::Claude, target),
+            SkillSource::RenderWithInvocationPolicy => self.skills_for(Provider::Codex, target),
+            SkillSource::CopyRendered(from) => self.reuse_rendered_skills(from, target),
         }
     }
 
-    fn generate_skills(&self, provider: Provider, target: &Path) -> Result<FileOp> {
-        let target = skills::SkillTarget {
-            provider,
-            path: target,
-        };
-        skills::render_skills(self.context.source, &[], target)
-    }
-
-    fn copy_rendered_skills(&self, from: ProviderId, target: std::path::PathBuf) -> Result<FileOp> {
+    /// Another provider's rendered skills, moved to `target` from where that provider puts them.
+    fn reuse_rendered_skills(&self, from: ProviderId, target: &Path) -> Result<FileOp> {
         let rendered = from
             .spec()
             .skill
             .with_context(|| format!("the {} provider spec declares no skills", from.spec().key))?;
-        Ok(FileOp::CopyTree {
-            source: self.out.join(rendered.destination),
-            target,
-        })
+        let origin = self.out.join(rendered.destination);
+        Ok(self
+            .render_declared_skill(rendered, &origin)?
+            .relocated(&origin, target))
+    }
+
+    fn skills_for(&self, provider: Provider, target: &Path) -> Result<FileOp> {
+        let target = skills::SkillTarget {
+            provider,
+            path: target,
+        };
+        skills::render_skills(self.context.source, target)
     }
 
     fn write_command_rule(&self, spec: &ProviderSpec) -> Result<Vec<FileOp>> {
@@ -139,20 +163,21 @@ impl ProviderRenderer<'_> {
 
     fn write_config(&self, spec: &ProviderSpec) -> Result<Vec<FileOp>> {
         match spec.config.zip(spec.config_file()) {
-            Some((config, path)) => self.write_config_file(config, &self.out.join(path)),
+            Some((config, path)) => self.write_config_file(config, path),
             None => Ok(Vec::new()),
         }
     }
 
-    fn write_config_file(&self, config: ConfigSpec, path: &Path) -> Result<Vec<FileOp>> {
+    fn write_config_file(&self, config: ConfigSpec, relative: &str) -> Result<Vec<FileOp>> {
         let target = InstalledConfig {
             sync: &config.sync,
-            path,
+            relative,
+            path: &self.out.join(relative),
         };
         match config.rendered {
             // The hook registration or the bridge directory, rendered with them.
             RenderedConfig::WithHooks => Ok(Vec::new()),
-            RenderedConfig::Fixed(content) => Ok(vec![FileOp::write(path, content)]),
+            RenderedConfig::Fixed(content) => Ok(vec![FileOp::write(target.path, content)]),
             RenderedConfig::SourceFile(relative) => self.merge_source_file(target, relative),
             RenderedConfig::SourceTomlWithProtection => self.merge_protected_toml(target),
         }
@@ -161,11 +186,15 @@ impl ProviderRenderer<'_> {
     fn merge_source_file(
         &self,
         target: InstalledConfig<'_>,
-        relative: &str,
+        source_relative: &str,
     ) -> Result<Vec<FileOp>> {
-        let path = self.context.source.root().join(relative);
-        let generated = read_optional_generated(target.sync, self.context.source.files(), &path)?;
-        self.merge_into_installed(target, &generated)
+        let generated = self
+            .context
+            .source
+            .provider_configs
+            .get(source_relative)
+            .with_context(|| format!("source config {source_relative} was not loaded"))?;
+        self.merge_into_installed(target, generated)
     }
 
     fn merge_protected_toml(&self, target: InstalledConfig<'_>) -> Result<Vec<FileOp>> {
@@ -181,10 +210,8 @@ impl ProviderRenderer<'_> {
         target: InstalledConfig<'_>,
         generated: &ConfigDocument,
     ) -> Result<Vec<FileOp>> {
-        let installed =
-            Installed::from_snapshot(target.sync, self.context.source.files(), target.path)?;
         Merge::new(target.sync, generated)
-            .apply(installed)?
+            .apply(self.installed.get(target.relative))?
             .into_ops(target.sync, target.path)
     }
 }
@@ -193,5 +220,8 @@ impl ProviderRenderer<'_> {
 #[derive(Clone, Copy)]
 struct InstalledConfig<'a> {
     sync: &'a ConfigSync,
+    /// The registry's path of the config, which the installed configs are keyed by.
+    relative: &'a str,
+    /// The config in the output.
     path: &'a Path,
 }
