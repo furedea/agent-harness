@@ -215,11 +215,21 @@ fn a_source_root_denial_over_a_generated_protected_path_is_a_conflict() {
         NO_RULES,
     );
 
-    assert_conflict(
-        &message,
-        ":root = \"deny\" (",
-        "~/.codex/hooks/adapt.sh = \"read\" (generated)",
-    );
+    // The `~/.codex` exception resolves the Codex paths; the other providers' paths still conflict.
+    assert_conflict(&message, ":root = \"deny\" (", "= \"read\" (generated)");
+    assert!(!message.contains("~/.codex/hooks"), "{message}");
+}
+
+#[test]
+fn a_source_exception_that_covers_the_generated_paths_resolves_the_conflict() -> Result<()> {
+    let document = merged_filesystem(
+        "[permissions.guarded.filesystem]\n\":root\" = \"deny\"\n\"~\" = \"read\"\n",
+        NO_RULES,
+    )?;
+
+    let filesystem = &document["permissions"]["guarded"]["filesystem"];
+    assert_eq!(filesystem["~/.codex/hooks/adapt.sh"].as_str(), Some("read"));
+    Ok(())
 }
 
 #[test]
