@@ -8,7 +8,8 @@ use crate::{
     file_op::FileOp,
     generation::{
         GenerationContext,
-        permission_rule::{CodexFilesystemEntry, CodexScope},
+        guarded_path::{GuardedEntry, required_accesses},
+        permission_rule::{CodexAccess, CodexFilesystemEntry, CodexScope},
         secret_path_policy,
     },
     layout::{InstalledLayout, SourceLayout},
@@ -62,7 +63,8 @@ pub(crate) fn codex_config_fragment_for_runtime(context: GenerationContext<'_>) 
     Ok(fragment)
 }
 
-/// Protected harness paths first, then secret paths; the stricter access wins on one path.
+/// Protected harness paths first, then secret paths; the stricter access wins on one path, and
+/// a path a stricter entry covers, such as one under a denied directory or glob, gets that access.
 fn guarded_filesystem_entries(context: GenerationContext<'_>) -> Result<Vec<CodexFilesystemEntry>> {
     let protected = protected_paths_for_runtime(context)?
         .into_iter()
@@ -79,7 +81,27 @@ fn guarded_filesystem_entries(context: GenerationContext<'_>) -> Result<Vec<Code
             None => entries.push(entry),
         }
     }
+    raise_covered(&mut entries)?;
     Ok(entries)
+}
+
+fn raise_covered(entries: &mut [CodexFilesystemEntry]) -> Result<()> {
+    let modeled = entries
+        .iter()
+        .map(CodexFilesystemEntry::guarded)
+        .collect::<Result<Vec<_>>>()?;
+    let (indexes, guarded): (Vec<usize>, Vec<GuardedEntry>) = modeled
+        .into_iter()
+        .enumerate()
+        .filter_map(|(index, entry)| Some((index, entry?)))
+        .unzip();
+    for (index, access) in indexes.into_iter().zip(required_accesses(&guarded)) {
+        entries
+            .get_mut(index)
+            .into_iter()
+            .for_each(|entry| entry.access = CodexAccess::from(access));
+    }
+    Ok(())
 }
 
 fn write_entries(
@@ -322,6 +344,32 @@ mod tests {
         );
 
         assert!(error.contains(".env*"));
+        crate::shell::fixtures::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn a_generated_denial_covers_a_narrower_generated_write_only_rule() -> Result<()> {
+        let root = test_root("a_generated_denial_covers_a_narrower_write_only_rule")?;
+        write_minimal_source(&root)?;
+        write_file(
+            &root.join("hooks/rules/secret_path_policy.json"),
+            r#"{"version":1,"rules":[
+{"pattern":"secrets/**","access":["read"]},
+{"pattern":"secrets/key","access":["write"]},
+{"pattern":"~/.codex/hooks/**","access":["read"]}
+]}"#,
+        )?;
+
+        let content = codex_config_fragment(&load_source(&root)?)?;
+        let document = content.parse::<toml_edit::DocumentMut>()?;
+        let filesystem = &document["permissions"]["guarded"]["filesystem"];
+
+        assert_eq!(
+            filesystem[":workspace_roots"]["secrets/key"].as_str(),
+            Some("none")
+        );
+        assert_eq!(filesystem["~/.codex/hooks/adapt.sh"].as_str(), Some("none"));
         crate::shell::fixtures::remove_dir_all(root)?;
         Ok(())
     }

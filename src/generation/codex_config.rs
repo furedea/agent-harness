@@ -30,7 +30,7 @@ fn config_source_content_for_runtime(context: GenerationContext<'_>) -> Result<S
     let mut protection = protection::codex_config_fragment_for_runtime(context)?
         .parse::<DocumentMut>()
         .context("failed to parse generated Codex config")?;
-    reconcile::guarded_filesystem(&mut document, &mut protection);
+    reconcile::guarded_filesystem(&mut document, &mut protection)?;
     for (key, item) in protection.iter() {
         merge_item(document.entry(key).or_insert(Item::None), item);
     }

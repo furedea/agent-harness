@@ -3,6 +3,8 @@
 //! Rules are parsed once at the source boundary so every provider renders the same meaning.
 
 use anyhow::{Result, ensure};
+
+use crate::generation::guarded_path::{Access, GuardedEntry, GuardedPath};
 use serde::{Deserialize, Serialize};
 
 /// A command prefix split into tokens, none of which is empty or contains whitespace.
@@ -145,7 +147,23 @@ pub(crate) enum CodexAccess {
     None,
 }
 
+impl From<Access> for CodexAccess {
+    fn from(access: Access) -> Self {
+        match access {
+            Access::Deny => Self::None,
+            Access::Read | Access::Write => Self::Read,
+        }
+    }
+}
+
 impl CodexAccess {
+    fn guarded(self) -> Access {
+        match self {
+            Self::Read => Access::Read,
+            Self::None => Access::Deny,
+        }
+    }
+
     pub(crate) fn as_str(self) -> &'static str {
         match self {
             Self::Read => "read",
@@ -169,6 +187,19 @@ pub(crate) struct CodexFilesystemEntry {
 }
 
 impl CodexFilesystemEntry {
+    /// The entry in the guarded path model; `None` when it is a looser entry on a pattern.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the path climbs above its root.
+    pub(crate) fn guarded(&self) -> Result<Option<GuardedEntry>> {
+        let path = match self.scope {
+            CodexScope::Absolute => GuardedPath::absolute(&self.path)?,
+            CodexScope::WorkspaceRoots => GuardedPath::workspace().join(&self.path)?,
+        };
+        Ok(GuardedEntry::new(path, self.access.guarded()))
+    }
+
     /// A protected installed path: readable, never writable.
     pub(crate) fn protected(path: String) -> Self {
         Self {
