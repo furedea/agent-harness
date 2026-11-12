@@ -321,11 +321,15 @@ fn entries_that_do_not_overlap_or_agree_on_access_pass() -> Result<()> {
     Ok(())
 }
 
+/// Tests run in parallel and the clock can repeat, so a counter keeps each root unique.
+static NEXT_ROOT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
 fn test_root(name: &str) -> Result<std::path::PathBuf> {
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)?
         .as_nanos();
-    let root = std::env::temp_dir().join(format!("agent-harness-{name}-{nanos}"));
+    let serial = NEXT_ROOT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let root = std::env::temp_dir().join(format!("agent-harness-{name}-{nanos}-{serial}"));
     crate::shell::fixtures::create_dir_all(&root)?;
     Ok(root)
 }
