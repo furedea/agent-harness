@@ -1,15 +1,14 @@
 use std::fmt::Write;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, ensure};
 use serde::Serialize;
 
 use crate::{
     file_op::FileOp,
     generation::{
         GenerationContext,
-        guarded_path::required_accesses,
-        permission_rule::{CodexAccess, CodexFilesystemEntry, CodexScope},
+        permission_rule::{CodexFilesystemEntry, CodexScope},
         secret_path_policy,
     },
     layout::{InstalledLayout, SourceLayout},
@@ -60,11 +59,12 @@ pub(crate) fn codex_config_fragment_for_runtime(context: GenerationContext<'_>) 
         write_entries(&mut fragment, &entries, CodexScope::WorkspaceRoots)?;
     }
 
+    crate::generation::guarded_conflict::check(&fragment.parse()?, None)?;
     Ok(fragment)
 }
 
-/// Protected harness paths first, then secret paths; the stricter access wins on one path, and
-/// a path a stricter entry covers, such as one under a denied directory or glob, gets that access.
+/// Protected harness paths first, then secret paths. A path both name with different accesses
+/// is a conflict, and so is any entry covered by a stricter one (see `guarded_conflict`).
 fn guarded_filesystem_entries(context: GenerationContext<'_>) -> Result<Vec<CodexFilesystemEntry>> {
     let protected = protected_paths_for_runtime(context)?
         .into_iter()
@@ -73,26 +73,25 @@ fn guarded_filesystem_entries(context: GenerationContext<'_>) -> Result<Vec<Code
 
     let mut entries: Vec<CodexFilesystemEntry> = Vec::new();
     for entry in protected.chain(secret) {
-        match entries
-            .iter_mut()
-            .find(|known| known.scope == entry.scope && known.path == entry.path)
-        {
-            Some(known) => known.access = known.access.max(entry.access),
-            None => entries.push(entry),
-        }
+        let known = entries
+            .iter()
+            .find(|known| known.scope == entry.scope && known.path == entry.path);
+        known.map_or(Ok(()), |known| ensure_same_access(known, &entry))?;
+        let is_new = known.is_none();
+        entries.extend(is_new.then_some(entry));
     }
-    raise_covered(&mut entries)?;
     Ok(entries)
 }
 
-fn raise_covered(entries: &mut [CodexFilesystemEntry]) -> Result<()> {
-    let guarded = entries
-        .iter()
-        .map(CodexFilesystemEntry::guarded)
-        .collect::<Result<Vec<_>>>()?;
-    for (entry, access) in entries.iter_mut().zip(required_accesses(&guarded)) {
-        entry.access = CodexAccess::from(access);
-    }
+fn ensure_same_access(known: &CodexFilesystemEntry, entry: &CodexFilesystemEntry) -> Result<()> {
+    ensure!(
+        known.access == entry.access,
+        "guarded filesystem conflict: {:?} is both \"{}\" and \"{}\" in the generated config; \
+         Codex applies the more specific entry, so change one of them",
+        entry.path,
+        known.access.as_str(),
+        entry.access.as_str()
+    );
     Ok(())
 }
 
@@ -285,25 +284,16 @@ mod tests {
 {"pattern":"~/.ssh/**","access":["read","write"]},
 {"pattern":"**/secrets/**","access":["read"]},
 {"pattern":"~/.aws/credentials","access":["write"]},
-{"pattern":"~/.claude/hooks/guard.sh","access":["read"]},
 {"pattern":"~/.codex/hooks.json","access":["write"]}
 ]}"#,
         )?;
 
         let content = codex_config_fragment(&load_source(&root)?)?;
-
         let (table, scoped) = content.split_once("\n[").unwrap();
         let lines: Vec<&str> = table.lines().collect();
 
         assert!(lines.contains(&"\"~/.codex/hooks/adapt.sh\" = \"read\""));
         assert!(lines.contains(&"\"~/.codex/hooks.json\" = \"read\""));
-        assert_eq!(
-            lines
-                .iter()
-                .filter(|line| line.starts_with("\"~/.claude/hooks/guard.sh\""))
-                .collect::<Vec<_>>(),
-            [&"\"~/.claude/hooks/guard.sh\" = \"none\""],
-        );
         assert_eq!(
             lines[lines.len() - 3..],
             [
@@ -317,6 +307,66 @@ mod tests {
             "permissions.guarded.filesystem.\":workspace_roots\"]\n\"**/secrets/**\" = \"none\"\n",
         );
         content.parse::<toml_edit::DocumentMut>()?;
+        crate::shell::fixtures::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    fn fragment_error(policy: &str) -> Result<String> {
+        let root = test_root("fragment_error")?;
+        write_minimal_source(&root)?;
+        write_file(&root.join("hooks/rules/secret_path_policy.json"), policy)?;
+        let error = codex_config_fragment(&load_source(&root)?).unwrap_err();
+        crate::shell::fixtures::remove_dir_all(root)?;
+        Ok(format!("{error:#}"))
+    }
+
+    #[test]
+    fn a_secret_rule_on_a_protected_path_with_another_access_is_a_conflict() -> Result<()> {
+        let message = fragment_error(
+            r#"{"version":1,"rules":[{"pattern":"~/.codex/hooks.json","access":["read"]}]}"#,
+        )?;
+
+        assert!(message.contains("guarded filesystem conflict"), "{message}");
+        assert!(message.contains("~/.codex/hooks.json"), "{message}");
+        Ok(())
+    }
+
+    #[test]
+    fn a_generated_denial_over_a_narrower_generated_entry_is_a_conflict() -> Result<()> {
+        let message = fragment_error(
+            r#"{"version":1,"rules":[
+{"pattern":"secrets/**","access":["read"]},
+{"pattern":"secrets/key","access":["write"]}
+]}"#,
+        )?;
+
+        assert!(
+            message.contains("secrets/** = \"none\" (generated)"),
+            "{message}"
+        );
+        assert!(
+            message.contains("secrets/key = \"read\" (generated)"),
+            "{message}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn overlapping_generated_entries_with_the_same_access_pass() -> Result<()> {
+        let root = test_root("overlapping_generated_entries_with_the_same_access_pass")?;
+        write_minimal_source(&root)?;
+        write_file(
+            &root.join("hooks/rules/secret_path_policy.json"),
+            r#"{"version":1,"rules":[
+{"pattern":"secrets/**","access":["read"]},
+{"pattern":"secrets/key","access":["read"]},
+{"pattern":"~/.codex/hooks.json","access":["write"]}
+]}"#,
+        )?;
+
+        let content = codex_config_fragment(&load_source(&root)?)?;
+
+        assert!(content.contains("\"secrets/key\" = \"none\""));
         crate::shell::fixtures::remove_dir_all(root)?;
         Ok(())
     }
@@ -336,32 +386,6 @@ mod tests {
         );
 
         assert!(error.contains(".env*"));
-        crate::shell::fixtures::remove_dir_all(root)?;
-        Ok(())
-    }
-
-    #[test]
-    fn a_generated_denial_covers_a_narrower_generated_write_only_rule() -> Result<()> {
-        let root = test_root("a_generated_denial_covers_a_narrower_write_only_rule")?;
-        write_minimal_source(&root)?;
-        write_file(
-            &root.join("hooks/rules/secret_path_policy.json"),
-            r#"{"version":1,"rules":[
-{"pattern":"secrets/**","access":["read"]},
-{"pattern":"secrets/key","access":["write"]},
-{"pattern":"~/.codex/hooks/**","access":["read"]}
-]}"#,
-        )?;
-
-        let content = codex_config_fragment(&load_source(&root)?)?;
-        let document = content.parse::<toml_edit::DocumentMut>()?;
-        let filesystem = &document["permissions"]["guarded"]["filesystem"];
-
-        assert_eq!(
-            filesystem[":workspace_roots"]["secrets/key"].as_str(),
-            Some("none")
-        );
-        assert_eq!(filesystem["~/.codex/hooks/adapt.sh"].as_str(), Some("none"));
         crate::shell::fixtures::remove_dir_all(root)?;
         Ok(())
     }

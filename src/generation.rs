@@ -8,6 +8,7 @@ mod claude_permissions;
 pub(crate) mod codex_config;
 pub(crate) mod command_permissions;
 pub(crate) mod external_hooks;
+mod guarded_conflict;
 mod guarded_path;
 pub(crate) mod hook_bundle;
 pub(crate) mod hooks;

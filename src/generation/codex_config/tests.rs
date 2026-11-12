@@ -120,229 +120,151 @@ fn write_config_source_renders_source_declared_write_denied_paths() -> Result<()
     Ok(())
 }
 
-#[test]
-fn write_config_source_keeps_a_stricter_source_access_over_a_secret_rule() -> Result<()> {
-    let root = test_root("write_config_source_keeps_a_stricter_source_access")?;
-    write_minimal_source(&root)?;
-    write_file(
-        &root.join("codex/config.toml"),
-        "[permissions.guarded.filesystem]\n\"~/.aws/credentials\" = \"none\"\n",
-    )?;
-    write_file(
-        &root.join("hooks/rules/secret_path_policy.json"),
-        r#"{"version":1,"rules":[{"pattern":"~/.aws/credentials","access":["write"]}]}"#,
-    )?;
-    let out = root.join("config.toml");
-
-    write_config_source(&root, &out, &[])?;
-
-    let document = std::fs::read_to_string(&out)?.parse::<DocumentMut>()?;
-    let guarded = &document["permissions"]["guarded"]["filesystem"];
-    assert_eq!(guarded["~/.aws/credentials"].as_str(), Some("none"));
-
-    crate::shell::fixtures::remove_dir_all(root)?;
-    Ok(())
-}
-
-#[test]
-fn write_config_source_keeps_a_scalar_workspace_grant_beside_scoped_secret_rules() -> Result<()> {
-    let root = test_root("write_config_source_keeps_a_scalar_workspace_grant")?;
-    write_minimal_source(&root)?;
-    write_file(
-        &root.join("codex/config.toml"),
-        "[permissions.guarded.filesystem]\n\":workspace_roots\" = \"write\"\n",
-    )?;
-    write_file(
-        &root.join("hooks/rules/secret_path_policy.json"),
-        r#"{"version":1,"rules":[{"pattern":"**/secrets/**","access":["read"]}]}"#,
-    )?;
-    let out = root.join("config.toml");
-
-    write_config_source(&root, &out, &[])?;
-
-    let document = std::fs::read_to_string(&out)?.parse::<DocumentMut>()?;
-    let roots = &document["permissions"]["guarded"]["filesystem"][":workspace_roots"];
-    assert_eq!(roots["."].as_str(), Some("write"));
-    assert_eq!(roots["**/secrets/**"].as_str(), Some("none"));
-
-    crate::shell::fixtures::remove_dir_all(root)?;
-    Ok(())
-}
-
-#[test]
-fn write_config_source_keeps_stricter_scoped_source_entries_and_scalar_denials() -> Result<()> {
-    let root = test_root("write_config_source_keeps_stricter_scoped_source_entries")?;
-    write_minimal_source(&root)?;
-    write_file(
-        &root.join("codex/config.toml"),
-        "[permissions.guarded.filesystem.\":workspace_roots\"]\n\"secrets/file\" = \"deny\"\n",
-    )?;
-    write_file(
-        &root.join("hooks/rules/secret_path_policy.json"),
-        r#"{"version":1,"rules":[{"pattern":"secrets/file","access":["write"]}]}"#,
-    )?;
-    let out = root.join("config.toml");
-
-    write_config_source(&root, &out, &[])?;
-
-    let document = std::fs::read_to_string(&out)?.parse::<DocumentMut>()?;
-    let roots = &document["permissions"]["guarded"]["filesystem"][":workspace_roots"];
-    assert_eq!(roots["secrets/file"].as_str(), Some("none"));
-
-    write_file(
-        &root.join("codex/config.toml"),
-        "[permissions.guarded.filesystem]\n\":workspace_roots\" = \"deny\"\n",
-    )?;
-    write_config_source(&root, &out, &[])?;
-
-    let document = std::fs::read_to_string(&out)?.parse::<DocumentMut>()?;
-    let roots = &document["permissions"]["guarded"]["filesystem"][":workspace_roots"];
-    assert_eq!(roots["."].as_str(), Some("deny"));
-    assert_eq!(roots["secrets/file"].as_str(), Some("none"));
-
-    crate::shell::fixtures::remove_dir_all(root)?;
-    Ok(())
-}
-
-#[test]
-fn write_config_source_keeps_broad_source_denials_over_specific_secret_rules() -> Result<()> {
-    let root = test_root("write_config_source_keeps_broad_source_denials")?;
-    write_minimal_source(&root)?;
-    write_file(
-        &root.join("hooks/rules/secret_path_policy.json"),
-        r#"{"version":1,"rules":[
-{"pattern":"secrets/file","access":["write"]},
-{"pattern":"~/.aws/credentials","access":["write"]}
-]}"#,
-    )?;
-    let out = root.join("config.toml");
-
-    write_file(
-        &root.join("codex/config.toml"),
-        "[permissions.guarded.filesystem.\":workspace_roots\"]\n\".\" = \"deny\"\n",
-    )?;
-    write_config_source(&root, &out, &[])?;
-    let document = std::fs::read_to_string(&out)?.parse::<DocumentMut>()?;
-    let filesystem = &document["permissions"]["guarded"]["filesystem"];
-    assert_eq!(
-        filesystem[":workspace_roots"]["secrets/file"].as_str(),
-        Some("none")
-    );
-    assert_eq!(filesystem["~/.aws/credentials"].as_str(), Some("read"));
-
-    write_file(
-        &root.join("codex/config.toml"),
-        "[permissions.guarded.filesystem]\n\":root\" = \"deny\"\n\"~/.aws\" = \"deny\"\n",
-    )?;
-    write_config_source(&root, &out, &[])?;
-    let document = std::fs::read_to_string(&out)?.parse::<DocumentMut>()?;
-    let filesystem = &document["permissions"]["guarded"]["filesystem"];
-    assert_eq!(filesystem["~/.aws/credentials"].as_str(), Some("none"));
-    assert_eq!(filesystem["~/.codex/hooks/adapt.sh"].as_str(), Some("none"));
-
-    crate::shell::fixtures::remove_dir_all(root)?;
-    Ok(())
-}
-
 fn merged_filesystem(source_config: &str, policy: &str) -> Result<DocumentMut> {
     let root = test_root("merged_filesystem")?;
     write_minimal_source(&root)?;
     write_file(&root.join("codex/config.toml"), source_config)?;
     write_file(&root.join("hooks/rules/secret_path_policy.json"), policy)?;
     let out = root.join("config.toml");
-    write_config_source(&root, &out, &[])?;
-    let document = std::fs::read_to_string(&out)?.parse::<DocumentMut>()?;
+    let written = write_config_source(&root, &out, &[]);
+    let document =
+        written.and_then(|()| Ok(std::fs::read_to_string(&out)?.parse::<DocumentMut>()?));
     crate::shell::fixtures::remove_dir_all(root)?;
-    Ok(document)
+    document
+}
+
+fn conflict_message(source_config: &str, policy: &str) -> String {
+    let error = merged_filesystem(source_config, policy).unwrap_err();
+    format!("{error:#}")
 }
 
 const WRITE_ONLY_SECRETS_FILE: &str =
     r#"{"version":1,"rules":[{"pattern":"secrets/file","access":["write"]}]}"#;
 const WRITE_ONLY_AWS_CREDENTIALS: &str =
     r#"{"version":1,"rules":[{"pattern":"~/.aws/credentials","access":["write"]}]}"#;
+const NO_RULES: &str = r#"{"version":1,"rules":[]}"#;
 
-#[test]
-fn a_source_parent_denial_under_workspace_roots_covers_a_generated_child() -> Result<()> {
-    let document = merged_filesystem(
-        "[permissions.guarded.filesystem.\":workspace_roots\"]\n\"secrets\" = \"deny\"\n",
-        WRITE_ONLY_SECRETS_FILE,
-    )?;
-
-    let roots = &document["permissions"]["guarded"]["filesystem"][":workspace_roots"];
-    assert_eq!(roots["secrets/file"].as_str(), Some("none"));
-    Ok(())
+fn assert_conflict(message: &str, stricter: &str, looser: &str) {
+    assert!(message.contains("guarded filesystem conflict"), "{message}");
+    assert!(message.contains(stricter), "{message}");
+    assert!(message.contains(looser), "{message}");
 }
 
 #[test]
-fn a_source_glob_denial_covers_a_generated_concrete_path() -> Result<()> {
-    let document = merged_filesystem(
+fn a_source_entry_on_the_same_path_with_another_access_is_a_conflict() {
+    let message = conflict_message(
+        "[permissions.guarded.filesystem]\n\"~/.aws/credentials\" = \"none\"\n",
+        WRITE_ONLY_AWS_CREDENTIALS,
+    );
+
+    assert_conflict(
+        &message,
+        "~/.aws/credentials = \"none\" (",
+        "~/.aws/credentials = \"read\" (generated)",
+    );
+    assert!(message.contains("codex/config.toml"), "{message}");
+}
+
+#[test]
+fn a_source_ancestor_denial_over_a_generated_entry_is_a_conflict() {
+    let message = conflict_message(
+        "[permissions.guarded.filesystem]\n\"~/.config/../.aws\" = \"deny\"\n",
+        WRITE_ONLY_AWS_CREDENTIALS,
+    );
+
+    assert_conflict(
+        &message,
+        "= \"deny\" (",
+        "~/.aws/credentials = \"read\" (generated)",
+    );
+}
+
+#[test]
+fn a_source_glob_denial_over_a_generated_concrete_path_is_a_conflict() {
+    let message = conflict_message(
         "[permissions.guarded.filesystem]\n\"~/.aws/**\" = \"deny\"\n",
         WRITE_ONLY_AWS_CREDENTIALS,
-    )?;
+    );
 
-    let filesystem = &document["permissions"]["guarded"]["filesystem"];
-    assert_eq!(filesystem["~/.aws/credentials"].as_str(), Some("none"));
-    Ok(())
+    assert_conflict(
+        &message,
+        "~/.aws/** = \"deny\" (",
+        "~/.aws/credentials = \"read\" (generated)",
+    );
 }
 
 #[test]
-fn a_source_path_is_normalized_before_it_is_compared() -> Result<()> {
-    let document = merged_filesystem(
-        "[permissions.guarded.filesystem]\n\"~/.config/../.aws//\" = \"deny\"\n",
-        WRITE_ONLY_AWS_CREDENTIALS,
-    )?;
+fn a_scoped_workspace_denial_over_a_generated_child_is_a_conflict() {
+    let message = conflict_message(
+        "[permissions.guarded.filesystem.\":workspace_roots\"]\n\"secrets\" = \"deny\"\n",
+        WRITE_ONLY_SECRETS_FILE,
+    );
 
-    let filesystem = &document["permissions"]["guarded"]["filesystem"];
-    assert_eq!(filesystem["~/.aws/credentials"].as_str(), Some("none"));
-    Ok(())
+    assert_conflict(
+        &message,
+        ":workspace_roots / secrets = \"deny\" (",
+        "secrets/file = \"read\" (generated)",
+    );
+}
+
+#[test]
+fn a_generated_read_over_a_more_specific_source_write_is_a_conflict() {
+    let message = conflict_message(
+        "[permissions.guarded.filesystem]\n\"~/.config/gh\" = \"write\"\n",
+        r#"{"version":1,"rules":[{"pattern":"~/.config/**","access":["write"]}]}"#,
+    );
+
+    assert_conflict(
+        &message,
+        "~/.config = \"read\" (generated)",
+        "~/.config/gh = \"write\" (",
+    );
+}
+
+#[test]
+fn a_source_root_denial_over_a_generated_protected_path_is_a_conflict() {
+    let message = conflict_message(
+        "[permissions.guarded.filesystem]\n\":root\" = \"deny\"\n\"~/.codex\" = \"read\"\n",
+        NO_RULES,
+    );
+
+    assert_conflict(
+        &message,
+        ":root = \"deny\" (",
+        "~/.codex/hooks/adapt.sh = \"read\" (generated)",
+    );
 }
 
 #[test]
 fn a_source_path_that_climbs_above_its_root_is_rejected() {
-    let error = merged_filesystem(
+    let message = conflict_message(
         "[permissions.guarded.filesystem]\n\"~/../x\" = \"deny\"\n",
-        WRITE_ONLY_AWS_CREDENTIALS,
-    )
-    .unwrap_err();
+        NO_RULES,
+    );
 
-    assert!(format!("{error:#}").contains("~/../x"));
+    assert!(message.contains("~/../x"), "{message}");
 }
 
 #[test]
-fn a_source_subtree_read_entry_is_raised_to_the_generated_denial() -> Result<()> {
+fn entries_that_do_not_overlap_or_agree_on_access_pass() -> Result<()> {
     let document = merged_filesystem(
-        "[permissions.guarded.filesystem]\n\"~/.ssh/**\" = \"read\"\n",
-        r#"{"version":1,"rules":[{"pattern":"~/.ssh/**","access":["read"]}]}"#,
+        "[permissions.guarded.filesystem]\n\
+         \":root\" = \"read\"\n\":workspace_roots\" = \"write\"\n\"/tmp\" = \"write\"\n\
+         \"~/.aws\" = \"read\"\n\"~/.kube\" = \"deny\"\n",
+        r#"{"version":1,"rules":[
+{"pattern":"~/.aws/credentials","access":["write"]},
+{"pattern":"**/secrets/**","access":["read"]}
+]}"#,
     )?;
 
     let filesystem = &document["permissions"]["guarded"]["filesystem"];
-    assert_eq!(filesystem["~/.ssh/**"].as_str(), Some("none"));
-    Ok(())
-}
-
-#[test]
-fn a_source_exception_under_a_broader_source_entry_is_left_alone() -> Result<()> {
-    let document = merged_filesystem(
-        "[permissions.guarded.filesystem]\n\":root\" = \"read\"\n\":workspace_roots\" = \"write\"\n\"/tmp\" = \"write\"\n",
-        r#"{"version":1,"rules":[]}"#,
-    )?;
-
-    let filesystem = &document["permissions"]["guarded"]["filesystem"];
+    assert_eq!(filesystem[":workspace_roots"]["."].as_str(), Some("write"));
+    assert_eq!(
+        filesystem[":workspace_roots"]["**/secrets/**"].as_str(),
+        Some("none")
+    );
+    assert_eq!(filesystem["~/.aws/credentials"].as_str(), Some("read"));
     assert_eq!(filesystem[":root"].as_str(), Some("read"));
-    assert_eq!(filesystem[":workspace_roots"].as_str(), Some("write"));
-    assert_eq!(filesystem["/tmp"].as_str(), Some("write"));
-    Ok(())
-}
-
-#[test]
-fn a_source_slash_tmp_denial_covers_a_generated_path_under_tmp() -> Result<()> {
-    let document = merged_filesystem(
-        "[permissions.guarded.filesystem]\n\":slash_tmp\" = \"deny\"\n",
-        r#"{"version":1,"rules":[{"pattern":"//tmp/secret","access":["write"]}]}"#,
-    )?;
-
-    let filesystem = &document["permissions"]["guarded"]["filesystem"];
-    assert_eq!(filesystem["/tmp/secret"].as_str(), Some("none"));
     Ok(())
 }
 

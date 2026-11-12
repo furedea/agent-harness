@@ -29,14 +29,6 @@ impl Access {
             _ => None,
         }
     }
-
-    pub(crate) fn as_str(self) -> &'static str {
-        match self {
-            Self::Write => "write",
-            Self::Read => "read",
-            Self::Deny => "none",
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -306,36 +298,35 @@ impl GuardedEntry {
     }
 }
 
-/// The access each entry needs: its own, raised to the strictest entry that covers it.
+/// A pair of entries where the stricter one covers the looser one.
 ///
-/// A denial already has the strictest access, so only looser entries are raised.
-pub(crate) fn required_accesses(entries: &[GuardedEntry]) -> Vec<Access> {
-    raised_by(entries, entries)
+/// Codex applies the more specific entry, so the looser entry reopens what the stricter one
+/// denies, or, when the looser one is the intended exception, the stricter one is broader than
+/// it should be. Either way the entries disagree about the same path.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Conflict {
+    pub(crate) stricter: usize,
+    pub(crate) looser: usize,
 }
 
-/// The access each of `targets` needs once the `coverers` that cover it are taken into account.
-pub(crate) fn raised_by(targets: &[GuardedEntry], coverers: &[GuardedEntry]) -> Vec<Access> {
-    targets
-        .iter()
-        .map(|entry| match entry {
-            GuardedEntry::Deny(_) => Access::Deny,
-            GuardedEntry::Looser { path, access } => strictest_cover(coverers, path).max(*access),
-        })
-        .collect()
-}
-
-fn strictest_cover(entries: &[GuardedEntry], path: &GuardedPath) -> Access {
-    entries
-        .iter()
-        .filter(|entry| entry.path().covers(path))
-        .map(GuardedEntry::access)
-        .max()
-        .unwrap_or(Access::Write)
+/// Every pair of `entries` in which one entry covers a looser one, by index.
+pub(crate) fn conflicts(entries: &[GuardedEntry]) -> Vec<Conflict> {
+    let mut found = Vec::new();
+    for (stricter, outer) in entries.iter().enumerate() {
+        found.extend(
+            entries
+                .iter()
+                .enumerate()
+                .filter(|(_, inner)| outer.access() > inner.access() && outer.covers(inner))
+                .map(|(looser, _)| Conflict { stricter, looser }),
+        );
+    }
+    found
 }
 
 impl GuardedEntry {
-    pub(crate) fn is_denial(&self) -> bool {
-        matches!(self, Self::Deny(_))
+    fn covers(&self, other: &Self) -> bool {
+        self.path().covers(other.path())
     }
 }
 
@@ -352,8 +343,12 @@ mod tests {
         entry.ok_or_else(|| anyhow::anyhow!("{path} is not concrete"))
     }
 
-    fn required(entries: &[GuardedEntry]) -> Vec<Access> {
-        required_accesses(entries)
+    /// The (stricter, looser) index pairs.
+    fn pairs(entries: &[GuardedEntry]) -> Vec<(usize, usize)> {
+        conflicts(entries)
+            .into_iter()
+            .map(|conflict| (conflict.stricter, conflict.looser))
+            .collect()
     }
 
     #[test]
@@ -373,10 +368,15 @@ mod tests {
             read("~/.awsome/x")?,
         ];
 
-        assert_eq!(
-            required(&entries),
-            [Access::Deny, Access::Deny, Access::Read]
-        );
+        assert_eq!(pairs(&entries), [(0, 1)]);
+        Ok(())
+    }
+
+    #[test]
+    fn an_equal_path_with_a_different_access_conflicts() -> Result<()> {
+        let entries = [deny("~/.aws/credentials")?, read("~/.aws/credentials")?];
+
+        assert_eq!(pairs(&entries), [(0, 1)]);
         Ok(())
     }
 
@@ -390,16 +390,7 @@ mod tests {
             read("/work/a/b/secret")?,
         ];
 
-        assert_eq!(
-            required(&entries),
-            [
-                Access::Deny,
-                Access::Deny,
-                Access::Deny,
-                Access::Deny,
-                Access::Read
-            ]
-        );
+        assert_eq!(pairs(&entries), [(0, 2), (1, 3)]);
         Ok(())
     }
 
@@ -413,16 +404,20 @@ mod tests {
             read("/w/bx/f")?,
         ];
 
-        assert_eq!(
-            required(&entries),
-            [
-                Access::Deny,
-                Access::Deny,
-                Access::Deny,
-                Access::Deny,
-                Access::Deny
-            ]
-        );
+        // `[ab]` is widened to any one character, so `/w/cx` is covered too.
+        assert_eq!(pairs(&entries), [(0, 2), (1, 3), (1, 4)]);
+        Ok(())
+    }
+
+    #[test]
+    fn a_stricter_entry_below_a_looser_one_and_equal_accesses_do_not_conflict() -> Result<()> {
+        let entries = [
+            read("~/.config")?,
+            deny("~/.config/gh")?,
+            deny("~/.config/gh/hosts")?,
+        ];
+
+        assert_eq!(pairs(&entries), []);
         Ok(())
     }
 
@@ -430,7 +425,7 @@ mod tests {
     fn paths_are_normalized_before_they_are_compared() -> Result<()> {
         let entries = [deny("~/.config/../.aws//")?, read("~/./.aws/credentials")?];
 
-        assert_eq!(required(&entries), [Access::Deny, Access::Deny]);
+        assert_eq!(pairs(&entries), [(0, 1)]);
         Ok(())
     }
 
@@ -443,10 +438,7 @@ mod tests {
             read("/v/a")?,
         ];
 
-        assert_eq!(
-            required(&entries),
-            [Access::Deny, Access::Deny, Access::Deny, Access::Read]
-        );
+        assert_eq!(pairs(&entries), [(0, 1), (0, 2)]);
         Ok(())
     }
 
@@ -455,7 +447,7 @@ mod tests {
         let subtree = GuardedEntry::new(GuardedPath::absolute("~/.ssh/**")?, Access::Read);
         let entries = [deny("~/.ssh/**")?, subtree.expect("a subtree is concrete")];
 
-        assert_eq!(required(&entries), [Access::Deny, Access::Deny]);
+        assert_eq!(pairs(&entries), [(0, 1)]);
         assert!(GuardedPath::absolute("C:/proj/.claude/hooks/guard.sh").is_ok());
         assert!(is_absolute_key("C:/work") && !is_absolute_key("work/C:"));
         Ok(())
@@ -473,11 +465,8 @@ mod tests {
         let home = read("~/secrets/x")?;
         let everything = GuardedEntry::Deny(GuardedPath::everything());
 
-        assert_eq!(
-            required(&[workspace, home.clone()]),
-            [Access::Deny, Access::Read]
-        );
-        assert_eq!(required(&[everything, home]), [Access::Deny, Access::Deny]);
+        assert_eq!(pairs(&[workspace, home.clone()]), []);
+        assert_eq!(pairs(&[everything, home]), [(0, 1)]);
         Ok(())
     }
 }

@@ -224,11 +224,28 @@ sequenceDiagram
 | `generation/command_permissions`                                                          | Maps neutral rules to Claude, Codex, and Devin permission syntax.                                              |
 | `generation/claude_config`, `codex_config`, `dsh_config`                                  | Build provider configs and the dsh bundle registration.                                                        |
 | `generation/protection`, `secret_path_policy`                                             | Compute protected paths and secret-file deny rules.                                                            |
+| `generation/guarded_path`, `guarded_conflict`                                             | Compare Codex guarded filesystem entries and fail when a looser entry sits under a stricter one.               |
 | `generation/skills`, `external_hooks`, `hook_bundle`                                      | Render skills and compose external bundles.                                                                    |
 | `inventory`                                                                               | Lists the skills and hooks a source provides.                                                                  |
 | `runtime_root`                                                                            | Relocates hook commands for project-local installs.                                                            |
 | `github_app`                                                                              | Mints GitHub App installation tokens for the agent token option ([0021]).                                      |
 | `runtime`                                                                                 | Checks that the manifest's runtime commands are on `PATH`.                                                     |
+
+### Codex guarded filesystem
+
+The secret path policy reaches Codex as `[permissions.guarded.filesystem]` entries: a denied read
+is `"none"`, a write-only denial is `"read"`. Codex applies the more specific entry, so a looser
+entry under a stricter one (`secrets/key = "read"` under `secrets/** = "none"`) reopens a denied
+path. The harness never rewrites guarded entries to guess which side was meant. It compares the
+generated entries with each other and with the source `codex/config.toml` and fails, naming both
+entries, when one covers a looser one. Only denials may be patterns; the looser entry is always a
+concrete path, so two globs are never compared with each other and a glob looser than another glob
+is not detected. A write-only denial with a glob (other than a trailing `/**`) has no Codex form
+and fails too.
+
+On platforms that expand unreadable globs before the sandbox starts, Codex caps `**` at
+`glob_scan_max_depth` (5), so a secret nested deeper stays readable by a command that bypasses the
+hooks. Hook-time enforcement remains the primary guard.
 
 ## Verification
 

@@ -165,11 +165,18 @@ sequenceDiagram
 | `generation/command_permissions`                                                          | 中立なルールを Claude，Codex，Devin の権限の構文に対応させる．                                |
 | `generation/claude_config`，`codex_config`，`dsh_config`                                  | プロバイダの設定と，dsh の bundle 登録を組み立てる．                                          |
 | `generation/protection`，`secret_path_policy`                                             | 保護パスと，秘密ファイルの deny ルールを計算する．                                            |
+| `generation/guarded_path`，`guarded_conflict`                                             | Codex のガード用エントリを比べ，厳しいエントリの下に緩いエントリがあれば生成を失敗させる．    |
 | `generation/skills`，`external_hooks`，`hook_bundle`                                      | スキルを生成し，外部のバンドルを合成する．                                                    |
 | `inventory`                                                                               | ソースが提供するスキルとフックを一覧にする．                                                  |
 | `runtime_root`                                                                            | プロジェクトローカルのインストール向けにフックのコマンドを移し替える．                        |
 | `github_app`                                                                              | エージェント用トークンのために GitHub App のインストールトークンを発行する（[0021]）．        |
 | `runtime`                                                                                 | manifest の実行時コマンドが `PATH` にあるかを確認する．                                       |
+
+### Codex のガード用ファイルシステム
+
+秘密パスのポリシーは，Codex には `[permissions.guarded.filesystem]` のエントリとして渡す．読み取り禁止は `"none"`，書き込みのみ禁止は `"read"` である．Codex はより具体的なエントリを優先するため，厳しいエントリの下に緩いエントリがある（`secrets/** = "none"` の下の `secrets/key = "read"`）と，禁止したパスが開く．ハーネスはどちらの意図かを推測してエントリを書き換えない．生成されたエントリどうしと，ソースの `codex/config.toml` との組を比べ，厳しいエントリが緩いエントリを覆うときは，両方のエントリを示して失敗する．パターンを持てるのは禁止だけで，緩いエントリは常に具体的なパスなので，グロブどうしは比べない（別のグロブより緩いグロブは検出できない）．末尾の `/**` 以外のグロブを持つ書き込みのみ禁止は Codex に表す形がなく，これも失敗にする．
+
+未読のグロブを事前展開するプラットフォームでは，Codex が `**` を `glob_scan_max_depth`（5）で打ち切る．そのため，それより深い秘密ファイルは，フックを通らないコマンドからは読めてしまう．フック時の検査が主たる防御である．
 
 ## 検証
 
