@@ -4,6 +4,7 @@ use super::spec::{
     ProviderId, ProviderSpec, RenderedConfig, SkillSource, SkillSpec, WhenAbsent,
 };
 use crate::{
+    config_sync::installed::InstalledConfigs,
     generation::{GenerationContext, protection},
     install_plan,
     inventory::shorten_hook_path_for,
@@ -11,7 +12,10 @@ use crate::{
     provider::renderer::ProviderRenderer,
     render::{self, RenderRequest},
     runtime_root::RuntimeRoot,
-    shell::fixtures::load_tree,
+    shell::{
+        LoadInputs,
+        fixtures::{load_source, load_source_with},
+    },
 };
 use anyhow::Result;
 use clap::ValueEnum;
@@ -58,8 +62,8 @@ fn extra_spec_flows_through_layout_protection_rendering_and_publication() -> Res
     let destination = crate::shell::TemporaryDirectory::create()?;
     let layout = InstalledLayout::new(staging.path());
     let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/complete-source");
-    let loaded = load_tree(&source)?;
-    let context = GenerationContext::home(loaded.tree(), &[]);
+    let loaded = load_source_with(&source, &LoadInputs::new(&providers))?;
+    let context = GenerationContext::home(&loaded);
     assert!(
         layout
             .managed_directories_for(&providers)
@@ -372,10 +376,12 @@ fn claude_and_codex_declare_their_instructions_skills_and_statusline() {
 fn rendering_writes_command_rules_where_the_provider_declares_them() -> Result<()> {
     let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/complete-source");
     let out = crate::shell::TemporaryDirectory::create()?;
-    let loaded = load_tree(&source)?;
+    let loaded = load_source(&source)?;
+    let installed = InstalledConfigs::default();
     let renderer = ProviderRenderer {
-        context: GenerationContext::home(loaded.tree(), &[]),
+        context: GenerationContext::home(&loaded),
         providers: PROVIDERS,
+        installed: &installed,
         out: out.path(),
     };
     let codex_elsewhere = ProviderSpec {

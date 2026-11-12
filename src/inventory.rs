@@ -2,14 +2,14 @@
 
 use crate::{
     provider::spec::{PROVIDERS, ProviderId},
-    snapshot::Tree,
+    source_model::Source,
 };
 use anyhow::Result;
 use std::collections::BTreeSet;
 
 use crate::generation::{
     hooks::{self, HookMetadata},
-    skills::{self, SkillMetadata},
+    skills::SkillMetadata,
 };
 
 #[derive(Debug)]
@@ -19,9 +19,9 @@ pub(crate) struct Inventory {
 }
 
 impl Inventory {
-    pub(crate) fn load(source: Tree<'_>) -> Result<Self> {
+    pub(crate) fn load(source: &Source) -> Result<Self> {
         Ok(Self {
-            skills: skills::built_in_skill_metadata(source)?,
+            skills: source.skills.metadata(),
             hooks: hooks::built_in_hook_metadata(source)?,
         })
     }

@@ -8,25 +8,16 @@ use std::path::Path;
 
 use anyhow::{Result, bail};
 
-use crate::{
-    layout::SourceLayout,
-    manifest::Manifest,
-    shell::load_snapshot,
-    snapshot::{SnapshotRequest, Tree},
-};
+use crate::source_model::Source;
 
-pub(crate) fn verify(source: &Path) -> Result<()> {
+pub(crate) fn verify(source: &Source) -> Result<()> {
     let path = std::env::var_os("PATH");
     verify_source_with_path(source, path.as_deref())
 }
 
-fn verify_source_with_path(source: &Path, path: Option<&OsStr>) -> Result<()> {
-    let files = load_snapshot(&SnapshotRequest {
-        documents: vec![SourceLayout::new(source).manifest()],
-        ..SnapshotRequest::default()
-    })?;
-    let manifest = Manifest::read(Tree::new(source, &files))?;
-    let missing = manifest
+fn verify_source_with_path(source: &Source, path: Option<&OsStr>) -> Result<()> {
+    let missing = source
+        .manifest
         .runtime_commands()
         .iter()
         .filter(|command| !is_command_available(command, path))
@@ -36,7 +27,7 @@ fn verify_source_with_path(source: &Path, path: Option<&OsStr>) -> Result<()> {
     if !missing.is_empty() {
         bail!(
             "missing required runtime commands for source {}: {}",
-            source.display(),
+            source.root().display(),
             missing.join(", "),
         );
     }
@@ -81,8 +72,9 @@ mod tests {
             r#"{"version":1,"runtime_commands":["missing-agent-harness-command"]}"#,
         )
         .unwrap();
+        let source = crate::shell::fixtures::load_source(&root).unwrap();
 
-        let error = verify_source_with_path(&root, Some(path.as_os_str())).unwrap_err();
+        let error = verify_source_with_path(&source, Some(path.as_os_str())).unwrap_err();
 
         assert!(error.to_string().contains("missing-agent-harness-command"));
         std::fs::remove_dir_all(root).unwrap();

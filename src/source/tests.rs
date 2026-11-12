@@ -7,10 +7,7 @@ fn profile_source_accepts_a_complete_flat_source() {
     let root = flat_source_root("complete");
     write_flat_source(&root, r#"{"version":1,"runtime_commands":[]}"#);
 
-    assert_eq!(
-        profile_source(&root, Profile::Minimal).unwrap(),
-        Some(root.clone())
-    );
+    assert_eq!(profile_source(&root, Profile::Minimal), Some(root.clone()));
 
     std::fs::remove_dir_all(root).unwrap();
 }

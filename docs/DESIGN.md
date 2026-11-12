@@ -114,7 +114,7 @@ flowchart LR
     SYNC["shell::sync"]
     ENGINE["config_sync::Merge (one engine)"]
   end
-  SNAP["Snapshot: files read once"]
+  SRC["Source: documents parsed once"]
   DISK[("disk")]
   SPEC -- "ProviderSpec" --> RENDER
   SPEC -- "ProviderSpec" --> RENDERER
@@ -133,26 +133,27 @@ flowchart LR
   EXEC --> FS
   FS --> DISK
   DISK --> LOAD
-  LOAD --> SNAP
-  SNAP -- "Snapshot" --> RENDER
-  SNAP -- "Snapshot" --> RENDERER
-  SNAP -- "Snapshot" --> SYNC
+  LOAD --> SRC
+  SRC -- "Source" --> RENDER
+  SRC -- "Source" --> RENDERER
 ```
 
 - Only values cross layers: `ProviderSpec` flows from Data to Functions and Capabilities, a
-    `Snapshot` of the files computation reads flows from the loader to Functions, and `FileOp` lists
-    flow from generation, rendering, planning, and sync to the executor, the only writer ([0028]).
+    typed `Source` the loader built from the files computation reads flows from the loader to
+    Functions, and `FileOp` lists flow from generation, rendering, planning, and sync to the executor,
+    the only writer ([0028]).
 - Three layers keep computation from writing, in one crate. `clippy.toml` bans std's write APIs and
     lifts the ban only in `shell::io`; the port is `pub(in crate::shell)`, so computation cannot reach
     it even through a wrapper; and `#![forbid(...)]` on `generation`, `provider::spec`,
-    `provider::renderer`, `install_plan`, `file_op`, `snapshot`, `layout`, `manifest`, `inventory`, and
+    `provider::renderer`, `install_plan`, `file_op`, `source_model`, `layout`, `manifest`, `inventory`, and
     `render` stops them from allowing the ban again. A crate split was rejected: `std::fs` is callable
     from every crate, so the clippy ban stays necessary and the split would only replace visibility
     ([0028]). Tests are outside the lint.
 - The same ban covers reads, so a result depends only on the inputs it was given and not on the disk
     at the moment it ran. `shell::load` reads the source tree, external bundles, and installed configs
-    once into a `Snapshot` (files, kinds, and the text of documents), and computation queries only
-    that. It bans `std::fs` reads, the `Path` probes (`exists`, `is_dir`, `read_dir`, `metadata`),
+    once into a typed `Source` (every document parsed and validated, an error naming its file; a
+    directory that is only copied as a location and a file list), and computation reads only that.
+    It bans `std::fs` reads, the `Path` probes (`exists`, `is_dir`, `read_dir`, `metadata`),
     `std::env`, and `std::process::Command`. The modules that are the program's imperative edge (`cli`,
     `source`, `runtime`, `github_app`, `shell::load`, `shell::hook_bundle`, and the build script) lift
     the ban for themselves with `#![expect(...)]` and a reason, which fails to compile once it stops
@@ -215,8 +216,8 @@ sequenceDiagram
 | `provider/spec`, `provider/ownership`, `provider/registry`                                | Data: provider metadata, asset destinations, the `ConfigSync` ownership declaration, and the registry.         |
 | `config_sync` (`codec`, `engine`, `installed`)                                            | Functions: format codecs, the one engine that applies declared ownership, and the parsed `Installed` config.   |
 | `install_plan`                                                                            | Functions: plan publication of rendered staging files and embedded assets.                                     |
-| `shell` (`io`, `load`, `executor`, `sync`, `hook_bundle`)                                 | Capabilities: the filesystem port, the snapshot loader, the `FileOp` executor, config sync, and hook bundles.  |
-| `snapshot`                                                                                | Functions: the read-only `Snapshot` and `Tree` that computation queries instead of the disk.                   |
+| `shell` (`io`, `load`, `executor`, `sync`, `hook_bundle`)                                 | Capabilities: the filesystem port, the `Source` loader, the `FileOp` executor, config sync, and hook bundles.    |
+| `source_model`                                                                            | Functions: the typed `Source` (hook config, permissions, skills, settings, bundles) computation reads.         |
 | `nix/providers.json`, `nix/home_manager_module.nix`                                       | Nix provider list generated from the registry, and the Home Manager options, links, and sync built from it.    |
 | `generation/hooks`                                                                        | Render hook wiring.                                                                                            |
 | `generation/bridges`, `provider/spec`, `install_plan`                                     | Verify bridge asset contracts; declare embedded bridge assets and destinations in specs and plan their writes. |

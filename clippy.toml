@@ -7,7 +7,7 @@ allow-indexing-slicing-in-tests = true
 
 # Writes belong to the filesystem port in `src/shell/io.rs`; everything else returns `FileOp`
 # values for the executor to apply. Reads belong to the loader in `src/shell/load.rs`; computation
-# receives a `Snapshot` it can only query. Computation modules also `forbid` these lints, so they
+# receives a typed `Source` it can only read. Computation modules also `forbid` these lints, so they
 # cannot allow them again.
 disallowed-methods = [
   { path = "std::fs::write", reason = "return a FileOp and let shell::execute write it" },
@@ -26,21 +26,21 @@ disallowed-methods = [
   { path = "std::fs::OpenOptions::open", reason = "opening for write belongs to the filesystem port" },
   { path = "std::fs::DirBuilder::create", reason = "directories are created by the filesystem port" },
   { path = "std::os::unix::fs::symlink", reason = "links belong to the filesystem port" },
-  { path = "std::fs::read", reason = "read through the Snapshot the shell loaded" },
-  { path = "std::fs::read_to_string", reason = "read through the Snapshot the shell loaded" },
-  { path = "std::fs::read_dir", reason = "list through the Snapshot the shell loaded" },
-  { path = "std::fs::metadata", reason = "ask the Snapshot the shell loaded" },
-  { path = "std::fs::symlink_metadata", reason = "ask the Snapshot the shell loaded" },
+  { path = "std::fs::read", reason = "read through the Source the shell loaded" },
+  { path = "std::fs::read_to_string", reason = "read through the Source the shell loaded" },
+  { path = "std::fs::read_dir", reason = "list through the Source the shell loaded" },
+  { path = "std::fs::metadata", reason = "ask the Source the shell loaded" },
+  { path = "std::fs::symlink_metadata", reason = "ask the Source the shell loaded" },
   { path = "std::fs::canonicalize", reason = "resolve paths in the shell" },
   { path = "std::fs::read_link", reason = "resolve paths in the shell" },
-  { path = "std::path::Path::exists", reason = "ask the Snapshot the shell loaded" },
-  { path = "std::path::Path::try_exists", reason = "ask the Snapshot the shell loaded" },
-  { path = "std::path::Path::is_file", reason = "ask the Snapshot the shell loaded" },
-  { path = "std::path::Path::is_dir", reason = "ask the Snapshot the shell loaded" },
-  { path = "std::path::Path::is_symlink", reason = "ask the Snapshot the shell loaded" },
-  { path = "std::path::Path::metadata", reason = "ask the Snapshot the shell loaded" },
-  { path = "std::path::Path::symlink_metadata", reason = "ask the Snapshot the shell loaded" },
-  { path = "std::path::Path::read_dir", reason = "list through the Snapshot the shell loaded" },
+  { path = "std::path::Path::exists", reason = "ask the Source the shell loaded" },
+  { path = "std::path::Path::try_exists", reason = "ask the Source the shell loaded" },
+  { path = "std::path::Path::is_file", reason = "ask the Source the shell loaded" },
+  { path = "std::path::Path::is_dir", reason = "ask the Source the shell loaded" },
+  { path = "std::path::Path::is_symlink", reason = "ask the Source the shell loaded" },
+  { path = "std::path::Path::metadata", reason = "ask the Source the shell loaded" },
+  { path = "std::path::Path::symlink_metadata", reason = "ask the Source the shell loaded" },
+  { path = "std::path::Path::read_dir", reason = "list through the Source the shell loaded" },
   { path = "std::path::Path::read_link", reason = "resolve paths in the shell" },
   { path = "std::path::Path::canonicalize", reason = "resolve paths in the shell" },
   { path = "std::env::var", reason = "the environment is read at the boundary" },

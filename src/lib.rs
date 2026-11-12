@@ -13,7 +13,7 @@ mod render;
 mod runtime;
 mod runtime_root;
 mod shell;
-mod snapshot;
 mod source;
+mod source_model;
 
 pub use cli::run;

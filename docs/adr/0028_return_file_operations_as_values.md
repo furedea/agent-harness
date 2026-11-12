@@ -9,8 +9,10 @@ filesystem, and a layering test that only grepped source text for `fs_ops` and `
 installed files that were all `0600` and a check that a wrapper such as `io::write_json` bypassed,
 we decided for a Functional Core / Imperative Shell split in one crate, enforced by three layers,
 and against splitting the crate, to make "computation cannot write" a compile-time fact, accepting
-that tests are outside the lint. The [amendment](#amendment-computation-does-not-read-either)
-extends the same split to reads.
+that tests are outside the lint. The [first amendment](#amendment-computation-does-not-read-either)
+extends the same split to reads, and the
+[second](#amendment-the-boundary-parses-the-source-into-a-typed-model) makes what computation
+receives a typed value instead of a bag of files.
 
 ## Pattern
 
@@ -73,6 +75,9 @@ Revisit it if the core must be reused by another program.
 
 ## Amendment: computation does not read either
 
+*The `Snapshot` described here was replaced by a typed `Source` in the
+[second amendment](#amendment-the-boundary-parses-the-source-into-a-typed-model).*
+
 A computation that reads mid-way depends on the disk at that instant, so one input could yield two
 outputs. The same split now covers reads.
 
@@ -89,10 +94,7 @@ outputs. The same split now covers reads.
   The loader walks a symlinked directory one hop and never a symlink met inside it, and
   `regular_files` skips what lies behind a symlink, as the directory walk it replaced did, so a
   profile may share a `hooks` directory without its protected paths vanishing.
-- **Stages reload.** The install still renders in stages whose later stages need what earlier ones
-  wrote (the carried-over configs, the files a bundle's assets must not collide with). Each stage
-  takes its own snapshot after the previous one is applied; computation stays a function of one
-  snapshot.
+- **Stages reload.** *(Superseded by the second amendment: the install is planned in one pass.)*
 - **The ban.** `clippy.toml` also bans `std::fs::{read, read_to_string, read_dir, metadata,
   symlink_metadata, canonicalize, read_link}`, `Path::{exists, try_exists, is_file, is_dir,
   is_symlink, metadata, symlink_metadata, read_dir, read_link, canonicalize}`,
@@ -107,13 +109,61 @@ outputs. The same split now covers reads.
   the point of the module, not an input to a computation, and `expect` fails to compile when one
   stops reading.
 
+## Amendment: the boundary parses the source into a typed model
+
+The first amendment gave computation a `Snapshot`: an in-memory copy of files. Computation still
+looked files up by path and parsed raw text where it used it, so a parse error surfaced deep inside
+a generator, the request that said what to read could drift from the reads that used it and fail only
+at runtime, and the install took a new snapshot per stage because later providers read earlier
+providers' output back from disk. The target is a clerk at the window: the boundary reads the
+documents and fills out a fixed form, and computation reads only the form.
+
+- **`Source` is the form.** `shell::load_source` reads the source tree, the external hook bundles,
+  and the external skills, parses and validates every document once, and returns a `Source`
+  (`source_model.rs`, under `forbid`): the manifest, hook config, command permissions, the regex
+  policy the hooks are generated from, the secret path policy, the built-in skills with their
+  rendering policy, the base Claude settings and Codex config, the source file of each provider
+  config that is applied to the installed one, and each bundle's hook files, Codex config, and asset
+  list. Every error names the file it came from, and nothing downstream re-validates. Computation
+  takes `&Source` and returns `FileOp`s; it has no path-as-lookup and parses no text.
+- **Copy-only directories are a location and a file list.** A directory that is only copied (the
+  hook scripts, the statusline, a skill's support files, a bundle's scripts) is a `SourceDir`, or a
+  path for a skill's support entry, and leaves computation as `FileOp::CopyTree` or `CopyFile`. The
+  file list is what protected paths and the bundle conflict check rest on; contents are never loaded.
+- **Only the loader knows where things live.** `SnapshotRequest` is gone. The loader is given the
+  providers a run renders and the external inputs the command line named (`LoadInputs`), and works
+  out the rest from the layout and the registry.
+- **Installed configs are loaded the same way.** `shell::load_installed` parses the configs a
+  rendering merges into (`InstalledConfigs`); an unparsable one is an error at the boundary. The
+  sidecar is not read for the install, which has always merged into the config alone: the sidecar it
+  would write sits in the staging directory, which is never published.
+- **One pass, in stages.** Install computes the whole plan from `Source` and the installed configs,
+  with nothing read between providers (`InstallPlan`, in `install_plan.rs`). Provider-to-provider
+  dependencies are values: a provider that copies another's skills renders them again from the same
+  `Source` and moves them with `FileOp::relocated`, instead of copying the other's output back from
+  disk. The Claude settings are merged into the installed ones while rendering, so the old
+  render-then-preserve step is gone. The plan is still applied in stages (synced directories,
+  bridge assets, bundle assets, each provider, publication from staging), because a later stage
+  writes inside a directory an earlier one replaces and the executor stages every replacement before
+  swapping any. A bundle's asset conflicts with a file an earlier stage leaves in the output, which
+  the plan works out from the `Source`'s file lists rather than by looking at the staging directory.
+- **What stays outside.** No computation module holds a `Snapshot`; the type is deleted. The loader
+  and a few shell entry points still read the disk directly, which is their job: `verify_paths`
+  (the installed files `verify` checks), `sync` (the rendered and installed configs), and
+  `shell::hook_bundle` (what an installer left in its isolated home, parsed into `Staged`).
+
+Behavior that changed with it: a skill must have a `name`, a `description`, and a level-one heading
+for any command to load the source, where only `list skills` required the heading before; a
+malformed `allowed_commands.json`, provider source config, or bundle hook file is refused by every
+command that loads the source, not only by `install`; and a bundle that maps two files to one
+installed path is refused when it is loaded. Generated output is unchanged: the golden tests and
+`nix/providers.json` are byte-identical.
+
 ## Consequences
 
-- A snapshot holds raw text, and computation still parses a document where it uses it. Parsing is
-    deterministic, so it cannot make a result depend on the disk; parsing once into constrained types
-    at the boundary is left for the sync step.
-- A snapshot walks the whole source tree, so a very large source directory costs a read of its
-    documents even when a command needs only one.
+- Every command that loads the source parses all of it, so a command that needs one document still
+    reads the others and fails on any that is invalid. A source is a few dozen small files, and the
+    copy-only directories are listed, not read.
 - The merge of Claude, Codex, Devin, Hermes, pi, and dsh configs was still per-provider code behind
     `ConfigSync` when this was written; [ADR-0029](0029_declare_config_ownership_and_sync_with_one_engine.md)
     declares ownership in the spec and syncs with one implementation.

@@ -3,7 +3,10 @@ use std::path::{Path, PathBuf};
 use anyhow::Result;
 
 use super::io::{FileSystem, NewFile, RealFileSystem};
-use crate::file_op::{FileMode, FileOp};
+use crate::{
+    file_op::{FileMode, FileOp},
+    install_plan::InstallPlan,
+};
 
 /// A replacement prepared next to the path it will replace.
 struct Staged<'a> {
@@ -23,6 +26,11 @@ struct Transaction<'a, F: FileSystem> {
     created_parents: Vec<PathBuf>,
     staged: Vec<Staged<'a>>,
     swapped: Vec<Swapped<'a>>,
+}
+
+/// Applies each stage of an installation in order, each all-or-nothing.
+pub(crate) fn execute_stages(plan: &InstallPlan) -> Result<()> {
+    plan.stages().iter().try_for_each(|stage| execute(stage))
 }
 
 /// Applies the plan on the real filesystem, all-or-nothing. This is the only way to write.

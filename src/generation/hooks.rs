@@ -11,20 +11,32 @@ use serde_json::{Map, Value};
 
 use crate::{
     file_op::FileOp,
-    generation::{GenerationContext, command_permissions, external_hooks::OpenBundle},
-    layout::SourceLayout,
+    generation::{GenerationContext, command_permissions, external_hooks},
     runtime_root::RuntimeRoot,
-    snapshot::Tree,
+    source_model::{HookBundle, Source},
 };
 
-#[derive(Debug, Deserialize)]
-struct HookConfig {
+/// The shared hook configuration of a source, parsed and validated once.
+#[derive(Clone, Debug, Deserialize)]
+pub(crate) struct HookConfig {
     version: u64,
     #[serde(flatten)]
     sections: BTreeMap<String, Value>,
 }
 
 impl HookConfig {
+    /// Parses and validates the hook config `text` read from `path`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error naming `path` when the text is not a valid hook config.
+    pub(crate) fn parse(path: &Path, text: &str) -> Result<Self> {
+        let config: Self = serde_json::from_str(text)
+            .with_context(|| format!("failed to parse {}", path.display()))?;
+        validate_hooks(&config)?;
+        Ok(config)
+    }
+
     /// The provider's section, or `None` when it is absent or null.
     fn section(&self, spec: &ProviderSpec) -> Option<&Value> {
         self.sections
@@ -33,10 +45,9 @@ impl HookConfig {
     }
 
     /// The provider's section, or the empty one of its format when an optional one is absent.
-    fn into_section(mut self, spec: &ProviderSpec) -> Value {
-        self.sections
-            .remove(spec.key)
-            .filter(|section| !section.is_null())
+    fn section_or_empty(&self, spec: &ProviderSpec) -> Value {
+        self.section(spec)
+            .cloned()
             .unwrap_or_else(|| empty_section(spec.hook.format))
     }
 }
@@ -67,9 +78,9 @@ pub(crate) fn hooks_op_for_runtime(
 }
 
 fn hooks_for_runtime(context: GenerationContext<'_>, spec: &ProviderSpec) -> Result<Value> {
-    let mut hooks = read_hooks(context.source)?.into_section(spec);
-    for bundle in context.external_hooks {
-        merge_bundle(&bundle.open(context.source.files())?, &mut hooks, spec)?;
+    let mut hooks = context.source.hooks.section_or_empty(spec);
+    for bundle in &context.source.hook_bundles {
+        merge_bundle(bundle, &mut hooks, spec)?;
     }
     relocate_commands(&mut hooks, context.runtime_root);
     if spec.command_rule == Some(CommandRuleSpec::InHookRegistration) {
@@ -78,7 +89,7 @@ fn hooks_for_runtime(context: GenerationContext<'_>, spec: &ProviderSpec) -> Res
             .with_context(|| format!("hook section for {} is not a JSON object", spec.key))?
             .insert(
                 "permissions".to_owned(),
-                command_permissions::devin_permissions(context.source)?,
+                command_permissions::devin_permissions(context.source),
             );
     }
     Ok(hooks)
@@ -88,11 +99,11 @@ pub(crate) fn claude_hooks_for_runtime(context: GenerationContext<'_>) -> Result
     hooks_for_runtime(context, ProviderId::Claude.spec())
 }
 
-fn merge_bundle(bundle: &OpenBundle<'_>, hooks: &mut Value, spec: &ProviderSpec) -> Result<()> {
+fn merge_bundle(bundle: &HookBundle, hooks: &mut Value, spec: &ProviderSpec) -> Result<()> {
     match spec.hook.format {
-        HookFormat::SettingsSection => bundle.merge_claude_hooks(hooks),
-        HookFormat::WrappedEvents => bundle.merge_codex_hooks(hooks),
-        HookFormat::BareEvents => bundle.merge_provider_hooks(hooks, spec),
+        HookFormat::SettingsSection => external_hooks::merge_claude_hooks(bundle, hooks),
+        HookFormat::WrappedEvents => external_hooks::merge_codex_hooks(bundle, hooks),
+        HookFormat::BareEvents => external_hooks::merge_provider_hooks(bundle, hooks, spec),
     }
 }
 
@@ -117,8 +128,8 @@ fn relocate_each<'a>(items: impl Iterator<Item = &'a mut Value>, runtime_root: &
     }
 }
 
-pub(crate) fn built_in_hook_metadata(source: Tree<'_>) -> Result<Vec<HookMetadata>> {
-    let config = read_hooks(source)?;
+pub(crate) fn built_in_hook_metadata(source: &Source) -> Result<Vec<HookMetadata>> {
+    let config = &source.hooks;
     let sections = PROVIDERS
         .iter()
         .filter_map(|spec| Some((spec, config.section(spec)?)));
@@ -163,18 +174,6 @@ fn hook_event_rank(event: &str) -> usize {
         "SessionEnd" => 10,
         _ => usize::MAX,
     }
-}
-
-fn read_hooks(source: Tree<'_>) -> Result<HookConfig> {
-    let path = SourceLayout::new(source.root()).hook_config();
-    let content = source
-        .files()
-        .read_text(&path)
-        .with_context(|| format!("failed to read {}", path.display()))?;
-    let config: HookConfig = serde_json::from_str(content)
-        .with_context(|| format!("failed to parse {}", path.display()))?;
-    validate_hooks(&config)?;
-    Ok(config)
 }
 
 fn validate_hooks(config: &HookConfig) -> Result<()> {

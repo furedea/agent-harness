@@ -1,14 +1,16 @@
+use std::path::Path;
+
 use anyhow::{Context, Result, ensure};
 use serde::Deserialize;
 
 use crate::{
     generation::permission_rule::{PathAccess, PathPattern, PathRule},
-    layout::SourceLayout,
-    snapshot::Tree,
+    source_model::Source,
 };
 
+/// The secret path policy of a source, parsed and validated once.
 #[derive(Debug, Deserialize)]
-struct SecretPathPolicy {
+pub(crate) struct SecretPathPolicy {
     version: u64,
     rules: Vec<SecretPathRule>,
 }
@@ -35,9 +37,23 @@ impl From<SecretPathAccess> for PathAccess {
     }
 }
 
-pub(crate) fn claude_deny_permissions(source: Tree<'_>) -> Result<Vec<String>> {
-    let policy = read_policy(source)?;
-    Ok(policy
+impl SecretPathPolicy {
+    /// Parses and validates the policy `text` read from `path`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error naming `path` when the text is not a valid secret path policy.
+    pub(crate) fn parse(path: &Path, text: &str) -> Result<Self> {
+        let policy: Self = serde_json::from_str(text)
+            .with_context(|| format!("failed to parse {}", path.display()))?;
+        validate_policy(&policy)?;
+        Ok(policy)
+    }
+}
+
+pub(crate) fn claude_deny_permissions(source: &Source) -> Vec<String> {
+    source
+        .secret_paths
         .rules
         .iter()
         .flat_map(|rule| {
@@ -45,19 +61,7 @@ pub(crate) fn claude_deny_permissions(source: Tree<'_>) -> Result<Vec<String>> {
                 .iter()
                 .map(|&access| PathRule::new(rule.pattern.clone(), access.into()).claude())
         })
-        .collect())
-}
-
-fn read_policy(source: Tree<'_>) -> Result<SecretPathPolicy> {
-    let path = SourceLayout::new(source.root()).secret_path_policy();
-    let content = source
-        .files()
-        .read_text(&path)
-        .with_context(|| format!("failed to read {}", path.display()))?;
-    let policy: SecretPathPolicy = serde_json::from_str(content)
-        .with_context(|| format!("failed to parse {}", path.display()))?;
-    validate_policy(&policy)?;
-    Ok(policy)
+        .collect()
 }
 
 fn validate_policy(policy: &SecretPathPolicy) -> Result<()> {
@@ -83,7 +87,8 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::*;
-    use crate::shell::fixtures::load_tree;
+    use crate::layout::SourceLayout;
+    use crate::shell::fixtures::load_source;
 
     #[test]
     fn claude_deny_permissions_render_from_secret_path_policy() -> Result<()> {
@@ -100,7 +105,7 @@ mod tests {
 "#,
         )?;
 
-        let permissions = claude_deny_permissions(load_tree(&root)?.tree())?;
+        let permissions = claude_deny_permissions(&load_source(&root)?);
 
         assert_eq!(
             permissions,
@@ -120,9 +125,7 @@ mod tests {
         let root = test_root("invalid_policy_version_is_rejected")?;
         write_policy(&root, r#"{"version":2,"rules":[]}"#)?;
 
-        let error = read_policy(load_tree(&root)?.tree())
-            .unwrap_err()
-            .to_string();
+        let error = format!("{:#}", load_source(&root).unwrap_err());
 
         assert!(error.contains("unsupported secret path policy version"));
 
@@ -138,7 +141,7 @@ mod tests {
             r#"{"version":1,"rules":[{"pattern":"a)b","access":["read"]}]}"#,
         )?;
 
-        let error = format!("{:#}", read_policy(load_tree(&root)?.tree()).unwrap_err());
+        let error = format!("{:#}", load_source(&root).unwrap_err());
 
         assert!(error.contains("parentheses"));
 
