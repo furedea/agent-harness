@@ -204,6 +204,46 @@ fn write_config_source_keeps_stricter_scoped_source_entries_and_scalar_denials()
     Ok(())
 }
 
+#[test]
+fn write_config_source_keeps_broad_source_denials_over_specific_secret_rules() -> Result<()> {
+    let root = test_root("write_config_source_keeps_broad_source_denials")?;
+    write_minimal_source(&root)?;
+    write_file(
+        &root.join("hooks/rules/secret_path_policy.json"),
+        r#"{"version":1,"rules":[
+{"pattern":"secrets/file","access":["write"]},
+{"pattern":"~/.aws/credentials","access":["write"]}
+]}"#,
+    )?;
+    let out = root.join("config.toml");
+
+    write_file(
+        &root.join("codex/config.toml"),
+        "[permissions.guarded.filesystem.\":workspace_roots\"]\n\".\" = \"deny\"\n",
+    )?;
+    write_config_source(&root, &out, &[])?;
+    let document = std::fs::read_to_string(&out)?.parse::<DocumentMut>()?;
+    let filesystem = &document["permissions"]["guarded"]["filesystem"];
+    assert_eq!(
+        filesystem[":workspace_roots"]["secrets/file"].as_str(),
+        Some("deny")
+    );
+    assert_eq!(filesystem["~/.aws/credentials"].as_str(), Some("read"));
+
+    write_file(
+        &root.join("codex/config.toml"),
+        "[permissions.guarded.filesystem]\n\":root\" = \"deny\"\n\"~/.aws\" = \"deny\"\n",
+    )?;
+    write_config_source(&root, &out, &[])?;
+    let document = std::fs::read_to_string(&out)?.parse::<DocumentMut>()?;
+    let filesystem = &document["permissions"]["guarded"]["filesystem"];
+    assert_eq!(filesystem["~/.aws/credentials"].as_str(), Some("deny"));
+    assert_eq!(filesystem["~/.codex/hooks/adapt.sh"].as_str(), Some("deny"));
+
+    crate::shell::fixtures::remove_dir_all(root)?;
+    Ok(())
+}
+
 fn test_root(name: &str) -> Result<std::path::PathBuf> {
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)?

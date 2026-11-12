@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use toml_edit::{DocumentMut, Item, Table, TableLike, value};
+use toml_edit::{DocumentMut, Item, TableLike};
 
 use crate::{
     file_op::FileOp,
@@ -30,7 +30,7 @@ fn config_source_content_for_runtime(context: GenerationContext<'_>) -> Result<S
     let mut protection = protection::codex_config_fragment_for_runtime(context)?
         .parse::<DocumentMut>()
         .context("failed to parse generated Codex config")?;
-    reconcile_guarded_filesystem(&mut document, &mut protection);
+    reconcile::guarded_filesystem(&mut document, &mut protection);
     for (key, item) in protection.iter() {
         merge_item(document.entry(key).or_insert(Item::None), item);
     }
@@ -38,93 +38,6 @@ fn config_source_content_for_runtime(context: GenerationContext<'_>) -> Result<S
         merge_external_config(&mut document, bundle)?;
     }
     Ok(document.to_string())
-}
-
-/// Keeps the stricter of the source's and the generated access for one path, at the top level
-/// and inside a scoped table such as `:workspace_roots`. A plain merge would let the generated
-/// value replace the source's, and a generated entry under a scalar source grant would
-/// override it, so the scalar becomes a `"."` entry beside the scoped ones.
-fn reconcile_guarded_filesystem(source: &mut DocumentMut, generated: &mut DocumentMut) {
-    let (Some(source), Some(generated)) = (
-        guarded_filesystem_mut(source),
-        guarded_filesystem_mut(generated),
-    ) else {
-        return;
-    };
-    let paths: Vec<String> = source.iter().map(|(path, _)| path.to_owned()).collect();
-    for path in paths {
-        reconcile_entry(source, generated, &path);
-    }
-}
-
-fn guarded_filesystem_mut(document: &mut DocumentMut) -> Option<&mut dyn TableLike> {
-    document
-        .get_mut("permissions")?
-        .get_mut("guarded")?
-        .get_mut("filesystem")?
-        .as_table_like_mut()
-}
-
-fn reconcile_entry(source: &mut dyn TableLike, generated: &mut dyn TableLike, path: &str) {
-    let declared = source.get(path).and_then(Item::as_str).map(str::to_owned);
-    let Some(access) = declared else {
-        reconcile_scoped(source, generated, path);
-        return;
-    };
-    if raise_scoped_children(generated, path, &access) {
-        let mut kept = Table::new();
-        kept.insert(".", value(access));
-        source.insert(path, Item::Table(kept));
-    } else {
-        raise_access(generated, path, &access);
-    }
-}
-
-/// Raises each generated entry under `path` to at least `access`; false when `path` is no table.
-fn raise_scoped_children(generated: &mut dyn TableLike, path: &str, access: &str) -> bool {
-    let Some(scoped) = generated.get_mut(path).and_then(Item::as_table_like_mut) else {
-        return false;
-    };
-    let children: Vec<String> = scoped.iter().map(|(child, _)| child.to_owned()).collect();
-    for child in children {
-        raise_access(scoped, &child, access);
-    }
-    true
-}
-
-fn reconcile_scoped(source: &mut dyn TableLike, generated: &mut dyn TableLike, path: &str) {
-    let (Some(source), Some(generated)) = (
-        source.get(path).and_then(Item::as_table_like),
-        generated.get_mut(path).and_then(Item::as_table_like_mut),
-    ) else {
-        return;
-    };
-    let declared: Vec<(String, String)> = source
-        .iter()
-        .filter_map(|(child, item)| Some((child.to_owned(), item.as_str()?.to_owned())))
-        .collect();
-    for (child, access) in declared {
-        raise_access(generated, &child, &access);
-    }
-}
-
-fn raise_access(table: &mut dyn TableLike, path: &str, access: &str) {
-    let weaker = table
-        .get(path)
-        .and_then(Item::as_str)
-        .is_some_and(|current| access_rank(current) < access_rank(access));
-    if weaker {
-        table.insert(path, value(access));
-    }
-}
-
-/// How restrictive a Codex filesystem access is; `none` is the legacy spelling of `deny`.
-fn access_rank(access: &str) -> u8 {
-    match access {
-        "none" | "deny" => 2,
-        "read" => 1,
-        _ => 0,
-    }
 }
 
 fn merge_external_config(document: &mut DocumentMut, bundle: &HookBundle) -> Result<()> {
@@ -162,6 +75,8 @@ fn merge_tables(target: &mut dyn TableLike, source: &dyn TableLike) {
         merge_item(target.entry(key).or_insert(Item::None), item);
     }
 }
+
+mod reconcile;
 
 #[cfg(test)]
 mod tests;
