@@ -169,6 +169,41 @@ fn write_config_source_keeps_a_scalar_workspace_grant_beside_scoped_secret_rules
     Ok(())
 }
 
+#[test]
+fn write_config_source_keeps_stricter_scoped_source_entries_and_scalar_denials() -> Result<()> {
+    let root = test_root("write_config_source_keeps_stricter_scoped_source_entries")?;
+    write_minimal_source(&root)?;
+    write_file(
+        &root.join("codex/config.toml"),
+        "[permissions.guarded.filesystem.\":workspace_roots\"]\n\"secrets/file\" = \"deny\"\n",
+    )?;
+    write_file(
+        &root.join("hooks/rules/secret_path_policy.json"),
+        r#"{"version":1,"rules":[{"pattern":"secrets/file","access":["write"]}]}"#,
+    )?;
+    let out = root.join("config.toml");
+
+    write_config_source(&root, &out, &[])?;
+
+    let document = std::fs::read_to_string(&out)?.parse::<DocumentMut>()?;
+    let roots = &document["permissions"]["guarded"]["filesystem"][":workspace_roots"];
+    assert_eq!(roots["secrets/file"].as_str(), Some("deny"));
+
+    write_file(
+        &root.join("codex/config.toml"),
+        "[permissions.guarded.filesystem]\n\":workspace_roots\" = \"deny\"\n",
+    )?;
+    write_config_source(&root, &out, &[])?;
+
+    let document = std::fs::read_to_string(&out)?.parse::<DocumentMut>()?;
+    let roots = &document["permissions"]["guarded"]["filesystem"][":workspace_roots"];
+    assert_eq!(roots["."].as_str(), Some("deny"));
+    assert_eq!(roots["secrets/file"].as_str(), Some("deny"));
+
+    crate::shell::fixtures::remove_dir_all(root)?;
+    Ok(())
+}
+
 fn test_root(name: &str) -> Result<std::path::PathBuf> {
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)?

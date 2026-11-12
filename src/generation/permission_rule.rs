@@ -125,11 +125,11 @@ impl PathRule {
     /// Returns an error when the pattern is not a Codex path or a write-only rule uses a glob.
     pub(crate) fn codex(&self) -> Result<CodexFilesystemEntry> {
         let pattern = self.pattern.as_str();
-        let (path, access, any_depth) = match self.access {
-            PathAccess::Read => (pattern, CodexAccess::None, true),
-            PathAccess::Write => (read_only_path(pattern)?, CodexAccess::Read, false),
+        let (path, access) = match self.access {
+            PathAccess::Read => (pattern, CodexAccess::None),
+            PathAccess::Write => (read_only_path(pattern)?, CodexAccess::Read),
         };
-        let (scope, path) = codex_location(path, any_depth)?;
+        let (scope, path) = codex_location(path, matches!(self.access, PathAccess::Read))?;
         Ok(CodexFilesystemEntry {
             scope,
             path,
@@ -180,6 +180,10 @@ impl CodexFilesystemEntry {
 }
 
 fn read_only_path(pattern: &str) -> Result<&str> {
+    ensure!(
+        pattern.contains('/') || pattern.starts_with('~'),
+        "Codex cannot deny writes only to {pattern:?} at any depth; give a path with a directory or deny reads too"
+    );
     let path = pattern.strip_suffix("/**").unwrap_or(pattern);
     ensure!(
         !path.contains(['*', '?', '[', ']']),
@@ -193,8 +197,9 @@ fn read_only_path(pattern: &str) -> Result<&str> {
 /// Claude reads `//x` as absolute, `/x` as relative to the project, and a slash-free relative
 /// pattern as matching at any depth. Codex only has absolute and `~/` keys and
 /// `:workspace_roots` subpaths, so `/x` is rejected as ambiguous and a slash-free pattern gets a
-/// `**/` prefix, which Codex accepts only for a denied read.
-fn codex_location(path: &str, any_depth: bool) -> Result<(CodexScope, String)> {
+/// `**/` prefix when `match_any_depth` is set. A path whose directory part was stripped is
+/// slash-free but stays anchored at the workspace root.
+fn codex_location(path: &str, match_any_depth: bool) -> Result<(CodexScope, String)> {
     if let Some(absolute) = path.strip_prefix("//") {
         return Ok((CodexScope::Absolute, format!("/{absolute}")));
     }
@@ -209,13 +214,9 @@ fn codex_location(path: &str, any_depth: bool) -> Result<(CodexScope, String)> {
         !path.split('/').any(|part| matches!(part, "" | "." | "..")),
         "Codex needs {path:?} to be absolute, start with ~/, or be a descendant of the workspace without . or .. parts"
     );
-    if path.contains('/') {
+    if path.contains('/') || !match_any_depth {
         return Ok((CodexScope::WorkspaceRoots, path.to_owned()));
     }
-    ensure!(
-        any_depth,
-        "Codex cannot deny writes only to {path:?} at any depth; give a path with a directory or deny reads too"
-    );
     Ok((CodexScope::WorkspaceRoots, format!("**/{path}")))
 }
 
@@ -322,6 +323,11 @@ mod tests {
         assert!(codex_rule("../x", PathAccess::Read).is_err());
         assert!(codex_rule("/x", PathAccess::Read).is_err());
         assert!(codex_rule(".env", PathAccess::Write).is_err());
+        let subtree = codex_rule("secrets/**", PathAccess::Write)?;
+        assert_eq!(
+            (subtree.scope, subtree.path.as_str(), subtree.access),
+            (CodexScope::WorkspaceRoots, "secrets", CodexAccess::Read)
+        );
         Ok(())
     }
 

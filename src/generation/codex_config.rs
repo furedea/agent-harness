@@ -40,41 +40,21 @@ fn config_source_content_for_runtime(context: GenerationContext<'_>) -> Result<S
     Ok(document.to_string())
 }
 
-/// Keeps the source's access on a path the generated fragment also names, unless the fragment
-/// is stricter, and keeps a scalar `:workspace_roots` grant when the fragment scopes entries
-/// under it. A plain merge would let the generated value replace both.
+/// Keeps the stricter of the source's and the generated access for one path, at the top level
+/// and inside a scoped table such as `:workspace_roots`. A plain merge would let the generated
+/// value replace the source's, and a generated entry under a scalar source grant would
+/// override it, so the scalar becomes a `"."` entry beside the scoped ones.
 fn reconcile_guarded_filesystem(source: &mut DocumentMut, generated: &mut DocumentMut) {
-    for declared in declared_accesses(source) {
-        reconcile_path(source, generated, &declared);
-    }
-}
-
-struct DeclaredAccess {
-    path: String,
-    access: String,
-}
-
-fn declared_accesses(document: &DocumentMut) -> Vec<DeclaredAccess> {
-    let Some(filesystem) = guarded_filesystem(document) else {
-        return Vec::new();
+    let (Some(source), Some(generated)) = (
+        guarded_filesystem_mut(source),
+        guarded_filesystem_mut(generated),
+    ) else {
+        return;
     };
-    filesystem
-        .iter()
-        .filter_map(|(path, item)| {
-            Some(DeclaredAccess {
-                path: path.to_owned(),
-                access: item.as_str()?.to_owned(),
-            })
-        })
-        .collect()
-}
-
-fn guarded_filesystem(document: &DocumentMut) -> Option<&dyn TableLike> {
-    document
-        .get("permissions")?
-        .get("guarded")?
-        .get("filesystem")?
-        .as_table_like()
+    let paths: Vec<String> = source.iter().map(|(path, _)| path.to_owned()).collect();
+    for path in paths {
+        reconcile_entry(source, generated, &path);
+    }
 }
 
 fn guarded_filesystem_mut(document: &mut DocumentMut) -> Option<&mut dyn TableLike> {
@@ -85,30 +65,57 @@ fn guarded_filesystem_mut(document: &mut DocumentMut) -> Option<&mut dyn TableLi
         .as_table_like_mut()
 }
 
-fn reconcile_path(
-    source: &mut DocumentMut,
-    generated: &mut DocumentMut,
-    declared: &DeclaredAccess,
-) {
-    let Some(generated) = guarded_filesystem_mut(generated) else {
+fn reconcile_entry(source: &mut dyn TableLike, generated: &mut dyn TableLike, path: &str) {
+    let declared = source.get(path).and_then(Item::as_str).map(str::to_owned);
+    let Some(access) = declared else {
+        reconcile_scoped(source, generated, path);
         return;
     };
-    match generated.get(&declared.path).map(Item::as_str) {
-        Some(Some(access)) if access_rank(access) < access_rank(&declared.access) => {
-            generated.insert(&declared.path, value(declared.access.as_str()));
-        }
-        Some(None) => scope_declared_grant(source, declared),
-        _ => {}
+    if raise_scoped_children(generated, path, &access) {
+        let mut kept = Table::new();
+        kept.insert(".", value(access));
+        source.insert(path, Item::Table(kept));
+    } else {
+        raise_access(generated, path, &access);
     }
 }
 
-fn scope_declared_grant(source: &mut DocumentMut, declared: &DeclaredAccess) {
-    let Some(filesystem) = guarded_filesystem_mut(source) else {
+/// Raises each generated entry under `path` to at least `access`; false when `path` is no table.
+fn raise_scoped_children(generated: &mut dyn TableLike, path: &str, access: &str) -> bool {
+    let Some(scoped) = generated.get_mut(path).and_then(Item::as_table_like_mut) else {
+        return false;
+    };
+    let children: Vec<String> = scoped.iter().map(|(child, _)| child.to_owned()).collect();
+    for child in children {
+        raise_access(scoped, &child, access);
+    }
+    true
+}
+
+fn reconcile_scoped(source: &mut dyn TableLike, generated: &mut dyn TableLike, path: &str) {
+    let (Some(source), Some(generated)) = (
+        source.get(path).and_then(Item::as_table_like),
+        generated.get_mut(path).and_then(Item::as_table_like_mut),
+    ) else {
         return;
     };
-    let mut scoped = Table::new();
-    scoped.insert(".", value(declared.access.as_str()));
-    filesystem.insert(&declared.path, Item::Table(scoped));
+    let declared: Vec<(String, String)> = source
+        .iter()
+        .filter_map(|(child, item)| Some((child.to_owned(), item.as_str()?.to_owned())))
+        .collect();
+    for (child, access) in declared {
+        raise_access(generated, &child, &access);
+    }
+}
+
+fn raise_access(table: &mut dyn TableLike, path: &str, access: &str) {
+    let weaker = table
+        .get(path)
+        .and_then(Item::as_str)
+        .is_some_and(|current| access_rank(current) < access_rank(access));
+    if weaker {
+        table.insert(path, value(access));
+    }
 }
 
 /// How restrictive a Codex filesystem access is; `none` is the legacy spelling of `deny`.
