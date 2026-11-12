@@ -248,6 +248,11 @@ never rewrites guarded entries to guess which side was meant. It compares the ge
 with each other and with the source `codex/config.toml` and fails, naming both entries, when one
 covers a looser one. Only denials may be patterns; the looser entry is always a concrete path, so
 two globs are never compared with each other and a glob looser than another glob is not detected.
+A rule that denies reads with a brace pattern fails generation, because Codex does not expand
+braces. Paths are compared by root: `~`, absolute paths and the workspace are separate, so a
+project-local install (`--runtime-root` is the project) is not matched against
+`:workspace_roots`. Conflict detection is a safety net; hooks still enforce the secret policy at
+runtime.
 
 On platforms that expand unreadable globs before the sandbox starts, Codex caps `**` at
 `glob_scan_max_depth` (5), so a secret nested deeper stays readable by a command that bypasses the

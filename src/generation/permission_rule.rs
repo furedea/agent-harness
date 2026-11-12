@@ -192,6 +192,10 @@ fn normalized_pattern(path: &str) -> &str {
 /// `:workspace_roots` subpaths, so `/x` is rejected as ambiguous and a slash-free pattern gets a
 /// `**/` prefix so it still matches at any depth.
 fn codex_location(path: &str) -> Result<(CodexScope, String)> {
+    ensure!(
+        !path.contains(['{', '}']),
+        "Codex does not expand braces, so {path:?} would match a literal name; list each path as its own rule"
+    );
     let path = normalized_pattern(path);
     if let Some(absolute) = path.strip_prefix("//") {
         return Ok((CodexScope::Absolute, format!("/{absolute}")));
@@ -311,6 +315,7 @@ mod tests {
         assert_eq!(codex_entry("./secrets/**")?.path, "secrets/**");
         assert_eq!(codex_entry("secrets/")?.path, "**/secrets");
         assert_eq!(codex_entry("./.env")?.path, "**/.env");
+        assert!(codex_entry("secrets/{prod,staging}.json").is_err());
         assert!(codex_entry("../x").is_err());
         assert!(codex_entry("/x").is_err());
         Ok(())

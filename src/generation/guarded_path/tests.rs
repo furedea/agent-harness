@@ -172,3 +172,11 @@ fn the_absolute_root_covers_home_entries() -> Result<()> {
     assert_eq!(pairs(&entries), [(0, 1), (0, 2)]);
     Ok(())
 }
+
+#[test]
+fn a_backslash_separates_segments() -> Result<()> {
+    let entries = [deny("C:\\work")?, read("C:/work/.codex/hooks.json")?];
+
+    assert_eq!(pairs(&entries), [(0, 1)]);
+    Ok(())
+}

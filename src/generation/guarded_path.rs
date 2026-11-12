@@ -161,7 +161,7 @@ fn has_drive_prefix(text: &str) -> bool {
 /// Splits `text` into segments, dropping empty and `.` parts and resolving `..` lexically.
 fn push_segments(segments: &mut Vec<Segment>, text: &str) -> Option<()> {
     widen_braces(text)
-        .split('/')
+        .split(['/', '\\'])
         .try_for_each(|part| apply_part(segments, part))
 }
 
