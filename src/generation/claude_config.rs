@@ -25,7 +25,7 @@ pub(crate) fn settings_for_runtime(context: GenerationContext<'_>) -> Result<Val
     build_settings(context, context.source.claude_settings.clone())
 }
 
-pub(crate) fn build_settings(context: GenerationContext<'_>, mut settings: Value) -> Result<Value> {
+fn build_settings(context: GenerationContext<'_>, mut settings: Value) -> Result<Value> {
     let root = object_mut(&mut settings, "Claude settings root")?;
 
     relocate_status_line(root, context.runtime_root)?;

@@ -54,6 +54,10 @@ require('node:child_process').execFileSync('/bin/sh', ['-c', process.argv[5]], {
   const call = (name, params) => tools.get(name).execute('id', params, undefined, undefined, { cwd: root });
   await call('write', { path: file, content: 'before\n' });
   assert.match((await call('read', { path: file })).content[0].text, /before/);
+  // Multi-byte text larger than a pipe chunk must survive the helper's stdin intact.
+  const wide = 'あ'.repeat(200000);
+  await call('write', { path: join(root, 'wide.txt'), content: wide });
+  assert.equal(readFileSync(join(root, 'wide.txt'), 'utf8'), wide);
   await call('edit', { path: file, edits: [{ oldText: 'before', newText: 'after' }] });
   assert.equal(readFileSync(file, 'utf8'), 'after\n');
   assert.match((await call('ls', { path: root })).content[0].text, /example.txt/);

@@ -28,8 +28,9 @@ async function execute(request) {
 }
 
 try {
-  let input = '';
-  for await (const chunk of process.stdin) input += chunk;
+  const chunks = [];
+  for await (const chunk of process.stdin) chunks.push(chunk);
+  const input = Buffer.concat(chunks).toString('utf8');
   process.stdout.write(JSON.stringify({ value: await execute(JSON.parse(input)) }));
 } catch (error) {
   process.stdout.write(JSON.stringify({ error: { message: error.message, code: error.code } }));
