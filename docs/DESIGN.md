@@ -237,8 +237,8 @@ The secret path policy reaches Pi as `filesystem.denyRead` entries of the srt po
 rule as Codex: only a rule that denies reads is rendered, and write-only rules stay with the hooks
 because srt's restrictions apply to every process the agent starts. srt reads each entry as a glob
 (`*`, `**`, `?`, `[...]`, no escapes, no braces, no negation) and expands `~` and `~/`; a relative
-entry is anchored at the working directory. A relative pattern therefore becomes `**/pattern` so it
-matches at any depth as in Claude, and `//x` becomes `/x`. Generation fails, naming the pattern, for
+entry is anchored at the working directory. A bare name or single-segment directory (`.env`, `secrets/**`) therefore becomes `**/pattern` so
+it matches at any depth as in Claude, while other relative patterns (`src/keys/*`) stay anchored, and `//x` becomes `/x`. Generation fails, naming the pattern, for
 a leading `/`, `.` or `..` parts, backslashes, braces, a leading `!`, or a wildcard in the first
 component of an absolute pattern (srt on Linux skips it). A `**/` pattern guards only beneath the
 working directory, as `:workspace_roots` does for Codex.

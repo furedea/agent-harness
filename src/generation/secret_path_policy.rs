@@ -115,10 +115,10 @@ pub(crate) fn srt_denied_read_paths(source: &Source) -> Result<Vec<String>> {
 
 /// Resolves a Claude-style pattern to the entry srt reads the same way.
 ///
-/// Claude reads `//x` as absolute and `/x` as relative to the project, and matches a relative
-/// pattern at any depth. srt reads `/x` as absolute and a relative entry only beneath the working
-/// directory, so `/x` is rejected as ambiguous and a relative pattern gets a `**/` prefix (the
-/// prefix can only deny more). srt has no escapes, braces, or negation, and on Linux ignores an
+/// Claude reads `//x` as absolute and `/x` as relative to the project, and matches a bare name or
+/// a single-segment directory (`secrets/**`) at any depth. srt reads `/x` as absolute and a
+/// relative entry only beneath the working directory, so `/x` is rejected as ambiguous and a
+/// pattern Claude matches at any depth gets a `**/` prefix. srt has no escapes, braces, or negation, and on Linux ignores an
 /// absolute pattern whose first component has a wildcard, so those are rejected too.
 fn srt_path(pattern: &str) -> Result<String> {
     ensure!(
@@ -159,10 +159,17 @@ fn srt_path(pattern: &str) -> Result<String> {
                 .any(|part| matches!(part, "" | "." | "..")),
         "srt needs {path:?} to be absolute, start with ~/, or stay inside the project without . or .. parts"
     );
-    if !is_home && !path.starts_with("**/") {
+    if !is_home && matches_at_any_depth(path) {
         return Ok(format!("**/{path}"));
     }
     Ok(path.to_owned())
+}
+
+/// Claude matches a bare name (`.env`) and a single-segment directory (`secrets/**`) at any depth;
+/// any other relative pattern (`src/keys/*`) stays anchored at the project, like in gitignore.
+fn matches_at_any_depth(relative: &str) -> bool {
+    let directory = relative.strip_suffix("/**").unwrap_or(relative);
+    !directory.contains('/') && !directory.starts_with("**")
 }
 
 fn validate_policy(policy: &SecretPathPolicy) -> Result<()> {
@@ -249,7 +256,7 @@ mod tests {
                 "~/.ssh/**",
                 "**/secrets/**",
                 "/etc/secret",
-                "**/src/keys/*"
+                "src/keys/*"
             ],
         );
 
