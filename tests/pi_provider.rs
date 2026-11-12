@@ -179,9 +179,7 @@ fn assert_synced_settings(source: &Path, target: &Path, expected: &Value) -> Res
     Ok(())
 }
 
-#[test]
-fn pi_install_generates_complete_srt_policy_from_claude_source() -> Result<()> {
-    let root = std::env::temp_dir().join(format!("pi-sandbox-{}", std::process::id()));
+fn installed_srt_policy(root: &Path, sockets: &[&str]) -> Result<Value> {
     let source = root.join("source");
     std::fs::create_dir_all(&source)?;
     assert!(
@@ -195,7 +193,7 @@ fn pi_install_generates_complete_srt_policy_from_claude_source() -> Result<()> {
     let mut claude: Value =
         serde_json::from_slice(&std::fs::read(source.join("claude/settings.json"))?)?;
     claude["sandbox"] = json!({
-        "network": {"allowedDomains": ["github.com"], "allowUnixSockets": ["/custom/socket"]},
+        "network": {"allowedDomains": ["github.com"], "allowUnixSockets": sockets},
         "filesystem": {"denyRead": ["~/.ssh"], "denyWrite": ["~/**/.git/hooks"], "allowWrite": ["~/.cache/nix"]}
     });
     std::fs::write(
@@ -213,16 +211,20 @@ fn pi_install_generates_complete_srt_policy_from_claude_source() -> Result<()> {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let policy: Value = serde_json::from_slice(&std::fs::read(
+    Ok(serde_json::from_slice(&std::fs::read(
         root.join("home/.pi/agent/extensions/sandbox_policy.json"),
-    )?)?;
+    )?)?)
+}
+
+#[test]
+fn pi_install_generates_complete_srt_policy_from_claude_source() -> Result<()> {
+    let root = std::env::temp_dir().join(format!("pi-sandbox-{}", std::process::id()));
+    let policy = installed_srt_policy(&root, &["/custom/socket"])?;
     assert_eq!(policy["network"]["allowedDomains"], json!(["github.com"]));
     assert_eq!(policy["network"]["deniedDomains"], json!([]));
-    assert!(
-        policy["network"]["allowUnixSockets"]
-            .as_array()
-            .unwrap()
-            .contains(&json!("/nix/var/nix/daemon-socket/socket"))
+    assert_eq!(
+        policy["network"]["allowUnixSockets"],
+        json!(["/custom/socket", "/nix/var/nix/daemon-socket/socket"])
     );
     assert!(
         policy["filesystem"]["denyRead"]
@@ -246,6 +248,18 @@ fn pi_install_generates_complete_srt_policy_from_claude_source() -> Result<()> {
     assert!(
         root.join("home/.pi/agent/extensions/bash_sandbox.ts")
             .is_file()
+    );
+    std::fs::remove_dir_all(root)?;
+    Ok(())
+}
+
+#[test]
+fn pi_srt_policy_lists_the_nix_socket_once_when_the_source_has_it() -> Result<()> {
+    let root = std::env::temp_dir().join(format!("pi-sandbox-dedupe-{}", std::process::id()));
+    let policy = installed_srt_policy(&root, &["/nix/var/nix/daemon-socket/socket"])?;
+    assert_eq!(
+        policy["network"]["allowUnixSockets"],
+        json!(["/nix/var/nix/daemon-socket/socket"])
     );
     std::fs::remove_dir_all(root)?;
     Ok(())
