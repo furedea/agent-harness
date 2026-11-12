@@ -51,6 +51,11 @@ enum Token {
     Star,
     AnyChar,
     Char(char),
+    Class {
+        negated: bool,
+        ranges: Vec<(char, char)>,
+    },
+    Alternatives(Vec<Vec<Token>>),
 }
 
 /// A normalized path under one root; its segments may be globs.
@@ -111,10 +116,20 @@ impl GuardedPath {
             .all(|segment| matches!(segment, Segment::Literal(_)))
     }
 
+    /// `/` holds the home directory, so it covers `~` entries too; `~` and `/x` stay unrelated
+    /// because the home directory is unknown at generation time.
+    fn covers_root(&self, root: Root) -> bool {
+        let holds_home = root == Root::Home && self.segments.is_empty();
+        match self.root {
+            Root::Everything => true,
+            Root::Absolute => root == Root::Absolute || holds_home,
+            Root::Home | Root::Workspace => self.root == root,
+        }
+    }
+
     /// Whether this path is, or is an ancestor of, or matches an ancestor of, `path`.
     fn covers(&self, path: &Self) -> bool {
-        (self.root == Root::Everything || self.root == path.root)
-            && covers_segments(&self.segments, &path.segments)
+        self.covers_root(path.root) && covers_segments(&self.segments, &path.segments)
     }
 }
 
@@ -186,22 +201,61 @@ fn segment_of(part: &str) -> Segment {
     Segment::Glob(tokens_of(part))
 }
 
-/// Classes and alternations are widened to what they could match, which only ever makes the
-/// check cover more paths and so deny more.
 fn tokens_of(part: &str) -> Vec<Token> {
     let mut tokens = Vec::new();
-    let mut chars = part.chars();
-    while let Some(ch) = chars.next() {
-        let token = match ch {
-            '*' => Token::Star,
-            '?' => Token::AnyChar,
-            '[' => skip_group(&mut chars, ']', Token::AnyChar),
-            '{' => skip_group(&mut chars, '}', Token::Star),
-            _ => Token::Char(ch),
+    let mut rest = part;
+    while let Some(ch) = rest.chars().next() {
+        let tail = rest.get(ch.len_utf8()..).unwrap_or("");
+        let (token, remaining) = match ch {
+            '*' => (Token::Star, tail),
+            '?' => (Token::AnyChar, tail),
+            '[' => class_token(tail).unwrap_or((Token::Char(ch), tail)),
+            '{' => alternatives_token(tail).unwrap_or((Token::Char(ch), tail)),
+            _ => (Token::Char(ch), tail),
         };
         push_token(&mut tokens, token);
+        rest = remaining;
     }
     tokens
+}
+
+/// `[abc]`, `[a-z]` and `[!x]`; `None` when the class is not closed, so `[` is a plain character.
+fn class_token(tail: &str) -> Option<(Token, &str)> {
+    let (inside, after) = tail.split_once(']')?;
+    let negated = inside.starts_with(['!', '^']);
+    let body = inside.strip_prefix(['!', '^']).unwrap_or(inside);
+    Some((
+        Token::Class {
+            negated,
+            ranges: ranges_of(body),
+        },
+        after,
+    ))
+}
+
+fn ranges_of(body: &str) -> Vec<(char, char)> {
+    let mut ranges = Vec::new();
+    let mut chars = body.chars().peekable();
+    while let Some(low) = chars.next() {
+        let high = take_range_end(&mut chars).unwrap_or(low);
+        ranges.push((low, high));
+    }
+    ranges
+}
+
+/// The `z` of `a-z`, consuming the `-z`; `None` when `-` is last or does not follow a range.
+fn take_range_end(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) -> Option<char> {
+    chars.next_if_eq(&'-')?;
+    chars.next()
+}
+
+/// `{a,b}`; `None` when the group is not closed, so `{` is a plain character.
+fn alternatives_token(tail: &str) -> Option<(Token, &str)> {
+    let (inside, after) = tail.split_once('}')?;
+    Some((
+        Token::Alternatives(inside.split(',').map(tokens_of).collect()),
+        after,
+    ))
 }
 
 fn push_token(tokens: &mut Vec<Token>, token: Token) {
@@ -209,11 +263,6 @@ fn push_token(tokens: &mut Vec<Token>, token: Token) {
     if !repeats_star {
         tokens.push(token);
     }
-}
-
-fn skip_group(chars: &mut std::str::Chars<'_>, close: char, widened: Token) -> Token {
-    chars.by_ref().find(|&ch| ch == close);
-    widened
 }
 
 fn covers_segments(pattern: &[Segment], path: &[Segment]) -> bool {
@@ -258,6 +307,14 @@ fn tokens_match(tokens: &[Token], text: &[char]) -> bool {
         Token::Char(expected) => text
             .split_first()
             .is_some_and(|(ch, tail)| ch == expected && tokens_match(rest, tail)),
+        Token::Class { negated, ranges } => text.split_first().is_some_and(|(ch, tail)| {
+            let inside = ranges.iter().any(|(low, high)| (low..=high).contains(&ch));
+            inside != *negated && tokens_match(rest, tail)
+        }),
+        Token::Alternatives(alternatives) => alternatives.iter().any(|alternative| {
+            let joined: Vec<Token> = alternative.iter().chain(rest).cloned().collect();
+            tokens_match(&joined, text)
+        }),
     }
 }
 

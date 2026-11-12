@@ -177,6 +177,14 @@ impl CodexFilesystemEntry {
     }
 }
 
+/// Claude writes a project-relative path as `./secrets/**`, and a directory may end in `/`; both
+/// name the same path without them.
+fn normalized_pattern(path: &str) -> &str {
+    let trimmed = path.trim_end_matches('/');
+    let trimmed = if trimmed.is_empty() { path } else { trimmed };
+    trimmed.strip_prefix("./").unwrap_or(trimmed)
+}
+
 /// Resolves a Claude-style pattern to where and how Codex matches it.
 ///
 /// Claude reads `//x` as absolute, `/x` as relative to the project, and a slash-free relative
@@ -184,6 +192,7 @@ impl CodexFilesystemEntry {
 /// `:workspace_roots` subpaths, so `/x` is rejected as ambiguous and a slash-free pattern gets a
 /// `**/` prefix so it still matches at any depth.
 fn codex_location(path: &str) -> Result<(CodexScope, String)> {
+    let path = normalized_pattern(path);
     if let Some(absolute) = path.strip_prefix("//") {
         return Ok((CodexScope::Absolute, format!("/{absolute}")));
     }
@@ -299,6 +308,9 @@ mod tests {
         assert_eq!(nested.scope, CodexScope::WorkspaceRoots);
         assert_eq!(nested.path, "secrets/**");
         assert_eq!(any_depth.path, "**/.env*");
+        assert_eq!(codex_entry("./secrets/**")?.path, "secrets/**");
+        assert_eq!(codex_entry("secrets/")?.path, "**/secrets");
+        assert_eq!(codex_entry("./.env")?.path, "**/.env");
         assert!(codex_entry("../x").is_err());
         assert!(codex_entry("/x").is_err());
         Ok(())

@@ -61,7 +61,7 @@ fn a_glob_covers_the_paths_it_matches() -> Result<()> {
 }
 
 #[test]
-fn double_star_matches_any_depth_and_classes_are_widened() -> Result<()> {
+fn double_star_matches_any_depth_and_classes_match_their_members() -> Result<()> {
     let entries = [
         deny("/w/**/.env*")?,
         deny("/w/[ab]x")?,
@@ -70,8 +70,7 @@ fn double_star_matches_any_depth_and_classes_are_widened() -> Result<()> {
         read("/w/bx/f")?,
     ];
 
-    // `[ab]` is widened to any one character, so `/w/cx` is covered too.
-    assert_eq!(pairs(&entries), [(0, 2), (1, 3), (1, 4)]);
+    assert_eq!(pairs(&entries), [(0, 2), (1, 4)]);
     Ok(())
 }
 
@@ -141,5 +140,35 @@ fn roots_do_not_cover_each_other_except_everything() -> Result<()> {
 
     assert_eq!(pairs(&[workspace, home.clone()]), []);
     assert_eq!(pairs(&[everything, home]), [(0, 1)]);
+    Ok(())
+}
+
+#[test]
+fn braces_and_classes_match_only_their_alternatives() -> Result<()> {
+    let entries = [
+        deny("~/.{aws,ssh}/**")?,
+        read("~/.aws/credentials")?,
+        read("~/.codex/hooks.json")?,
+        deny("/w/[a-c]?")?,
+        read("/w/bz")?,
+        read("/w/dz")?,
+        deny("/v/[!a]x")?,
+        read("/v/bx")?,
+        read("/v/ax")?,
+    ];
+
+    assert_eq!(pairs(&entries), [(0, 1), (3, 4), (6, 7)]);
+    Ok(())
+}
+
+#[test]
+fn the_absolute_root_covers_home_entries() -> Result<()> {
+    let entries = [
+        deny("/")?,
+        read("~/.codex/hooks.json")?,
+        read("/etc/hosts")?,
+    ];
+
+    assert_eq!(pairs(&entries), [(0, 1), (0, 2)]);
     Ok(())
 }
