@@ -115,6 +115,15 @@ function isCommonDirectory(path: string, common: string): boolean {
 	}
 }
 
+// Files git reads to find its config and hooks, in the common dir and in every git dir below it
+// (linked worktrees, submodules, and submodules of linked worktrees). One list, so scopes cannot drift.
+const GIT_CONTROL_FILES = ["hooks", "config", "config.worktree", "commondir", "gitdir"];
+
+function gitControlPaths(common: string): string[] {
+	const scopes = ["", "worktrees/*/", "modules/**/", "worktrees/*/modules/**/"];
+	return scopes.flatMap(scope => GIT_CONTROL_FILES.map(file => join(common, scope, file)));
+}
+
 // Policy for one worktree: the static source policy plus what only the runtime knows.
 function buildPolicy(source: Policy, cwd: string, temporary: string, protectedFiles: string[], common: string | undefined): Policy {
 	const policy: Policy = structuredClone(source);
@@ -127,11 +136,7 @@ function buildPolicy(source: Policy, cwd: string, temporary: string, protectedFi
 	policy.filesystem.denyWrite.push(temporary, ...protectedFiles);
 	if (common) {
 		policy.filesystem.allowWrite.push(common);
-		policy.filesystem.denyWrite.push(join(common, "hooks"), join(common, "config"), join(common, "commondir"), join(common, "config.worktree"),
-			join(common, "modules/**/config"), join(common, "modules/**/config.worktree"), join(common, "modules/**/hooks"), join(common, "modules/**/commondir"), join(common, "modules/**/gitdir"),
-			join(common, "worktrees/*/modules/**/config"), join(common, "worktrees/*/modules/**/config.worktree"), join(common, "worktrees/*/modules/**/hooks"),
-			join(common, "worktrees/*/config.worktree"), join(common, "worktrees/*/commondir"), join(common, "worktrees/*/gitdir"),
-		);
+		policy.filesystem.denyWrite.push(...gitControlPaths(common));
 	}
 	// Pi loads project-local extensions and settings from here, unsandboxed, on its next start.
 	policy.filesystem.denyWrite.push(join(cwd, ".pi"));
