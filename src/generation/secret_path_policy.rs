@@ -118,8 +118,8 @@ pub(crate) fn srt_denied_read_paths(source: &Source) -> Result<Vec<String>> {
 /// Claude reads `//x` as absolute and `/x` as relative to the project, and matches a relative
 /// pattern at any depth. srt reads `/x` as absolute and a relative entry only beneath the working
 /// directory, so `/x` is rejected as ambiguous and a relative pattern gets a `**/` prefix (the
-/// prefix can only deny more). srt has no escapes and does not expand braces, so a backslash or a
-/// brace is rejected too.
+/// prefix can only deny more). srt has no escapes, braces, or negation, and on Linux ignores an
+/// absolute pattern whose first component has a wildcard, so those are rejected too.
 fn srt_path(pattern: &str) -> Result<String> {
     ensure!(
         !pattern.contains('\\'),
@@ -134,7 +134,16 @@ fn srt_path(pattern: &str) -> Result<String> {
         trimmed
             .strip_prefix("./")
             .unwrap_or(if trimmed.is_empty() { pattern } else { trimmed });
+    ensure!(
+        !path.starts_with('!'),
+        "srt has no negation, so {path:?} cannot carve an exception out of another rule"
+    );
     if let Some(absolute) = path.strip_prefix("//") {
+        let root = absolute.split('/').next().unwrap_or_default();
+        ensure!(
+            !root.contains(['*', '?', '[', ']']),
+            "srt on Linux skips an absolute pattern whose first component has a wildcard, so {path:?} would deny nothing; start it with a literal directory"
+        );
         return Ok(format!("/{absolute}"));
     }
     ensure!(
@@ -250,7 +259,16 @@ mod tests {
 
     #[test]
     fn srt_rejects_patterns_it_would_read_differently() -> Result<()> {
-        for pattern in ["a/{b,c}", "/project/x", "a/../b", "./", "a/key\\[1\\]"] {
+        for pattern in [
+            "a/{b,c}",
+            "/project/x",
+            "a/../b",
+            "./",
+            "a/key\\[1\\]",
+            "!sample.env",
+            "//**/.env",
+            "//opt*/keys/**",
+        ] {
             let error = srt_path(pattern).unwrap_err().to_string();
 
             assert!(
