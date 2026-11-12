@@ -1,7 +1,8 @@
 use super::spec::{
-    Asset, Bridge, CommandRuleSpec, ConfigFormat, ConfigLocation, ConfigSpec, EntryMatch,
-    HookFormat, HookRegistration, HookSection, HookSpec, KeyScope, Ownership, PROVIDERS,
-    ProviderId, ProviderSpec, RenderedConfig, SkillSource, SkillSpec, WhenAbsent,
+    Asset, Bridge, BundleCapture, CommandRuleSpec, ConfigFormat, ConfigLocation, ConfigSpec,
+    EntryMatch, HookFormat, HookRegistration, HookSection, HookSpec, KeyScope, Ownership,
+    PROVIDERS, ProviderId, ProviderSpec, RenderedConfig, SkillSource, SkillSpec, SyncTarget,
+    WhenAbsent,
 };
 use crate::{
     config_sync::installed::InstalledConfigs,
@@ -35,6 +36,7 @@ fn extra_spec_flows_through_layout_protection_rendering_and_publication() -> Res
             format: HookFormat::BareEvents,
             section: HookSection::Optional,
             external_file: ".example/external.json",
+            bundle: BundleCapture::NOTHING,
             bridge: Bridge {
                 directory: Some(".example/bridge"),
                 assets: &[Asset {
@@ -52,6 +54,7 @@ fn extra_spec_flows_through_layout_protection_rendering_and_publication() -> Res
             location: ConfigLocation::File(".example/managed.yaml"),
             rendered: RenderedConfig::Fixed("plugins:\n  enabled:\n    - agent-harness-hooks\n"),
             sync: ProviderId::Hermes.spec().config.unwrap().sync,
+            sync_target: SyncTarget::SameAsRendered,
             directories: &[],
         }),
         ..ProviderId::Hermes.spec().clone()
@@ -407,4 +410,45 @@ fn rendering_writes_command_rules_where_the_provider_declares_them() -> Result<(
             .starts_with(rendered.path().join(".codex/rules"))
     }));
     Ok(())
+}
+
+#[test]
+fn installed_layout_derives_sync_targets_from_the_registry() {
+    let layout = crate::layout::InstalledLayout::relative();
+    let files = layout.generated_files_for("web", PROVIDERS);
+    let tail: Vec<_> = files.iter().rev().take(2).rev().collect();
+    assert_eq!(
+        tail,
+        [
+            Path::new(".hermes/config.yaml"),
+            Path::new(".dsh/profiles/web/package.json"),
+        ]
+    );
+    assert_eq!(
+        layout
+            .generated_files_for("other", PROVIDERS)
+            .last()
+            .map(|p| p.to_owned()),
+        Some(PathBuf::from(".dsh/profiles/other/package.json"))
+    );
+}
+
+#[test]
+fn hook_bundle_capture_is_declared_by_codex_alone() {
+    let capturing: Vec<_> = PROVIDERS
+        .iter()
+        .filter(|spec| {
+            spec.hook.bundle.config_file.is_some()
+                || spec.hook.bundle.top_level_scripts_dir.is_some()
+        })
+        .map(|spec| spec.key)
+        .collect();
+    assert_eq!(capturing, ["codex"]);
+    let codex = ProviderId::Codex.spec().hook.bundle;
+    assert_eq!(codex.config_file, Some(".codex/config.toml"));
+    assert_eq!(codex.top_level_scripts_dir, Some(".codex"));
+    assert_eq!(
+        crate::generation::hook_bundle::supported_files().last(),
+        Some(".codex/config.toml")
+    );
 }

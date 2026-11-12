@@ -103,8 +103,14 @@ pub(crate) struct Staged {
     pub(crate) files: Vec<StagedFile>,
     /// The provider hook directories that exist.
     pub(crate) directories: Vec<StagedDirectory>,
-    /// The shell scripts that sit directly in `.codex`.
-    pub(crate) codex_scripts: Vec<PathBuf>,
+    /// The scripts that sit directly in a provider's declared scripts directory.
+    pub(crate) scripts: Vec<StagedScript>,
+}
+
+#[derive(Debug)]
+pub(crate) struct StagedScript {
+    pub(crate) directory: &'static str,
+    pub(crate) path: PathBuf,
 }
 
 #[derive(Debug)]
@@ -127,13 +133,20 @@ pub(crate) struct StagedDirectory {
 }
 
 /// The supported files of a bundle, relative to the home: each provider's external hook file and
-/// the Codex config.
+/// then the config files providers declare.
 pub(crate) fn supported_files() -> impl Iterator<Item = &'static str> {
     PROVIDERS.iter().map(|spec| spec.hook.external_file).chain(
-        crate::provider::spec::ProviderId::Codex
-            .spec()
-            .config_file(),
+        PROVIDERS
+            .iter()
+            .filter_map(|spec| spec.hook.bundle.config_file),
     )
+}
+
+/// The directories whose top-level scripts a bundle captures, relative to the home.
+pub(crate) fn script_directories() -> impl Iterator<Item = &'static str> {
+    PROVIDERS
+        .iter()
+        .filter_map(|spec| spec.hook.bundle.top_level_scripts_dir)
 }
 
 /// Whether the file at `relative` is a JSON document.
@@ -167,7 +180,7 @@ fn capture_supported_files(
                 target: output.join(directory.relative),
             }),
     );
-    operations.extend(codex_script_ops(staging, output));
+    operations.extend(script_ops(staging, output));
     Ok(operations)
 }
 
@@ -230,14 +243,14 @@ fn rewrite_command(object: &mut Map<String, Value>, rewrite: impl FnOnce(&str) -
     }
 }
 
-fn codex_script_ops(staging: &Staged, output: &Path) -> Vec<FileOp> {
+fn script_ops(staging: &Staged, output: &Path) -> Vec<FileOp> {
     staging
-        .codex_scripts
+        .scripts
         .iter()
         .filter_map(|script| {
             Some(FileOp::CopyFile {
-                target: output.join(".codex").join(script.file_name()?),
-                source: script.clone(),
+                target: output.join(script.directory).join(script.path.file_name()?),
+                source: script.path.clone(),
             })
         })
         .collect()
