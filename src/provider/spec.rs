@@ -1,5 +1,7 @@
 #![forbid(clippy::disallowed_methods, clippy::disallowed_types)]
 
+use std::path::{Path, PathBuf};
+
 pub(crate) use super::id::ProviderId;
 pub(crate) use super::ownership::{
     ConfigFormat, ConfigSync, EntryMatch, KeyScope, Ownership, WhenAbsent, WhenMissing,
@@ -61,6 +63,22 @@ pub(crate) enum HookSection {
     Optional,
 }
 
+/// What an external hook bundle captures from the provider's home besides the hook file.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct BundleCapture {
+    /// A config file captured as it is.
+    pub(crate) config_file: Option<&'static str>,
+    /// A directory whose shell scripts that sit directly in it are captured.
+    pub(crate) top_level_scripts_dir: Option<&'static str>,
+}
+
+impl BundleCapture {
+    pub(crate) const NOTHING: Self = Self {
+        config_file: None,
+        top_level_scripts_dir: None,
+    };
+}
+
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct HookSpec {
     /// Directory of the source tree that holds the hook scripts.
@@ -71,6 +89,7 @@ pub(crate) struct HookSpec {
     pub(crate) section: HookSection,
     /// File an external hook bundle writes its registration to.
     pub(crate) external_file: &'static str,
+    pub(crate) bundle: BundleCapture,
     pub(crate) bridge: Bridge,
 }
 
@@ -145,6 +164,34 @@ pub(crate) enum ConfigLocation {
     BundleDirectory(&'static str),
 }
 
+/// The file the rendered config is merged into at installation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum SyncTarget {
+    /// The file the rendered config is published to.
+    SameAsRendered,
+    File(&'static str),
+    /// A file inside the user's profile directory, named by the profile at install time.
+    InProfile {
+        profiles_dir: &'static str,
+        file: &'static str,
+    },
+}
+
+fn join3(a: &str, b: &str, c: &str) -> PathBuf {
+    Path::new(a).join(b).join(c)
+}
+
+impl SyncTarget {
+    /// The target when it is not the published file, with `profile` filled in.
+    pub(crate) fn path_in(self, profile: &str) -> Option<PathBuf> {
+        match self {
+            Self::SameAsRendered => None,
+            Self::File(path) => Some(PathBuf::from(path)),
+            Self::InProfile { profiles_dir, file } => Some(join3(profiles_dir, profile, file)),
+        }
+    }
+}
+
 /// How the rendered config file of a provider is produced at render time.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum RenderedConfig {
@@ -174,6 +221,7 @@ pub(crate) struct ConfigSpec {
     pub(crate) location: ConfigLocation,
     pub(crate) rendered: RenderedConfig,
     pub(crate) sync: ConfigSync,
+    pub(crate) sync_target: SyncTarget,
     /// Source directories the config refers to, such as Claude's statusline command.
     pub(crate) directories: &'static [SyncedDirectory],
 }

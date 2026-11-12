@@ -13,7 +13,7 @@ use crate::{
     file_op::FileOp,
     generation::hook_bundle::{
         HookBundleSpec, Installer, Staged, StagedContent, StagedDirectory, StagedFile,
-        is_json_file, supported_files,
+        StagedScript, is_json_file, script_directories, supported_files,
     },
     provider::spec::PROVIDERS,
 };
@@ -40,8 +40,8 @@ fn read_spec(path: &Path) -> Result<HookBundleSpec> {
     HookBundleSpec::parse(path, &content)
 }
 
-/// What the installers left in `home`: the supported files, the hook directories, and the Codex
-/// scripts, with every JSON document parsed.
+/// What the installers left in `home`: the supported files, the hook directories, and the
+/// top-level scripts, with every JSON document parsed.
 fn load_staged(home: &Path) -> Result<Staged> {
     let files = supported_files()
         .filter(|relative| home.join(relative).is_file())
@@ -57,8 +57,20 @@ fn load_staged(home: &Path) -> Result<Staged> {
         root: home.to_path_buf(),
         files,
         directories,
-        codex_scripts: shell_scripts(&home.join(".codex"))?,
+        scripts: staged_scripts(home)?,
     })
+}
+
+fn staged_scripts(home: &Path) -> Result<Vec<StagedScript>> {
+    let mut scripts = Vec::new();
+    for directory in script_directories() {
+        scripts.extend(
+            shell_scripts(&home.join(directory))?
+                .into_iter()
+                .map(|path| StagedScript { directory, path }),
+        );
+    }
+    Ok(scripts)
 }
 
 fn staged_file(home: &Path, relative: &'static str) -> Result<StagedFile> {

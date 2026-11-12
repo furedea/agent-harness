@@ -1,6 +1,6 @@
 #![forbid(clippy::disallowed_methods, clippy::disallowed_types)]
 
-use crate::provider::spec::{CommandRuleSpec, ProviderId, ProviderSpec, SkillSource};
+use crate::provider::spec::{CommandRuleSpec, ProviderSpec, SkillSource};
 use std::path::{Path, PathBuf};
 
 const MANIFEST_PATH: &str = "manifest.json";
@@ -129,12 +129,6 @@ impl<'a> InstalledLayout<'a> {
         Self::new(Path::new(""))
     }
 
-    pub(crate) fn hermes_config(self) -> PathBuf {
-        self.root
-            .join(ProviderId::Hermes.spec().home_dir)
-            .join("config.yaml")
-    }
-
     /// Directories published as a whole, in registry order.
     pub(crate) fn managed_directories_for(self, providers: &[ProviderSpec]) -> Vec<PathBuf> {
         providers
@@ -185,15 +179,18 @@ impl<'a> InstalledLayout<'a> {
                 .flat_map(ProviderSpec::generated_rule_files)
                 .map(|path| self.root.join(path)),
         );
-        files.extend([
-            self.hermes_config(),
-            self.root
-                .join(ProviderId::Dsh.spec().home_dir)
-                .join("profiles")
-                .join(dsh_profile)
-                .join("package.json"),
-        ]);
+        files.extend(self.sync_targets_for(dsh_profile, providers));
         files
+    }
+
+    /// Files the rendered configs are merged into that are not themselves published.
+    fn sync_targets_for(self, profile: &str, providers: &[ProviderSpec]) -> Vec<PathBuf> {
+        providers
+            .iter()
+            .filter_map(|spec| spec.config)
+            .filter_map(|config| config.sync_target.path_in(profile))
+            .map(|path| self.root.join(path))
+            .collect()
     }
 
     /// Files that verification requires to exist.

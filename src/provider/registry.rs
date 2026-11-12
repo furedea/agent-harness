@@ -2,10 +2,10 @@
 //! The registry: every provider's declaration, in install order.
 
 use super::spec::{
-    Asset, Bridge, CommandRuleSpec, ConfigFormat, ConfigLocation, ConfigSpec, ConfigSync,
-    EntryMatch, HookFormat, HookRegistration, HookSection, HookSpec, KeyScope, Ownership,
-    ProviderId, ProviderSpec, RenderedConfig, SkillSource, SkillSpec, SyncedDirectory, WhenAbsent,
-    WhenMissing,
+    Asset, Bridge, BundleCapture, CommandRuleSpec, ConfigFormat, ConfigLocation, ConfigSpec,
+    ConfigSync, EntryMatch, HookFormat, HookRegistration, HookSection, HookSpec, KeyScope,
+    Ownership, ProviderId, ProviderSpec, RenderedConfig, SkillSource, SkillSpec, SyncTarget,
+    SyncedDirectory, WhenAbsent, WhenMissing,
 };
 
 impl ProviderId {
@@ -51,6 +51,10 @@ const CODEX: ProviderSpec = ProviderSpec {
         format: HookFormat::WrappedEvents,
         section: HookSection::Required,
         external_file: ".codex/hooks.json",
+        bundle: BundleCapture {
+            config_file: Some(".codex/config.toml"),
+            top_level_scripts_dir: Some(".codex"),
+        },
         bridge: Bridge {
             directory: None,
             assets: &[],
@@ -83,6 +87,7 @@ const CODEX: ProviderSpec = ProviderSpec {
             when_missing: WhenMissing::Create,
             home_command_lists: &[],
         },
+        sync_target: SyncTarget::SameAsRendered,
         directories: &[],
     }),
 };
@@ -99,6 +104,7 @@ const CLAUDE: ProviderSpec = ProviderSpec {
         format: HookFormat::SettingsSection,
         section: HookSection::Required,
         external_file: ".claude/settings.json",
+        bundle: BundleCapture::NOTHING,
         bridge: Bridge {
             directory: None,
             assets: &[],
@@ -132,6 +138,7 @@ const CLAUDE: ProviderSpec = ProviderSpec {
             when_missing: WhenMissing::Create,
             home_command_lists: &[&["sandbox", "excludedCommands"]],
         },
+        sync_target: SyncTarget::SameAsRendered,
         directories: &[SyncedDirectory {
             source: "claude/statusline",
             destination: ".claude/statusline",
@@ -151,6 +158,7 @@ const DEVIN: ProviderSpec = ProviderSpec {
         format: HookFormat::BareEvents,
         section: HookSection::Optional,
         external_file: ".devin/hooks.v1.json",
+        bundle: BundleCapture::NOTHING,
         bridge: Bridge {
             directory: None,
             assets: &[],
@@ -180,6 +188,7 @@ const DEVIN: ProviderSpec = ProviderSpec {
             when_missing: WhenMissing::Create,
             home_command_lists: &[],
         },
+        sync_target: SyncTarget::SameAsRendered,
         directories: &[],
     }),
 };
@@ -196,6 +205,7 @@ const HERMES: ProviderSpec = ProviderSpec {
         format: HookFormat::BareEvents,
         section: HookSection::Optional,
         external_file: ".hermes/hooks.json",
+        bundle: BundleCapture::NOTHING,
         bridge: Bridge {
             directory: Some(".hermes/plugins/agent-harness-hooks"),
             assets: &[
@@ -230,6 +240,7 @@ const HERMES: ProviderSpec = ProviderSpec {
             when_missing: WhenMissing::Create,
             home_command_lists: &[],
         },
+        sync_target: SyncTarget::File(".hermes/config.yaml"),
         directories: &[],
     }),
 };
@@ -246,6 +257,7 @@ const PI: ProviderSpec = ProviderSpec {
         format: HookFormat::BareEvents,
         section: HookSection::Optional,
         external_file: ".pi/hooks.json",
+        bundle: BundleCapture::NOTHING,
         bridge: Bridge {
             directory: None,
             assets: &[Asset {
@@ -276,6 +288,7 @@ const PI: ProviderSpec = ProviderSpec {
             when_missing: WhenMissing::Create,
             home_command_lists: &[],
         },
+        sync_target: SyncTarget::SameAsRendered,
         directories: &[],
     }),
 };
@@ -292,6 +305,7 @@ const DSH: ProviderSpec = ProviderSpec {
         format: HookFormat::BareEvents,
         section: HookSection::Optional,
         external_file: ".dsh/hooks.json",
+        bundle: BundleCapture::NOTHING,
         bridge: Bridge {
             directory: Some(".dsh/bridge"),
             assets: &[
@@ -332,6 +346,10 @@ const DSH: ProviderSpec = ProviderSpec {
             // The profile is the user's, and dsh creates it on its first run.
             when_missing: WhenMissing::Skip,
             home_command_lists: &[],
+        },
+        sync_target: SyncTarget::InProfile {
+            profiles_dir: ".dsh/profiles",
+            file: "package.json",
         },
         directories: &[],
     }),
