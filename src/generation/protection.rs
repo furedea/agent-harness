@@ -59,7 +59,11 @@ pub(crate) fn codex_config_fragment_for_runtime(context: GenerationContext<'_>) 
         write_entries(&mut fragment, &entries, CodexScope::WorkspaceRoots)?;
     }
 
-    crate::generation::guarded_conflict::check(&fragment.parse()?, None)?;
+    crate::generation::guarded_conflict::check(
+        &fragment.parse()?,
+        None,
+        context.runtime_root.project_directory().as_deref(),
+    )?;
     Ok(fragment)
 }
 

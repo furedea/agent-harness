@@ -233,6 +233,60 @@ fn a_source_exception_that_covers_the_generated_paths_resolves_the_conflict() ->
 }
 
 #[test]
+fn a_looser_intermediate_source_entry_resolves_the_generated_paths_below_it() -> Result<()> {
+    let document = merged_filesystem(
+        "[permissions.guarded.filesystem]\n\":root\" = \"deny\"\n\"~\" = \"write\"\n",
+        NO_RULES,
+    )?;
+
+    let filesystem = &document["permissions"]["guarded"]["filesystem"];
+    assert_eq!(filesystem["~/.codex/hooks/adapt.sh"].as_str(), Some("read"));
+    Ok(())
+}
+
+#[cfg(unix)]
+fn project_local_error(source_config: &str) -> Result<String> {
+    let root = test_root("project_local_error")?;
+    write_minimal_source(&root)?;
+    write_file(&root.join("codex/config.toml"), source_config)?;
+    let loaded = load_source_with(&root, &LoadInputs::new(PROVIDERS))?;
+    let runtime_root = crate::runtime_root::RuntimeRoot::directory("/work/proj".into())?;
+    let result = config_source_content_for_runtime(GenerationContext {
+        source: &loaded,
+        runtime_root: &runtime_root,
+        dsh_profile: "web",
+    });
+    crate::shell::fixtures::remove_dir_all(root)?;
+    Ok(result.map_or_else(|error| format!("{error:#}"), |_| String::new()))
+}
+
+#[cfg(unix)]
+#[test]
+fn a_workspace_denial_over_a_project_local_protected_path_is_a_conflict() -> Result<()> {
+    let message = project_local_error(
+        "[permissions.guarded.filesystem.\":workspace_roots\"]\n\".codex/hooks/**\" = \"deny\"\n",
+    )?;
+
+    assert_conflict(
+        &message,
+        ":workspace_roots / .codex/hooks/** = \"deny\" (",
+        "/work/proj/.codex/hooks/adapt.sh = \"read\" (generated)",
+    );
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn a_workspace_denial_beside_the_project_local_protected_paths_passes() -> Result<()> {
+    let message = project_local_error(
+        "[permissions.guarded.filesystem.\":workspace_roots\"]\n\"secrets/**\" = \"deny\"\n",
+    )?;
+
+    assert_eq!(message, "");
+    Ok(())
+}
+
+#[test]
 fn a_source_path_that_climbs_above_its_root_is_rejected() {
     let message = conflict_message(
         "[permissions.guarded.filesystem]\n\"~/../x\" = \"deny\"\n",

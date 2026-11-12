@@ -35,7 +35,7 @@ fn config_source_content_for_runtime(context: GenerationContext<'_>) -> Result<S
     let protection = protection::codex_config_fragment_for_runtime(context)?
         .parse::<DocumentMut>()
         .context("failed to parse generated Codex config")?;
-    check_guarded_conflicts(context.source, &protection)?;
+    check_guarded_conflicts(context, &protection)?;
     keep_scalar_workspace_grants(&mut document, &protection);
     for (key, item) in protection.iter() {
         merge_item(document.entry(key).or_insert(Item::None), item);
@@ -46,7 +46,8 @@ fn config_source_content_for_runtime(context: GenerationContext<'_>) -> Result<S
     Ok(document.to_string())
 }
 
-fn check_guarded_conflicts(source: &Source, generated: &DocumentMut) -> Result<()> {
+fn check_guarded_conflicts(context: GenerationContext<'_>, generated: &DocumentMut) -> Result<()> {
+    let source = context.source;
     let path = SourceLayout::new(source.root()).codex_config();
     guarded_conflict::check(
         generated,
@@ -54,6 +55,7 @@ fn check_guarded_conflicts(source: &Source, generated: &DocumentMut) -> Result<(
             path: &path,
             document: &source.codex_config,
         }),
+        context.runtime_root.project_directory().as_deref(),
     )
 }
 

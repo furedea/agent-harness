@@ -30,6 +30,14 @@ impl RuntimeRoot {
         path
     }
 
+    /// The project directory of a project-local install, which Codex treats as the workspace.
+    pub(crate) fn project_directory(&self) -> Option<String> {
+        match self {
+            Self::Home => None,
+            Self::Directory(_) => Some(self.path(Path::new(""))),
+        }
+    }
+
     pub(crate) fn relocate_command(&self, command: &str) -> String {
         match self {
             Self::Home => command.to_owned(),
