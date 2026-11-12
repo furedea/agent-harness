@@ -59,14 +59,14 @@ fn strings(object: &Value, key: &str) -> Result<Vec<Value>> {
     let Some(value) = object.get(key) else {
         return Ok(Vec::new());
     };
-    let values = value
-        .as_array()
-        .with_context(|| format!("{key} must be an array"))?;
+    let values = value.as_array().with_context(|| {
+        format!("generate the Pi srt policy: sandbox setting {key} must be an array")
+    })?;
     anyhow::ensure!(
         values
             .iter()
             .all(|value| value.as_str().is_some_and(|s| !s.is_empty())),
-        "{key} entries must be nonempty strings"
+        "generate the Pi srt policy: sandbox setting {key} entries must be nonempty strings"
     );
     Ok(values.clone())
 }
