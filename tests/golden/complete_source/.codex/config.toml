@@ -44,3 +44,6 @@ hooks = true
 "~/.hermes/config.yaml" = "read"
 "~/.dsh/profiles/web/package.json" = "read"
 glob_scan_max_depth = 5
+
+[permissions.guarded.filesystem.":workspace_roots"]
+"**/secrets/**" = "none"

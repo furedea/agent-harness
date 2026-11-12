@@ -1,12 +1,16 @@
 use std::fmt::Write;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, ensure};
 use serde::Serialize;
 
 use crate::{
     file_op::FileOp,
-    generation::GenerationContext,
+    generation::{
+        GenerationContext,
+        permission_rule::{CodexFilesystemEntry, CodexScope},
+        secret_path_policy,
+    },
     layout::{InstalledLayout, SourceLayout},
     runtime_root::RuntimeRoot,
     source_model::Source,
@@ -42,14 +46,69 @@ pub(crate) fn codex_config_fragment(source: &Source) -> Result<String> {
 }
 
 pub(crate) fn codex_config_fragment_for_runtime(context: GenerationContext<'_>) -> Result<String> {
+    let entries = guarded_filesystem_entries(context)?;
     let mut fragment = String::from("[permissions.guarded.filesystem]\n");
 
-    for path in protected_paths_for_runtime(context)? {
-        writeln!(fragment, "{} = \"read\"", toml_edit::Key::new(path))?;
-    }
+    write_entries(&mut fragment, &entries, CodexScope::Absolute)?;
     writeln!(fragment, "glob_scan_max_depth = {GLOB_SCAN_MAX_DEPTH}")?;
+    if entries
+        .iter()
+        .any(|entry| entry.scope == CodexScope::WorkspaceRoots)
+    {
+        fragment.push_str("\n[permissions.guarded.filesystem.\":workspace_roots\"]\n");
+        write_entries(&mut fragment, &entries, CodexScope::WorkspaceRoots)?;
+    }
 
+    crate::generation::guarded_conflict::check(&fragment.parse()?, None)?;
     Ok(fragment)
+}
+
+/// Protected harness paths first, then secret paths. A path both name with different accesses
+/// is a conflict, and so is any entry covered by a stricter one (see `guarded_conflict`).
+fn guarded_filesystem_entries(context: GenerationContext<'_>) -> Result<Vec<CodexFilesystemEntry>> {
+    let protected = protected_paths_for_runtime(context)?
+        .into_iter()
+        .map(CodexFilesystemEntry::protected);
+    let secret = secret_path_policy::codex_filesystem_entries(context.source)?;
+
+    let mut entries: Vec<CodexFilesystemEntry> = Vec::new();
+    for entry in protected.chain(secret) {
+        let known = entries
+            .iter()
+            .find(|known| known.scope == entry.scope && known.path == entry.path);
+        known.map_or(Ok(()), |known| ensure_same_access(known, &entry))?;
+        let is_new = known.is_none();
+        entries.extend(is_new.then_some(entry));
+    }
+    Ok(entries)
+}
+
+fn ensure_same_access(known: &CodexFilesystemEntry, entry: &CodexFilesystemEntry) -> Result<()> {
+    ensure!(
+        known.access == entry.access,
+        "guarded filesystem conflict: {:?} is both \"{}\" and \"{}\" in the generated config; \
+         Codex applies the more specific entry, so change one of them",
+        entry.path,
+        known.access.as_str(),
+        entry.access.as_str()
+    );
+    Ok(())
+}
+
+fn write_entries(
+    fragment: &mut String,
+    entries: &[CodexFilesystemEntry],
+    scope: CodexScope,
+) -> Result<()> {
+    for entry in entries.iter().filter(|entry| entry.scope == scope) {
+        writeln!(
+            fragment,
+            "{} = \"{}\"",
+            toml_edit::Key::new(&entry.path),
+            entry.access.as_str()
+        )?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -211,6 +270,122 @@ mod tests {
         assert!(content.contains("\"~/.claude/hooks/guard.sh\" = \"read\""));
         assert!(content.contains("glob_scan_max_depth = 5"));
 
+        crate::shell::fixtures::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn codex_config_fragment_applies_the_secret_path_policy() -> Result<()> {
+        let root = test_root("codex_config_fragment_applies_the_secret_path_policy")?;
+        write_minimal_source(&root)?;
+        write_file(
+            &root.join("hooks/rules/secret_path_policy.json"),
+            r#"{"version":1,"rules":[
+{"pattern":"~/.ssh/**","access":["read","write"]},
+{"pattern":"**/secrets/**","access":["read"]},
+{"pattern":"~/.aws/credentials","access":["write"]},
+{"pattern":"**/agent-harness/verification/**","access":["write"]},
+{"pattern":"~/.codex/hooks.json","access":["write"]}
+]}"#,
+        )?;
+
+        let content = codex_config_fragment(&load_source(&root)?)?;
+        let (table, scoped) = content.split_once("\n[").unwrap();
+        let lines: Vec<&str> = table.lines().collect();
+
+        assert!(lines.contains(&"\"~/.codex/hooks/adapt.sh\" = \"read\""));
+        assert!(lines.contains(&"\"~/.codex/hooks.json\" = \"read\""));
+        assert_eq!(
+            lines[lines.len() - 2..],
+            ["\"~/.ssh/**\" = \"none\"", "glob_scan_max_depth = 5",],
+        );
+        assert!(!content.contains("~/.aws/credentials"));
+        assert!(!content.contains("verification"));
+        assert_eq!(
+            scoped,
+            "permissions.guarded.filesystem.\":workspace_roots\"]\n\"**/secrets/**\" = \"none\"\n",
+        );
+        content.parse::<toml_edit::DocumentMut>()?;
+        crate::shell::fixtures::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    fn fragment_error(policy: &str) -> Result<String> {
+        let root = test_root("fragment_error")?;
+        write_minimal_source(&root)?;
+        write_file(&root.join("hooks/rules/secret_path_policy.json"), policy)?;
+        let error = codex_config_fragment(&load_source(&root)?).unwrap_err();
+        crate::shell::fixtures::remove_dir_all(root)?;
+        Ok(format!("{error:#}"))
+    }
+
+    #[test]
+    fn a_secret_rule_on_a_protected_path_with_another_access_is_a_conflict() -> Result<()> {
+        let message = fragment_error(
+            r#"{"version":1,"rules":[{"pattern":"~/.codex/hooks.json","access":["read"]}]}"#,
+        )?;
+
+        assert!(message.contains("guarded filesystem conflict"), "{message}");
+        assert!(message.contains("~/.codex/hooks.json"), "{message}");
+        Ok(())
+    }
+
+    #[test]
+    fn a_generated_denial_over_a_protected_path_is_a_conflict() -> Result<()> {
+        let message = fragment_error(
+            r#"{"version":1,"rules":[{"pattern":"~/.codex/**","access":["read"]}]}"#,
+        )?;
+
+        assert!(
+            message.contains("~/.codex/** = \"none\" (generated)"),
+            "{message}"
+        );
+        assert!(
+            message.contains("~/.codex/hooks/adapt.sh = \"read\" (generated)"),
+            "{message}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn overlapping_generated_entries_with_the_same_access_pass() -> Result<()> {
+        let root = test_root("overlapping_generated_entries_with_the_same_access_pass")?;
+        write_minimal_source(&root)?;
+        write_file(
+            &root.join("hooks/rules/secret_path_policy.json"),
+            r#"{"version":1,"rules":[
+{"pattern":"secrets/**","access":["read"]},
+{"pattern":"secrets/key","access":["read"]}
+]}"#,
+        )?;
+
+        let content = codex_config_fragment(&load_source(&root)?)?;
+
+        assert!(content.contains("\"secrets/key\" = \"none\""));
+        crate::shell::fixtures::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn a_write_only_rule_produces_no_codex_entry() -> Result<()> {
+        let root = test_root("a_write_only_rule_produces_no_codex_entry")?;
+        write_minimal_source(&root)?;
+        write_file(
+            &root.join("hooks/rules/secret_path_policy.json"),
+            r#"{"version":1,"rules":[
+{"pattern":".env*","access":["write"]},
+{"pattern":"**/agent-harness/audit/**","access":["write"]}
+]}"#,
+        )?;
+
+        let with_rules = codex_config_fragment(&load_source(&root)?)?;
+        write_file(
+            &root.join("hooks/rules/secret_path_policy.json"),
+            r#"{"version":1,"rules":[]}"#,
+        )?;
+        let without_rules = codex_config_fragment(&load_source(&root)?)?;
+
+        assert_eq!(with_rules, without_rules);
         crate::shell::fixtures::remove_dir_all(root)?;
         Ok(())
     }

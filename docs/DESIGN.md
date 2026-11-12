@@ -224,11 +224,39 @@ sequenceDiagram
 | `generation/command_permissions`                                                          | Maps neutral rules to Claude, Codex, and Devin permission syntax.                                              |
 | `generation/claude_config`, `codex_config`, `dsh_config`                                  | Build provider configs and the dsh bundle registration.                                                        |
 | `generation/protection`, `secret_path_policy`                                             | Compute protected paths and secret-file deny rules.                                                            |
+| `generation/guarded_path`, `guarded_conflict`                                             | Compare Codex guarded filesystem entries and fail when a looser entry sits under a stricter one.               |
 | `generation/skills`, `external_hooks`, `hook_bundle`                                      | Render skills and compose external bundles.                                                                    |
 | `inventory`                                                                               | Lists the skills and hooks a source provides.                                                                  |
 | `runtime_root`                                                                            | Relocates hook commands for project-local installs.                                                            |
 | `github_app`                                                                              | Mints GitHub App installation tokens for the agent token option ([0021]).                                      |
 | `runtime`                                                                                 | Checks that the manifest's runtime commands are on `PATH`.                                                     |
+
+### Codex guarded filesystem
+
+The secret path policy reaches Codex as `[permissions.guarded.filesystem]` entries: a rule that
+denies reads is `"none"`. A rule that only denies writes is not rendered for Codex at all. Codex's
+filesystem permissions apply to every process the agent starts, while Claude's `Edit(...)` deny
+applies only to the Edit tool, and the write-only rules guard harness state that harness scripts
+write themselves (`verification_session.py` writes under `**/agent-harness/{verification,
+trusted-owners,audit}/**`). Denying those writes in Codex's sandbox would break the scripts; hooks
+keep enforcing them. This matches the Claude Code sandbox, which denies reading such paths but
+allows writing to `~/.local/state/agent-harness`.
+
+Codex applies the more specific entry, so a looser entry under a stricter one (a protected
+`~/.codex/hooks/adapt.sh = "read"` under `~/.codex/** = "none"`) reopens a denied path. The harness
+never rewrites guarded entries to guess which side was meant. It compares the generated entries
+with each other and with the source `codex/config.toml` and fails, naming both entries, when one
+covers a looser one. Only denials may be patterns; the looser entry is always a concrete path, so
+two globs are never compared with each other and a glob looser than another glob is not detected.
+A rule that denies reads with a brace pattern fails generation, because Codex does not expand
+braces. Paths are compared by root: `~`, absolute paths and the workspace are separate, so a
+project-local install (`--runtime-root` is the project) is not matched against
+`:workspace_roots`. Conflict detection is a safety net; hooks still enforce the secret policy at
+runtime.
+
+On platforms that expand unreadable globs before the sandbox starts, Codex caps `**` at
+`glob_scan_max_depth` (5), so a secret nested deeper stays readable by a command that bypasses the
+hooks. Hook-time enforcement remains the primary guard.
 
 ## Verification
 

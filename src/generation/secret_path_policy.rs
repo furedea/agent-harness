@@ -4,7 +4,7 @@ use anyhow::{Context, Result, ensure};
 use serde::Deserialize;
 
 use crate::{
-    generation::permission_rule::{PathAccess, PathPattern, PathRule},
+    generation::permission_rule::{CodexFilesystemEntry, PathAccess, PathPattern, PathRule},
     source_model::Source,
 };
 
@@ -19,6 +19,14 @@ pub(crate) struct SecretPathPolicy {
 struct SecretPathRule {
     pattern: PathPattern,
     access: Vec<SecretPathAccess>,
+}
+
+impl SecretPathRule {
+    fn denies_read(&self) -> bool {
+        self.access
+            .iter()
+            .any(|access| matches!(access, SecretPathAccess::Read))
+    }
 }
 
 #[derive(Debug, Clone, Copy, Deserialize)]
@@ -61,6 +69,25 @@ pub(crate) fn claude_deny_permissions(source: &Source) -> Vec<String> {
                 .iter()
                 .map(|&access| PathRule::new(rule.pattern.clone(), access.into()).claude())
         })
+        .collect()
+}
+
+/// The Codex filesystem entries the policy requires, one per rule that denies reads.
+///
+/// A rule that only denies writes has no Codex entry: Codex's permissions apply to every process
+/// the agent starts, and the harness scripts write the paths such rules guard. Hooks keep
+/// enforcing them.
+///
+/// # Errors
+///
+/// Returns an error when a rule's pattern is not a path Codex can address.
+pub(crate) fn codex_filesystem_entries(source: &Source) -> Result<Vec<CodexFilesystemEntry>> {
+    source
+        .secret_paths
+        .rules
+        .iter()
+        .filter(|rule| rule.denies_read())
+        .map(|rule| rule.pattern.codex_denied_read())
         .collect()
 }
 
