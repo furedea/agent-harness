@@ -8,6 +8,7 @@ try {
   const adapter = join(root, 'adapter.py');
   writeFileSync(adapter, '');
   process.env.AGENT_HARNESS_PI_ADAPTER = adapter;
+  process.env.AGENT_HARNESS_HOOK_TIMEOUT = "3";
   const { default: register } = await import('../src/generation/assets/pi/hook_bridge.ts');
   const listeners = new Map();
   register({ on(event, listener) { listeners.set(event, listener); } });
@@ -70,6 +71,25 @@ sys.exit(${code})
   output([allow]);
   assert.equal(await call(), undefined);
   assert.equal(prompts.length, 0);
+  output([]);
+  const fileCall = (toolName, path) => listeners.get('tool_call')({ toolName, input: { path } }, ctx);
+  // Hooks are policy only: adapter failures let every tool proceed.
+  for (const code of [1, 3]) {
+    output([], code);
+    for (const tool of ['bash', 'read', 'write', 'edit', 'grep', 'find', 'ls']) {
+      assert.equal(await fileCall(tool, '../outside'), undefined, tool);
+    }
+  }
+  writeFileSync(adapter, 'import os, signal\nos.kill(os.getpid(), signal.SIGTERM)\n');
+  assert.equal(await fileCall('write', '../outside'), undefined);
+  writeFileSync(adapter, 'import time\ntime.sleep(10)\n');
+  assert.equal(await fileCall('write', '../outside'), undefined);
+  const savedPath = process.env.PATH;
+  process.env.PATH = root;
+  assert.equal(await fileCall('write', '../outside'), undefined);
+  process.env.PATH = savedPath;
+  rmSync(adapter);
+  assert.equal(await fileCall('write', '../outside'), undefined);
   output([ask]);
   await listeners.get('tool_call')({ toolName: 'read', input: { path: 'README.md' } }, ctx);
   assert.ok(prompts[0].includes('read'));

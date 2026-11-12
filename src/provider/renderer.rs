@@ -12,8 +12,8 @@ use crate::{
     },
     file_op::FileOp,
     generation::{
-        GenerationContext, claude_config, codex_config, command_permissions, hooks, protection,
-        skills,
+        GenerationContext, claude_config, codex_config, command_permissions, hooks, pi_sandbox,
+        protection, skills,
     },
     layout::SourceLayout,
     provider::spec::{
@@ -47,7 +47,15 @@ impl ProviderRenderer<'_> {
         operations.extend(self.render_skill(spec)?);
         operations.extend(self.write_command_rule(spec)?);
         operations.extend(self.write_config(spec)?);
+        operations.extend(self.write_sandbox_policy(spec)?);
         Ok(operations)
+    }
+
+    /// Pi's srt policy, generated from the same source as Claude's sandbox block.
+    fn write_sandbox_policy(&self, spec: &ProviderSpec) -> Result<Option<FileOp>> {
+        (spec.id == ProviderId::Pi)
+            .then(|| pi_sandbox::policy_op(self.context, self.out))
+            .transpose()
     }
 
     fn copy_instructions(&self, spec: &ProviderSpec) -> Option<FileOp> {

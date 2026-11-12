@@ -1,0 +1,59 @@
+{
+  "filesystem": {
+    "allowWrite": [
+      "."
+    ],
+    "denyRead": [
+      "~/.pi/agent/auth.json"
+    ],
+    "denyWrite": [
+      "~/.codex/hooks/adapt.sh",
+      "~/.codex/hooks/guard.sh",
+      "~/.claude/hooks/guard.sh",
+      "~/.claude/hooks/lib/provider_adapter.py",
+      "~/.claude/hooks/rules/allowed_commands.json",
+      "~/.claude/hooks/rules/forbidden_commands.json",
+      "~/.claude/hooks/rules/secret_commit_policy.json",
+      "~/.claude/hooks/rules/secret_path_policy.json",
+      "~/.devin/hooks/hook_adapter.py",
+      "~/.hermes/hooks/hook_adapter.py",
+      "~/.pi/hooks/hook_adapter.py",
+      "~/.dsh/hooks/hook_adapter.py",
+      "~/.claude/statusline/statusline.py",
+      "~/.hermes/plugins/agent-harness-hooks/plugin.yaml",
+      "~/.hermes/plugins/agent-harness-hooks/__init__.py",
+      "~/.dsh/bridge/package.json",
+      "~/.dsh/bridge/cordis.patch.yml",
+      "~/.dsh/bridge/hook_bridge.ts",
+      "~/.codex/AGENTS.md",
+      "~/.codex/hooks.json",
+      "~/.codex/config.toml",
+      "~/.codex/rules/default.rules",
+      "~/.claude/CLAUDE.md",
+      "~/.claude/settings.json",
+      "~/.config/devin/config.json",
+      "~/.hermes/hooks.json",
+      "~/.hermes/managed-config.yaml",
+      "~/.pi/agent/AGENTS.md",
+      "~/.pi/agent/hooks.json",
+      "~/.pi/agent/settings.json",
+      "~/.pi/agent/extensions/hook_bridge.ts",
+      "~/.pi/agent/extensions/sandbox/file_operations.mjs",
+      "~/.pi/agent/extensions/bash_sandbox.ts",
+      "~/.pi/agent/extensions/sandbox_policy.json",
+      "~/.dsh/AGENTS.md",
+      "~/.dsh/hooks.json",
+      "~/.claude/hooks/rules/command_permissions.json",
+      "~/.claude/hooks/rules/protected_paths.json",
+      "~/.hermes/config.yaml",
+      "~/.dsh/profiles/web/package.json"
+    ]
+  },
+  "network": {
+    "allowUnixSockets": [
+      "/nix/var/nix/daemon-socket/socket"
+    ],
+    "allowedDomains": [],
+    "deniedDomains": []
+  }
+}

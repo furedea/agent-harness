@@ -24,6 +24,8 @@ interface AdapterRun {
 function dispatch(event: string, payload: unknown): Promise<AdapterRun> {
 	return new Promise((resolve) => {
 		const run: AdapterRun = { code: -1, stdout: "", stderr: "" };
+		// A missing adapter must not read as exit 2 (deny) from the interpreter's "can't open file".
+		if (!existsSync(ADAPTER)) return resolve(run);
 		const done = (result: AdapterRun) => {
 			clearTimeout(timer);
 			resolve(result);
@@ -40,6 +42,7 @@ function dispatch(event: string, payload: unknown): Promise<AdapterRun> {
 		child.stderr.on("data", (data) => (run.stderr += data));
 		child.on("error", () => done(run));
 		child.on("close", (code) => done({ ...run, code: code ?? -1 }));
+		child.stdin.on("error", () => done(run));
 		child.stdin.end(JSON.stringify(payload));
 	});
 }
@@ -85,7 +88,6 @@ function sessionId(ctx: ExtensionContext): string {
 type RawEvent = Record<string, unknown>;
 
 export default function (pi: ExtensionAPI) {
-	if (!existsSync(ADAPTER)) return;
 
 	const forward = (event: string, rawEvent: unknown, ctx: ExtensionContext, extra?: RawEvent) => {
 		const base = typeof rawEvent === "object" && rawEvent !== null ? (rawEvent as RawEvent) : {};
@@ -105,22 +107,18 @@ export default function (pi: ExtensionAPI) {
 		};
 	};
 
-	for (const event of [
-		"session_start",
-		"session_shutdown",
-		"session_before_compact",
-		"session_compact",
-		"before_agent_start",
-		"agent_start",
-		"agent_end",
-		"agent_settled",
-		"turn_start",
-		"turn_end",
-		"tool_result",
-		"user_bash",
-	]) {
-		pi.on(event, observe(event));
-	}
+	pi.on("session_start", observe("session_start"));
+	pi.on("session_shutdown", observe("session_shutdown"));
+	pi.on("session_before_compact", observe("session_before_compact"));
+	pi.on("session_compact", observe("session_compact"));
+	pi.on("before_agent_start", observe("before_agent_start"));
+	pi.on("agent_start", observe("agent_start"));
+	pi.on("agent_end", observe("agent_end"));
+	pi.on("agent_settled", observe("agent_settled"));
+	pi.on("turn_start", observe("turn_start"));
+	pi.on("turn_end", observe("turn_end"));
+	pi.on("tool_result", observe("tool_result"));
+	pi.on("user_bash", observe("user_bash"));
 
 	pi.on("tool_call", async (event, ctx) => {
 		const run = await forward("tool_call", event, ctx, {

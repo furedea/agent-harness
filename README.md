@@ -511,7 +511,25 @@ Devin, Hermes Agent, and pi config directories.
 | `~/.pi/agent/settings.json`              | Managed model defaults merged with user keys |
 | `~/.pi/agent/hooks.json`                 | pi hook manifest                             |
 | `~/.pi/agent/extensions/hook_bridge.ts`  | pi extension that runs the manifest          |
+| `~/.pi/agent/extensions/bash_sandbox.ts` | pi bash tool replacement using srt           |
+| `~/.pi/agent/extensions/sandbox_policy.json` | Generated srt policy                     |
 | `~/.pi/hooks/`                           | pi hook adapters                             |
+
+Pi's agent bash tool requires `srt` on `PATH` with recursive `denyGlobRegex`
+support; nixpkgs sandbox-runtime 0.0.52 does not satisfy this requirement.
+Installing srt is separate from installing the harness, so `agent-harness verify` does not check it;
+declare `srt` in the source manifest's `runtime_commands` to have verify require it. The policy comes from
+`claude/settings.json`'s sandbox block and adds Pi authentication-file read protection.
+For each command's working directory the extension resolves the worktree and, inside a Git
+repository, the common Git directory, grants them write access, and denies writes to Git hooks,
+configuration, and a linked worktree's `.git` pointer file. Outside a repository only the base
+policy and the directory itself apply. A directory's first resolution is fixed for the session; if its
+Git layout changes afterwards, bash refuses to run until Pi restarts. Invalid settings or unavailable
+srt block bash execution. Pi itself, hooks, and user `!` commands run outside this wrapper.
+Pi's read, write, edit, grep, find, and ls tools perform their file I/O in a helper process that
+runs under the same srt settings, so the kernel enforces `allowWrite`, `denyWrite`, and `denyRead`
+for them as well; the helper being absent or the settings being invalid blocks them. Hooks are a
+policy layer only: as with Claude, a hook failure lets the call proceed.
 
 Installation replaces the managed hook and skill directories and rewrites Claude Code's managed
 settings. Codex config synchronization replaces only these managed top-level keys and preserves
