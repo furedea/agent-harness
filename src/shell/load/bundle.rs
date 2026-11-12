@@ -40,7 +40,7 @@ pub(super) fn load_bundle(
         root: root.to_path_buf(),
         assets,
         hook_files: bundle_hook_files(root, providers)?,
-        codex_config: bundle_codex_config(root)?,
+        codex_config: bundle_config(root, providers)?,
     })
 }
 
@@ -56,11 +56,20 @@ pub(super) fn bundle_hook_files(
         .collect()
 }
 
-pub(super) fn bundle_codex_config(root: &Path) -> Result<Option<(PathBuf, DocumentMut)>> {
-    let path = root.join(".codex/config.toml");
-    if !path.is_file() {
+/// The first config file a provider's bundle declares that the bundle ships, parsed.
+pub(super) fn bundle_config(
+    root: &Path,
+    providers: &[ProviderSpec],
+) -> Result<Option<(PathBuf, DocumentMut)>> {
+    let declared = providers
+        .iter()
+        .filter_map(|spec| spec.hook.bundle.config_file);
+    let Some(path) = declared
+        .map(|file| root.join(file))
+        .find(|path| path.is_file())
+    else {
         return Ok(None);
-    }
+    };
     let document = read_toml(&path)?;
     Ok(Some((path, document)))
 }
@@ -73,11 +82,21 @@ pub(super) fn bundle_assets(
     for spec in providers {
         let scripts = source_dir(bundle.source().join(spec.hook.scripts_dir))?;
         assets.extend(bundle.tree_assets(Path::new(spec.hook.scripts_dir), &scripts)?);
+        assets.extend(top_level_script_assets(bundle, spec)?);
     }
-    let codex_scripts = shell_scripts(&bundle.source().join(".codex"))?;
-    assets.extend(bundle.codex_script_assets(&codex_scripts));
     assets.sort_by(|left, right| left.target.cmp(&right.target));
     Ok(assets)
+}
+
+fn top_level_script_assets(
+    bundle: &ExternalHookBundle,
+    spec: &ProviderSpec,
+) -> Result<Vec<HookAsset>> {
+    let Some(directory) = spec.hook.bundle.top_level_scripts_dir else {
+        return Ok(Vec::new());
+    };
+    let scripts = shell_scripts(&bundle.source().join(directory))?;
+    Ok(bundle.top_level_script_assets(spec, &scripts))
 }
 
 /// Two bundle files that land on one installed path would silently overwrite each other.

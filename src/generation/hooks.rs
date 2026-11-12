@@ -13,7 +13,7 @@ use crate::{
     file_op::FileOp,
     generation::{GenerationContext, command_permissions, external_hooks},
     runtime_root::RuntimeRoot,
-    source_model::{HookBundle, Source},
+    source_model::Source,
 };
 
 /// The shared hook configuration of a source, parsed and validated once.
@@ -74,13 +74,15 @@ pub(crate) fn hooks_op_for_runtime(
     path: &Path,
     spec: &ProviderSpec,
 ) -> Result<FileOp> {
-    FileOp::write_json(path, &hooks_for_runtime(context, spec)?)
+    let hooks = hooks_for_runtime(context, spec)
+        .with_context(|| format!("failed to generate hooks for {}", spec.key))?;
+    FileOp::write_json(path, &hooks)
 }
 
 fn hooks_for_runtime(context: GenerationContext<'_>, spec: &ProviderSpec) -> Result<Value> {
     let mut hooks = context.source.hooks.section_or_empty(spec);
     for bundle in &context.source.hook_bundles {
-        merge_bundle(bundle, &mut hooks, spec)?;
+        external_hooks::merge_provider_hooks(bundle, &mut hooks, spec)?;
     }
     relocate_commands(&mut hooks, context.runtime_root);
     if spec.command_rule == Some(CommandRuleSpec::InHookRegistration) {
@@ -97,14 +99,6 @@ fn hooks_for_runtime(context: GenerationContext<'_>, spec: &ProviderSpec) -> Res
 
 pub(crate) fn claude_hooks_for_runtime(context: GenerationContext<'_>) -> Result<Value> {
     hooks_for_runtime(context, ProviderId::Claude.spec())
-}
-
-fn merge_bundle(bundle: &HookBundle, hooks: &mut Value, spec: &ProviderSpec) -> Result<()> {
-    match spec.hook.format {
-        HookFormat::SettingsSection => external_hooks::merge_claude_hooks(bundle, hooks),
-        HookFormat::WrappedEvents => external_hooks::merge_codex_hooks(bundle, hooks),
-        HookFormat::BareEvents => external_hooks::merge_provider_hooks(bundle, hooks, spec),
-    }
 }
 
 fn relocate_commands(value: &mut Value, runtime_root: &RuntimeRoot) {

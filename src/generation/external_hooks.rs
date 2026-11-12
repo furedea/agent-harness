@@ -64,9 +64,14 @@ impl ExternalHookBundle {
             .collect()
     }
 
-    /// The installed copy of each shell script that sits directly in the bundle's `.codex`.
-    pub(crate) fn codex_script_assets(&self, scripts: &[PathBuf]) -> Vec<HookAsset> {
-        let target_root = self.asset_root(Path::new(".codex/hooks"));
+    /// The installed copy of each top-level shell script of the bundle's captured directory, as
+    /// the provider `spec` installs it.
+    pub(crate) fn top_level_script_assets(
+        &self,
+        spec: &ProviderSpec,
+        scripts: &[PathBuf],
+    ) -> Vec<HookAsset> {
+        let target_root = self.asset_root(Path::new(spec.hook.scripts_dir));
         scripts
             .iter()
             .filter_map(|script| script_asset(script, &target_root))
@@ -80,26 +85,17 @@ impl ExternalHookBundle {
 
 /// Where a bundle keeps the hook files of the providers, relative to its directory.
 pub(crate) fn hook_file_paths(providers: &[ProviderSpec]) -> Vec<&'static str> {
-    let declared = providers.iter().map(|spec| spec.hook.external_file);
     let mut seen = std::collections::BTreeSet::new();
-    [CLAUDE_HOOK_FILE.path, CODEX_HOOK_FILE.path]
-        .into_iter()
-        .chain(declared)
+    providers
+        .iter()
+        .map(|spec| spec.hook.external_file)
         .filter(|path| seen.insert(*path))
         .collect()
 }
 
-/// Whether `path` names a shell script a bundle ships beside its Codex config.
-pub(crate) fn is_codex_script(path: &Path) -> bool {
-    is_shell_script(path)
-}
-
-pub(crate) fn merge_claude_hooks(bundle: &HookBundle, hooks: &mut Value) -> Result<()> {
-    merge_hooks(bundle, hooks, &CLAUDE_HOOK_FILE)
-}
-
-pub(crate) fn merge_codex_hooks(bundle: &HookBundle, hooks: &mut Value) -> Result<()> {
-    merge_hooks(bundle, hooks, &CODEX_HOOK_FILE)
+/// Whether `path` names a shell script a bundle ships.
+pub(crate) fn is_shell_script(path: &Path) -> bool {
+    path.extension().and_then(|extension| extension.to_str()) == Some("sh")
 }
 
 pub(crate) fn merge_provider_hooks(
@@ -112,8 +108,8 @@ pub(crate) fn merge_provider_hooks(
         hooks,
         &HookFile {
             path: spec.hook.external_file,
-            target_key: Some("hooks"),
-            events_key: None,
+            target_key: spec.hook.format.merge_target_key(),
+            events_key: spec.hook.format.bundle_events_key(),
         },
     )
 }
@@ -131,16 +127,6 @@ fn merge_hooks(bundle: &HookBundle, hooks: &mut Value, file: &HookFile) -> Resul
         .with_context(|| format!("failed to merge external hook bundle {}", bundle.name))
 }
 
-const CLAUDE_HOOK_FILE: HookFile = HookFile {
-    path: ".claude/settings.json",
-    target_key: None,
-    events_key: Some("hooks"),
-};
-const CODEX_HOOK_FILE: HookFile = HookFile {
-    path: ".codex/hooks.json",
-    target_key: Some("hooks"),
-    events_key: Some("hooks"),
-};
 /// A provider hook file inside a bundle, where its events live in that file, and
 /// where they merge into the generated provider config.
 struct HookFile {
@@ -339,8 +325,4 @@ fn tree_asset(file: PathBuf, source: &Path, target_root: &Path) -> Result<HookAs
         source: file,
         target,
     })
-}
-
-fn is_shell_script(path: &Path) -> bool {
-    path.extension().and_then(|extension| extension.to_str()) == Some("sh")
 }
