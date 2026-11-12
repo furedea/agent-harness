@@ -313,3 +313,11 @@ fn a_workspace_is_windows_form_on_a_windows_host() -> Result<()> {
     );
     Ok(())
 }
+
+#[test]
+fn a_leading_backslash_stays_literal_in_a_unix_absolute_path() -> Result<()> {
+    let entries = [deny("/\\secret/**")?, read("/secret/key")?];
+
+    assert_eq!(pairs(&entries), []);
+    Ok(())
+}

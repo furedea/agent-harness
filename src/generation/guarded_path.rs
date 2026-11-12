@@ -84,7 +84,8 @@ impl GuardedPath {
     /// Windows rules too; a `~\...` key is Windows-form on any host.
     fn absolute_on(text: &str, host_is_windows: bool) -> Result<Self> {
         let (root, windows, rest) = split_root(text)?;
-        let windows = windows || host_is_windows || rest.starts_with('\\');
+        let backslash_home = root == Root::Home && rest.starts_with('\\');
+        let windows = windows || host_is_windows || backslash_home;
         let mut segments = Vec::new();
         push_segments(&mut segments, rest, windows)
             .ok_or_else(|| anyhow!("guarded path {text:?} climbs above its root"))?;
