@@ -207,7 +207,7 @@ if (args[3].includes('file_operations.mjs')) {
   mkdirSync(join(root, 'git-only'));
   symlinkSync(join(gitDir, 'git'), join(root, 'git-only/git'));
   process.env.PATH = [join(root, 'git-only'), ...hostDirs.filter(dir => !existsSync(join(dir, 'srt')))].join(delimiter);
-  await assert.rejects(() => tool.execute('id', { command: 'touch escaped' }), /ENOENT/);
+  await assert.rejects(() => tool.execute('id', { command: 'touch escaped' }), /srt: not found/);
   for (const name of ['read', 'write', 'edit', 'grep', 'find', 'ls']) {
     await assert.rejects(() => tools.get(name).execute('missing-srt', { path: file, content: 'escape' }), undefined, name);
   }
