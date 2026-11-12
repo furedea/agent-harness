@@ -51,7 +51,7 @@ pub(super) fn read_toml(path: &Path) -> Result<DocumentMut> {
 pub(crate) fn shell_scripts(dir: &Path) -> Result<Vec<PathBuf>> {
     Ok(children(dir)?
         .into_iter()
-        .filter(|child| child.is_regular_file() && external_hooks::is_codex_script(&child.path))
+        .filter(|child| child.is_regular_file() && external_hooks::is_shell_script(&child.path))
         .map(|child| child.path)
         .collect())
 }

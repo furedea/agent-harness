@@ -56,6 +56,26 @@ pub(crate) enum HookFormat {
     BareEvents,
 }
 
+impl HookFormat {
+    /// Key under which the bundle's events merge into the generated section; `None` when the
+    /// section is the event map itself.
+    pub(crate) fn merge_target_key(self) -> Option<&'static str> {
+        match self {
+            Self::SettingsSection => None,
+            Self::WrappedEvents | Self::BareEvents => Some("hooks"),
+        }
+    }
+
+    /// Key under which a bundle's hook file keeps its events; `None` when the file is the
+    /// event map itself.
+    pub(crate) fn bundle_events_key(self) -> Option<&'static str> {
+        match self {
+            Self::SettingsSection | Self::WrappedEvents => Some("hooks"),
+            Self::BareEvents => None,
+        }
+    }
+}
+
 /// Whether the shared hook config must contain a section for the provider.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum HookSection {
