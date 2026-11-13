@@ -239,7 +239,7 @@ because srt's restrictions apply to every process the agent starts. srt reads ea
 (`*`, `**`, `?`, `[...]`, no escapes, no braces, no negation) and expands `~` and `~/`; a relative
 entry is anchored at the Git toplevel of the tool call's working directory (the working directory itself
 outside a repository), not at the working directory, so a tool running in `/repo/src` still denies
-`/repo/.env`. The toplevel is pinned per working directory like the common dir: the sandbox can rewrite `.git`
+`/repo/.env`; as the entries only deny, each is also resolved at the working directory. The toplevel is pinned per working directory like the common dir: the sandbox can rewrite `.git`
 pointers, so a first resolution that later changes fails the call. A single-segment name (`.env`, `*.pem`) becomes `**/pattern` so
 it matches at any depth as in Claude, and `//x` becomes `/x`. A relative pattern with a `/` other than a trailing one
 that does not start with `**/` (`secrets/**`, `config/x.json`, `./secrets/**`) is rejected when the secret path policy is

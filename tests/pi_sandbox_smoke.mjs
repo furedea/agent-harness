@@ -179,7 +179,8 @@ if (args[3].includes('file_operations.mjs')) {
   await tool.execute('id', { command: 'true' }, undefined, undefined, { cwd: subdirectory });
   const subdirectoryRecord = JSON.parse(readFileSync(join(root, 'record.json')));
   assert.ok(subdirectoryRecord.settings.filesystem.denyRead.includes(join(realpathSync(worktree), '**/.env')));
-  assert.ok(!subdirectoryRecord.settings.filesystem.denyRead.includes(join(realpathSync(subdirectory), '**/.env')));
+  // The cwd anchoring stays as well, so an entry written for it keeps its reach.
+  assert.ok(subdirectoryRecord.settings.filesystem.denyRead.includes(join(realpathSync(subdirectory), '**/.env')));
   // Outside a repository the working directory is the root.
   assert.ok(plainRecord.settings.filesystem.denyRead.includes(join(realpathSync(plain), '**/.env')));
   // A .git planted later would make git run attacker config outside the sandbox, so it is denied even when absent.

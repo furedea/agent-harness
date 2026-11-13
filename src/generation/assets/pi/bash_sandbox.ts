@@ -151,7 +151,8 @@ function gitControlPaths(common: string): string[] {
 function buildPolicy(source: Policy, cwd: string, root: string, temporary: string, protectedFiles: string[], common: string | undefined): Policy {
 	const policy: Policy = structuredClone(source);
 	policy.filesystem.allowWrite = policy.filesystem.allowWrite.map(path => policyPath(path, cwd));
-	policy.filesystem.denyRead = policy.filesystem.denyRead.flatMap(path => protectedPaths(path, root));
+	// Deny-only, so a relative entry is resolved at the root and at the cwd: a source entry that relied on the cwd anchor keeps its reach.
+	policy.filesystem.denyRead = [...new Set(policy.filesystem.denyRead.flatMap(path => [...protectedPaths(path, root), ...protectedPaths(path, cwd)]))];
 	policy.filesystem.denyWrite = policy.filesystem.denyWrite.flatMap(path => protectedPaths(path, cwd));
 	policy.network.allowUnixSockets = policy.network.allowUnixSockets.map(path => policyPath(path, cwd));
 	policy.filesystem.allowWrite.push(cwd);
