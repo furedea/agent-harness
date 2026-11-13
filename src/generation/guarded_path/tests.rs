@@ -369,3 +369,10 @@ fn a_unc_project_root_matches_workspace_entries_in_both_directions() -> Result<(
     assert_eq!(reverse, [(0, 1)]);
     Ok(())
 }
+
+#[test]
+fn every_accepted_unc_spelling_is_an_absolute_key() {
+    assert!(is_absolute_key_on("\\/host/share", true));
+    assert!(is_absolute_key_on("\\\\host\\share", false));
+    assert!(!is_absolute_key_on("\\/host/share", false));
+}

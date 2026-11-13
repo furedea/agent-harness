@@ -210,7 +210,11 @@ fn unc_rest(text: &str, host_is_windows: bool) -> Option<&str> {
 /// Whether a table key names an absolute location: `~`, `/...`, a Windows drive path or a UNC
 /// path.
 pub(crate) fn is_absolute_key(key: &str) -> bool {
-    key.starts_with(['/', '~']) || key.starts_with("\\\\") || has_drive_prefix(key)
+    is_absolute_key_on(key, cfg!(windows))
+}
+
+fn is_absolute_key_on(key: &str, host_is_windows: bool) -> bool {
+    key.starts_with(['/', '~']) || unc_rest(key, host_is_windows).is_some() || has_drive_prefix(key)
 }
 
 /// `C:/...`, as a runtime root on Windows writes it; the drive stays the first segment.
