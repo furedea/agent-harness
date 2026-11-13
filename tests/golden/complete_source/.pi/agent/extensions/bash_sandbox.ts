@@ -37,16 +37,28 @@ function isDomainPattern(value: string, deny: boolean): boolean {
 // Accept only the generated subset of srt's schema; never pass unknown options to srt.
 // In particular, incomplete configs make some srt versions silently use defaults.
 function validatePolicy(value: unknown): asserts value is Policy {
-	if (!isRecord(value) || Object.keys(value).some(key => !["network", "filesystem"].includes(key))) throw new Error("Failed to validate srt sandbox policy: invalid fields");
-	const network = value.network;
-	const filesystem = value.filesystem;
-	if (!isRecord(network) || !isRecord(filesystem) ||
-		Object.keys(network).some(key => !["allowedDomains", "deniedDomains", "allowUnixSockets"].includes(key)) ||
-		Object.keys(filesystem).some(key => !["denyRead", "allowWrite", "denyWrite"].includes(key)) ||
-		!isStringArray(network.allowedDomains) || !isStringArray(network.deniedDomains) || !isStringArray(network.allowUnixSockets) ||
-		!isStringArray(filesystem.denyRead) || !isStringArray(filesystem.allowWrite) || !isStringArray(filesystem.denyWrite) ||
-		!network.allowedDomains.every(value => isDomainPattern(value, false)) ||
-		!network.deniedDomains.every(value => isDomainPattern(value, true))) throw new Error("Failed to validate srt sandbox policy: invalid network or filesystem rules");
+	const fail = (reason: string): never => { throw new Error("Failed to validate srt sandbox policy: " + reason); };
+	if (!isRecord(value)) return fail("the policy is not an object");
+	const unknownTop = Object.keys(value).find(key => !["network", "filesystem"].includes(key));
+	if (unknownTop !== undefined) return fail("unknown field " + JSON.stringify(unknownTop));
+	const { network, filesystem } = value;
+	if (!isRecord(network)) return fail("network is not an object");
+	if (!isRecord(filesystem)) return fail("filesystem is not an object");
+	const sections = [
+		["network", network, ["allowedDomains", "deniedDomains", "allowUnixSockets"]],
+		["filesystem", filesystem, ["denyRead", "allowWrite", "denyWrite"]],
+	] as const;
+	for (const [section, object, keys] of sections) {
+		const unknown = Object.keys(object).find(key => !(keys as readonly string[]).includes(key));
+		if (unknown !== undefined) return fail("unknown field " + JSON.stringify(section + "." + unknown));
+		for (const key of keys) {
+			if (!isStringArray(object[key])) return fail(section + "." + key + " is not an array of nonempty strings");
+		}
+	}
+	const badDomain = (network.allowedDomains as string[]).find(domain => !isDomainPattern(domain, false));
+	if (badDomain !== undefined) return fail("network.allowedDomains has an invalid domain " + JSON.stringify(badDomain));
+	const badDenied = (network.deniedDomains as string[]).find(domain => !isDomainPattern(domain, true));
+	if (badDenied !== undefined) return fail("network.deniedDomains has an invalid domain " + JSON.stringify(badDenied));
 }
 
 function canonical(path: string): string {

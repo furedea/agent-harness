@@ -91,6 +91,91 @@ pub(crate) fn codex_filesystem_entries(source: &Source) -> Result<Vec<CodexFiles
         .collect()
 }
 
+/// The srt `denyRead` entries the policy requires, one per rule that denies reads.
+///
+/// As for Codex, a rule that only denies writes has no entry: srt's restrictions apply to every
+/// process the agent starts, and the harness scripts write the paths such rules guard. Hooks keep
+/// enforcing them.
+///
+/// srt reads every entry as a glob (`*`, `**`, `?`, `[...]`, no escapes), expands `~` and `~/`,
+/// and resolves a relative entry against the working directory, on macOS and Linux alike.
+///
+/// # Errors
+///
+/// Returns an error naming the pattern when srt would read it differently from Claude.
+pub(crate) fn srt_denied_read_paths(source: &Source) -> Result<Vec<String>> {
+    source
+        .secret_paths
+        .rules
+        .iter()
+        .filter(|rule| rule.denies_read())
+        .map(|rule| srt_path(rule.pattern.as_str()))
+        .collect()
+}
+
+/// Resolves a Claude-style pattern to the entry srt reads the same way.
+///
+/// Claude reads `//x` as absolute and `/x` as relative to the project, and matches a bare name or
+/// a single-segment directory (`secrets/**`) at any depth. srt reads `/x` as absolute and a
+/// relative entry only beneath the working directory, so `/x` is rejected as ambiguous and a
+/// pattern Claude matches at any depth gets a `**/` prefix. srt has no escapes, braces, negation, or negated character classes, and on Linux ignores an
+/// absolute pattern whose first component has a wildcard, so those are rejected too.
+fn srt_path(pattern: &str) -> Result<String> {
+    ensure!(
+        !pattern.contains('\\'),
+        "srt has no escape syntax, so {pattern:?} would match a name with a backslash; list each path as its own rule"
+    );
+    ensure!(
+        !pattern.contains(['{', '}']),
+        "srt does not expand braces, so {pattern:?} would match a literal name; list each path as its own rule"
+    );
+    ensure!(
+        !pattern.contains("[!") && !pattern.contains("[^"),
+        "srt does not negate character classes, so {pattern:?} would match a literal ! or ^; list the allowed characters instead"
+    );
+    let trimmed = pattern.trim_end_matches('/');
+    let path =
+        trimmed
+            .strip_prefix("./")
+            .unwrap_or(if trimmed.is_empty() { pattern } else { trimmed });
+    ensure!(
+        !path.starts_with('!'),
+        "srt has no negation, so {path:?} cannot carve an exception out of another rule"
+    );
+    if let Some(absolute) = path.strip_prefix("//") {
+        let root = absolute.split('/').next().unwrap_or_default();
+        ensure!(
+            !root.contains(['*', '?', '[', ']']),
+            "srt on Linux skips an absolute pattern whose first component has a wildcard, so {path:?} would deny nothing; start it with a literal directory"
+        );
+        return Ok(format!("/{absolute}"));
+    }
+    ensure!(
+        !path.starts_with('/'),
+        "{path:?} is ambiguous for srt: write // for an absolute path or drop the leading / for a project path"
+    );
+    let is_home = path == "~" || path.starts_with("~/");
+    let relative = path.strip_prefix("~/").unwrap_or(path);
+    ensure!(
+        is_home
+            || !relative
+                .split('/')
+                .any(|part| matches!(part, "" | "." | "..")),
+        "srt needs {path:?} to be absolute, start with ~/, or stay inside the project without . or .. parts"
+    );
+    if !is_home && matches_at_any_depth(path) {
+        return Ok(format!("**/{path}"));
+    }
+    Ok(path.to_owned())
+}
+
+/// Claude matches a bare name (`.env`) and a single-segment directory (`secrets/**`) at any depth;
+/// any other relative pattern (`src/keys/*`) stays anchored at the project, like in gitignore.
+fn matches_at_any_depth(relative: &str) -> bool {
+    let directory = relative.strip_suffix("/**").unwrap_or(relative);
+    !directory.contains('/') && !directory.starts_with("**")
+}
+
 fn validate_policy(policy: &SecretPathPolicy) -> Result<()> {
     ensure!(
         policy.version == 1,
@@ -144,6 +229,66 @@ mod tests {
         );
 
         crate::shell::fixtures::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn srt_denied_read_paths_keep_only_rules_that_deny_reads() -> Result<()> {
+        let root = test_root("srt_denied_read_paths_keep_only_rules_that_deny_reads")?;
+        write_policy(
+            &root,
+            r#"{
+  "version": 1,
+  "rules": [
+    {"pattern": ".env", "access": ["read", "write"]},
+    {"pattern": "~/.ssh/**", "access": ["read"]},
+    {"pattern": "**/secrets/**", "access": ["read"]},
+    {"pattern": "//etc/secret/", "access": ["read"]},
+    {"pattern": "src/keys/*", "access": ["read"]},
+    {"pattern": "**/audit/**", "access": ["write"]}
+  ]
+}
+"#,
+        )?;
+
+        let paths = srt_denied_read_paths(&load_source(&root)?)?;
+
+        assert_eq!(
+            paths,
+            [
+                "**/.env",
+                "~/.ssh/**",
+                "**/secrets/**",
+                "/etc/secret",
+                "src/keys/*"
+            ],
+        );
+
+        crate::shell::fixtures::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn srt_rejects_patterns_it_would_read_differently() -> Result<()> {
+        for pattern in [
+            "a/{b,c}",
+            "/project/x",
+            "a/../b",
+            "./",
+            "a/key\\[1\\]",
+            "!sample.env",
+            "//**/.env",
+            "//opt*/keys/**",
+            "keys/[!a]*",
+            "[^a-z].env",
+        ] {
+            let error = srt_path(pattern).unwrap_err().to_string();
+
+            assert!(
+                error.contains(&format!("{:?}", pattern.trim_end_matches('/'))),
+                "{pattern}: {error}"
+            );
+        }
         Ok(())
     }
 

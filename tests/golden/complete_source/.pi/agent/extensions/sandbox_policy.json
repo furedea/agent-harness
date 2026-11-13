@@ -4,6 +4,7 @@
       "."
     ],
     "denyRead": [
+      "**/secrets/**",
       "~/.pi/agent/auth.json"
     ],
     "denyWrite": [

@@ -3,13 +3,14 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use serde_json::{Value, json};
 
-use super::{GenerationContext, claude_config};
+use super::{GenerationContext, claude_config, secret_path_policy};
 use crate::file_op::FileOp;
 
 const NIX_DAEMON_SOCKET: &str = "/nix/var/nix/daemon-socket/socket";
 
 pub(crate) fn policy_op(context: GenerationContext<'_>, out: &Path) -> Result<FileOp> {
-    let settings = claude_config::settings_for_runtime(context)?;
+    let settings = claude_config::settings_for_runtime(context)
+        .context("generate the Pi srt policy: render the Claude settings it derives from")?;
     let sandbox = settings
         .get("sandbox")
         .context("generate the Pi srt policy: the Claude settings have no sandbox")?;
@@ -23,7 +24,14 @@ pub(crate) fn policy_op(context: GenerationContext<'_>, out: &Path) -> Result<Fi
         sockets.push(nix_socket);
     }
     let mut deny_read = strings(filesystem, "denyRead")?;
-    deny_read.push(json!("~/.pi/agent/auth.json"));
+    let secret_paths = secret_path_policy::srt_denied_read_paths(context.source)
+        .context("generate the Pi srt policy: a secret path rule is not an srt path")?;
+    let secret_entries = secret_paths
+        .into_iter()
+        .chain(["~/.pi/agent/auth.json".to_owned()]);
+    for path in secret_entries {
+        push_unique(&mut deny_read, json!(path));
+    }
     let policy = json!({
         "network": {
             "allowedDomains": strings(network, "allowedDomains")?,
@@ -36,24 +44,29 @@ pub(crate) fn policy_op(context: GenerationContext<'_>, out: &Path) -> Result<Fi
             "denyWrite": strings(filesystem, "denyWrite")?
         }
     });
-    FileOp::write_json(
-        out.join(".pi/agent/extensions/sandbox_policy.json"),
-        &policy,
-    )
+    let path = out.join(".pi/agent/extensions/sandbox_policy.json");
+    FileOp::write_json(path.clone(), &policy)
+        .with_context(|| format!("generate the Pi srt policy: write {}", path.display()))
+}
+
+fn push_unique(values: &mut Vec<Value>, value: Value) {
+    if !values.contains(&value) {
+        values.push(value);
+    }
 }
 
 fn strings(object: &Value, key: &str) -> Result<Vec<Value>> {
     let Some(value) = object.get(key) else {
         return Ok(Vec::new());
     };
-    let values = value
-        .as_array()
-        .with_context(|| format!("{key} must be an array"))?;
+    let values = value.as_array().with_context(|| {
+        format!("generate the Pi srt policy: sandbox setting {key} must be an array")
+    })?;
     anyhow::ensure!(
         values
             .iter()
             .all(|value| value.as_str().is_some_and(|s| !s.is_empty())),
-        "{key} entries must be nonempty strings"
+        "generate the Pi srt policy: sandbox setting {key} entries must be nonempty strings"
     );
     Ok(values.clone())
 }

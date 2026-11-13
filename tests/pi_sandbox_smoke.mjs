@@ -45,7 +45,14 @@ registerHooks({ resolve(specifier, context, next) {
   `) };
 }});
 const originalCwd = process.cwd();
+// Repository discovery must see only the repositories this test creates: git variables set by a
+// calling hook, or a temporary directory inside another repository, would make the "a directory
+// becomes a repository" assertions below find the outer one both before and after.
+for (const name of Object.keys(process.env)) {
+  if (name.startsWith('GIT_') && !name.startsWith('GIT_CONFIG')) delete process.env[name];
+}
 const root = mkdtempSync(join(tmpdir(), 'pi-sandbox-'));
+process.env.GIT_CEILING_DIRECTORIES = realpathSync(tmpdir());
 const cleanups = [];
 try {
   const repo = join(root, 'repo');
@@ -65,7 +72,7 @@ try {
   const policyPath = join(root, 'sandbox_policy.json');
   const policy = {
     network: { allowedDomains: ['github.com'], deniedDomains: [], allowUnixSockets: ['/nix/var/nix/daemon-socket/socket'] },
-    filesystem: { denyRead: ['~/.pi/agent/auth.json'], allowWrite: [], denyWrite: [join(root, 'link-to-target'), join(root, 'linked-dir/inner')] },
+    filesystem: { denyRead: ['~/.pi/agent/auth.json', '**/.env'], allowWrite: [], denyWrite: [join(root, 'link-to-target'), join(root, 'linked-dir/inner')] },
   };
   writeFileSync(policyPath, JSON.stringify(policy));
   const bin = join(root, 'bin');
@@ -116,6 +123,8 @@ if (args[3].includes('file_operations.mjs')) {
   // Nested repositories and submodule gitfiles inside the worktree are denied; the worktree's own .git is not.
   assert.ok(record.settings.filesystem.denyWrite.includes(join(realpathSync(worktree), '*/**/.git')));
   assert.ok(record.settings.filesystem.denyWrite.includes(join(realpathSync(worktree), '.pi')));
+  // A relative secret glob is anchored at the working directory, where srt would otherwise resolve it.
+  assert.ok(record.settings.filesystem.denyRead.includes(join(realpathSync(worktree), '**/.env')));
   const file = join(worktree, "data ' $(false).txt");
   await tools.get('write').execute('w', { path: file, content: 'before' });
   assert.equal(readFileSync(file, 'utf8'), 'before');
@@ -198,6 +207,10 @@ if (args[3].includes('file_operations.mjs')) {
       await assert.rejects(() => tools.get(name).execute('bad', { path: file, content: 'escape' }), undefined, name);
     }
   }
+  // A rejected policy names the offending field, not only that validation failed.
+  writeFileSync(policyPath, JSON.stringify({ ...policy, network: { ...policy.network, allowedDomains: ['https://bad'] } }));
+  register({ getAllTools() { return [...tools.values()]; }, registerTool(value) { tools.set(value.name, value); if (value.name === 'bash') tool = value; }, on(event, fn) { if (event === 'session_shutdown') cleanups.push(fn); } });
+  await assert.rejects(() => tool.execute('id', { command: 'true' }), /network\.allowedDomains has an invalid domain "https:\/\/bad"/);
   writeFileSync(policyPath, JSON.stringify(policy));
   register({ getAllTools() { return [...tools.values()]; }, registerTool(value) { tools.set(value.name, value); if (value.name === 'bash') tool = value; }, on(event, fn) { if (event === 'session_shutdown') cleanups.push(fn); } });
   rmSync(join(bin, 'srt'));
