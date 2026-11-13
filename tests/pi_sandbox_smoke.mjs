@@ -219,11 +219,12 @@ if (args[3].includes('file_operations.mjs')) {
   rmSync(join(pinned, '.git'), { recursive: true });
   writeFileSync(join(pinned, '.git'), 'gitdir: ' + victim + '\n');
   await assert.rejects(() => tool.execute('id', { command: 'true' }, undefined, undefined, { cwd: pinned }), /git layout changed/);
-  // A common dir whose name ends in whitespace is kept verbatim, not trimmed into a different path.
-  const spaced = join(root, 'spaced repo ');
-  execFileSync('git', ['init', spaced]);
+  // A common dir whose own name ends in whitespace is kept verbatim, not trimmed into a different path.
+  const spaced = join(root, 'spaced repo');
+  const spacedGitDir = join(root, 'spaced gitdir ');
+  execFileSync('git', ['init', '--separate-git-dir', spacedGitDir, spaced]);
   await tool.execute('id', { command: 'true' }, undefined, undefined, { cwd: spaced });
-  assert.ok(JSON.parse(readFileSync(join(root, 'record.json'))).settings.filesystem.allowWrite.includes(join(realpathSync(spaced), '.git')));
+  assert.ok(JSON.parse(readFileSync(join(root, 'record.json'))).settings.filesystem.allowWrite.includes(realpathSync(spacedGitDir)));
   // Startup failures must still replace bash, and execution must refuse.
   for (const invalid of ['{}', '{', JSON.stringify({ ...policy, network: { ...policy.network, deniedDomains: undefined } }),
     ...['https://bad', '*.com', 'host', 'example.com:01', '*'].map(value => JSON.stringify({ ...policy, network: { ...policy.network, allowedDomains: [value] } }))]) {
