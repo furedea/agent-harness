@@ -333,8 +333,14 @@ fn a_failure_while_staging_leaves_every_live_path_untouched() {
 #[test]
 fn rollback_restores_the_remaining_paths_when_one_restore_fails() -> Result<()> {
     let (fs, plan) = installed_state();
-    let first = plan.first().context("empty plan")?.target();
-    let last = plan.last().context("empty plan")?.target();
+    let first = plan
+        .first()
+        .context("read the first install operation of an empty plan")?
+        .target();
+    let last = plan
+        .last()
+        .context("read the last install operation of an empty plan")?
+        .target();
     fs.fail(FailureMode::Swap, &last.to_string_lossy());
     fs.fail(FailureMode::Restore, &first.to_string_lossy());
 

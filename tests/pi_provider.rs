@@ -189,7 +189,7 @@ fn assert_synced_settings(source: &Path, target: &Path, expected: &Value) -> Res
 }
 
 fn installed_srt_policy(root: &Path, sockets: &[&str]) -> Result<Value> {
-    installed_srt_policy_with(
+    install_and_read_srt_policy(
         root,
         &SandboxSource {
             sockets,
@@ -207,7 +207,7 @@ struct SandboxSource<'a> {
     secret_rule: Option<(&'a str, &'a str)>,
 }
 
-fn installed_srt_policy_with(root: &Path, sandbox: &SandboxSource<'_>) -> Result<Value> {
+fn install_and_read_srt_policy(root: &Path, sandbox: &SandboxSource<'_>) -> Result<Value> {
     let SandboxSource {
         sockets,
         deny_read: source_deny_read,
@@ -316,7 +316,7 @@ fn pi_srt_policy_lists_the_nix_socket_once_when_the_source_has_it() -> Result<()
 #[test]
 fn pi_srt_policy_lists_a_read_denied_path_once_when_the_source_has_it() -> Result<()> {
     let root = std::env::temp_dir().join(format!("pi-sandbox-denyread-{}", std::process::id()));
-    let policy = installed_srt_policy_with(
+    let policy = install_and_read_srt_policy(
         &root,
         &SandboxSource {
             sockets: &[],
@@ -339,7 +339,7 @@ fn pi_srt_policy_lists_a_read_denied_path_once_when_the_source_has_it() -> Resul
 #[test]
 fn pi_srt_policy_omits_write_only_secret_rules() -> Result<()> {
     let root = std::env::temp_dir().join(format!("pi-sandbox-writeonly-{}", std::process::id()));
-    let policy = installed_srt_policy_with(
+    let policy = install_and_read_srt_policy(
         &root,
         &SandboxSource {
             sockets: &[],
