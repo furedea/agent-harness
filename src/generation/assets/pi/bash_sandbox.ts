@@ -79,21 +79,21 @@ function isSymlink(path: string): boolean {
 }
 
 // A protected symlink must keep its own rule as well as its target's: the link itself can be replaced.
-function protectedPaths(path: string, cwd: string): string[] {
+function protectedPaths(path: string, base: string): string[] {
 	const expanded = path.replace(/^(~|\$HOME)(?=\/|$)/, homedir());
-	const absolute = resolve(cwd, expanded);
-	const literal = policyPath(dirname(absolute), cwd) + "/" + basename(absolute);
+	const absolute = resolve(base, expanded);
+	const literal = policyPath(dirname(absolute), base) + "/" + basename(absolute);
 	// Intermediate components that are symlinks (e.g. a linked ~/.claude) can be replaced too.
 	const links: string[] = [];
 	for (let part = absolute; part !== dirname(part); part = dirname(part)) {
-		if (isSymlink(part) && part !== absolute) links.push(policyPath(dirname(part), cwd) + "/" + basename(part));
+		if (isSymlink(part) && part !== absolute) links.push(policyPath(dirname(part), base) + "/" + basename(part));
 	}
-	return [...new Set([literal, policyPath(path, cwd), ...links])];
+	return [...new Set([literal, policyPath(path, base), ...links])];
 }
 
-function policyPath(path: string, cwd: string): string {
+function policyPath(path: string, base: string): string {
 	const expanded = path.replace(/^(~|\$HOME)(?=\/|$)/, homedir());
-	const absolute = resolve(cwd, expanded);
+	const absolute = resolve(base, expanded);
 	// Resolve the literal ancestor of a glob without expanding its pattern.
 	const glob = absolute.search(/[*?\[\]{]/);
 	if (glob < 0) return canonical(absolute);
@@ -105,7 +105,7 @@ function quote(value: string): string {
 	return "'" + value.replaceAll("'", "'\\''") + "'";
 }
 
-type Prepared = { settingsPath: string; content: string; common: string | undefined };
+type Prepared = { settingsPath: string; content: string; common: string | undefined; root: string };
 
 // Any failure (no repository, no git, unusable layout) reads as "no repository": the caller then denies .git.
 function gitCommonDir(cwd: string): string | undefined {
@@ -114,6 +114,17 @@ function gitCommonDir(cwd: string): string | undefined {
 		return canonical(out.trim());
 	} catch {
 		return undefined;
+	}
+}
+
+// Relative secret entries are anchored here, as gitignore and Codex anchor them. Outside a repository
+// (or when git fails) the working directory is the root.
+function gitRoot(cwd: string): string {
+	try {
+		const out = execFileSync("git", ["rev-parse", "--show-toplevel"], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+		return canonical(out.trim());
+	} catch {
+		return cwd;
 	}
 }
 
@@ -137,12 +148,11 @@ function gitControlPaths(common: string): string[] {
 }
 
 // Policy for one worktree: the static source policy plus what only the runtime knows.
-function buildPolicy(source: Policy, cwd: string, temporary: string, protectedFiles: string[], common: string | undefined): Policy {
+function buildPolicy(source: Policy, cwd: string, root: string, temporary: string, protectedFiles: string[], common: string | undefined): Policy {
 	const policy: Policy = structuredClone(source);
 	policy.filesystem.allowWrite = policy.filesystem.allowWrite.map(path => policyPath(path, cwd));
-	for (const key of ["denyRead", "denyWrite"] as const) {
-		policy.filesystem[key] = policy.filesystem[key].flatMap(path => protectedPaths(path, cwd));
-	}
+	policy.filesystem.denyRead = policy.filesystem.denyRead.flatMap(path => protectedPaths(path, root));
+	policy.filesystem.denyWrite = policy.filesystem.denyWrite.flatMap(path => protectedPaths(path, cwd));
 	policy.network.allowUnixSockets = policy.network.allowUnixSockets.map(path => policyPath(path, cwd));
 	policy.filesystem.allowWrite.push(cwd);
 	policy.filesystem.denyWrite.push(temporary, ...protectedFiles);
@@ -187,10 +197,13 @@ export default function (pi: ExtensionAPI) {
 		// The sandbox can rewrite .git pointers, so a cwd's first resolution (repository or not) is final for the session.
 		const common = gitCommonDir(cwd);
 		if (previous && previous.common !== common) throw new Error("Sandbox git layout changed");
-		const content = JSON.stringify(buildPolicy(source, cwd, temporary, protectedFiles, common));
+		// The root comes from the same pointers, so it is pinned with them.
+		const root = gitRoot(cwd);
+		if (previous && previous.root !== root) throw new Error("Sandbox git layout changed");
+		const content = JSON.stringify(buildPolicy(source, cwd, root, temporary, protectedFiles, common));
 		const settingsPath = previous?.settingsPath ?? join(temporary, prepared.size + ".json");
 		if (content !== previous?.content) writeFileSync(settingsPath, content, { mode: 0o600 });
-		const entry = { settingsPath, content, common };
+		const entry = { settingsPath, content, common, root };
 		prepared.set(cwd, entry);
 		return entry;
 	}

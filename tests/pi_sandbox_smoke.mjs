@@ -123,7 +123,7 @@ if (args[3].includes('file_operations.mjs')) {
   // Nested repositories and submodule gitfiles inside the worktree are denied; the worktree's own .git is not.
   assert.ok(record.settings.filesystem.denyWrite.includes(join(realpathSync(worktree), '*/**/.git')));
   assert.ok(record.settings.filesystem.denyWrite.includes(join(realpathSync(worktree), '.pi')));
-  // A relative secret glob is anchored at the working directory, where srt would otherwise resolve it.
+  // A relative secret glob is anchored at the repository root (here the worktree), where srt would otherwise resolve it against the cwd.
   assert.ok(record.settings.filesystem.denyRead.includes(join(realpathSync(worktree), '**/.env')));
   const file = join(worktree, "data ' $(false).txt");
   await tools.get('write').execute('w', { path: file, content: 'before' });
@@ -173,6 +173,15 @@ if (args[3].includes('file_operations.mjs')) {
   assert.ok(plainRecord.settings.filesystem.allowWrite.includes(realpathSync(plain)));
   assert.ok(!plainRecord.settings.filesystem.allowWrite.includes(realpathSync(worktree)));
   assert.ok(plainRecord.settings.filesystem.denyWrite.every(path => !path.endsWith('config.worktree')));
+  // From a subdirectory, a relative secret glob stays anchored at the repository root, so the parent's .env is denied.
+  const subdirectory = join(worktree, 'nested/deeper');
+  mkdirSync(subdirectory, { recursive: true });
+  await tool.execute('id', { command: 'true' }, undefined, undefined, { cwd: subdirectory });
+  const subdirectoryRecord = JSON.parse(readFileSync(join(root, 'record.json')));
+  assert.ok(subdirectoryRecord.settings.filesystem.denyRead.includes(join(realpathSync(worktree), '**/.env')));
+  assert.ok(!subdirectoryRecord.settings.filesystem.denyRead.includes(join(realpathSync(subdirectory), '**/.env')));
+  // Outside a repository the working directory is the root.
+  assert.ok(plainRecord.settings.filesystem.denyRead.includes(join(realpathSync(plain), '**/.env')));
   // A .git planted later would make git run attacker config outside the sandbox, so it is denied even when absent.
   assert.ok(plainRecord.settings.filesystem.denyWrite.includes(join(realpathSync(plain), '.git')));
   // A protected symlink keeps its own deny rule (the link can be replaced) besides its target's.

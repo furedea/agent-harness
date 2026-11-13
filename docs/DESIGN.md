@@ -237,11 +237,17 @@ The secret path policy reaches Pi as `filesystem.denyRead` entries of the srt po
 rule as Codex: only a rule that denies reads is rendered, and write-only rules stay with the hooks
 because srt's restrictions apply to every process the agent starts. srt reads each entry as a glob
 (`*`, `**`, `?`, `[...]`, no escapes, no braces, no negation) and expands `~` and `~/`; a relative
-entry is anchored at the working directory. A bare name or single-segment directory (`.env`, `secrets/**`) therefore becomes `**/pattern` so
-it matches at any depth as in Claude, while other relative patterns (`src/keys/*`) stay anchored, and `//x` becomes `/x`. Generation fails, naming the pattern, for
+entry is anchored at the Git toplevel of the tool call's working directory (the working directory itself
+outside a repository), not at the working directory, so a tool running in `/repo/src` still denies
+`/repo/.env`. The toplevel is pinned per working directory like the common dir: the sandbox can rewrite `.git`
+pointers, so a first resolution that later changes fails the call. A single-segment name (`.env`, `*.pem`) becomes `**/pattern` so
+it matches at any depth as in Claude, and `//x` becomes `/x`. A relative pattern with a `/` other than a trailing one
+that does not start with `**/` (`secrets/**`, `config/x.json`, `./secrets/**`) is rejected when the secret path policy is
+loaded: gitignore and Codex anchor it at the repository root, srt matches it at any depth, and Claude anchors it at the working
+directory, so one pattern would guard three different sets of files. Write `**/<pattern>` for any depth. Generation fails, naming the pattern, for
 a leading `/`, `.` or `..` parts, backslashes, braces, a leading `!`, a negated character class (`[!a]`, `[^a]`), or a wildcard in the first
 component of an absolute pattern (srt on Linux skips it). A `**/` pattern guards only beneath the
-working directory, as `:workspace_roots` does for Codex.
+repository root, as `:workspace_roots` does for Codex.
 
 ### Codex guarded filesystem
 
