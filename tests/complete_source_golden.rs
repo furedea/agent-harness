@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use anyhow::{Result, ensure};
+use anyhow::{Context, Result, ensure};
 
 #[test]
 fn complete_source_install_matches_every_golden_file_and_byte() -> Result<()> {
@@ -73,7 +73,8 @@ fn relative_to(root: &Path, paths: &[PathBuf]) -> Result<Vec<PathBuf>> {
 
 /// Splits `directory` into its subdirectories and regular files, rejecting any other entry kind.
 fn list_directory(directory: &Path) -> Result<(Vec<PathBuf>, Vec<PathBuf>)> {
-    let entries = std::fs::read_dir(directory)?
+    let entries = std::fs::read_dir(directory)
+        .with_context(|| format!("list {}", directory.display()))?
         .map(|entry| {
             let entry = entry?;
             Ok((entry.path(), entry.file_type()?))
