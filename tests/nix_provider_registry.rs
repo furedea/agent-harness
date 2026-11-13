@@ -126,11 +126,15 @@ fn linked_destinations(spec: &ProviderSpec) -> BTreeSet<&'static str> {
 fn bridge_destinations(spec: &ProviderSpec) -> BTreeSet<&'static str> {
     let bridge = spec.hook.bridge;
     if let Some(directory) = bridge.directory {
+        let outside: Vec<&str> = bridge
+            .assets
+            .iter()
+            .map(|asset| asset.destination)
+            .filter(|destination| !destination.starts_with(&format!("{directory}/")))
+            .collect();
         assert!(
-            bridge
-                .assets
-                .iter()
-                .all(|asset| asset.destination.starts_with(&format!("{directory}/")))
+            outside.is_empty(),
+            "assets outside {directory}/: {outside:?}"
         );
     }
     bridge

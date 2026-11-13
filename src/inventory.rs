@@ -336,11 +336,12 @@ mod tests {
                 .map(|spec| hook(spec.id, "event", "*"))
                 .collect(),
         };
-        assert!(
-            PROVIDERS
-                .iter()
-                .all(|spec| lists_provider(&inventory, spec.display_name))
-        );
+        let missing: Vec<&str> = PROVIDERS
+            .iter()
+            .map(|spec| spec.display_name)
+            .filter(|name| !lists_provider(&inventory, name))
+            .collect();
+        assert!(missing.is_empty(), "providers not listed: {missing:?}");
     }
 
     fn lists_provider(inventory: &Inventory, display_name: &str) -> bool {
@@ -361,10 +362,14 @@ mod tests {
     #[test]
     fn hook_commands_drop_the_provider_hooks_directory() {
         let expected = "hook_adapter.py shell forbidden";
+        let mismatched: Vec<(&str, String)> = PROVIDERS
+            .iter()
+            .map(|spec| (spec.home_dir, shortened_adapter_command(spec.home_dir)))
+            .filter(|(_, shortened)| shortened != expected)
+            .collect();
         assert!(
-            PROVIDERS
-                .iter()
-                .all(|spec| shortened_adapter_command(spec.home_dir) == expected)
+            mismatched.is_empty(),
+            "expected {expected:?}, got (home_dir, command): {mismatched:?}"
         );
     }
 }
