@@ -121,7 +121,8 @@ function gitDiscoveryEnv(): NodeJS.ProcessEnv {
 function gitCommonDir(cwd: string): string | undefined {
 	try {
 		const out = execFileSync("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], { cwd, env: gitDiscoveryEnv(), encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
-		return canonical(out.trim());
+		// Drop only git's terminating newline: a directory name may end in whitespace.
+		return canonical(out.replace(/\n$/, ""));
 	} catch {
 		return undefined;
 	}
