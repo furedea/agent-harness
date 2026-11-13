@@ -358,14 +358,14 @@ mod tests {
         write_file(
             &root.join("hooks/rules/secret_path_policy.json"),
             r#"{"version":1,"rules":[
-{"pattern":"secrets/**","access":["read"]},
-{"pattern":"secrets/key","access":["read"]}
+{"pattern":"**/secrets/**","access":["read"]},
+{"pattern":"**/secrets/key","access":["read"]}
 ]}"#,
         )?;
 
         let content = codex_config_fragment(&load_source(&root)?)?;
 
-        assert!(content.contains("\"secrets/key\" = \"none\""));
+        assert!(content.contains("\"**/secrets/key\" = \"none\""));
         crate::shell::fixtures::remove_dir_all(root)?;
         Ok(())
     }

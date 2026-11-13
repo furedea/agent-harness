@@ -98,7 +98,8 @@ pub(crate) fn codex_filesystem_entries(source: &Source) -> Result<Vec<CodexFiles
 /// enforcing them.
 ///
 /// srt reads every entry as a glob (`*`, `**`, `?`, `[...]`, no escapes), expands `~` and `~/`,
-/// and resolves a relative entry against the working directory, on macOS and Linux alike.
+/// and resolves a relative entry against the working directory, on macOS and Linux alike; Pi's
+/// extension re-anchors it at the Git toplevel.
 ///
 /// # Errors
 ///
@@ -115,11 +116,13 @@ pub(crate) fn srt_denied_read_paths(source: &Source) -> Result<Vec<String>> {
 
 /// Resolves a Claude-style pattern to the entry srt reads the same way.
 ///
-/// Claude reads `//x` as absolute and `/x` as relative to the project, and matches a bare name or
-/// a single-segment directory (`secrets/**`) at any depth. srt reads `/x` as absolute and a
-/// relative entry only beneath the working directory, so `/x` is rejected as ambiguous and a
-/// pattern Claude matches at any depth gets a `**/` prefix. srt has no escapes, braces, negation, or negated character classes, and on Linux ignores an
-/// absolute pattern whose first component has a wildcard, so those are rejected too.
+/// Claude reads `//x` as absolute and `/x` as relative to the project, and matches a single-segment
+/// name (`.env`) at any depth. srt reads `/x` as absolute and a relative entry only beneath the
+/// directory the harness anchors it at, so `/x` is rejected as ambiguous and a single-segment
+/// name gets a `**/` prefix. A multi-segment relative pattern never reaches this function without
+/// a leading `**/`: the policy rejects it on load. srt has no escapes, braces, negation, or
+/// negated character classes, and on Linux ignores an absolute pattern whose first component has
+/// a wildcard, so those are rejected too.
 fn srt_path(pattern: &str) -> Result<String> {
     ensure!(
         !pattern.contains('\\'),
@@ -163,17 +166,28 @@ fn srt_path(pattern: &str) -> Result<String> {
                 .any(|part| matches!(part, "" | "." | "..")),
         "srt needs {path:?} to be absolute, start with ~/, or stay inside the project without . or .. parts"
     );
-    if !is_home && matches_at_any_depth(path) {
+    if !is_home && is_single_segment_name(path) {
         return Ok(format!("**/{path}"));
     }
     Ok(path.to_owned())
 }
 
-/// Claude matches a bare name (`.env`) and a single-segment directory (`secrets/**`) at any depth;
-/// any other relative pattern (`src/keys/*`) stays anchored at the project, like in gitignore.
-fn matches_at_any_depth(relative: &str) -> bool {
-    let directory = relative.strip_suffix("/**").unwrap_or(relative);
-    !directory.contains('/') && !directory.starts_with("**")
+fn is_single_segment_name(relative: &str) -> bool {
+    !relative.contains('/') && !relative.starts_with("**")
+}
+
+/// A relative pattern with a `/` other than a trailing one is read at the root by gitignore and
+/// Codex, at any depth by srt, and at the working directory by Claude. Only `**/` says "any depth".
+fn ensure_unambiguous(pattern: &PathPattern) -> Result<()> {
+    let text = pattern.as_str();
+    let body = text.trim_end_matches('/');
+    let suggestion = body.strip_prefix("./").unwrap_or(body);
+    let is_anchored_elsewhere = text.starts_with('/') || text.starts_with("~/") || body == "~";
+    ensure!(
+        is_anchored_elsewhere || !body.contains('/') || body.starts_with("**/"),
+        "secret path pattern {text:?} is ambiguous: gitignore and Codex anchor it at the repository root, srt matches it at any depth, and Claude anchors it at the working directory; write \"**/{suggestion}\" to match at any depth"
+    );
+    Ok(())
 }
 
 fn validate_policy(policy: &SecretPathPolicy) -> Result<()> {
@@ -186,8 +200,10 @@ fn validate_policy(policy: &SecretPathPolicy) -> Result<()> {
     for rule in &policy.rules {
         ensure!(
             !rule.access.is_empty(),
-            "secret path policy access list must not be empty"
+            "secret path policy access list must not be empty for pattern {:?}",
+            rule.pattern.as_str()
         );
+        ensure_unambiguous(&rule.pattern)?;
     }
 
     Ok(())
@@ -244,7 +260,7 @@ mod tests {
     {"pattern": "~/.ssh/**", "access": ["read"]},
     {"pattern": "**/secrets/**", "access": ["read"]},
     {"pattern": "//etc/secret/", "access": ["read"]},
-    {"pattern": "src/keys/*", "access": ["read"]},
+    {"pattern": "**/src/keys/*", "access": ["read"]},
     {"pattern": "**/audit/**", "access": ["write"]}
   ]
 }
@@ -260,7 +276,7 @@ mod tests {
                 "~/.ssh/**",
                 "**/secrets/**",
                 "/etc/secret",
-                "src/keys/*"
+                "**/src/keys/*"
             ],
         );
 
@@ -289,6 +305,53 @@ mod tests {
                 "{pattern}: {error}"
             );
         }
+        Ok(())
+    }
+
+    #[test]
+    fn ambiguous_relative_patterns_are_rejected_when_the_policy_is_loaded() -> Result<()> {
+        for pattern in ["secrets/**", "config/x.json", "./secrets/**", "src/keys/*"] {
+            let root = test_root("ambiguous_relative_patterns_are_rejected")?;
+            write_policy(
+                &root,
+                &format!(
+                    r#"{{"version":1,"rules":[{{"pattern":"{pattern}","access":["read"]}}]}}"#
+                ),
+            )?;
+
+            let error = format!("{:#}", load_source(&root).unwrap_err());
+
+            assert!(
+                error.contains(&format!("{pattern:?}")),
+                "{pattern}: {error}"
+            );
+            assert!(error.contains("**/"), "{pattern}: {error}");
+            assert!(!error.contains("**/./"), "{pattern}: {error}");
+
+            crate::shell::fixtures::remove_dir_all(root)?;
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn unambiguous_patterns_are_accepted() -> Result<()> {
+        let root = test_root("unambiguous_patterns_are_accepted")?;
+        write_policy(
+            &root,
+            r#"{"version":1,"rules":[
+  {"pattern":".env","access":["read"]},
+  {"pattern":"*.pem","access":["read"]},
+  {"pattern":"secrets/","access":["read"]},
+  {"pattern":"**/secrets/**","access":["read"]},
+  {"pattern":"~/.ssh/**","access":["read"]},
+  {"pattern":"//etc/secret/**","access":["read"]},
+  {"pattern":"/project/x","access":["write"]}
+]}"#,
+        )?;
+
+        load_source(&root)?;
+
+        crate::shell::fixtures::remove_dir_all(root)?;
         Ok(())
     }
 
