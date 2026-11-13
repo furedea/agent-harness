@@ -6,7 +6,9 @@ fn deny(path: &str) -> Result<GuardedEntry> {
 
 fn read(path: &str) -> Result<GuardedEntry> {
     let entry = GuardedEntry::new(GuardedPath::absolute(path)?, Access::Read);
-    entry.ok_or_else(|| anyhow::anyhow!("{path} is not concrete"))
+    entry.ok_or_else(|| {
+        anyhow::anyhow!("cannot build a looser guarded entry from the pattern {path}")
+    })
 }
 
 /// The (stricter, looser) index pairs.
@@ -181,16 +183,17 @@ fn a_backslash_separates_segments() -> Result<()> {
     Ok(())
 }
 
-fn grant(path: &str, access: Access) -> Result<GuardedEntry> {
-    GuardedEntry::new(GuardedPath::absolute(path)?, access)
-        .ok_or_else(|| anyhow::anyhow!("{path} is not concrete"))
+fn entry_with(path: &str, access: Access) -> Result<GuardedEntry> {
+    GuardedEntry::new(GuardedPath::absolute(path)?, access).ok_or_else(|| {
+        anyhow::anyhow!("cannot build a looser guarded entry from the pattern {path}")
+    })
 }
 
 #[test]
 fn a_looser_intermediate_entry_is_the_exception_for_the_entries_below_it() -> Result<()> {
     let entries = [
         GuardedEntry::Deny(GuardedPath::everything()),
-        grant("~", Access::Write)?,
+        entry_with("~", Access::Write)?,
         read("~/.codex/hooks/adapt.sh")?,
     ];
 
@@ -203,7 +206,7 @@ fn a_stricter_intermediate_entry_is_the_one_that_conflicts() -> Result<()> {
     let entries = [
         GuardedEntry::Deny(GuardedPath::everything()),
         read("~")?,
-        grant("~/x", Access::Write)?,
+        entry_with("~/x", Access::Write)?,
     ];
 
     assert_eq!(pairs(&entries), [(0, 1), (1, 2)]);
@@ -333,4 +336,43 @@ fn a_unc_path_is_not_a_unix_path_with_the_same_segments() -> Result<()> {
     assert!(hosted.covers(&unc, None));
     assert!(!unix.covers(&unc, None));
     Ok(())
+}
+
+#[test]
+fn every_spelling_of_a_unc_prefix_is_one_root_on_a_windows_host() -> Result<()> {
+    let share = GuardedPath::absolute_on("\\\\host\\share", true)?;
+
+    for spelling in ["//host/share/x", "\\/host/share/x", "/\\host\\share\\x"] {
+        let path = GuardedPath::absolute_on(spelling, true)?;
+        assert!(share.covers(&path, None), "{spelling}");
+    }
+    Ok(())
+}
+
+#[test]
+fn a_unc_project_root_matches_workspace_entries_in_both_directions() -> Result<()> {
+    let root = GuardedPath::absolute_on("//host/share/proj", true)?;
+    let workspace = GuardedPath::workspace_on(Some(&root), true);
+    let secrets = GuardedEntry::Deny(workspace.join("secrets/**")?);
+    let hook = read("\\\\host\\share\\proj\\secrets\\hook.sh")?;
+    let elsewhere = read("\\\\host\\share\\other\\secrets\\hook.sh")?;
+    let unix = read("/host/share/proj/secrets/hook.sh")?;
+    let unc_deny = GuardedEntry::Deny(GuardedPath::absolute("\\\\host\\share\\proj\\keys\\**")?);
+    let key = GuardedEntry::new(workspace.join("keys/k")?, Access::Read);
+
+    let found = conflicts(&[secrets, hook, elsewhere, unix], Some(&root));
+    let reverse = conflicts(&[unc_deny, key.expect("concrete")], Some(&root));
+
+    let found: Vec<_> = found.iter().map(|c| (c.stricter, c.looser)).collect();
+    let reverse: Vec<_> = reverse.iter().map(|c| (c.stricter, c.looser)).collect();
+    assert_eq!(found, [(0, 1)]);
+    assert_eq!(reverse, [(0, 1)]);
+    Ok(())
+}
+
+#[test]
+fn every_accepted_unc_spelling_is_an_absolute_key() {
+    assert!(is_absolute_key_on("\\/host/share", true));
+    assert!(is_absolute_key_on("\\\\host\\share", false));
+    assert!(!is_absolute_key_on("\\/host/share", false));
 }

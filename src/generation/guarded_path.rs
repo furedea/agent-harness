@@ -157,15 +157,15 @@ impl GuardedPath {
     fn rewritten_for(&self, workspace: &Self) -> Option<Self> {
         match self.root {
             Root::Workspace => Some(self.below(workspace)),
-            Root::Absolute => self.relative_to(workspace),
-            Root::Everything | Root::Unc | Root::Home => None,
+            Root::Absolute | Root::Unc => self.relative_to(workspace),
+            Root::Everything | Root::Home => None,
         }
     }
 
     fn below(&self, workspace: &Self) -> Self {
         let segments = workspace.segments.iter().chain(&self.segments).cloned();
         Self::at(
-            Root::Absolute,
+            workspace.root,
             self.windows || workspace.windows,
             segments.collect(),
         )
@@ -200,17 +200,21 @@ fn split_root(text: &str, host_is_windows: bool) -> Result<(Root, bool, &str)> {
     }
 }
 
-/// The part of a UNC path after its prefix: `\\\\host\\share`, or on a Windows host also the
-/// `//host/share` a runtime root renders.
+/// The part of a UNC path after its two-separator prefix: `\\host\share` anywhere, and on a
+/// Windows host any mix of `\` and `/`, such as the `//host/share` a runtime root renders.
 fn unc_rest(text: &str, host_is_windows: bool) -> Option<&str> {
-    let slashes = host_is_windows.then(|| text.strip_prefix("//")).flatten();
-    text.strip_prefix("\\\\").or(slashes)
+    let is_separator = |ch: char| ch == '\\' || (host_is_windows && ch == '/');
+    text.strip_prefix(is_separator)?.strip_prefix(is_separator)
 }
 
 /// Whether a table key names an absolute location: `~`, `/...`, a Windows drive path or a UNC
 /// path.
 pub(crate) fn is_absolute_key(key: &str) -> bool {
-    key.starts_with(['/', '~']) || key.starts_with("\\\\") || has_drive_prefix(key)
+    is_absolute_key_on(key, cfg!(windows))
+}
+
+fn is_absolute_key_on(key: &str, host_is_windows: bool) -> bool {
+    key.starts_with(['/', '~']) || unc_rest(key, host_is_windows).is_some() || has_drive_prefix(key)
 }
 
 /// `C:/...`, as a runtime root on Windows writes it; the drive stays the first segment.
