@@ -200,7 +200,8 @@ fn validate_policy(policy: &SecretPathPolicy) -> Result<()> {
     for rule in &policy.rules {
         ensure!(
             !rule.access.is_empty(),
-            "secret path policy access list must not be empty"
+            "secret path policy access list must not be empty for pattern {:?}",
+            rule.pattern.as_str()
         );
         ensure_unambiguous(&rule.pattern)?;
     }
