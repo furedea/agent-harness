@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.9.14](https://github.com/furedea/agent-harness/compare/agent-harness-v0.9.13...agent-harness-v0.9.14) (2026-11-13)
+
+
+### Bug Fixes
+
+* **codex:** handle edge cases in guarded path matching ([#240](https://github.com/furedea/agent-harness/issues/240)) ([25105ec](https://github.com/furedea/agent-harness/commit/25105eca2164f0ab52ae6b8831ca1840b7184f29))
+* **codex:** match UNC project roots against workspace entries ([#244](https://github.com/furedea/agent-harness/issues/244)) ([a24332b](https://github.com/furedea/agent-harness/commit/a24332bb6cd3a816ceac6607b68c319a6084054e))
+* **pi:** anchor secret paths at the repo root and reject ambiguous patterns ([#245](https://github.com/furedea/agent-harness/issues/245)) ([58ceb35](https://github.com/furedea/agent-harness/commit/58ceb356a028a252de56e39608654b84d3426ec4))
+* **pi:** keep git common dir whitespace and name the hook write operation ([#247](https://github.com/furedea/agent-harness/issues/247)) ([6c38b73](https://github.com/furedea/agent-harness/commit/6c38b734979d4f272d8c641687a8e918107d9752))
+
 ## [0.9.13](https://github.com/furedea/agent-harness/compare/agent-harness-v0.9.12...agent-harness-v0.9.13) (2026-11-12)
 
 
