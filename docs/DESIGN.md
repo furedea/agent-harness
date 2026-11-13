@@ -265,7 +265,7 @@ two globs are never compared with each other and a glob looser than another glob
 A rule that denies reads with a brace pattern fails generation, because Codex does not expand
 braces. Paths are compared by root: `~`, absolute paths, UNC paths and the workspace are separate,
 except that a project-local install (`--runtime-root` is the project) matches an absolute path
-inside the project against `:workspace_roots` too. Windows-form paths (a drive letter, a UNC
+inside the project against `:workspace_roots` too, a UNC project root included. Windows-form paths (a drive letter, a UNC
 prefix, or any path on a Windows host) take `\` as a separator and compare without regard to
 case; elsewhere `\` is a filename character. Conflict detection is a safety net; hooks still enforce the secret policy at
 runtime.

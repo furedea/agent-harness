@@ -348,3 +348,24 @@ fn every_spelling_of_a_unc_prefix_is_one_root_on_a_windows_host() -> Result<()> 
     }
     Ok(())
 }
+
+#[test]
+fn a_unc_project_root_matches_workspace_entries_in_both_directions() -> Result<()> {
+    let root = GuardedPath::absolute_on("//host/share/proj", true)?;
+    let workspace = GuardedPath::workspace_on(Some(&root), true);
+    let secrets = GuardedEntry::Deny(workspace.join("secrets/**")?);
+    let hook = read("\\\\host\\share\\proj\\secrets\\hook.sh")?;
+    let elsewhere = read("\\\\host\\share\\other\\secrets\\hook.sh")?;
+    let unix = read("/host/share/proj/secrets/hook.sh")?;
+    let unc_deny = GuardedEntry::Deny(GuardedPath::absolute("\\\\host\\share\\proj\\keys\\**")?);
+    let key = GuardedEntry::new(workspace.join("keys/k")?, Access::Read);
+
+    let found = conflicts(&[secrets, hook, elsewhere, unix], Some(&root));
+    let reverse = conflicts(&[unc_deny, key.expect("concrete")], Some(&root));
+
+    let found: Vec<_> = found.iter().map(|c| (c.stricter, c.looser)).collect();
+    let reverse: Vec<_> = reverse.iter().map(|c| (c.stricter, c.looser)).collect();
+    assert_eq!(found, [(0, 1)]);
+    assert_eq!(reverse, [(0, 1)]);
+    Ok(())
+}

@@ -157,15 +157,15 @@ impl GuardedPath {
     fn rewritten_for(&self, workspace: &Self) -> Option<Self> {
         match self.root {
             Root::Workspace => Some(self.below(workspace)),
-            Root::Absolute => self.relative_to(workspace),
-            Root::Everything | Root::Unc | Root::Home => None,
+            Root::Absolute | Root::Unc => self.relative_to(workspace),
+            Root::Everything | Root::Home => None,
         }
     }
 
     fn below(&self, workspace: &Self) -> Self {
         let segments = workspace.segments.iter().chain(&self.segments).cloned();
         Self::at(
-            Root::Absolute,
+            workspace.root,
             self.windows || workspace.windows,
             segments.collect(),
         )
