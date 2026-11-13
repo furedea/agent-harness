@@ -77,6 +77,7 @@ pub(crate) fn hooks_op_for_runtime(
     let hooks = hooks_for_runtime(context, spec)
         .with_context(|| format!("failed to generate hooks for {}", spec.key))?;
     FileOp::write_json(path, &hooks)
+        .with_context(|| format!("failed to serialize hooks to {}", path.display()))
 }
 
 fn hooks_for_runtime(context: GenerationContext<'_>, spec: &ProviderSpec) -> Result<Value> {
