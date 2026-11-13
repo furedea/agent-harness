@@ -58,9 +58,10 @@ Each layer closes a hole the previous one leaves open.
     `#![deny(...)]` instead; the registry test still enumerates every variant through the derive.
 
 `tests/provider_spec_layering.rs` is deleted: it was a substring check on four files, and it could
-not see a wrapper. CI now runs `cargo clippy --all-targets -- -D warnings`: integration test crates
-and shell test modules `allow` the ban with a reason, while tests inside computation modules use
-`shell::fixtures` so the code still compiles under `forbid`.
+not see a wrapper. The pre-commit hook runs `cargo clippy --all-targets -- -D warnings` (CI is to
+follow, as it still skips `#[cfg(test)]` code): integration test crates and shell test modules
+`allow` the ban with a reason, while tests inside computation modules use `shell::fixtures` so the
+code still compiles under `forbid`.
 
 ## Why not split the crate
 
