@@ -1,3 +1,12 @@
+#![allow(
+    clippy::disallowed_methods,
+    clippy::disallowed_types,
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    reason = "integration tests build fixtures on disk and fail fast on any error"
+)]
+
 use anyhow::Result;
 use std::{path::Path, process::Command};
 
@@ -9,26 +18,16 @@ fn unified_hook_commands_match_legacy_files() -> Result<()> {
     for provider in ["claude", "codex", "devin", "hermes", "pi", "dsh"] {
         let old = root.join(format!("{provider}-old.json"));
         let new = root.join(format!("{provider}-new.json"));
-        for (command, path, unified) in [
-            (format!("generate-{provider}-hooks"), &old, false),
-            ("generate-hooks".into(), &new, true),
-        ] {
-            let mut cmd = Command::new(env!("CARGO_BIN_EXE_agent-harness"));
-            cmd.arg(command)
-                .arg("--source")
-                .arg(&source)
-                .arg("--output")
-                .arg(path);
-            if unified {
-                cmd.args(["--provider", provider]);
-            }
-            let output = cmd.output()?;
-            assert!(
-                output.status.success(),
-                "{provider}: {}",
-                String::from_utf8_lossy(&output.stderr)
-            );
-        }
+        let mut legacy = cli(
+            &format!("generate-{provider}-hooks"),
+            &[("--source", &source), ("--output", &old)],
+        );
+        assert_succeeds(provider, &mut legacy)?;
+        let mut unified = cli(
+            "generate-hooks",
+            &[("--source", &source), ("--output", &new)],
+        );
+        assert_succeeds(provider, unified.args(["--provider", provider]))?;
         assert_eq!(std::fs::read(old)?, std::fs::read(new)?, "{provider}");
     }
     std::fs::remove_dir_all(root)?;
@@ -87,24 +86,13 @@ fn unified_sync_commands_match_legacy_files() -> Result<()> {
     ] {
         let old = root.join(format!("{provider}-old"));
         let new = root.join(format!("{provider}-new"));
-        for (command, target, unified) in [(legacy, &old, false), ("sync-config", &new, true)] {
-            std::fs::write(target, initial)?;
-            let mut cmd = Command::new(env!("CARGO_BIN_EXE_agent-harness"));
-            cmd.arg(command)
-                .arg("--source")
-                .arg(installed.join(generated))
-                .arg("--target")
-                .arg(target);
-            if unified {
-                cmd.args(["--provider", provider]);
-            }
-            let output = cmd.output()?;
-            assert!(
-                output.status.success(),
-                "{provider}: {}",
-                String::from_utf8_lossy(&output.stderr)
-            );
-        }
+        let source = installed.join(generated);
+        std::fs::write(&old, initial)?;
+        std::fs::write(&new, initial)?;
+        let mut legacy_run = cli(legacy, &[("--source", &source), ("--target", &old)]);
+        assert_succeeds(provider, &mut legacy_run)?;
+        let mut unified = cli("sync-config", &[("--source", &source), ("--target", &new)]);
+        assert_succeeds(provider, unified.args(["--provider", provider]))?;
         assert_eq!(std::fs::read(old)?, std::fs::read(new)?, "{provider}");
     }
     std::fs::remove_dir_all(root)?;
@@ -121,5 +109,24 @@ fn invented_sync_commands_are_rejected() -> Result<()> {
         assert!(!output.status.success(), "{command}");
         assert!(String::from_utf8_lossy(&output.stderr).contains("unrecognized subcommand"));
     }
+    Ok(())
+}
+
+fn cli(command: &str, flags: &[(&str, &Path)]) -> Command {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_agent-harness"));
+    cmd.arg(command);
+    for (flag, path) in flags {
+        cmd.arg(flag).arg(path);
+    }
+    cmd
+}
+
+fn assert_succeeds(provider: &str, cmd: &mut Command) -> Result<()> {
+    let output = cmd.output()?;
+    assert!(
+        output.status.success(),
+        "{provider}: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     Ok(())
 }

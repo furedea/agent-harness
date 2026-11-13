@@ -15,7 +15,13 @@ fn codex_replaces_managed_keys_removes_absent_ones_and_keeps_the_rest() -> Resul
         "model = \"old\"\npersonality = \"terse\"\n\n[projects.\"/work\"]\ntrust_level = \"trusted\"\n",
     )?;
 
-    sandbox.sync(ProviderId::Codex, &source, &target)?;
+    sandbox.sync(
+        ProviderId::Codex,
+        &super::SyncPaths {
+            source: &source,
+            target: &target,
+        },
+    )?;
 
     let merged: toml_edit::DocumentMut = sandbox.text("config.toml")?.parse()?;
     assert_eq!(merged["model"].as_str(), Some("gpt-5.5"));
@@ -37,7 +43,13 @@ fn codex_preserves_the_formatting_of_what_it_keeps() -> Result<()> {
         "# my notes\n[projects.\"/work\"]\ntrust_level   = \"trusted\" # keep\n",
     )?;
 
-    sandbox.sync(ProviderId::Codex, &source, &target)?;
+    sandbox.sync(
+        ProviderId::Codex,
+        &super::SyncPaths {
+            source: &source,
+            target: &target,
+        },
+    )?;
 
     let text = sandbox.text("config.toml")?;
     assert!(text.contains("# my notes"));
@@ -54,7 +66,13 @@ fn codex_writes_generated_env_keys_and_records_them_in_the_sidecar() -> Result<(
     )?;
     let target = sandbox.path("config.toml");
 
-    sandbox.sync(ProviderId::Codex, &source, &target)?;
+    sandbox.sync(
+        ProviderId::Codex,
+        &super::SyncPaths {
+            source: &source,
+            target: &target,
+        },
+    )?;
 
     assert!(
         sandbox
@@ -81,8 +99,20 @@ fn codex_removes_a_previously_managed_env_key_and_keeps_user_added_ones() -> Res
         "[shell_environment_policy.set]\nNODE_REPL = \"abc\"\n",
     )?;
 
-    sandbox.sync(ProviderId::Codex, &with_key, &target)?;
-    sandbox.sync(ProviderId::Codex, &without_key, &target)?;
+    sandbox.sync(
+        ProviderId::Codex,
+        &super::SyncPaths {
+            source: &with_key,
+            target: &target,
+        },
+    )?;
+    sandbox.sync(
+        ProviderId::Codex,
+        &super::SyncPaths {
+            source: &without_key,
+            target: &target,
+        },
+    )?;
 
     let text = sandbox.text("config.toml")?;
     assert!(text.contains("NODE_REPL = \"abc\""));
@@ -102,7 +132,13 @@ fn codex_writes_env_keys_into_inline_tables() -> Result<()> {
         "shell_environment_policy = { set = { CI = \"1\" } }\n",
     )?;
 
-    sandbox.sync(ProviderId::Codex, &source, &target)?;
+    sandbox.sync(
+        ProviderId::Codex,
+        &super::SyncPaths {
+            source: &source,
+            target: &target,
+        },
+    )?;
 
     let merged: toml_edit::DocumentMut = sandbox.text("config.toml")?.parse()?;
     let set = &merged["shell_environment_policy"]["set"];
@@ -120,7 +156,17 @@ fn codex_rejects_a_shell_environment_policy_that_is_not_a_table() -> Result<()> 
     )?;
     let target = sandbox.put("config.toml", "shell_environment_policy = \"inherit\"\n")?;
 
-    assert!(sandbox.sync(ProviderId::Codex, &source, &target).is_err());
+    assert!(
+        sandbox
+            .sync(
+                ProviderId::Codex,
+                &super::SyncPaths {
+                    source: &source,
+                    target: &target
+                }
+            )
+            .is_err()
+    );
     Ok(())
 }
 
@@ -134,7 +180,13 @@ fn codex_without_a_sidecar_removes_only_the_gh_config_dir_it_managed_before_side
         "[shell_environment_policy.set]\nGH_CONFIG_DIR = \"/gh\"\nNVIM_LOG_FILE = \"/old\"\n",
     )?;
 
-    sandbox.sync(ProviderId::Codex, &source, &target)?;
+    sandbox.sync(
+        ProviderId::Codex,
+        &super::SyncPaths {
+            source: &source,
+            target: &target,
+        },
+    )?;
 
     let text = sandbox.text("config.toml")?;
     assert!(!text.contains("GH_CONFIG_DIR"));
@@ -147,13 +199,25 @@ fn codex_keeps_a_user_owned_gh_config_dir_once_a_sidecar_exists() -> Result<()> 
     let sandbox = Sandbox::new("codex-user-gh")?;
     let source = sandbox.put("generated.toml", "model = \"m\"\n")?;
     let target = sandbox.path("config.toml");
-    sandbox.sync(ProviderId::Codex, &source, &target)?;
+    sandbox.sync(
+        ProviderId::Codex,
+        &super::SyncPaths {
+            source: &source,
+            target: &target,
+        },
+    )?;
     sandbox.put(
         "config.toml",
         "[shell_environment_policy.set]\nGH_CONFIG_DIR = \"/mine\"\n",
     )?;
 
-    sandbox.sync(ProviderId::Codex, &source, &target)?;
+    sandbox.sync(
+        ProviderId::Codex,
+        &super::SyncPaths {
+            source: &source,
+            target: &target,
+        },
+    )?;
 
     assert!(
         sandbox
@@ -172,7 +236,13 @@ fn codex_survives_an_unreadable_sidecar() -> Result<()> {
     )?;
     sandbox.put(".agent-harness-managed.json", "not json")?;
 
-    sandbox.sync(ProviderId::Codex, &source, &sandbox.path("config.toml"))?;
+    sandbox.sync(
+        ProviderId::Codex,
+        &super::SyncPaths {
+            source: &source,
+            target: &sandbox.path("config.toml"),
+        },
+    )?;
 
     assert!(sandbox.text("config.toml")?.contains("NVIM_LOG_FILE"));
     assert!(
@@ -191,7 +261,13 @@ fn codex_starts_from_an_empty_config_when_the_target_is_a_dangling_symlink() -> 
     let target = sandbox.path("config.toml");
     crate::shell::fixtures::symlink(sandbox.path("gone.toml"), &target)?;
 
-    sandbox.sync(ProviderId::Codex, &source, &target)?;
+    sandbox.sync(
+        ProviderId::Codex,
+        &super::SyncPaths {
+            source: &source,
+            target: &target,
+        },
+    )?;
 
     assert!(sandbox.text("config.toml")?.contains("model = \"m\""));
     Ok(())

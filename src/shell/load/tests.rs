@@ -54,7 +54,7 @@ fn an_optional_directory_the_source_omits_is_absent() -> Result<()> {
 
     let claude = PROVIDERS
         .iter()
-        .flat_map(|spec| spec.config_directories())
+        .flat_map(crate::provider::spec::ProviderSpec::config_directories)
         .map(|directory| root.path().join(directory.source))
         .next()
         .expect("a provider declares a config directory");

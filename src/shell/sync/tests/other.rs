@@ -18,7 +18,13 @@ fn hermes_unions_enabled_plugins_and_keeps_user_keys() -> Result<()> {
         "model:\n  provider: openai-codex\nplugins:\n  enabled:\n    - moshi-hooks\nonboarding:\n  seen: true\n",
     )?;
 
-    sandbox.sync(ProviderId::Hermes, &source, &target)?;
+    sandbox.sync(
+        ProviderId::Hermes,
+        &super::SyncPaths {
+            source: &source,
+            target: &target,
+        },
+    )?;
 
     let parsed: serde_norway::Value = serde_norway::from_str(&sandbox.text("config.yaml")?)?;
     assert_eq!(parsed["model"]["provider"].as_str(), Some("openai-codex"));
@@ -39,8 +45,20 @@ fn hermes_creates_a_missing_target_and_does_not_duplicate_on_repeat() -> Result<
     )?;
     let target = sandbox.path("nested/config.yaml");
 
-    sandbox.sync(ProviderId::Hermes, &source, &target)?;
-    sandbox.sync(ProviderId::Hermes, &source, &target)?;
+    sandbox.sync(
+        ProviderId::Hermes,
+        &super::SyncPaths {
+            source: &source,
+            target: &target,
+        },
+    )?;
+    sandbox.sync(
+        ProviderId::Hermes,
+        &super::SyncPaths {
+            source: &source,
+            target: &target,
+        },
+    )?;
 
     let parsed: serde_norway::Value = serde_norway::from_str(&sandbox.text("nested/config.yaml")?)?;
     assert_eq!(
@@ -59,7 +77,13 @@ fn hermes_treats_an_empty_target_file_as_an_empty_mapping() -> Result<()> {
     )?;
     let target = sandbox.put("config.yaml", "")?;
 
-    sandbox.sync(ProviderId::Hermes, &source, &target)?;
+    sandbox.sync(
+        ProviderId::Hermes,
+        &super::SyncPaths {
+            source: &source,
+            target: &target,
+        },
+    )?;
 
     assert!(sandbox.text("config.yaml")?.contains("agent-harness-hooks"));
     Ok(())
@@ -81,7 +105,13 @@ fn pi_replaces_only_the_model_defaults_it_owns() -> Result<()> {
         &json!({"defaultThinkingLevel": "high", "defaultModel": "old", "theme": "user"}),
     )?;
 
-    sandbox.sync(ProviderId::Pi, &source, &target)?;
+    sandbox.sync(
+        ProviderId::Pi,
+        &super::SyncPaths {
+            source: &source,
+            target: &target,
+        },
+    )?;
 
     assert_eq!(
         sandbox.json("settings.json")?,
@@ -102,7 +132,17 @@ fn pi_rejects_invalid_documents_and_leaves_the_target_untouched() -> Result<()> 
     let target = sandbox.path("settings.json");
     for invalid in ["invalid JSON", "[]", "null"] {
         sandbox.put("settings.json", invalid)?;
-        assert!(sandbox.sync(ProviderId::Pi, &source, &target).is_err());
+        assert!(
+            sandbox
+                .sync(
+                    ProviderId::Pi,
+                    &super::SyncPaths {
+                        source: &source,
+                        target: &target
+                    }
+                )
+                .is_err()
+        );
         assert_eq!(sandbox.text("settings.json")?, invalid);
     }
     Ok(())
@@ -121,8 +161,20 @@ fn dsh_registers_the_bundle_in_an_existing_profile_once() -> Result<()> {
         }),
     )?;
 
-    sandbox.sync(ProviderId::Dsh, &bundle, &target)?;
-    sandbox.sync(ProviderId::Dsh, &bundle, &target)?;
+    sandbox.sync(
+        ProviderId::Dsh,
+        &super::SyncPaths {
+            source: &bundle,
+            target: &target,
+        },
+    )?;
+    sandbox.sync(
+        ProviderId::Dsh,
+        &super::SyncPaths {
+            source: &bundle,
+            target: &target,
+        },
+    )?;
 
     let real = std::fs::canonicalize(&bundle)?;
     assert_eq!(
@@ -148,7 +200,13 @@ fn dsh_skips_a_profile_that_does_not_exist_yet() -> Result<()> {
     create_dir_all(&bundle)?;
     let target = sandbox.path("profiles/web/package.json");
 
-    sandbox.sync(ProviderId::Dsh, &bundle, &target)?;
+    sandbox.sync(
+        ProviderId::Dsh,
+        &super::SyncPaths {
+            source: &bundle,
+            target: &target,
+        },
+    )?;
 
     assert!(!target.exists());
     Ok(())
@@ -161,6 +219,16 @@ fn dsh_rejects_a_profile_whose_bundles_are_not_a_list() -> Result<()> {
     create_dir_all(&bundle)?;
     let target = sandbox.put_json("package.json", &json!({"dsh": {"profile": {"bundles": 1}}}))?;
 
-    assert!(sandbox.sync(ProviderId::Dsh, &bundle, &target).is_err());
+    assert!(
+        sandbox
+            .sync(
+                ProviderId::Dsh,
+                &super::SyncPaths {
+                    source: &bundle,
+                    target: &target
+                }
+            )
+            .is_err()
+    );
     Ok(())
 }

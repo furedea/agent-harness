@@ -66,7 +66,7 @@ fn write_config_source_appends_guarded_filesystem_fragment() -> Result<()> {
 
     write_config_source(&root, &out, &[])?;
 
-    let content = std::fs::read_to_string(&out)?;
+    let content = crate::shell::fixtures::read_to_string(&out)?;
     assert!(content.contains("model = \"gpt-5.5\""));
     assert!(content.contains("[permissions.guarded.filesystem]"));
     assert!(content.contains("\"~/.codex/hooks/adapt.sh\" = \"read\""));
@@ -87,7 +87,7 @@ fn write_config_source_keeps_guarded_filesystem_entries_from_the_source() -> Res
 
     write_config_source(&root, &out, &[])?;
 
-    let document = std::fs::read_to_string(&out)?.parse::<DocumentMut>()?;
+    let document = crate::shell::fixtures::read_to_string(&out)?.parse::<DocumentMut>()?;
     let guarded = &document["permissions"]["guarded"]["filesystem"];
     assert_eq!(guarded["~/.config/gh/hosts.yml"].as_str(), Some("deny"));
     assert_eq!(guarded["~/.codex/hooks/adapt.sh"].as_str(), Some("read"));
@@ -108,7 +108,7 @@ fn write_config_source_renders_source_declared_write_denied_paths() -> Result<()
 
     write_config_source(&root, &out, &[])?;
 
-    let document = std::fs::read_to_string(&out)?.parse::<DocumentMut>()?;
+    let document = crate::shell::fixtures::read_to_string(&out)?.parse::<DocumentMut>()?;
     let guarded = &document["permissions"]["guarded"]["filesystem"];
     assert_eq!(
         guarded["~/.local/state/agent-harness/verification"].as_str(),
@@ -127,8 +127,8 @@ fn merged_filesystem(source_config: &str, policy: &str) -> Result<DocumentMut> {
     write_file(&root.join("hooks/rules/secret_path_policy.json"), policy)?;
     let out = root.join("config.toml");
     let written = write_config_source(&root, &out, &[]);
-    let document =
-        written.and_then(|()| Ok(std::fs::read_to_string(&out)?.parse::<DocumentMut>()?));
+    let document = written
+        .and_then(|()| Ok(crate::shell::fixtures::read_to_string(&out)?.parse::<DocumentMut>()?));
     crate::shell::fixtures::remove_dir_all(root)?;
     document
 }

@@ -1,9 +1,18 @@
+#![allow(
+    clippy::disallowed_methods,
+    clippy::disallowed_types,
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    reason = "integration tests build fixtures on disk and fail fast on any error"
+)]
+
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use anyhow::{Result, ensure};
+use anyhow::{Context, Result, ensure};
 
 #[test]
 fn complete_source_install_matches_every_golden_file_and_byte() -> Result<()> {
@@ -48,19 +57,40 @@ fn relative_files(root: &Path) -> Result<BTreeSet<PathBuf>> {
     let mut files = BTreeSet::new();
     let mut directories = vec![root.to_path_buf()];
     while let Some(directory) = directories.pop() {
-        for entry in std::fs::read_dir(directory)? {
-            let entry = entry?;
-            let path = entry.path();
-            let kind = entry.file_type()?;
-            if kind.is_dir() {
-                directories.push(path);
-            } else {
-                ensure!(kind.is_file(), "unexpected non-file: {}", path.display());
-                files.insert(path.strip_prefix(root)?.to_path_buf());
-            }
-        }
+        let (subdirectories, regular_files) = list_directory(&directory)?;
+        directories.extend(subdirectories);
+        files.extend(relative_to(root, &regular_files)?);
     }
     Ok(files)
+}
+
+fn relative_to(root: &Path, paths: &[PathBuf]) -> Result<Vec<PathBuf>> {
+    paths
+        .iter()
+        .map(|path| Ok(path.strip_prefix(root)?.to_path_buf()))
+        .collect()
+}
+
+/// Splits `directory` into its subdirectories and regular files, rejecting any other entry kind.
+fn list_directory(directory: &Path) -> Result<(Vec<PathBuf>, Vec<PathBuf>)> {
+    let entries = std::fs::read_dir(directory)
+        .with_context(|| format!("list {}", directory.display()))?
+        .map(|entry| {
+            let entry = entry?;
+            Ok((entry.path(), entry.file_type()?))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    for (path, kind) in &entries {
+        ensure!(
+            kind.is_dir() || kind.is_file(),
+            "unexpected non-file: {}",
+            path.display()
+        );
+    }
+    let (subdirectories, regular_files): (Vec<_>, Vec<_>) =
+        entries.into_iter().partition(|(_, kind)| kind.is_dir());
+    let paths = |entries: Vec<(PathBuf, _)>| entries.into_iter().map(|(path, _)| path).collect();
+    Ok((paths(subdirectories), paths(regular_files)))
 }
 
 struct TemporaryPrefix(PathBuf);

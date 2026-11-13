@@ -32,7 +32,13 @@ fn devin_replaces_generated_keys_and_only_its_exec_permission_entries() -> Resul
         }),
     )?;
 
-    sandbox.sync(ProviderId::Devin, &source, &target)?;
+    sandbox.sync(
+        ProviderId::Devin,
+        &super::SyncPaths {
+            source: &source,
+            target: &target,
+        },
+    )?;
 
     assert_eq!(
         sandbox.json("config.json")?,
@@ -59,14 +65,32 @@ fn devin_is_idempotent_and_keeps_permissions_the_source_does_not_declare() -> Re
         &json!({"permissions": {"allow": ["Exec(cargo)"], "ask": []}}),
     )?;
     let target = sandbox.path("config.json");
-    sandbox.sync(ProviderId::Devin, &source, &target)?;
+    sandbox.sync(
+        ProviderId::Devin,
+        &super::SyncPaths {
+            source: &source,
+            target: &target,
+        },
+    )?;
     let first = sandbox.text("config.json")?;
 
-    sandbox.sync(ProviderId::Devin, &source, &target)?;
+    sandbox.sync(
+        ProviderId::Devin,
+        &super::SyncPaths {
+            source: &source,
+            target: &target,
+        },
+    )?;
     assert_eq!(sandbox.text("config.json")?, first);
 
     let hooks_only = sandbox.put_json("hooks_only.json", &json!({"hooks": {}}))?;
-    sandbox.sync(ProviderId::Devin, &hooks_only, &target)?;
+    sandbox.sync(
+        ProviderId::Devin,
+        &super::SyncPaths {
+            source: &hooks_only,
+            target: &target,
+        },
+    )?;
     assert_eq!(
         sandbox.json("config.json")?["permissions"],
         json!({"allow": ["Exec(cargo)"], "ask": []}),
@@ -81,7 +105,13 @@ fn devin_rejects_a_generated_permission_list_that_is_not_an_array() -> Result<()
 
     assert!(
         sandbox
-            .sync(ProviderId::Devin, &source, &sandbox.path("config.json"))
+            .sync(
+                ProviderId::Devin,
+                &super::SyncPaths {
+                    source: &source,
+                    target: &sandbox.path("config.json")
+                }
+            )
             .is_err()
     );
     Ok(())

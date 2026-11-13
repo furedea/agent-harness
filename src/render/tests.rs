@@ -32,22 +32,27 @@ fn install_places_codex_and_claude_files_under_output_root() -> Result<()> {
         ".config/devin/config.json",
     ]
     .into_iter()
-    .filter(|relative| !out.join(relative).is_file())
+    .filter(|relative| !crate::shell::fixtures::is_file(out.join(relative)))
     .collect();
     assert!(missing_files.is_empty(), "missing files: {missing_files:?}");
-    let forbidden =
-        std::fs::read_to_string(out.join(".claude/hooks/rules/forbidden_commands.json"))?;
+    let forbidden = crate::shell::fixtures::read_to_string(
+        out.join(".claude/hooks/rules/forbidden_commands.json"),
+    )?;
     assert!(forbidden.contains("never-match-forbidden"));
-    assert!(!out.join(".claude/rules/forbidden_commands.json").exists());
-    assert!(source.join("hooks/rules/forbidden_commands.json").is_file());
-    assert!(out.join(".devin/hooks").is_dir());
+    assert!(!crate::shell::fixtures::exists(
+        out.join(".claude/rules/forbidden_commands.json")
+    ));
+    assert!(crate::shell::fixtures::is_file(
+        source.join("hooks/rules/forbidden_commands.json")
+    ));
+    assert!(crate::shell::fixtures::is_dir(out.join(".devin/hooks")));
 
-    let codex_config = std::fs::read_to_string(out.join(".codex/config.toml"))?;
+    let codex_config = crate::shell::fixtures::read_to_string(out.join(".codex/config.toml"))?;
     assert!(codex_config.contains("[permissions.guarded.filesystem]"));
     assert!(codex_config.contains("\"~/.codex/hooks/hook.sh\" = \"read\""));
     assert!(codex_config.contains("\"~/.claude/hooks/hook.sh\" = \"read\""));
 
-    std::fs::remove_dir_all(root)?;
+    crate::shell::fixtures::remove_dir_all(root)?;
     Ok(())
 }
 
@@ -63,16 +68,14 @@ fn install_accepts_read_only_command_regex_source_files() -> Result<()> {
 
     install_home(&source, &out)?;
 
-    assert!(
+    assert!(crate::shell::fixtures::is_file(
         out.join(".claude/hooks/rules/allowed_commands.json")
-            .is_file()
-    );
-    assert!(
+    ));
+    assert!(crate::shell::fixtures::is_file(
         out.join(".claude/hooks/rules/forbidden_commands.json")
-            .is_file()
-    );
+    ));
 
-    std::fs::remove_dir_all(root)?;
+    crate::shell::fixtures::remove_dir_all(root)?;
     Ok(())
 }
 
@@ -84,12 +87,12 @@ fn verify_rejects_a_missing_codex_config() -> Result<()> {
     write_minimal_source(&source)?;
     install_home(&source, &out)?;
     verify(&out)?;
-    std::fs::remove_file(out.join(".codex/config.toml"))?;
+    crate::shell::fixtures::remove_file(out.join(".codex/config.toml"))?;
 
     let error = verify(&out).unwrap_err();
 
     assert!(error.to_string().contains(".codex/config.toml"));
-    std::fs::remove_dir_all(root)?;
+    crate::shell::fixtures::remove_dir_all(root)?;
     Ok(())
 }
 
@@ -102,14 +105,14 @@ fn install_preserves_existing_files_when_source_generation_fails() -> Result<()>
     install_home(&source, &out)?;
     let before = installed_contents(&out)?;
     write_file(&source.join("AGENTS.md"), "replacement instructions\n")?;
-    std::fs::remove_file(source.join("hooks/hook.sh"))?;
+    crate::shell::fixtures::remove_file(source.join("hooks/hook.sh"))?;
     write_file(&source.join("codex/config.toml"), "invalid TOML [")?;
 
     let error = install_home(&source, &out).unwrap_err();
 
     assert!(format!("{error:#}").contains("TOML"));
     assert_eq!(installed_contents(&out)?, before);
-    std::fs::remove_dir_all(root)?;
+    crate::shell::fixtures::remove_dir_all(root)?;
     Ok(())
 }
 
@@ -127,7 +130,12 @@ fn install_home(source: &Path, out: &Path) -> Result<()> {
 fn installed_contents(root: &Path) -> Result<Vec<(PathBuf, Vec<u8>)>> {
     regular_files(root)?
         .into_iter()
-        .map(|path| Ok((path.strip_prefix(root)?.to_path_buf(), std::fs::read(path)?)))
+        .map(|path| {
+            Ok((
+                path.strip_prefix(root)?.to_path_buf(),
+                crate::shell::fixtures::read(path)?,
+            ))
+        })
         .collect()
 }
 
@@ -138,12 +146,12 @@ fn verify_rejects_required_paths_with_the_wrong_file_type() -> Result<()> {
     let out = root.join("out");
     write_minimal_source(&source)?;
     install_home(&source, &out)?;
-    let replace_with_directory = |path: &Path| std::fs::create_dir(path);
-    let replace_with_file = |path: &Path| std::fs::write(path, "not a directory");
+    let replace_with_directory = |path: &Path| crate::shell::fixtures::create_dir(path);
+    let replace_with_file = |path: &Path| crate::shell::fixtures::write(path, "not a directory");
     assert_verify_rejects(&out, ".claude/settings.json", replace_with_directory)?;
     assert_verify_rejects(&out, ".codex/skills", replace_with_file)?;
     verify(&out)?;
-    std::fs::remove_dir_all(root)?;
+    crate::shell::fixtures::remove_dir_all(root)?;
     Ok(())
 }
 
@@ -154,14 +162,15 @@ fn assert_verify_rejects(
 ) -> Result<()> {
     let path = out.join(relative);
     let backup = path.with_extension("backup");
-    std::fs::rename(&path, &backup)?;
+    crate::shell::fixtures::rename(&path, &backup)?;
     replace(&path)?;
 
     let error = verify(out).unwrap_err();
 
     assert!(error.to_string().contains(relative));
-    std::fs::remove_dir(&path).or_else(|_| std::fs::remove_file(&path))?;
-    std::fs::rename(backup, path)?;
+    crate::shell::fixtures::remove_dir(&path)
+        .or_else(|_| crate::shell::fixtures::remove_file(&path))?;
+    crate::shell::fixtures::rename(backup, path)?;
     Ok(())
 }
 
@@ -174,11 +183,11 @@ fn generate_claude_settings_writes_final_file_output() -> Result<()> {
 
     generate_claude_settings(&source, &out)?;
 
-    let content = std::fs::read_to_string(&out)?;
+    let content = crate::shell::fixtures::read_to_string(&out)?;
     assert!(content.contains(r#""hooks""#));
     assert!(content.contains(r#""permissions""#));
 
-    std::fs::remove_dir_all(root)?;
+    crate::shell::fixtures::remove_dir_all(root)?;
     Ok(())
 }
 
@@ -191,11 +200,11 @@ fn generate_codex_config_source_writes_final_file_output() -> Result<()> {
 
     generate_codex_config_source(&source, &out)?;
 
-    let content = std::fs::read_to_string(&out)?;
+    let content = crate::shell::fixtures::read_to_string(&out)?;
     assert!(content.contains("model = \"gpt-5.5\""));
     assert!(content.contains("[permissions.guarded.filesystem]"));
 
-    std::fs::remove_dir_all(root)?;
+    crate::shell::fixtures::remove_dir_all(root)?;
     Ok(())
 }
 
@@ -215,16 +224,18 @@ fn generate_skills_writes_final_directory_output() -> Result<()> {
         },
     )?;
 
-    assert!(out.join("example/SKILL.md").is_file());
+    assert!(crate::shell::fixtures::is_file(
+        out.join("example/SKILL.md")
+    ));
 
-    std::fs::remove_dir_all(root)?;
+    crate::shell::fixtures::remove_dir_all(root)?;
     Ok(())
 }
 
 fn test_root(name: &str) -> Result<PathBuf> {
     let nanos = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
     let root = std::env::temp_dir().join(format!("agent-harness-{name}-{nanos}"));
-    std::fs::create_dir_all(&root)?;
+    crate::shell::fixtures::create_dir_all(&root)?;
     Ok(root)
 }
 
@@ -310,15 +321,17 @@ fn write_minimal_source(source: &Path) -> Result<()> {
 }
 
 fn set_readonly(path: &Path) -> Result<()> {
-    let mut permissions = std::fs::metadata(path)?.permissions();
+    let mut permissions = crate::shell::fixtures::metadata(path)?.permissions();
     permissions.set_readonly(true);
-    std::fs::set_permissions(path, permissions)?;
+    crate::shell::fixtures::set_permissions(path, permissions)?;
     Ok(())
 }
 
 fn write_file(path: &Path, content: &str) -> Result<()> {
-    path.parent().map(std::fs::create_dir_all).transpose()?;
-    std::fs::write(path, content)?;
+    path.parent()
+        .map(crate::shell::fixtures::create_dir_all)
+        .transpose()?;
+    crate::shell::fixtures::write(path, content)?;
     Ok(())
 }
 
@@ -328,20 +341,21 @@ fn install_keeps_top_level_claude_settings_it_does_not_generate() -> Result<()> 
     let source = root.join("source");
     let out = root.join("out");
     write_minimal_source(&source)?;
-    std::fs::create_dir_all(out.join(".claude"))?;
-    std::fs::write(
+    crate::shell::fixtures::create_dir_all(out.join(".claude"))?;
+    crate::shell::fixtures::write(
         out.join(".claude/settings.json"),
         r#"{"model":"user-model","hooks":{"Stale":[]}}"#,
     )?;
 
     install_home(&source, &out)?;
 
-    let settings: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(out.join(".claude/settings.json"))?)?;
+    let settings: serde_json::Value = serde_json::from_str(
+        &crate::shell::fixtures::read_to_string(out.join(".claude/settings.json"))?,
+    )?;
     assert_eq!(settings["model"], "user-model");
     assert!(settings["hooks"].get("Stale").is_none());
     assert!(settings["permissions"].is_object());
-    std::fs::remove_dir_all(root)?;
+    crate::shell::fixtures::remove_dir_all(root)?;
     Ok(())
 }
 
@@ -354,8 +368,8 @@ fn install_matches_the_merge_the_home_manager_build_applies() -> Result<()> {
     let synced = root.join("synced/settings.json");
     write_minimal_source(&source)?;
     for target in [&out.join(".claude/settings.json"), &synced] {
-        std::fs::create_dir_all(target.parent().unwrap())?;
-        std::fs::write(target, r#"{"model":"user-model"}"#)?;
+        crate::shell::fixtures::create_dir_all(target.parent().unwrap())?;
+        crate::shell::fixtures::write(target, r#"{"model":"user-model"}"#)?;
     }
     generate_claude_settings(&source, &generated)?;
 
@@ -367,10 +381,10 @@ fn install_matches_the_merge_the_home_manager_build_applies() -> Result<()> {
     install_home(&source, &out)?;
 
     assert_eq!(
-        std::fs::read_to_string(out.join(".claude/settings.json"))?,
-        std::fs::read_to_string(&synced)?
+        crate::shell::fixtures::read_to_string(out.join(".claude/settings.json"))?,
+        crate::shell::fixtures::read_to_string(&synced)?
     );
-    std::fs::remove_dir_all(root)?;
+    crate::shell::fixtures::remove_dir_all(root)?;
     Ok(())
 }
 
@@ -380,17 +394,17 @@ fn install_rejects_a_source_without_hooks_and_keeps_the_installed_hooks() -> Res
     let source = root.join("source");
     let out = root.join("out");
     write_minimal_source(&source)?;
-    std::fs::create_dir_all(out.join(".claude/hooks"))?;
-    std::fs::write(out.join(".claude/hooks/installed.sh"), "installed\n")?;
-    std::fs::remove_dir_all(source.join("hooks"))?;
+    crate::shell::fixtures::create_dir_all(out.join(".claude/hooks"))?;
+    crate::shell::fixtures::write(out.join(".claude/hooks/installed.sh"), "installed\n")?;
+    crate::shell::fixtures::remove_dir_all(source.join("hooks"))?;
 
     assert!(install_home(&source, &out).is_err());
 
     assert_eq!(
-        std::fs::read_to_string(out.join(".claude/hooks/installed.sh"))?,
+        crate::shell::fixtures::read_to_string(out.join(".claude/hooks/installed.sh"))?,
         "installed\n"
     );
-    std::fs::remove_dir_all(root)?;
+    crate::shell::fixtures::remove_dir_all(root)?;
     Ok(())
 }
 
@@ -400,15 +414,15 @@ fn install_leaves_home_paths_to_the_sync_when_the_prefix_is_not_the_home() -> Re
     let source = root.join("source");
     let out = root.join("out");
     write_minimal_source(&source)?;
-    std::fs::write(
+    crate::shell::fixtures::write(
         source.join("claude/settings.json"),
         r#"{"sandbox":{"excludedCommands":["~/.local/bin/tool *"]}}"#,
     )?;
 
     install_home(&source, &out)?;
 
-    let settings = std::fs::read_to_string(out.join(".claude/settings.json"))?;
+    let settings = crate::shell::fixtures::read_to_string(out.join(".claude/settings.json"))?;
     assert!(settings.contains("\"~/.local/bin/tool *\""));
-    std::fs::remove_dir_all(root)?;
+    crate::shell::fixtures::remove_dir_all(root)?;
     Ok(())
 }

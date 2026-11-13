@@ -1,3 +1,8 @@
+#![allow(
+    clippy::disallowed_methods,
+    reason = "unit tests build fixtures on disk and spawn helper processes"
+)]
+
 use std::path::PathBuf;
 
 use super::*;

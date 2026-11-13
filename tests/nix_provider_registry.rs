@@ -3,24 +3,45 @@
 //! The test renders the JSON from `PROVIDERS` and fails when the committed file differs.
 //! Regenerate it with `UPDATE_PROVIDERS_JSON=1 cargo test --test nix_provider_registry`.
 
+#![allow(
+    clippy::disallowed_methods,
+    clippy::disallowed_types,
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    reason = "integration tests build fixtures on disk and fail fast on any error"
+)]
+
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
 use serde_json::{Map, Value, json};
 
-#[allow(dead_code)]
+#[allow(
+    dead_code,
+    reason = "the registry sources are included whole but only part is used here"
+)]
 #[path = "../src/provider/id.rs"]
 mod id;
 
-#[allow(dead_code)]
+#[allow(
+    dead_code,
+    reason = "the registry sources are included whole but only part is used here"
+)]
 #[path = "../src/provider/ownership.rs"]
 mod ownership;
 
-#[allow(dead_code)]
+#[allow(
+    dead_code,
+    reason = "the registry sources are included whole but only part is used here"
+)]
 #[path = "../src/provider/registry.rs"]
 mod registry;
 
-#[allow(dead_code)]
+#[allow(
+    dead_code,
+    reason = "the registry sources are included whole but only part is used here"
+)]
 #[path = "../src/provider/spec.rs"]
 mod spec;
 
@@ -104,10 +125,13 @@ fn linked_destinations(spec: &ProviderSpec) -> BTreeSet<&'static str> {
 
 fn bridge_destinations(spec: &ProviderSpec) -> BTreeSet<&'static str> {
     let bridge = spec.hook.bridge;
-    for asset in bridge.assets {
-        if let Some(directory) = bridge.directory {
-            assert!(asset.destination.starts_with(&format!("{directory}/")));
-        }
+    if let Some(directory) = bridge.directory {
+        assert!(
+            bridge
+                .assets
+                .iter()
+                .all(|asset| asset.destination.starts_with(&format!("{directory}/")))
+        );
     }
     bridge
         .assets

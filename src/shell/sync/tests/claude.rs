@@ -23,7 +23,13 @@ fn claude_replaces_generated_top_level_keys_and_keeps_the_rest() -> Result<()> {
         }),
     )?;
 
-    sandbox.sync(ProviderId::Claude, &source, &target)?;
+    sandbox.sync(
+        ProviderId::Claude,
+        &super::SyncPaths {
+            source: &source,
+            target: &target,
+        },
+    )?;
 
     assert_eq!(
         sandbox.json("settings.json")?,
@@ -44,8 +50,10 @@ fn claude_creates_a_missing_target_with_every_generated_key() -> Result<()> {
 
     sandbox.sync(
         ProviderId::Claude,
-        &source,
-        &sandbox.path("home/settings.json"),
+        &super::SyncPaths {
+            source: &source,
+            target: &sandbox.path("home/settings.json"),
+        },
     )?;
 
     assert_eq!(sandbox.json("home/settings.json")?, generated);
@@ -67,7 +75,13 @@ fn claude_expands_leading_home_prefixes_of_excluded_commands_only() -> Result<()
     )?;
     let target = sandbox.path("settings.json");
 
-    sandbox.sync(ProviderId::Claude, &source, &target)?;
+    sandbox.sync(
+        ProviderId::Claude,
+        &super::SyncPaths {
+            source: &source,
+            target: &target,
+        },
+    )?;
 
     let home = sandbox.root.display();
     assert_eq!(
@@ -89,7 +103,17 @@ fn claude_rejects_a_target_that_is_not_an_object() -> Result<()> {
     let source = sandbox.put_json("generated.json", &json!({"hooks": {}}))?;
     let target = sandbox.put("settings.json", "[]")?;
 
-    assert!(sandbox.sync(ProviderId::Claude, &source, &target).is_err());
+    assert!(
+        sandbox
+            .sync(
+                ProviderId::Claude,
+                &super::SyncPaths {
+                    source: &source,
+                    target: &target
+                }
+            )
+            .is_err()
+    );
     assert_eq!(sandbox.text("settings.json")?, "[]");
     Ok(())
 }

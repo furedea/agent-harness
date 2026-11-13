@@ -37,7 +37,7 @@ jobs:
         uses: furedea/reusable-workflows/.github/actions/nix-setup@2ae953294b9a805d0705657adc1d9d4f1bc1f646 # v1.3.0
 
       - name: Run clippy
-        run: cargo clippy -- -D warnings
+        run: cargo clippy --all-targets -- -D warnings
 
   format:
     runs-on: ubuntu-latest
