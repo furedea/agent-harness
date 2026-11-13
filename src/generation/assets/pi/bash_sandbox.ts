@@ -122,7 +122,8 @@ function gitCommonDir(cwd: string): string | undefined {
 function gitRoot(cwd: string): string {
 	try {
 		const out = execFileSync("git", ["rev-parse", "--show-toplevel"], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
-		return canonical(out.trim());
+		// Drop only git's terminating newline: a directory name may end in whitespace.
+		return canonical(out.replace(/\n$/, ""));
 	} catch {
 		return cwd;
 	}

@@ -181,10 +181,11 @@ fn is_single_segment_name(relative: &str) -> bool {
 fn ensure_unambiguous(pattern: &PathPattern) -> Result<()> {
     let text = pattern.as_str();
     let body = text.trim_end_matches('/');
+    let suggestion = body.strip_prefix("./").unwrap_or(body);
     let is_anchored_elsewhere = text.starts_with('/') || text.starts_with("~/") || body == "~";
     ensure!(
         is_anchored_elsewhere || !body.contains('/') || body.starts_with("**/"),
-        "secret path pattern {text:?} is ambiguous: gitignore and Codex anchor it at the repository root, srt matches it at any depth, and Claude anchors it at the working directory; write \"**/{body}\" to match at any depth"
+        "secret path pattern {text:?} is ambiguous: gitignore and Codex anchor it at the repository root, srt matches it at any depth, and Claude anchors it at the working directory; write \"**/{suggestion}\" to match at any depth"
     );
     Ok(())
 }
@@ -324,6 +325,7 @@ mod tests {
                 "{pattern}: {error}"
             );
             assert!(error.contains("**/"), "{pattern}: {error}");
+            assert!(!error.contains("**/./"), "{pattern}: {error}");
 
             crate::shell::fixtures::remove_dir_all(root)?;
         }
