@@ -336,18 +336,20 @@ mod tests {
                 .map(|spec| hook(spec.id, "event", "*"))
                 .collect(),
         };
-        for spec in PROVIDERS {
-            assert!(
-                inventory
-                    .summary()
-                    .contains(&format!("{} hook events", spec.display_name))
-            );
-            assert!(
-                inventory
-                    .hooks(None)
-                    .contains(&format!("\n{}\n", spec.display_name))
-            );
-        }
+        assert!(
+            PROVIDERS
+                .iter()
+                .all(|spec| lists_provider(&inventory, spec.display_name))
+        );
+    }
+
+    fn lists_provider(inventory: &Inventory, display_name: &str) -> bool {
+        inventory
+            .summary()
+            .contains(&format!("{display_name} hook events"))
+            && inventory
+                .hooks(None)
+                .contains(&format!("\n{display_name}\n"))
     }
 
     fn shortened_adapter_command(provider_dir: &str) -> String {
@@ -359,8 +361,10 @@ mod tests {
     #[test]
     fn hook_commands_drop_the_provider_hooks_directory() {
         let expected = "hook_adapter.py shell forbidden";
-        for spec in PROVIDERS {
-            assert_eq!(shortened_adapter_command(spec.home_dir), expected);
-        }
+        assert!(
+            PROVIDERS
+                .iter()
+                .all(|spec| shortened_adapter_command(spec.home_dir) == expected)
+        );
     }
 }

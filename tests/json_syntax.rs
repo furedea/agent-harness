@@ -1,3 +1,12 @@
+#![allow(
+    clippy::disallowed_methods,
+    clippy::disallowed_types,
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    reason = "integration tests build fixtures on disk and fail fast on any error"
+)]
+
 use std::path::{Path, PathBuf};
 
 #[test]

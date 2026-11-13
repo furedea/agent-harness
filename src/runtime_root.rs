@@ -115,6 +115,10 @@ fn double_quote_escape(value: &str) -> String {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::disallowed_methods,
+    reason = "the test spawns a shell to observe the exported root"
+)]
 mod tests {
     use super::*;
 

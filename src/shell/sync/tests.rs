@@ -3,7 +3,12 @@
 //! These pin the observable result of `sync` per provider, so the ownership each provider
 //! declares can be checked against what the harness has always done.
 
-use std::path::{Path, PathBuf};
+#![allow(
+    clippy::disallowed_methods,
+    reason = "unit tests build fixtures on disk and spawn helper processes"
+)]
+
+use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::Result;
@@ -31,9 +36,7 @@ impl Sandbox {
 
     pub(super) fn put(&self, name: &str, content: &str) -> Result<PathBuf> {
         let path = self.path(name);
-        if let Some(parent) = path.parent() {
-            create_dir_all(parent)?;
-        }
+        path.parent().map(create_dir_all).transpose()?;
         write(&path, content)?;
         Ok(path)
     }
@@ -42,8 +45,8 @@ impl Sandbox {
         self.put(name, &serde_json::to_string(value)?)
     }
 
-    pub(super) fn sync(&self, provider: ProviderId, source: &Path, target: &Path) -> Result<()> {
-        sync(provider.spec(), &SyncPaths { source, target }, &self.root)
+    pub(super) fn sync(&self, provider: ProviderId, paths: &SyncPaths<'_>) -> Result<()> {
+        sync(provider.spec(), paths, &self.root)
     }
 
     pub(super) fn json(&self, name: &str) -> Result<Value> {

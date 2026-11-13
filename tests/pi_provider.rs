@@ -1,3 +1,12 @@
+#![allow(
+    clippy::disallowed_methods,
+    clippy::disallowed_types,
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    reason = "integration tests build fixtures on disk and fail fast on any error"
+)]
+
 use anyhow::Result;
 use serde_json::{Value, json};
 use std::{path::Path, process::Command};
@@ -180,17 +189,30 @@ fn assert_synced_settings(source: &Path, target: &Path, expected: &Value) -> Res
 }
 
 fn installed_srt_policy(root: &Path, sockets: &[&str]) -> Result<Value> {
-    installed_srt_policy_with(root, sockets, &["~/.ssh"], None)
+    installed_srt_policy_with(
+        root,
+        &SandboxSource {
+            sockets,
+            deny_read: &["~/.ssh"],
+            secret_rule: None,
+        },
+    )
 }
 
-/// Installs with `source_deny_read` in the Claude sandbox and, when given, one secret path rule
-/// `(pattern, access)` in place of the fixture's.
-fn installed_srt_policy_with(
-    root: &Path,
-    sockets: &[&str],
-    source_deny_read: &[&str],
-    secret_rule: Option<(&str, &str)>,
-) -> Result<Value> {
+/// What the Claude source declares for the sandbox: the unix sockets, `denyRead`, and, when
+/// given, one secret path rule `(pattern, access)` in place of the fixture's.
+struct SandboxSource<'a> {
+    sockets: &'a [&'a str],
+    deny_read: &'a [&'a str],
+    secret_rule: Option<(&'a str, &'a str)>,
+}
+
+fn installed_srt_policy_with(root: &Path, sandbox: &SandboxSource<'_>) -> Result<Value> {
+    let SandboxSource {
+        sockets,
+        deny_read: source_deny_read,
+        secret_rule,
+    } = *sandbox;
     let source = root.join("source");
     std::fs::create_dir_all(&source)?;
     assert!(
@@ -294,7 +316,14 @@ fn pi_srt_policy_lists_the_nix_socket_once_when_the_source_has_it() -> Result<()
 #[test]
 fn pi_srt_policy_lists_a_read_denied_path_once_when_the_source_has_it() -> Result<()> {
     let root = std::env::temp_dir().join(format!("pi-sandbox-denyread-{}", std::process::id()));
-    let policy = installed_srt_policy_with(&root, &[], &["**/secrets/**"], None)?;
+    let policy = installed_srt_policy_with(
+        &root,
+        &SandboxSource {
+            sockets: &[],
+            deny_read: &["**/secrets/**"],
+            secret_rule: None,
+        },
+    )?;
     let deny_read = policy["filesystem"]["denyRead"].as_array().unwrap();
     assert_eq!(
         deny_read
@@ -310,7 +339,14 @@ fn pi_srt_policy_lists_a_read_denied_path_once_when_the_source_has_it() -> Resul
 #[test]
 fn pi_srt_policy_omits_write_only_secret_rules() -> Result<()> {
     let root = std::env::temp_dir().join(format!("pi-sandbox-writeonly-{}", std::process::id()));
-    let policy = installed_srt_policy_with(&root, &[], &[], Some(("**/audit/**", "write")))?;
+    let policy = installed_srt_policy_with(
+        &root,
+        &SandboxSource {
+            sockets: &[],
+            deny_read: &[],
+            secret_rule: Some(("**/audit/**", "write")),
+        },
+    )?;
     let deny_read = policy["filesystem"]["denyRead"].as_array().unwrap();
     assert!(!deny_read.iter().any(|path| path == &json!("**/audit/**")));
     std::fs::remove_dir_all(root)?;

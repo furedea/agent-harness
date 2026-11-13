@@ -285,8 +285,8 @@ mod tests {
     }
 
     #[test]
-    fn srt_rejects_patterns_it_would_read_differently() -> Result<()> {
-        for pattern in [
+    fn srt_rejects_patterns_it_would_read_differently() {
+        [
             "a/{b,c}",
             "/project/x",
             "a/../b",
@@ -297,39 +297,44 @@ mod tests {
             "//opt*/keys/**",
             "keys/[!a]*",
             "[^a-z].env",
-        ] {
-            let error = srt_path(pattern).unwrap_err().to_string();
+        ]
+        .into_iter()
+        .for_each(assert_srt_rejects);
+    }
 
-            assert!(
-                error.contains(&format!("{:?}", pattern.trim_end_matches('/'))),
-                "{pattern}: {error}"
-            );
-        }
-        Ok(())
+    fn assert_srt_rejects(pattern: &str) {
+        let error = srt_path(pattern).unwrap_err().to_string();
+
+        assert!(
+            error.contains(&format!("{:?}", pattern.trim_end_matches('/'))),
+            "{pattern}: {error}"
+        );
     }
 
     #[test]
     fn ambiguous_relative_patterns_are_rejected_when_the_policy_is_loaded() -> Result<()> {
-        for pattern in ["secrets/**", "config/x.json", "./secrets/**", "src/keys/*"] {
-            let root = test_root("ambiguous_relative_patterns_are_rejected")?;
-            write_policy(
-                &root,
-                &format!(
-                    r#"{{"version":1,"rules":[{{"pattern":"{pattern}","access":["read"]}}]}}"#
-                ),
-            )?;
+        ["secrets/**", "config/x.json", "./secrets/**", "src/keys/*"]
+            .into_iter()
+            .try_for_each(assert_ambiguous_pattern_rejected)
+    }
 
-            let error = format!("{:#}", load_source(&root).unwrap_err());
+    fn assert_ambiguous_pattern_rejected(pattern: &str) -> Result<()> {
+        let root = test_root("ambiguous_relative_patterns_are_rejected")?;
+        write_policy(
+            &root,
+            &format!(r#"{{"version":1,"rules":[{{"pattern":"{pattern}","access":["read"]}}]}}"#),
+        )?;
 
-            assert!(
-                error.contains(&format!("{pattern:?}")),
-                "{pattern}: {error}"
-            );
-            assert!(error.contains("**/"), "{pattern}: {error}");
-            assert!(!error.contains("**/./"), "{pattern}: {error}");
+        let error = format!("{:#}", load_source(&root).unwrap_err());
 
-            crate::shell::fixtures::remove_dir_all(root)?;
-        }
+        assert!(
+            error.contains(&format!("{pattern:?}")),
+            "{pattern}: {error}"
+        );
+        assert!(error.contains("**/"), "{pattern}: {error}");
+        assert!(!error.contains("**/./"), "{pattern}: {error}");
+
+        crate::shell::fixtures::remove_dir_all(root)?;
         Ok(())
     }
 

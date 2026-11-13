@@ -24,7 +24,7 @@ fn write_claude_hooks_reads_shared_hook_config() -> Result<()> {
         ProviderId::Claude.spec(),
     )?;
 
-    let hooks: Value = serde_json::from_str(&std::fs::read_to_string(&output)?)?;
+    let hooks: Value = serde_json::from_str(&crate::shell::fixtures::read_to_string(&output)?)?;
     assert_eq!(
         hooks["PreToolUse"][0]["hooks"][0]["command"].as_str(),
         Some("$HOME/.claude/hooks/guard_forbidden_commands.sh"),
@@ -46,7 +46,7 @@ fn write_codex_hooks_reads_shared_hook_config() -> Result<()> {
         ProviderId::Codex.spec(),
     )?;
 
-    let hooks: Value = serde_json::from_str(&std::fs::read_to_string(&output)?)?;
+    let hooks: Value = serde_json::from_str(&crate::shell::fixtures::read_to_string(&output)?)?;
     assert_eq!(
         hooks["hooks"]["PreToolUse"][0]["matcher"].as_str(),
         Some("^(Bash|exec_command|functions\\.exec_command)$"),
@@ -69,7 +69,7 @@ fn write_devin_hooks_renders_the_devin_section_as_a_config_fragment() -> Result<
         ProviderId::Devin.spec(),
     )?;
 
-    let hooks: Value = serde_json::from_str(&std::fs::read_to_string(&output)?)?;
+    let hooks: Value = serde_json::from_str(&crate::shell::fixtures::read_to_string(&output)?)?;
     assert_eq!(
         hooks["hooks"]["PreToolUse"][0]["matcher"].as_str(),
         Some("exec"),
@@ -96,7 +96,7 @@ fn write_devin_hooks_includes_command_permissions() -> Result<()> {
         ProviderId::Devin.spec(),
     )?;
 
-    let config: Value = serde_json::from_str(&std::fs::read_to_string(&output)?)?;
+    let config: Value = serde_json::from_str(&crate::shell::fixtures::read_to_string(&output)?)?;
     assert_eq!(
         config["permissions"],
         serde_json::json!({
@@ -126,7 +126,7 @@ fn write_devin_hooks_emits_empty_hooks_when_the_section_is_missing() -> Result<(
         ProviderId::Devin.spec(),
     )?;
 
-    let hooks: Value = serde_json::from_str(&std::fs::read_to_string(&output)?)?;
+    let hooks: Value = serde_json::from_str(&crate::shell::fixtures::read_to_string(&output)?)?;
     assert_eq!(hooks["hooks"], serde_json::json!({}));
 
     crate::shell::fixtures::remove_dir_all(root)?;

@@ -274,7 +274,7 @@ mod tests {
         write_forbidden_commands(&root, &generated_path)?;
 
         let generated: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(&generated_path)?)?;
+            serde_json::from_str(&crate::shell::fixtures::read_to_string(&generated_path)?)?;
         assert_eq!(generated, source);
 
         crate::shell::fixtures::remove_dir_all(root)?;

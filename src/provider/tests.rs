@@ -1,3 +1,8 @@
+#![allow(
+    clippy::disallowed_methods,
+    reason = "unit tests build fixtures on disk and spawn helper processes"
+)]
+
 use super::spec::{
     Asset, Bridge, BundleCapture, CommandRuleSpec, ConfigFormat, ConfigLocation, ConfigSpec,
     EntryMatch, HookFormat, HookRegistration, HookSection, HookSpec, KeyScope, Ownership,
@@ -88,18 +93,16 @@ fn extra_spec_flows_through_layout_protection_rendering_and_publication() -> Res
             .contains(&(source.join("hooks"), staging.path().join(".example/hooks")))
     );
     let protected = protection::protected_paths_for_providers(context, &providers)?;
-    for path in [
-        "~/.example/hooks/guard.sh",
-        "~/.example/bridge/nested/entry.txt",
-        "~/.example/hooks.json",
-        "~/.example/AGENTS.md",
-        "~/.example/managed.yaml",
-    ] {
-        assert!(
-            protected.iter().any(|entry| entry == path),
-            "missing protection: {path}"
-        );
-    }
+    assert_protected(
+        &protected,
+        &[
+            "~/.example/hooks/guard.sh",
+            "~/.example/bridge/nested/entry.txt",
+            "~/.example/hooks.json",
+            "~/.example/AGENTS.md",
+            "~/.example/managed.yaml",
+        ],
+    );
     assert_eq!(
         shorten_hook_path_for("$HOME/.example/hooks/guard.sh", &providers),
         "guard.sh"
@@ -112,12 +115,7 @@ fn extra_spec_flows_through_layout_protection_rendering_and_publication() -> Res
         runtime_root: &runtime_root,
     };
     render::render_installation_for(&request, staging.path(), &providers)?;
-    let policy = std::fs::read_to_string(
-        staging
-            .path()
-            .join(".claude/hooks/rules/protected_paths.json"),
-    )?;
-    assert!(policy.contains("~/.example/bridge/nested/entry.txt"));
+    assert_policy_protects_bridge(staging.path())?;
     let plan = install_plan::plan_install_for(
         &layout,
         &InstalledLayout::new(destination.path()),
@@ -125,21 +123,41 @@ fn extra_spec_flows_through_layout_protection_rendering_and_publication() -> Res
     );
     crate::shell::execute(&plan)?;
     for root in [staging.path(), destination.path()] {
-        for path in [
-            ".example/hooks/guard.sh",
-            ".example/hooks.json",
-            ".example/bridge/nested/entry.txt",
-            ".example/AGENTS.md",
-            ".example/skills/example-skill/SKILL.md",
-            ".example/managed.yaml",
-        ] {
-            assert!(root.join(path).is_file(), "missing file: {path}");
-        }
-        assert_eq!(
-            std::fs::read(root.join(".example/bridge/nested/entry.txt"))?,
-            b"example bridge\n"
+        assert_example_published(root)?;
+    }
+    Ok(())
+}
+
+fn assert_policy_protects_bridge(staging: &Path) -> Result<()> {
+    let policy = std::fs::read_to_string(staging.join(".claude/hooks/rules/protected_paths.json"))?;
+    assert!(policy.contains("~/.example/bridge/nested/entry.txt"));
+    Ok(())
+}
+
+fn assert_protected(protected: &[String], expected: &[&str]) {
+    for path in expected {
+        assert!(
+            protected.iter().any(|entry| entry == path),
+            "missing protection: {path}"
         );
     }
+}
+
+fn assert_example_published(root: &Path) -> Result<()> {
+    for path in [
+        ".example/hooks/guard.sh",
+        ".example/hooks.json",
+        ".example/bridge/nested/entry.txt",
+        ".example/AGENTS.md",
+        ".example/skills/example-skill/SKILL.md",
+        ".example/managed.yaml",
+    ] {
+        assert!(root.join(path).is_file(), "missing file: {path}");
+    }
+    assert_eq!(
+        std::fs::read(root.join(".example/bridge/nested/entry.txt"))?,
+        b"example bridge\n"
+    );
     Ok(())
 }
 
@@ -267,12 +285,16 @@ fn a_claim_never_overlaps_another_claim_of_the_same_config() {
     for spec in PROVIDERS {
         let claims = spec.config.unwrap().sync.ownership;
         let paths: Vec<_> = claims.iter().filter_map(claim_path).collect();
-        for (index, path) in paths.iter().enumerate() {
-            let overlaps = paths[index + 1..]
-                .iter()
-                .any(|other| path.starts_with(other) || other.starts_with(path));
-            assert!(!overlaps, "{} claims {path:?} twice", spec.key);
-        }
+        assert_no_overlap(spec.key, &paths);
+    }
+}
+
+fn assert_no_overlap(key: &str, paths: &[&[&str]]) {
+    for (index, path) in paths.iter().enumerate() {
+        let overlaps = paths[index + 1..]
+            .iter()
+            .any(|other| path.starts_with(other) || other.starts_with(path));
+        assert!(!overlaps, "{key} claims {path:?} twice");
     }
 }
 
@@ -401,16 +423,16 @@ fn rendering_writes_command_rules_where_the_provider_declares_them() -> Result<(
     crate::shell::execute(&renderer.render(&codex_elsewhere)?)?;
     assert!(out.path().join(".codex/rules/elsewhere.rules").is_file());
     assert!(!out.path().join(".codex/rules/default.rules").exists());
-    let rendered = crate::shell::TemporaryDirectory::create()?;
+    let rules_out = crate::shell::TemporaryDirectory::create()?;
     let without_rules = ProviderRenderer {
-        out: rendered.path(),
+        out: rules_out.path(),
         ..renderer
     }
     .render(&codex_without_rules)?;
     assert!(without_rules.iter().all(|operation| {
         !operation
             .target()
-            .starts_with(rendered.path().join(".codex/rules"))
+            .starts_with(rules_out.path().join(".codex/rules"))
     }));
     Ok(())
 }
@@ -431,7 +453,7 @@ fn installed_layout_derives_sync_targets_from_the_registry() {
         layout
             .generated_files_for("other", PROVIDERS)
             .last()
-            .map(|p| p.to_owned()),
+            .cloned(),
         Some(PathBuf::from(".dsh/profiles/other/package.json"))
     );
 }

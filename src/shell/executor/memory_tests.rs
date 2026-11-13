@@ -44,11 +44,10 @@ impl MemoryFileSystem {
         Ok(())
     }
 
-    fn write_file(&self, target: &Path, content: &[u8]) -> Result<()> {
+    fn write_file(&self, target: &Path, content: &[u8]) {
         self.files
             .borrow_mut()
             .insert(target.to_owned(), content.to_vec());
-        Ok(())
     }
 
     fn relocate(&self, from: &Path, to: &Path) {
@@ -102,10 +101,9 @@ impl FileSystem for MemoryFileSystem {
     }
 
     fn remove_created(&self, created: &[PathBuf]) {
-        let mut directories = self.directories.borrow_mut();
-        created.iter().for_each(|directory| {
-            directories.remove(directory);
-        });
+        self.directories
+            .borrow_mut()
+            .retain(|directory| !created.contains(directory));
     }
 
     fn stage_directory(&self, source: &Path, target: &Path) -> Result<PathBuf> {
@@ -120,31 +118,34 @@ impl FileSystem for MemoryFileSystem {
     fn stage_file(&self, target: &Path, file: &NewFile<'_>) -> Result<PathBuf> {
         self.check_failure(FailureMode::Stage, target)?;
         let staged = PathBuf::from("staged").join(target);
-        self.write_file(&staged, file.content)?;
+        self.write_file(&staged, file.content);
         Ok(staged)
     }
 
     fn stage_copy(&self, source: &Path, target: &Path) -> Result<PathBuf> {
         self.check_failure(FailureMode::Stage, target)?;
         let staged = PathBuf::from("staged").join(target);
-        self.write_file(&staged, &self.read_file(source)?)?;
+        self.write_file(&staged, &self.read_file(source)?);
         Ok(staged)
     }
 
     fn stage_tree(&self, target: &Path, contents: &[FileOp]) -> Result<PathBuf> {
         self.check_failure(FailureMode::Stage, target)?;
         let staged = PathBuf::from("staged").join(target);
-        for operation in contents {
-            if let FileOp::WriteFile {
-                target, content, ..
-            } = operation
-            {
-                self.write_file(
-                    &staged.join(target.strip_prefix(operation.target())?),
-                    content,
-                )?;
-            }
-        }
+        let writes = contents
+            .iter()
+            .filter_map(|operation| match operation {
+                FileOp::WriteFile {
+                    target, content, ..
+                } => Some(
+                    target
+                        .strip_prefix(operation.target())
+                        .map(|relative| (staged.join(relative), content)),
+                ),
+                _ => None,
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        write_all(self, &writes);
         Ok(staged)
     }
 
@@ -152,9 +153,7 @@ impl FileSystem for MemoryFileSystem {
         self.check_failure(FailureMode::Swap, target)?;
         let backup = PathBuf::from("backup").join(target);
         let existed = self.has_files_under(target);
-        if existed {
-            self.relocate(target, &backup);
-        }
+        self.relocate(target, &backup);
         self.relocate(staged, target);
         Ok(existed.then_some(backup))
     }
@@ -164,9 +163,7 @@ impl FileSystem for MemoryFileSystem {
         self.files
             .borrow_mut()
             .retain(|path, _| !path.starts_with(target));
-        if let Some(backup) = backup {
-            self.relocate(backup, target);
-        }
+        relocate_backup(self, backup, target);
         Ok(())
     }
 
@@ -184,20 +181,20 @@ fn install_replaces_managed_trees_and_preserves_user_files() -> Result<()> {
     let rendered = InstalledLayout::new(Path::new("staging"));
     let installed = InstalledLayout::new(Path::new("home"));
     for path in rendered.managed_files_for(crate::provider::spec::PROVIDERS) {
-        fs.write_file(&path, b"generated\n")?;
+        fs.write_file(&path, b"generated\n");
     }
     for directory in rendered.managed_directories_for(crate::provider::spec::PROVIDERS) {
-        fs.write_file(&directory.join("keep"), b"keep\n")?;
+        fs.write_file(&directory.join("keep"), b"keep\n");
     }
     fs.write_file(
         Path::new("staging/.hermes/plugins/agent-harness-hooks/plugin.yaml"),
         b"plugin\n",
-    )?;
+    );
     fs.write_file(
         Path::new("home/.hermes/plugins/agent-harness-hooks/stale"),
         b"stale",
-    )?;
-    fs.write_file(Path::new("home/.hermes/config.yaml"), b"user\n")?;
+    );
+    fs.write_file(Path::new("home/.hermes/config.yaml"), b"user\n");
     let before = fs.files.borrow().clone();
     let plan = plan_install(&rendered, &installed);
     assert_eq!(*fs.files.borrow(), before);
@@ -279,24 +276,36 @@ fn relocated_files(
         .collect()
 }
 
-fn installed_state() -> Result<(MemoryFileSystem, Vec<FileOp>)> {
+fn write_all(fs: &MemoryFileSystem, writes: &[(PathBuf, &Vec<u8>)]) {
+    for (path, content) in writes {
+        fs.write_file(path, content);
+    }
+}
+
+fn relocate_backup(fs: &MemoryFileSystem, backup: Option<&Path>, target: &Path) {
+    if let Some(backup) = backup {
+        fs.relocate(backup, target);
+    }
+}
+
+fn installed_state() -> (MemoryFileSystem, Vec<FileOp>) {
     let fs = MemoryFileSystem::default();
     let rendered = InstalledLayout::new(Path::new("staging"));
     let installed = InstalledLayout::new(Path::new("home"));
     for path in rendered.managed_files_for(crate::provider::spec::PROVIDERS) {
-        fs.write_file(&path, b"generated\n")?;
+        fs.write_file(&path, b"generated\n");
     }
     for directory in rendered.managed_directories_for(crate::provider::spec::PROVIDERS) {
-        fs.write_file(&directory.join("keep"), b"keep\n")?;
+        fs.write_file(&directory.join("keep"), b"keep\n");
     }
-    fs.write_file(Path::new("home/.claude/hooks/old.sh"), b"old\n")?;
-    fs.write_file(Path::new("home/.claude/CLAUDE.md"), b"old instructions\n")?;
-    Ok((fs, plan_install(&rendered, &installed)))
+    fs.write_file(Path::new("home/.claude/hooks/old.sh"), b"old\n");
+    fs.write_file(Path::new("home/.claude/CLAUDE.md"), b"old instructions\n");
+    (fs, plan_install(&rendered, &installed))
 }
 
 #[test]
-fn a_failure_midway_restores_every_installed_path() -> Result<()> {
-    let (fs, plan) = installed_state()?;
+fn a_failure_midway_restores_every_installed_path() {
+    let (fs, plan) = installed_state();
     fs.fail(FailureMode::Swap, "home/.codex/hooks.json");
     let before = fs.snapshot_under("home");
 
@@ -306,12 +315,11 @@ fn a_failure_midway_restores_every_installed_path() -> Result<()> {
     assert!(fs.snapshot_under("backup").is_empty());
     assert!(fs.snapshot_under("staged").is_empty());
     assert!(fs.directories.borrow().is_empty());
-    Ok(())
 }
 
 #[test]
-fn a_failure_while_staging_leaves_every_live_path_untouched() -> Result<()> {
-    let (fs, plan) = installed_state()?;
+fn a_failure_while_staging_leaves_every_live_path_untouched() {
+    let (fs, plan) = installed_state();
     fs.fail(FailureMode::Stage, "home/.codex/hooks.json");
     let before = fs.snapshot_under("home");
 
@@ -320,12 +328,11 @@ fn a_failure_while_staging_leaves_every_live_path_untouched() -> Result<()> {
     assert_eq!(fs.snapshot_under("home"), before);
     assert!(fs.snapshot_under("staged").is_empty());
     assert!(fs.directories.borrow().is_empty());
-    Ok(())
 }
 
 #[test]
 fn rollback_restores_the_remaining_paths_when_one_restore_fails() -> Result<()> {
-    let (fs, plan) = installed_state()?;
+    let (fs, plan) = installed_state();
     let first = plan.first().context("empty plan")?.target();
     let last = plan.last().context("empty plan")?.target();
     fs.fail(FailureMode::Swap, &last.to_string_lossy());
@@ -349,7 +356,7 @@ fn rollback_restores_the_remaining_paths_when_one_restore_fails() -> Result<()> 
 #[test]
 fn a_missing_source_directory_keeps_the_installed_directory() -> Result<()> {
     let fs = MemoryFileSystem::default();
-    fs.write_file(Path::new("home/.claude/hooks/old.sh"), b"old\n")?;
+    fs.write_file(Path::new("home/.claude/hooks/old.sh"), b"old\n");
     let plan = vec![FileOp::CopyTree {
         source: "staging/.claude/hooks".into(),
         target: "home/.claude/hooks".into(),

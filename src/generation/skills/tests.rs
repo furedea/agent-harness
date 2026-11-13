@@ -48,10 +48,12 @@ fn render_claude_skill_applies_frontmatter_overrides() -> Result<()> {
         },
     )?;
 
-    let content = std::fs::read_to_string(out.join("custom-command/SKILL.md"))?;
+    let content = crate::shell::fixtures::read_to_string(out.join("custom-command/SKILL.md"))?;
     assert!(content.contains("argument-hint: \"{direct | pr-per-feature}\""));
     assert!(content.contains("disable-model-invocation: true"));
-    assert!(!out.join("custom-command/agents/openai.yaml").exists());
+    assert!(!crate::shell::fixtures::exists(
+        out.join("custom-command/agents/openai.yaml")
+    ));
 
     crate::shell::fixtures::remove_dir_all(root)?;
     Ok(())
@@ -88,10 +90,10 @@ fn render_codex_skill_writes_explicit_only_metadata() -> Result<()> {
         },
     )?;
 
-    let content = std::fs::read_to_string(out.join("custom-command/SKILL.md"))?;
+    let content = crate::shell::fixtures::read_to_string(out.join("custom-command/SKILL.md"))?;
     assert!(!content.contains("disable-model-invocation"));
     assert_eq!(
-        std::fs::read_to_string(out.join("custom-command/agents/openai.yaml"))?,
+        crate::shell::fixtures::read_to_string(out.join("custom-command/agents/openai.yaml"))?,
         "policy:\n  allow_implicit_invocation: false\n",
     );
 
@@ -124,11 +126,11 @@ fn render_skills_copies_an_external_skill_directory_verbatim() -> Result<()> {
     )?;
 
     assert_eq!(
-        std::fs::read_to_string(out.join("herdr/SKILL.md"))?,
+        crate::shell::fixtures::read_to_string(out.join("herdr/SKILL.md"))?,
         external_skill_content,
     );
     assert_eq!(
-        std::fs::read_to_string(out.join("herdr/references/commands.md"))?,
+        crate::shell::fixtures::read_to_string(out.join("herdr/references/commands.md"))?,
         "Upstream commands\n",
     );
 
@@ -245,7 +247,7 @@ fn render_skills_preserves_installed_skills_when_a_source_is_invalid() -> Result
 
     assert!(format!("{error:#}").contains("frontmatter"));
     assert_eq!(
-        std::fs::read_to_string(out.join("existing/SKILL.md"))?,
+        crate::shell::fixtures::read_to_string(out.join("existing/SKILL.md"))?,
         "installed skill\n",
     );
     crate::shell::fixtures::remove_dir_all(root)?;
@@ -260,7 +262,7 @@ fn render_skills_rejects_an_external_skill_with_only_a_symlinked_skill_file() ->
     let real_skill = root.join("upstream.md");
     write_file(&real_skill, "upstream skill\n")?;
     crate::shell::fixtures::create_dir(&external)?;
-    std::os::unix::fs::symlink(real_skill, external.join("SKILL.md"))?;
+    crate::shell::fixtures::symlink(real_skill, external.join("SKILL.md"))?;
     let out = root.join("out");
     write_file(&out.join("existing/SKILL.md"), "installed skill\n")?;
     let skills = [ExternalSkill::new("example", external)?];
@@ -277,7 +279,7 @@ fn render_skills_rejects_an_external_skill_with_only_a_symlinked_skill_file() ->
 
     assert!(format!("{error:#}").contains("SKILL.md"));
     assert_eq!(
-        std::fs::read_to_string(out.join("existing/SKILL.md"))?,
+        crate::shell::fixtures::read_to_string(out.join("existing/SKILL.md"))?,
         "installed skill\n",
     );
     crate::shell::fixtures::remove_dir_all(root)?;
