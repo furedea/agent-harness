@@ -107,10 +107,20 @@ function quote(value: string): string {
 
 type Prepared = { settingsPath: string; content: string; common: string | undefined; root: string };
 
+// Variables that select a repository instead of letting git discover it from the cwd. Pi may be started
+// by a Git hook, and an inherited one would point discovery at another repository.
+const GIT_SELECTION_VARIABLES = ["GIT_DIR", "GIT_COMMON_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_NAMESPACE", "GIT_PREFIX"];
+
+function gitDiscoveryEnv(): NodeJS.ProcessEnv {
+	const env = { ...process.env };
+	for (const name of GIT_SELECTION_VARIABLES) delete env[name];
+	return env;
+}
+
 // Any failure (no repository, no git, unusable layout) reads as "no repository": the caller then denies .git.
 function gitCommonDir(cwd: string): string | undefined {
 	try {
-		const out = execFileSync("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+		const out = execFileSync("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], { cwd, env: gitDiscoveryEnv(), encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
 		return canonical(out.trim());
 	} catch {
 		return undefined;
@@ -121,7 +131,7 @@ function gitCommonDir(cwd: string): string | undefined {
 // (or when git fails) the working directory is the root.
 function gitRoot(cwd: string): string {
 	try {
-		const out = execFileSync("git", ["rev-parse", "--show-toplevel"], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+		const out = execFileSync("git", ["rev-parse", "--show-toplevel"], { cwd, env: gitDiscoveryEnv(), encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
 		// Drop only git's terminating newline: a directory name may end in whitespace.
 		return canonical(out.replace(/\n$/, ""));
 	} catch {

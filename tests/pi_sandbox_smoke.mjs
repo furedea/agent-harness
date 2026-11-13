@@ -181,6 +181,18 @@ if (args[3].includes('file_operations.mjs')) {
   assert.ok(subdirectoryRecord.settings.filesystem.denyRead.includes(join(realpathSync(worktree), '**/.env')));
   // The cwd anchoring stays as well, so an entry written for it keeps its reach.
   assert.ok(subdirectoryRecord.settings.filesystem.denyRead.includes(join(realpathSync(subdirectory), '**/.env')));
+  // Repository-selection variables inherited from a Git hook must not redirect discovery to another repository.
+  const hooked = join(worktree, 'hooked');
+  mkdirSync(hooked);
+  Object.assign(process.env, { GIT_DIR: join(repo, '.git'), GIT_WORK_TREE: repo, GIT_COMMON_DIR: join(repo, '.git') });
+  try {
+    await tool.execute('id', { command: 'true' }, undefined, undefined, { cwd: hooked });
+  } finally {
+    for (const name of ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_COMMON_DIR']) delete process.env[name];
+  }
+  const hookedDeny = JSON.parse(readFileSync(join(root, 'record.json'))).settings.filesystem.denyRead;
+  assert.ok(hookedDeny.includes(join(realpathSync(worktree), '**/.env')));
+  assert.ok(!hookedDeny.includes(join(realpathSync(repo), '**/.env')));
   // Outside a repository the working directory is the root.
   assert.ok(plainRecord.settings.filesystem.denyRead.includes(join(realpathSync(plain), '**/.env')));
   // A .git planted later would make git run attacker config outside the sandbox, so it is denied even when absent.
