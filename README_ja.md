@@ -328,9 +328,9 @@ nix run github:furedea/agent-harness -- verify --prefix "$HOME"
 }
 ```
 
-[Nix で合成する](#nix-で合成する) で示したとおり，追加のスキルディレクトリや外部のフックバンドルは，このリポジトリにコピーせずにすべてのプロバイダへ合成できる．スキルディレクトリには `SKILL.md` が必要である．インストール名には小文字の ASCII 英字，数字，ハイフンだけが使え，組み込みのスキルを上書きする名前は使えない．通常のファイルはそのままコピーされ，シンボリックリンクは無視される．
+[Nix で合成する](#nix-で合成する) で示したとおり，追加のスキルディレクトリや外部のフックバンドルは，このリポジトリにコピーせずに合成できる．スキルディレクトリは Claude，Codex，pi，dsh に展開され（Devin と Hermes にはスキルの出力先がない），フックバンドルはすべてのプロバイダに適用される．スキルディレクトリには `SKILL.md` が必要である．インストール名には小文字の ASCII 英字，数字，ハイフンだけが使え，組み込みのスキルを上書きする名前は使えない．通常のファイルはそのままコピーされ，シンボリックリンクは無視される．
 
-各バンドルには `{"version":1}` を持つ `hook_bundle.json` が必要で，任意のプロバイダのフックファイルとフックスクリプト，加えて Codex の feature フラグを含められる．スクリプトは各プロバイダのフックディレクトリの下に `hooks/external/<name>/` としてインストールされる（例：`~/.claude/hooks/external/<name>/`）．フックの JSON は構造的にマージされ，外部の Codex 設定が追加できるのは `[features]` のエントリだけである．`hooks` に相当する CLI は，`install` と `generate-*` コマンドの `--extra-hook NAME=PATH` である．
+各バンドルには `{"version":1}` を持つ `hook_bundle.json` が必要で，任意のプロバイダのフックファイルとフックスクリプト，加えて Codex の feature フラグを含められる．スクリプトは各プロバイダのフックディレクトリの下に `hooks/external/<name>/` としてインストールされる（例：`~/.claude/hooks/external/<name>/`）．フックの JSON は構造的にマージされ，外部の Codex 設定が追加できるのは `[features]` のエントリだけである．`hooks` に相当する CLI は，`install` と，`--source` と `--output` を取る `generate-*` コマンド（`generate-hook-bundle` と `generate-skills` を除くすべて）の `--extra-hook NAME=PATH` である．
 
 モジュールのインターフェースの全体は次のとおり．
 

@@ -431,8 +431,9 @@ Use the Home Manager module when your agent config is managed by Nix. The module
 ```
 
 As shown in [Compose with Nix](#compose-with-nix), additional skill directories and external hook
-bundles can be composed into every provider without copying them into this repository. Skill
-directories must contain `SKILL.md`. Installed names may contain only lowercase ASCII letters,
+bundles can be composed without copying them into this repository. Skill directories are rendered for
+Claude, Codex, pi, and dsh (Devin and Hermes have no skill destination), and hook bundles apply to
+every provider. Skill directories must contain `SKILL.md`. Installed names may contain only lowercase ASCII letters,
 digits, and hyphens, and may not shadow a built-in skill. Regular files are copied verbatim;
 symlinks are ignored.
 
@@ -440,7 +441,8 @@ Each bundle must contain `hook_bundle.json` with `{"version":1}` and may provide
 file and hook scripts, plus Codex feature flags. Scripts are installed below each provider's hook
 directory as `hooks/external/<name>/` (for example `~/.claude/hooks/external/<name>/`). Hook JSON
 is merged structurally; external Codex configuration may add only `[features]` entries. The CLI
-equivalent of `hooks` is `--extra-hook NAME=PATH` on `install` and the `generate-*` commands.
+equivalent of `hooks` is `--extra-hook NAME=PATH` on `install` and on the `generate-*` commands that take `--source` and
+`--output` (all except `generate-hook-bundle` and `generate-skills`).
 
 The module interface is:
 
