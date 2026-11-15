@@ -7,7 +7,7 @@
 
 **スキルだけでなくフックも，コーディングエージェント間で共有する．**
 
-`agent-harness` は，フック，スキル，エージェント指示，コマンド権限，プロバイダ設定をまとめる Nix ネイティブの合成レイヤである．環境を 1 つ定義すれば，Claude Code，Codex，Devin，Hermes Agent，pi が期待するネイティブなファイルを生成できる．
+`agent-harness` は，フック，スキル，エージェント指示，コマンド権限，プロバイダ設定をまとめる Nix ネイティブの合成レイヤである．環境を 1 つ定義すれば，Claude Code，Codex，Devin，Hermes Agent，pi，DeepSeek Harness（dsh）が期待するネイティブなファイルを生成できる．
 
 同梱のデフォルトは意図的に小さくしてある．個人やチームの振る舞いは，他の設定と並ぶ完全なソースツリーに置く．そこから，このリポジトリを fork せずに，ローカルや Nix でビルドしたスキルとフックバンドルを合成できる．
 
@@ -23,17 +23,18 @@ Provider settings
         |-- Codex: config, hooks, adapters, rules, and skills
         |-- Devin: config, hooks, and command permissions
         |-- Hermes Agent: hook manifest, plugin, and config
-        `-- pi: hook manifest and bridge extension
+        |-- pi: hook manifest, bridge and srt sandbox extensions, settings, and skills
+        `-- dsh: hook manifest, bridge bundle, and skills
 ```
 
 ## なぜ使うのか
 
-- **フックの共有**: Claude Code，Codex，Devin，Hermes Agent，pi でフックの振る舞いを再利用する．通常は各プロバイダの設定ディレクトリに直接書き込む CLI のフックも対象にできる．
+- **フックの共有**: Claude Code，Codex，Devin，Hermes Agent，pi，dsh でフックの振る舞いを再利用する．通常は各プロバイダの設定ディレクトリに直接書き込む CLI のフックも対象にできる．
 - **ガードレールを 1 つに**: Claude の Bash 権限，Codex の execpolicy，Devin の Exec 権限を，中立な `allow` / `ask` / `deny` の 1 つのソースから生成する．
 - **合成できる拡張**: 組み込みの振る舞いに，外部のスキルとフックバンドルを組み合わせる．
 - **CLI と Nix の橋渡し**: コマンドの出力をスキルにしたり，隔離したビルド用ホームでフックのインストーラが作るファイルを取り込んだりする．
 - **プロバイダごとのネイティブ出力**: 各エージェントが期待するアダプタ，フック配線，権限，ルール，設定を生成する．
-- **状態を壊さない設定の同期**: harness が管理するキーだけを置き換え，Claude Code，Codex，Devin，Hermes Agent の設定でツールやユーザーが所有する状態は残す．
+- **状態を壊さない設定の同期**: harness が管理するキーだけを置き換え，Claude Code，Codex，Devin，Hermes Agent，pi，dsh の設定でツールやユーザーが所有する状態は残す．
 
 この設計が解決する問題，中核の設計判断，検討した代替案については [docs/DESIGN_ja.md](docs/DESIGN_ja.md) を参照．
 
@@ -107,9 +108,9 @@ in
 }
 ```
 
-`buildSkillFromCommand` はコマンドの標準出力を `SKILL.md` に書き込み，空の出力は拒否する．`buildHookBundleFromCommands` は隔離した `HOME` でコマンドを順に実行し，対応する Claude と Codex の成果物を取り込んで，バージョン付きのバンドルを書き出す．各コマンドは引数のリストで，最初の要素が実行ファイル，残りがシェルを介さずに渡される引数である．フックのインストーラは絶対パスでなければならない．スキル用のコマンドにも Nix パッケージの絶対パスを推奨する．ビルドは決定的であるべきで，対話入力やネットワークアクセスに依存してはならない．
+`buildSkillFromCommand` はコマンドの標準出力を `SKILL.md` に書き込み，空の出力は拒否する．`buildHookBundleFromCommands` は隔離した `HOME` でコマンドを順に実行し，対応するプロバイダのフック成果物を取り込んで，バージョン付きのバンドルを書き出す．各コマンドは引数のリストで，最初の要素が実行ファイル，残りがシェルを介さずに渡される引数である．フックのインストーラは絶対パスでなければならない．スキル用のコマンドにも Nix パッケージの絶対パスを推奨する．ビルドは決定的であるべきで，対話入力やネットワークアクセスに依存してはならない．
 
-フックビルダーが取り込むのは，`.claude/settings.json`，`.claude/hooks/`，`.codex/hooks.json`，`.codex/hooks/`，`.codex/config.toml`，トップレベルの `.codex/*.sh` である．生成されたフックのコマンドに，実行時には別の場所になるビルド時のパスが埋め込まれる場合は，`commandReplacements = [{ from = "..."; to = "..."; }]` を渡す．
+フックビルダーが取り込むのは，各プロバイダのフックファイル（`.claude/settings.json`，`.codex/hooks.json`，`.devin/hooks.v1.json`，`.hermes/hooks.json`，`.pi/hooks.json`，`.dsh/hooks.json`）とフックディレクトリ（`.claude/hooks/`，`.codex/hooks/`，`.devin/hooks/`，`.hermes/hooks/`，`.pi/hooks/`，`.dsh/hooks/`），加えて `.codex/config.toml` とトップレベルの `.codex/*.sh` である．生成されたフックのコマンドに，実行時には別の場所になるビルド時のパスが埋め込まれる場合は，`commandReplacements = [{ from = "..."; to = "..."; }]` を渡す．
 
 [`moshi-hook install`](https://getmoshi.app/docs/hooks) のようなインストーラにも同じフックビルダーを使う．ペアリングの認証情報やデーモンの状態は実行時の関心事であり，バンドルには取り込まない．
 
@@ -135,7 +136,7 @@ moshiHooks = agent-harness.lib.${pkgs.system}.buildHookBundleFromCommands {
 
     ```nix
     programs.agent-harness.github.agentToken.enable = true;
-    # configDir の既定値は "${config.home.homeDirectory}/.config/agent-harness/gh"．
+    # configDir defaults to "${config.home.homeDirectory}/.config/agent-harness/gh".
     ```
 
 生成される Claude の設定は，`env.GH_CONFIG_DIR` に絶対パスの `configDir` を設定し，`github.com` と `api.github.com` を `sandbox.network.allowedDomains` に加え，gh が TLS を検証できるよう `sandbox.enableWeakerNetworkIsolation` を有効にし，ソース設定が列挙していても `gh *` を `sandbox.excludedCommands` から除く．この除去は，ソース設定を正とする原則の唯一の例外である（[ADR-0020](docs/adr/0020_keep_git_push_outside_the_claude_sandbox.md)）．`git push *` を含む他の除外は，ソースの列挙どおりに残る．そのため git をどこで実行するかはソース設定が決める（[エージェントのコミット](#エージェントのコミット)を参照）．`configDir` が相対パスの場合や，`Read(...)` の拒否，`sandbox.filesystem.denyRead` の項目，シークレットパスポリシーのルールがそれを隠す場合は評価が失敗する．ユーザー自身の `~/.config/gh/hosts.yml` の拒否はそのまま残る．オプションが無効なら，生成物は変わらない．
@@ -151,17 +152,17 @@ Codex は，リンクされた worktree の git ディレクトリ（`<repo>/.gi
 - **(a) エージェントのコミットに署名する．** `git add *`，`git status *`，`git commit *`，`git push *` を `sandbox.excludedCommands` に列挙し，`git add x && git commit -m y && git push` のような連結を，署名が動くサンドボックスの外で実行する．除外された `git push` も `GH_CONFIG_DIR` を引き継ぐので，エージェント用トークンで認証する．このときリポジトリの git フックもサンドボックスの外で動くため，エージェントは `lefthook.yml` のようなフックの設定，フックが呼ぶスクリプト，フックのツールが読むビルド設定を編集して，サンドボックスの外でコードを実行できる．
 - **(b) エージェントのコミットに署名しない（フックやフックが実行するツールがリポジトリのファイルを読む場合に推奨）．** Claude Code に限って署名を無効にし，git コマンドを何も除外しない．git，そのフック，push はすべてサンドボックス内で動き，push はどちらの供給元のエージェント用トークンでも認証する．squash マージでデフォルトブランチに入るコミットは，GitHub が署名するので引き続き署名付きである（[ADR-0022](docs/adr/0022_leave_agent_commits_unsigned_inside_the_claude_sandbox.md)）．
 
-(b) では，Claude のソース設定の `env` に `GIT_CONFIG_*` を設定する．これは Claude Code のプロセスに限って git の設定ファイルを上書きし，ユーザー自身のコミットは署名付きのまま残る（git 2.31 以降）:
+(b) では，Claude のソース設定の `env` に `GIT_CONFIG_*` を設定する．これは Claude Code のプロセスに限って git の設定ファイルを上書きし，ユーザー自身のコミットは署名付きのまま残る（git 2.31 以降）：
 
 ```json
 {
-    "env": {
-        "GIT_CONFIG_COUNT": "2",
-        "GIT_CONFIG_KEY_0": "commit.gpgsign",
-        "GIT_CONFIG_VALUE_0": "false",
-        "GIT_CONFIG_KEY_1": "tag.gpgsign",
-        "GIT_CONFIG_VALUE_1": "false"
-    }
+  "env": {
+    "GIT_CONFIG_COUNT": "2",
+    "GIT_CONFIG_KEY_0": "commit.gpgsign",
+    "GIT_CONFIG_VALUE_0": "false",
+    "GIT_CONFIG_KEY_1": "tag.gpgsign",
+    "GIT_CONFIG_VALUE_1": "false"
+  }
 }
 ```
 
@@ -170,11 +171,11 @@ Codex は，リンクされた worktree の git ディレクトリ（`<repo>/.gi
 - サンドボックス内で動くものはすべて，API の直接呼び出しを含め，権限の範囲内でトークンを使える．安全境界はコマンドルールではなく，トークンの fine-grained な権限である．
 - gh は意図してサンドボックス内で実行する．外で実行すると，`gh gist create`，`gh release upload`，`gh api --input` などで読めるローカルファイルを何でもアップロードできてしまう．構成 (a) でサンドボックスの外の git push が送れるのはリポジトリのコミットだけである．
 - git は `gh auth git-credential`（`gh auth setup-git` で設定する）で認証するため，リモートは HTTPS でなければならない．SSH のリモートはこの仕組みの外で，引き続きユーザーの SSH 鍵を使う．
-- 対象は Claude Code だけである．Codex，Devin，Hermes，pi は既定の挙動のままである．
+- Claude Code と Codex のシェルコマンドはトークンを受け取る．Devin，Hermes，pi は既定の挙動のままである．
 
 #### GitHub App をトークンの供給元にする
 
-personal access token は期限が切れるたびに作り直す必要がある．`source = "app"` にすると，GitHub App がエージェント用トークンを供給する．ユーザーごとの定期ジョブが，ログイン時と 5 分ごとにトークンを確認し，残りが 20 分未満なら有効期間 1 時間のインストールアクセストークンを発行して，`configDir` の `hosts.yml` へ mode 0600 でアトミックに書き込む．ジョブは macOS では launchd エージェントで，スリープ復帰後に逃した実行を 1 回行う．Linux では systemd のユーザーサービスと永続タイマーである．このオプションが Claude の設定に加える変更は，どちらの供給元でも同じである．
+personal access token は期限が切れるたびに作り直す必要がある．`source = "app"` にすると，GitHub App がエージェント用トークンを供給する．ユーザーごとの定期ジョブが，ログイン時と 5 分ごとにトークンを確認し，残りが 20 分未満なら有効期間 1 時間のインストールアクセストークンを発行して，`configDir` の `hosts.yml` へ mode 0600 でアトミックに書き込む．ジョブは macOS では launchd エージェントで，スリープ復帰後に逃した実行を 1 回行う．Linux では systemd のユーザーサービスと永続タイマーである．このオプションが Claude と Codex の設定に加える変更は，どちらの供給元でも同じである．
 
 1. Webhook を無効にして [GitHub App を登録](https://github.com/settings/apps/new)し，リポジトリ権限を次のようにする：Contents，Pull requests，Issues は read and write，Actions と Metadata は read．Workflows は付与しない．付与すると，サンドボックス内のコードがリポジトリのシークレット付きで動くワークフローを書き換えられてしまう．
 2. エージェントが変更してよいリポジトリに App をインストールする．
@@ -193,12 +194,12 @@ personal access token は期限が切れるたびに作り直す必要がある�
       app = {
         id = 123456;
         privateKeyPath = "${config.home.homeDirectory}/.config/agent-harness/github_app.pem";
-        # installationId = 7890123;  # App のインストールが複数あるときだけ必要．
+        # installationId = 7890123;  # Required only when the App has several installations.
       };
     };
     ```
 
-秘密鍵のパスは絶対パスでなければならない．生成される Claude の設定は `permissions.deny` に `Read(//<path>)` を，`sandbox.filesystem.denyRead` にそのパスを加えるので，Claude Code のツールからもサンドボックス内のコマンドからも鍵は読めない．`installationId` を指定しない場合，ジョブは App の唯一のインストールを使い，インストールが複数あると失敗する．
+秘密鍵のパスは絶対パスでなければならない．生成される Claude の設定は `permissions.deny` に `Read(//<path>)` を，`sandbox.filesystem.denyRead` にそのパスを加えるので，Claude Code のツールからもサンドボックス内のコマンドからも鍵は読めない．生成される Codex の設定は，`[permissions.guarded.filesystem]` でも鍵を拒否する．`installationId` を指定しない場合，ジョブは App の唯一のインストールを使い，インストールが複数あると失敗する．
 
 ジョブは更新のたびに，トークンの隣の `agent_harness_token.json` に結果を記録する．ジョブが止まると 1 時間以内に push が失敗し始めるので，次のコマンドで確認する：
 
@@ -206,7 +207,7 @@ personal access token は期限が切れるたびに作り直す必要がある�
 agent-harness github-app-token status --config-dir ~/.config/agent-harness/gh
 ```
 
-このコマンドは有効期限を表示し，トークンがない場合，最後の更新が失敗した場合，`hosts.yml` がないか最後の更新で記録したものと違うトークンを持つ場合，残りが 5 分以下の場合は終了ステータス 1 で終わる．ジョブの出力は macOS では `~/Library/Logs/agent-harness-github-app-token.log` に，Linux ではユーザージャーナルに出る．`agent-harness github-app-token refresh --force` を同じ引数で実行すれば，任意のタイミングでトークンを発行できる．`--force` を付けない場合，残りが 20 分以上で，`hosts.yml` に残っており，設定した App とインストールで発行されたトークンはそのまま使う．
+このコマンドは有効期限を表示し，トークンがない場合，古いリリースで記録されたトークンの場合，最後の更新が失敗した場合，`hosts.yml` がないか最後の更新で記録したものと違うトークンを持つ場合，残りが 5 分以下の場合は終了ステータス 1 で終わる．ジョブの出力は macOS では `~/Library/Logs/agent-harness-github-app-token.log` に，Linux ではユーザージャーナルに出る．`agent-harness github-app-token refresh --force` を同じ引数で実行すれば，任意のタイミングでトークンを発行できる．`--force` を付けない場合，残りが 20 分以上で，`hosts.yml` に残っており，設定した App とインストールで発行されたトークンはそのまま使う．ただし最後の更新が失敗していた場合を除く．
 
 App を使う場合に追加される脅威モデル：
 
@@ -298,7 +299,7 @@ nix run github:furedea/agent-harness -- verify --prefix "$HOME"
 ```nix
 {
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-25.11-darwin";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-26.05-darwin";
     home-manager = {
       url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -327,33 +328,36 @@ nix run github:furedea/agent-harness -- verify --prefix "$HOME"
 }
 ```
 
-[Nix で合成する](#nix-で合成する) で示したとおり，追加のスキルディレクトリや外部のフックバンドルは，このリポジトリにコピーせずに両方のプロバイダへ合成できる．スキルディレクトリには `SKILL.md` が必要である．インストール名には小文字の ASCII 英字，数字，ハイフンだけが使え，組み込みのスキルを上書きする名前は使えない．通常のファイルはそのままコピーされ，シンボリックリンクは無視される．
+[Nix で合成する](#nix-で合成する) で示したとおり，追加のスキルディレクトリや外部のフックバンドルは，このリポジトリにコピーせずにすべてのプロバイダへ合成できる．スキルディレクトリには `SKILL.md` が必要である．インストール名には小文字の ASCII 英字，数字，ハイフンだけが使え，組み込みのスキルを上書きする名前は使えない．通常のファイルはそのままコピーされ，シンボリックリンクは無視される．
 
-各バンドルには `{"version":1}` を持つ `hook_bundle.json` が必要で，Claude の設定，Codex のフック，Codex の feature フラグ，プロバイダのフックスクリプトを含められる．スクリプトは `~/.claude/hooks/external/<name>/` または `~/.codex/hooks/external/<name>/` の下にインストールされる．フックの JSON は構造的にマージされ，外部の Codex 設定が追加できるのは `[features]` のエントリだけである．
+各バンドルには `{"version":1}` を持つ `hook_bundle.json` が必要で，任意のプロバイダのフックファイルとフックスクリプト，加えて Codex の feature フラグを含められる．スクリプトは各プロバイダのフックディレクトリの下に `hooks/external/<name>/` としてインストールされる（例：`~/.claude/hooks/external/<name>/`）．フックの JSON は構造的にマージされ，外部の Codex 設定が追加できるのは `[features]` のエントリだけである．`hooks` に相当する CLI は，`install` と `generate-*` コマンドの `--extra-hook NAME=PATH` である．
 
 モジュールのインターフェースの全体は次のとおり．
 
-| オプション           | デフォルト             | 意味                                                                       |
-| -------------------- | ---------------------- | -------------------------------------------------------------------------- |
-| `enable`             | `false`                | パッケージと管理対象ファイルを有効にする．                                 |
-| `package`            | flake のパッケージ     | `agent-harness` の実行ファイルを選ぶ．                                     |
-| `source`             | この flake             | プロファイル集，または完全でフラットなプロファイルのソースツリー．         |
-| `profile`            | `"minimal"`            | 同梱の合成のベースを選ぶ．                                                 |
-| `agentsMd`           | プロファイルのファイル | 共有の `AGENTS.md` / `CLAUDE.md` のソースを置き換える．                    |
-| `commandPermissions` | プロファイルのファイル | プロバイダ中立な `allow` / `ask` / `deny` ルールを置き換える．             |
-| `skills`             | `{}`                   | スキルのディレクトリや derivation をインストール名で追加する．             |
-| `hooks`              | `{}`                   | バージョン付きフックバンドルのディレクトリや derivation を名前で追加する． |
-| `claude.enable`      | `true`                 | Claude Code のファイルをインストールする．                                 |
-| `claude.settings`    | `{}`                   | 選んだ Claude のベース設定のキーを任意で上書きする．                       |
-| `codex.enable`       | `true`                 | Codex のファイルをインストールする．                                       |
-| `codex.settings`     | `{}`                   | 選んだ Codex のベース設定のキーを任意で上書きする．                        |
-| `devin.enable`       | `true`                 | Devin のファイルをインストールする．                                       |
-| `hermes.enable`      | `true`                 | Hermes Agent のファイルをインストールする．                                |
-| `pi.enable`          | `true`                 | pi のファイルをインストールする．                                          |
+| オプション           | デフォルト             | 意味                                                                                                      |
+| -------------------- | ---------------------- | --------------------------------------------------------------------------------------------------------- |
+| `enable`             | `false`                | パッケージと管理対象ファイルを有効にする．                                                                |
+| `package`            | flake のパッケージ     | `agent-harness` の実行ファイルを選ぶ．                                                                    |
+| `source`             | この flake             | プロファイル集，または完全でフラットなプロファイルのソースツリー．                                        |
+| `profile`            | `"minimal"`            | 同梱の合成のベースを選ぶ．                                                                                |
+| `agentsMd`           | プロファイルのファイル | 共有の `AGENTS.md` / `CLAUDE.md` のソースを置き換える．                                                   |
+| `commandPermissions` | プロファイルのファイル | プロバイダ中立な `allow` / `ask` / `deny` ルールを置き換える．                                            |
+| `skills`             | `{}`                   | スキルのディレクトリや derivation をインストール名で追加する．                                            |
+| `hooks`              | `{}`                   | バージョン付きフックバンドルのディレクトリや derivation を名前で追加する．                                |
+| `claude.enable`      | `true`                 | Claude Code のファイルをインストールする．                                                                |
+| `claude.settings`    | `{}`                   | 選んだ Claude のベース設定のキーを任意で上書きする．                                                      |
+| `codex.enable`       | `true`                 | Codex のファイルをインストールする．                                                                      |
+| `codex.settings`     | `{}`                   | 選んだ Codex のベース設定のキーを任意で上書きする．                                                       |
+| `devin.enable`       | `true`                 | Devin のファイルをインストールする．                                                                      |
+| `hermes.enable`      | `true`                 | Hermes Agent のファイルをインストールする．                                                               |
+| `pi.enable`          | `true`                 | pi のファイルをインストールする．                                                                         |
+| `dsh.enable`         | `true`                 | DeepSeek Harness のファイルをインストールする．                                                           |
+| `dsh.profile`        | `"web"`                | フックバンドルを登録する，ユーザー所有の dsh プロファイル．                                               |
+| `github.agentToken`  | disabled               | エージェント用 GitHub トークン．[下記](#claude-サンドボックス内のエージェント用-github-トークン) を参照． |
 
-生成されたフック配線，Bash のコマンド権限，保護パスは，プロバイダ設定のマージ後も harness の管理下に残る．これにより，設定のオーバーレイが強制力を黙って取り除くことを防ぐ．保護パスは，harness が Claude Code，Codex，Devin，Hermes，pi のために生成または同期するすべてのファイル（可変のプロバイダ設定を含む）を対象にし，スキルは対象にしない．プロバイダの `enable` を `false` にすると，そのプロバイダのファイルはインストールされない．
+生成されたフック配線，Bash のコマンド権限，保護パスは，プロバイダ設定のマージ後も harness の管理下に残る．これにより，設定のオーバーレイが強制力を黙って取り除くことを防ぐ．保護パスは，harness が Claude Code，Codex，Devin，Hermes，pi，dsh のために生成または同期するすべてのファイル（可変のプロバイダ設定を含む）を対象にし，スキルは対象にしない．プロバイダの `enable` を `false` にすると，そのプロバイダのファイルはインストールされない．
 
-Claude Code が `~/.claude/settings.json` を更新することがあるため，Home Manager モジュールはこのファイルを書き込み可能な通常のファイルとして実体化する．activation のたびに，生成されたトップレベルのキーが既存の対応する値を置き換え，生成された設定にないトップレベルのキーは残る．その他の Claude Code のファイルは，Home Manager が管理するシンボリックリンクのままである．activation では，[インストールされるもの](#インストールされるもの) で説明する Codex，Devin，Hermes Agent の設定の同期も行う．
+Claude Code が `~/.claude/settings.json` を更新することがあるため，Home Manager モジュールはこのファイルを書き込み可能な通常のファイルとして実体化する．activation のたびに，生成されたトップレベルのキーが既存の対応する値を置き換え，生成された設定にないトップレベルのキーは残る．その他の Claude Code のファイルは，Home Manager が管理するシンボリックリンクのままである．activation では，[インストールされるもの](#インストールされるもの) で説明する Codex，Devin，Hermes Agent，pi，dsh の設定の同期も行う．
 
 ## 任意の完全性チェック
 
@@ -369,30 +373,43 @@ sha256sum -c agent-harness-x86_64-unknown-linux-musl.tar.xz.sha256
 
 ## インストールされるもの
 
-`agent-harness install --prefix "$HOME"` は，生成した harness を Claude Code，Codex，Devin，Hermes Agent，pi の設定ディレクトリに書き込む．
+`agent-harness install --prefix "$HOME"` は，生成した harness を Claude Code，Codex，Devin，Hermes Agent，pi，dsh の設定ディレクトリに書き込む．
 
-| パス                                     | 用途                                             |
-| ---------------------------------------- | ------------------------------------------------ |
-| `~/.codex/AGENTS.md`                     | Codex のエージェント指示                         |
-| `~/.codex/config.toml`                   | 管理対象の Codex 設定                            |
-| `~/.codex/hooks.json`                    | Codex のフック配線                               |
-| `~/.codex/hooks/`                        | Codex のフックアダプタ                           |
-| `~/.codex/rules/default.rules`           | Codex のコマンド権限                             |
-| `~/.codex/skills/`                       | 生成した Codex のスキル                          |
-| `~/.claude/CLAUDE.md`                    | Claude Code のエージェント指示                   |
-| `~/.claude/settings.json`                | Claude Code の設定                               |
-| `~/.claude/hooks/`                       | Claude Code のフックとポリシーガード             |
-| `~/.claude/skills/`                      | 生成した Claude Code のスキル                    |
-| `~/.claude/statusline/`                  | Claude Code のステータスラインコマンド           |
-| `~/.devin/hooks/`                        | Devin のフックアダプタ                           |
-| `~/.config/devin/config.json`            | Devin のフックとコマンド権限                     |
-| `~/.hermes/hooks.json`                   | Hermes Agent のフックマニフェスト                |
-| `~/.hermes/hooks/`                       | Hermes Agent のフックアダプタ                    |
-| `~/.hermes/plugins/agent-harness-hooks/` | マニフェストを実行する Hermes Agent のプラグイン |
-| `~/.hermes/managed-config.yaml`          | `config.yaml` に同期する Hermes Agent のキー     |
-| `~/.pi/agent/hooks.json`                 | pi のフックマニフェスト                          |
-| `~/.pi/agent/extensions/hook_bridge.ts`  | マニフェストを実行する pi の拡張                 |
-| `~/.pi/hooks/`                           | pi のフックアダプタ                              |
+| パス                                                 | 用途                                                 |
+| ---------------------------------------------------- | ---------------------------------------------------- |
+| `~/.codex/AGENTS.md`                                 | Codex のエージェント指示                             |
+| `~/.codex/config.toml`                               | 管理対象の Codex 設定                                |
+| `~/.codex/hooks.json`                                | Codex のフック配線                                   |
+| `~/.codex/hooks/`                                    | Codex のフックアダプタ                               |
+| `~/.codex/rules/default.rules`                       | Codex のコマンド権限                                 |
+| `~/.codex/skills/`                                   | 生成した Codex のスキル                              |
+| `~/.claude/CLAUDE.md`                                | Claude Code のエージェント指示                       |
+| `~/.claude/settings.json`                            | Claude Code の設定                                   |
+| `~/.claude/hooks/`                                   | Claude Code のフックとポリシーガード                 |
+| `~/.claude/skills/`                                  | 生成した Claude Code のスキル                        |
+| `~/.claude/statusline/`                              | Claude Code のステータスラインコマンド               |
+| `~/.devin/hooks/`                                    | Devin のフックアダプタ                               |
+| `~/.config/devin/config.json`                        | Devin のフックとコマンド権限                         |
+| `~/.hermes/hooks.json`                               | Hermes Agent のフックマニフェスト                    |
+| `~/.hermes/hooks/`                                   | Hermes Agent のフックアダプタ                        |
+| `~/.hermes/plugins/agent-harness-hooks/`             | マニフェストを実行する Hermes Agent のプラグイン     |
+| `~/.hermes/managed-config.yaml`                      | `config.yaml` に同期する Hermes Agent のキー         |
+| `~/.pi/agent/AGENTS.md`                              | 共有のエージェント指示                               |
+| `~/.pi/agent/skills/`                                | Claude 互換の frontmatter を持つスキル               |
+| `~/.pi/agent/settings.json`                          | 管理対象のモデルのデフォルトをユーザーのキーとマージ |
+| `~/.pi/agent/hooks.json`                             | pi のフックマニフェスト                              |
+| `~/.pi/agent/extensions/hook_bridge.ts`              | マニフェストを実行する pi の拡張                     |
+| `~/.pi/agent/extensions/bash_sandbox.ts`             | srt を使う pi の bash ツールの置き換え               |
+| `~/.pi/agent/extensions/sandbox_policy.json`         | 生成した srt のポリシー                              |
+| `~/.pi/agent/extensions/sandbox/file_operations.mjs` | srt の下で動く pi のファイルツールのヘルパー         |
+| `~/.pi/hooks/`                                       | pi のフックアダプタ                                  |
+| `~/.dsh/AGENTS.md`                                   | dsh のエージェント指示                               |
+| `~/.dsh/hooks.json`                                  | dsh のフックマニフェスト                             |
+| `~/.dsh/hooks/`                                      | dsh のフックアダプタ                                 |
+| `~/.dsh/bridge/`                                     | マニフェストを実行する dsh のブリッジバンドル        |
+| `~/.dsh/skills/`                                     | Codex の生成結果からコピーしたスキル                 |
+
+Pi のエージェントの bash ツールは，再帰的な `denyGlobRegex` に対応した `srt` を `PATH` 上に必要とする．nixpkgs の sandbox-runtime 0.0.52 はこの要件を満たさない．srt のインストールは harness のインストールとは別なので，`agent-harness verify` は確認しない．verify に確認させるには，ソースの manifest の `runtime_commands` に `srt` を宣言する．ポリシーは `claude/settings.json` の sandbox ブロックから作られ，Pi の認証ファイルの読み取り保護が加わる．拡張は各コマンドの作業ディレクトリについて worktree を解決し，Git リポジトリの内側では共通の Git ディレクトリも解決して，それらへの書き込みを許可し，Git のフック，設定，リンクされた worktree の `.git` ポインタファイルへの書き込みを拒否する．リポジトリの外では，基本ポリシーとそのディレクトリ自体だけが適用される．ディレクトリの最初の解決はセッション中固定される．その後 Git のレイアウトが変わると，Pi を再起動するまで bash は実行を拒否する．不正な設定や利用できない srt は bash の実行をブロックする．Pi 自体，フック，ユーザーの `!` コマンドはこのラッパーの外で動く．Pi の read，write，edit，grep，find，ls ツールは，同じ srt の設定の下で動くヘルパープロセスでファイル I/O を行うため，カーネルがこれらについても `allowWrite`，`denyWrite`，`denyRead` を強制する．ヘルパーがない場合や設定が不正な場合は，これらのツールもブロックされる．フックは方針の層にすぎない．Claude と同様に，フックが失敗すると呼び出しは続行される．
 
 インストールは，管理対象のフックとスキルのディレクトリを置き換え，Claude Code の管理対象の設定を書き直す．Codex の設定の同期は次の管理対象トップレベルキーだけを置き換え，プロジェクトの信頼情報やマーケットプレイスのデータなど，Codex やユーザーが所有する他の状態は残す．
 
@@ -402,11 +419,15 @@ approvals_reviewer, cli_auth_credentials_store, notice, tui, plugins, features,
 default_permissions, permissions
 ```
 
+また，ソースの `shell_environment_policy.set` の下にあるキーをすべて書き込み，前回の同期が書いたキーのうちソースから消えたものを削除する．記録はターゲットの隣の `.agent-harness-managed.json` にある．Codex やユーザーが追加したキーは残る．サイドカーがない場合は，ソースに `GH_CONFIG_DIR` がないときだけ `GH_CONFIG_DIR` を削除する．
+
 生成される Claude の設定は，ソースの `claude/settings.json` が宣言する `permissions.allow`，`permissions.ask`，`permissions.deny` のエントリをすべて残し，その後に生成した `Bash(...)`，`Read(...)`，`Edit(...)` のエントリを続ける．各ルールは 1 回だけ現れ，複数のリストで宣言されたルールは最も厳しいリスト（`deny` > `ask` > `allow`）にだけ残る．そのため，マージによって権限が広がることはない．`defaultMode` などの他の権限キーはそのまま引き継がれる．Claude の設定の同期は生成された `permissions` キー全体を置き換えるため，Claude Code が対話的に `~/.claude/settings.json` に保存した承認は次の同期で残らない．永続させたいルールは `command_permissions.json` かソースの `claude/settings.json` に書くこと．
 
 Devin の設定の同期は管理対象のトップレベルキーを置き換え，`permissions` の中では `Exec(...)` のエントリだけを置き換える．`Read(...)`，`Write(...)`，`Fetch(...)`，`mcp__*` などの Exec 以外のルールはユーザーの所有のままである．対話的に `Exec(...)` として保存した承認は次の同期で置き換わるので，永続させたいコマンドルールは `command_permissions.json` に書くこと．
 
 `install` は `~/.hermes/config.yaml` を編集しない．`sync-config --provider hermes` が `~/.hermes/managed-config.yaml` をそこへマージする．生成された `plugins.enabled` のエントリは重複なく追加され，Hermes Agent の他の状態は残る．Home Manager モジュールは activation でこの同期を実行する．
+
+`sync-config --provider dsh` は，ユーザー所有の dsh プロファイルの `~/.dsh/profiles/<profile>/package.json` にブリッジバンドルを登録する．プロファイル名は Home Manager のオプション `dsh.profile` で指定し（既定は `web`），`install --dsh-profile` も同じファイルを保護する．この同期が管理するのは `dependencies` のエントリで，`dsh.profile.bundles` にはバンドルを 1 回だけ追加する．dsh がまだ作成していないプロファイルはスキップする．ブリッジの設計は [ADR-0025](docs/adr/0025_embed_the_dsh_hook_bridge.md) に記録している．
 
 `verify` は，解決したソースの manifest が宣言する必要なパスと実行時コマンドを確認する．インストールされたファイルの内容を選んだソースと比較はしない．
 
@@ -456,7 +477,9 @@ CLI は，個々の出力を確認したり合成したりするための低レ�
 | `generate-hook-bundle`           | 隔離して作るバージョン付きの外部フックバンドル   |
 | `generate-skills`                | プロバイダ別の組み込みスキルと外部スキルのツリー |
 
-`generate-hooks` は `claude`，`codex`，`devin`，`hermes`，`pi`，`dsh` に対応する．`sync-config` も同じ指定を受け付けるが，pi は管理対象の設定がないためエラーになる．従来の `generate-<provider>-hooks`，`sync-claude-settings`，`sync-{codex,devin,hermes,dsh}-config` は非推奨の別名として動作し，ヘルプには表示しない．
+`generate-hooks` は `claude`，`codex`，`devin`，`hermes`，`pi`，`dsh` に対応する．`sync-config` も同じ指定を受け付ける．pi については，生成された設定から `defaultProvider`，`defaultModel`，`defaultThinkingLevel` だけをマージし，ユーザー所有のキーは残す．任意のソースのデフォルトは `pi/settings.json` に置く．Pi のスキルは `disable-model-invocation` を含む Claude の形式で生成し，`~/.pi/agent/skills/` の下にインストールする．共有の指示は `~/.pi/agent/AGENTS.md` としてインストールする．
+
+Pi のフックの判定は deny > ask > allow の順に優先される．ask の判定は，UI があればツールの入力とともに確認を求め，「Yes」の場合だけ実行を許可する．UI がなければ ask はブロックする．従来の `generate-<provider>-hooks`，`sync-claude-settings`，`sync-{codex,devin,hermes,dsh}-config` の各コマンドは，非推奨の別名として引き続き動作し，ヘルプには表示しない．
 
 ```bash
 agent-harness generate-skills \
@@ -495,23 +518,23 @@ agent-harness generate-claude-settings \
   --output "$HOME/.claude/settings.json"
 ```
 
-フックバンドルの spec には，絶対パスのインストーラ実行ファイルとその引数を並べる．インストーラは隔離した一時ホームで実行され，対応する Claude と Codex のフック成果物だけが取り込まれる．任意のコマンド置換を使うと，ビルド時の実行ファイルのパスを安定した実行時のパスに変えられる．
+フックバンドルの spec には，絶対パスのインストーラ実行ファイルとその引数を並べる．インストーラは隔離した一時ホームで実行され，対応するプロバイダのフック成果物だけが取り込まれる．任意のコマンド置換を使うと，ビルド時の実行ファイルのパスを安定した実行時のパスに変えられる．
 
 ```json
 {
-    "version": 1,
-    "installers": [
-        {
-            "executable": "/nix/store/example/bin/example-hook",
-            "arguments": ["install", "--target", "claude,codex"]
-        }
-    ],
-    "command_replacements": [
-        {
-            "from": "/nix/store/example/bin/example-hook",
-            "to": "/opt/homebrew/bin/example-hook"
-        }
-    ]
+  "version": 1,
+  "installers": [
+    {
+      "executable": "/nix/store/example/bin/example-hook",
+      "arguments": ["install", "--target", "claude,codex"]
+    }
+  ],
+  "command_replacements": [
+    {
+      "from": "/nix/store/example/bin/example-hook",
+      "to": "/opt/homebrew/bin/example-hook"
+    }
+  ]
 }
 ```
 
@@ -519,60 +542,57 @@ agent-harness generate-claude-settings \
 
 Nix で管理するカスタマイズでは，完全でフラットなソースツリーか，上記の Home Manager の直接のオプションを使うのがよい．カスタムのツリーは `agent-harness install --source <path> --prefix "$HOME"` で生成する．
 
-| 目的                                       | 編集するもの                                           |
-| ------------------------------------------ | ------------------------------------------------------ |
-| 実行時コマンドの要件を宣言する             | `agents/manifest.json`                                 |
-| 共有のエージェント指示を変える             | `agents/AGENTS.md`                                     |
-| スキルを追加・編集する                     | `agents/skills/<skill>/SKILL.md`                       |
-| プロバイダ別のスキルのメタデータを変える   | `agents/skill_rendering.json`                          |
-| 共有のコマンド権限を変える                 | `agents/command_permissions.json`                      |
-| グローバルで厳密なコマンド形式を変える     | `agents/hooks/rules/{allowed,forbidden}_commands.json` |
-| フック配線を追加・変更する                 | `agents/hooks.json`                                    |
-| Claude のフックを追加・変更する            | `agents/hooks/*.sh`                                    |
-| Codex のフックアダプタを追加・変更する     | `agents/codex/hooks/*.sh`                              |
-| Devin，Hermes，pi のフックを追加・変更する | `agents/{devin,hermes,pi}/hooks/`                      |
-| Codex のベース設定を変える                 | `agents/codex/config.toml`                             |
-| Claude のベース設定を変える                | `agents/claude/settings.json`                          |
+| 目的                                             | 編集するもの                                           |
+| ------------------------------------------------ | ------------------------------------------------------ |
+| 実行時コマンドの要件を宣言する                   | `agents/manifest.json`                                 |
+| 共有のエージェント指示を変える                   | `agents/AGENTS.md`                                     |
+| スキルを追加・編集する                           | `agents/skills/<skill>/SKILL.md`                       |
+| プロバイダ別のスキルのメタデータを変える         | `agents/skill_rendering.json`                          |
+| 共有のコマンド権限を変える                       | `agents/command_permissions.json`                      |
+| グローバルで厳密なコマンド形式を変える           | `agents/hooks/rules/{allowed,forbidden}_commands.json` |
+| フック配線を追加・変更する                       | `agents/hooks.json`                                    |
+| Claude のフックを追加・変更する                  | `agents/hooks/*.sh`                                    |
+| Codex のフックアダプタを追加・変更する           | `agents/codex/hooks/*.sh`                              |
+| Devin，Hermes，pi，dsh のフックを追加・変更する  | `agents/{devin,hermes,pi,dsh}/hooks/`                  |
+| シークレットパスまたはコミットのポリシーを変える | `agents/hooks/rules/secret_{path,commit}_policy.json`  |
+| pi のモデルのデフォルトを変える                  | `agents/pi/settings.json`                              |
+| Codex のベース設定を変える                       | `agents/codex/config.toml`                             |
+| Claude のベース設定を変える                      | `agents/claude/settings.json`                          |
 
 コマンド権限は 2 層になっている．プロファイルのルートにある `command_permissions.json` は，共有するトークンのプレフィックスを定義するプロバイダ中立なソースである．各ルールは `decision`（`allow`，`ask`，`deny` のいずれか），`prefix`，必須の justification を持つ．
 
 ```json
 {
-    "version": 1,
-    "rules": [
-        {
-            "decision": "ask",
-            "prefix": ["git", "push"],
-            "justification": "Publishing changes requires user confirmation."
-        }
-    ]
+  "version": 1,
+  "rules": [
+    {
+      "decision": "ask",
+      "prefix": ["git", "push"],
+      "justification": "Publishing changes requires user confirmation."
+    }
+  ]
 }
 ```
 
-ジェネレータはこれらのルールを，Claude Code の `allow`，`ask`，`deny` の Bash 権限と，Codex の `allow`，`prompt`，`forbidden` の execpolicy の判定に対応させる．`hooks/rules/` の下の JSON ファイルには，グローバルで厳密なコマンド形式を表す POSIX 拡張正規表現を書く．
-
-リポジトリは，agent-harness を変えずに，次のどちらかの任意のファイルを作って厳密なルールを追加できる．
-
-```text
-<git-root>/.agents/hooks/rules/allowed_commands.json
-<git-root>/.agents/hooks/rules/forbidden_commands.json
-```
-
-どちらのファイルも次のスキーマを使う．
+ジェネレータはこれらのルールを，Claude Code の `allow`，`ask`，`deny` の Bash 権限，Codex の `allow`，`prompt`，`forbidden` の execpolicy の判定，Devin の `Exec(...)` の `allow`，`ask`，`deny` の権限に対応させる．`hooks/rules/` の下にある `allowed_commands.json` と `forbidden_commands.json` には，グローバルで厳密なコマンド形式を表す POSIX 拡張正規表現を書く．
 
 ```json
 {
-    "version": 1,
-    "rules": [
-        {
-            "patterns": ["^uv run --frozen example$"],
-            "justification": "Allow the repository's validated example task."
-        }
-    ]
+  "version": 1,
+  "rules": [
+    {
+      "programs": ["uv"],
+      "patterns": ["^uv run --frozen example$"],
+      "exceptions": ["^uv run --frozen example --unsafe$"],
+      "justification": "Allow the repository's validated example task."
+    }
+  ]
 }
 ```
 
-プロジェクトの allow ルールが承認できるのは，有効なプロファイルの `command_permissions.json` ですでに宣言された allow のプレフィックスの範囲内にある厳密な形式だけで，新しい共有プレフィックスは導入できない．プロジェクトの forbidden ルールは，一致するコマンドの断片をどれでも拒否できる．forbidden の一致は allow の一致より優先され，不正なプロジェクトのルールファイルは安全側に倒れて拒否する．
+`programs` と `exceptions` は省略できる．agent-harness はこれらのファイルを検証し，フックの隣にインストールする．実行時にこれらを強制するのは，プロジェクトローカルのルールファイルを含めて，ソースのフックスクリプトの役目である．組み込みの `minimal` ソースにはそのようなフックは含まれない．
+
+`hooks/rules/secret_path_policy.json` と `hooks/rules/secret_commit_policy.json` も必須である．読み取りを拒否するシークレットパスのルールは，Codex の `[permissions.guarded.filesystem]` の `"none"` のエントリと，Pi の srt ポリシーの `filesystem.denyRead` のエントリにもなる．パターンのルールは [docs/DESIGN_ja.md](docs/DESIGN_ja.md) を参照．
 
 インストールしたバイナリをローカルのソースツリーと使う：
 
@@ -598,7 +618,7 @@ agent-harness install --prefix "$HOME"
 5. カレントディレクトリが `agent-harness` のソースツリーであればそこ
 6. 埋め込まれた同梱の資産
 
-ソースのルートを解決した後，CLI は `profiles/<profile>` があればそれを選ぶ．なければ，ルートを `manifest.json`，`AGENTS.md`，`hooks/`，`skills/`，`claude/`，`codex/` を含む完全でフラットなプロファイルとして扱う．これにより，dotfiles リポジトリが `agents/` を直接公開でき，同じバイナリがリリースの tarball，Nix のビルド，Cargo のインストール，ローカルのチェックアウトのどれでも動き続ける．
+ソースのルートを解決した後，CLI は `profiles/<profile>` があればそれを選ぶ．なければ，ルートを完全でフラットなプロファイルとして扱う．そのプロファイルには `manifest.json`，`AGENTS.md`，`command_permissions.json`，`hooks.json`，`skill_rendering.json`，`claude/settings.json`，`codex/config.toml`，`hooks/rules/{allowed_commands,forbidden_commands,secret_commit_policy,secret_path_policy}.json` が必要である．`skills/` と他のプロバイダのフックディレクトリは省略できる．これにより，dotfiles リポジトリは `agents/` を直接公開でき，同じバイナリがリリースの tarball，Nix のビルド，Cargo のインストール，ローカルのチェックアウトのどれでも動き続ける．
 
 ## コントリビュート
 

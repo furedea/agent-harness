@@ -21,14 +21,13 @@
 **1. すべてのエージェントのファイルを 1 つの中立なソースから生成する．**
 
 - 決定：フラットなソースツリー（`AGENTS.md`，`command_permissions.json`，`hooks.json`，スキル，プロバイダのベース設定）だけをユーザーが編集する．生成したファイルは手で編集しない．
-- 理由：1 つの `allow` / `ask` / `deny` のルールセットを，Claude の Bash 権限，Codex の execpolicy の判定，Devin の `Exec(...)` ルールに対応させる．そのため，変更があるエージェントにだけ届いて他に漏れることがない．
+- 理由：1 つの `allow` / `ask` / `deny` のルールセットを，Claude の Bash 権限，Codex の execpolicy の判定，Devin の `Exec(...)` ルールに対応させる．そのため，変更が一方のエージェントには届くのに別のエージェントには届かない，という事態は起きない．
 - ADR: [0012]，[0014]，[0015]．
 
 **2. 保護パスを Rust の 1 つのインベントリから導出し，安全側に倒す．**
 
 - 決定：protection モジュールが，インストーラと同じ表から保護パスを計算する．そこから，Claude の deny ルール，サンドボックスの `denyWrite`，Codex のガード，実行時のフックが読む JSON ポリシーを生成する．
 - 理由：強制の各層が同じ生成済みのリストを共有すれば，食い違いは起きない．ポリシーファイルがないか不正な場合，フックは許可せずに拒否する．
-- 秘密パスポリシーの相対パターンは，`/` を末尾以外に含む場合，`**/` で始めなければ読み込み時に拒否する（`secrets/**`，`config/x.json`，`./secrets/**`）．gitignore と Codex はリポジトリルートに，srt は任意の深さに，Claude は作業ディレクトリに固定するため，同じパターンが読み手ごとに別の範囲を指す．任意の深さを意味するときは `**/<pattern>` と書く．`.env` や `*.pem` のような 1 セグメントの名前は，どの深さにも一致する．Pi の srt は，相対エントリを tool 呼び出しの cwd ではなく git の toplevel（リポジトリ外では cwd）に固定する．
 - ADR: [0008]．
 
 **3. Codex CLI への適合テストを必須チェックから外す．**
@@ -47,7 +46,7 @@
 
 - 決定：同期コマンドは harness が所有する範囲を置き換え，それ以外は残す．所有範囲は各プロバイダが spec に宣言する（トップレベルのキー，接頭辞に合う配列の要素，和集合を取る配列，マッピングの項目，sidecar で追跡するキー）．1 つの同期処理が，宣言を JSON，TOML，YAML のどれにも適用する．ソースの権限ルールは残して重複を除き，複数のリストにあるルールは最も厳しいリストにだけ残す．オプトインのエージェント用 GitHub トークンだけは，ソースのサンドボックス除外を上書きする．
 - 理由：エージェントは自分の状態を書き込み続けるが，設定のオーバーレイが生成した強制力を弱めたり取り除いたりしてはならない．
-- ADR: [0016]，[0018]，[0020]，[0029]．
+- ADR: [0016]，[0018]，[0020]，[0024]，[0029]．
 
 **6. プロバイダの宣言と処理，I/O を分離する．**
 
@@ -101,8 +100,8 @@ flowchart LR
 ```
 
 - 層をまたぐのは値だけである．`ProviderSpec` が Data から Functions と Capabilities へ渡り，loader が境界で組み立てた型付きの `Source` が loader から Functions へ渡り，`FileOp` の一覧が生成，レンダリング，計画，同期から唯一の書き込み口である executor へ渡る（[0028]）．
-- 計算の層が書き込めないことを，1 つの crate の中で 3 つの仕組みで保証する．`clippy.toml` が `std` の書き込み API を禁止し，`shell::io` だけが禁止を外す．ポートは `pub(in crate::shell)` なので，計算の層は自前のラッパー経由でも到達できない．`generation`，`provider::spec`，`provider::renderer`，`install_plan`，`file_op`，`source_model`，`layout`，`manifest`，`inventory`，`render` の `#![forbid(...)]` が，禁止を再び許可することを防ぐ．crate の分割は採らなかった．`std::fs` はどの crate からも呼べるので clippy の禁止は結局必要で，分割で置き換わるのは可視性だけだからである（[0028]）．テストは検査の対象外である．
-- 同じ禁止が読み込みにも及ぶ．結果は与えられた入力だけで決まり，実行した瞬間のディスクには左右されない．`shell::load` が source，外部 bundle，インストール済みの設定を一度だけ型付きの `Source` に読み込む．文書はすべて境界で解析と検証を済ませ，失敗はそのファイルのパスとともに境界で出る．丸ごとコピーするだけのディレクトリは場所とファイル一覧だけを持つ．計算は `Source` だけを読む．禁止するのは `std::fs` の読み込み，`Path` の `exists`／`is_dir`／`read_dir`／`metadata`，`std::env`，`std::process::Command` である．プログラムの命令的な端である `cli`，`source`，`runtime`，`github_app`，`shell::load`，`shell::hook_bundle`，ビルドスクリプトは，理由を添えた `#![expect(...)]` で自分だけ禁止を外す．不要になると `expect` がコンパイルエラーになる（[0028]）．
+- 計算の層が書き込めないことを，1 つの crate の中で 3 つの仕組みで保証する．`clippy.toml` が `std` の書き込み API を禁止し，`shell::io` と後述する命令的な端が禁止を外す．ポートは `pub(in crate::shell)` なので，計算の層は自前のラッパー経由でも到達できない．`generation`，`provider::spec`，`provider::registry`，`provider::ownership`，`provider::renderer`，`config_sync`，`install_plan`，`file_op`，`source_model`，`layout`，`manifest`，`inventory`，`render` の `#![forbid(...)]` が，禁止を再び許可することを防ぐ．crate の分割は採らなかった．`std::fs` はどの crate からも呼べるので clippy の禁止は結局必要で，分割で置き換わるのは可視性だけだからである（[0028]）．テストは検査の対象外である．
+- 同じ禁止が読み込みにも及ぶ．結果は与えられた入力だけで決まり，実行した瞬間のディスクには左右されない．`shell::load` が source，外部 bundle，インストール済みの設定を一度だけ型付きの `Source` に読み込む．文書はすべて境界で解析と検証を済ませ，失敗はそのファイルのパスとともに境界で出る．丸ごとコピーするだけのディレクトリは場所とファイル一覧だけを持つ．計算は `Source` だけを読む．禁止するのは `std::fs` の読み込み，`Path` の `exists`／`is_dir`／`read_dir`／`metadata`，`std::env`，`std::process::Command` である．プログラムの命令的な端である `cli`，`source`，`runtime`，`github_app`，`shell::load`，`shell::hook_bundle` は，理由を添えた `#![expect(...)]` で自分だけ禁止を外す．不要になると `expect` がコンパイルエラーになる（[0028]）．ビルドスクリプトは crate が存在する前に動くため，代わりに `#![allow(...)]` を使う．
 - 秘密のファイル（GitHub App のトークン）だけを `0600` で書く．それ以外はプロセスの既定のモードで書き，コピーは元のファイルの権限ビットを保ち，既存のファイルを置き換えるときはその権限ビットを保つ．
 - Claude と Codex も他の 4 つと同じく registry に宣言する．registry は各 provider が持つものを宣言し，中身は provider ごとの関数が生成する（[0027]）．
 
@@ -130,48 +129,57 @@ sequenceDiagram
   participant S as staging (temporary directory)
   participant H as install target (~/.claude, ~/.codex, ~/.devin, ...)
   U->>A: agent-harness install --source <dir>
-  A->>A: read the source tree and choose providers from PROVIDERS
-  A->>S: copy the existing Codex config so its own state is kept
-  A->>S: write each provider's configs, hooks, permission rules and protected paths
-  A->>S: place fixed files (assets) such as bridge scripts
-  A->>A: decide the list of managed files and directories
-  loop each managed path
-    A->>S: read the finished file
-    S-->>A: file contents
-    A->>H: replace the same path
+  A->>A: ソースツリーと導入済みの設定を型付きの Source に読み込み，PROVIDERS からプロバイダを選ぶ
+  A->>A: 導入済みの Claude，Codex，pi の設定を，生成した設定と統合して自分の状態を残す
+  A->>S: 各プロバイダの設定，フック，権限ルール，保護パスを書き込む
+  A->>S: ブリッジスクリプトなどの固定ファイル（資産）を置く
+  A->>A: 管理対象のファイルとディレクトリを FileOp の値として計画する
+  loop 計画された各 FileOp
+    A->>H: ステージングまたは埋め込みの内容で管理対象のパスを置き換える
   end
-  A-->>U: done
+  A-->>U: 完了
 ```
 
 - ステージング用のディレクトリは組み立て場所であり，生成中に失敗してもインストール先には触れない．
-- ループでは，管理対象のパスごとに，ステージングで完成したファイルを読んで置き換える．
+- `install_plan` は完成したステージングのツリーを `FileOp` の値に変換し，`shell::execute` が管理対象のパスごとにそれを適用する．
 - エージェントが自分で書いた状態など，管理対象でないファイルはそのまま残す．
 
 `sync-config --provider <id>` コマンドは，エージェントも書き込む設定ファイルに管理対象のキーをマージする．
 
-| モジュール                                                                                | 責務                                                                                          |
-| ----------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `cli`                                                                                     | サブコマンドを解析し，生成，同期，一覧，検証に振り分ける．                                    |
-| `source`，`layout`，`manifest`                                                            | ソースツリーを解決し，そのレイアウトと必要な実行時コマンドを検証する．                        |
-| `profile`                                                                                 | 同梱の組み込みソース（`minimal`）の名前を定める．                                             |
-| `render`                                                                                  | ステージング生成を実行し，公開計画を executor に渡す．                                        |
-| `provider/spec`，`provider/ownership`，`provider/registry`                                | Data: プロバイダのメタデータ，資産の出力先，`ConfigSync` の所有範囲の宣言，registry．         |
-| `config_sync`（`codec`，`engine`，`installed`）                                           | Functions: 形式の codec，宣言された所有範囲を適用する唯一の処理，解析済みの `Installed`．     |
-| `install_plan`                                                                            | Functions: 生成済み staging の公開と埋め込み資産の配置を計画する．                            |
-| `shell`（`io`，`load`，`executor`，`sync`，`hook_bundle`）                                | Capabilities: ファイル I/O のポート，`Source` の loader，`FileOp` の executor，設定同期，hook bundle． |
-| `source_model`                                                                            | Functions: 計算が読む型付きの `Source`（フック設定，権限規則，スキル，設定，bundle）．         |
-| `nix/providers.json`，`nix/home_manager_module.nix`                                       | registry から生成する Nix の一覧と，そこから作る Home Manager の option，リンク，同期．       |
-| `generation/hooks`                                                                        | フックの配線を描画する．                                                                      |
-| `generation/bridges`，`provider/spec`，`install_plan`                                     | ブリッジ asset の契約を検証し，spec の埋め込み asset と出力先から書き込みを計画する．         |
-| `generation/command_permissions`                                                          | 中立なルールを Claude，Codex，Devin の権限の構文に対応させる．                                |
-| `generation/claude_config`，`codex_config`，`dsh_config`                                  | プロバイダの設定と，dsh の bundle 登録を組み立てる．                                          |
-| `generation/protection`，`secret_path_policy`                                             | 保護パスと，秘密ファイルの deny ルールを計算する．                                            |
-| `generation/guarded_path`，`guarded_conflict`                                             | Codex のガード用エントリを比べ，厳しいエントリの下に緩いエントリがあれば生成を失敗させる．    |
-| `generation/skills`，`external_hooks`，`hook_bundle`                                      | スキルを生成し，外部のバンドルを合成する．                                                    |
-| `inventory`                                                                               | ソースが提供するスキルとフックを一覧にする．                                                  |
-| `runtime_root`                                                                            | プロジェクトローカルのインストール向けにフックのコマンドを移し替える．                        |
-| `github_app`                                                                              | エージェント用トークンのために GitHub App のインストールトークンを発行する（[0021]）．        |
-| `runtime`                                                                                 | manifest の実行時コマンドが `PATH` にあるかを確認する．                                       |
+| モジュール                                                        | 責務                                                                                                              |
+| ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `cli`                                                             | サブコマンドを解析し，install，`generate-*`，同期，一覧，検証，`github-app-token` に振り分ける．                  |
+| `source`，`layout`，`manifest`                                    | ソースツリーを解決し，そのレイアウトと必要な実行時コマンドを検証する．                                            |
+| `profile`                                                         | 同梱の組み込みソース（`minimal`）の名前を定める．                                                                 |
+| `render`                                                          | ステージング生成を実行し，公開計画を executor に渡す．                                                            |
+| `provider/spec`，`provider/ownership`，`provider/registry`        | Data: プロバイダのメタデータ，資産の出力先，`ConfigSync` の所有範囲の宣言，registry．                             |
+| `config_sync`（`codec`，`engine`，`installed`）                   | Functions: 形式の codec，宣言された所有範囲を適用する唯一の処理，解析済みの `Installed`．                         |
+| `provider/renderer`                                               | Functions: `ProviderRenderer` が，各プロバイダが宣言したファイルを `FileOp` の値として生成する．                  |
+| `file_op`                                                         | Data: 計算が書き込む代わりに返す `FileOp` と `FileMode` の値（[0028]）．                                          |
+| `install_plan`                                                    | Functions: 生成済み staging の公開と埋め込み資産の配置を計画する．                                                |
+| `shell`（`io`，`load`，`executor`，`sync`，`hook_bundle`）        | Capabilities: ファイル I/O のポート，`Source` の loader，`FileOp` の executor，設定同期，hook bundle．            |
+| `source_model`                                                    | Functions: 計算が読む型付きの `Source`（フック設定，権限規則，スキル，設定，bundle）．                            |
+| `nix/providers.json`，`nix/home_manager_module.nix`               | registry から生成する Nix の一覧と，そこから作る Home Manager の option，リンク，同期．                           |
+| `nix/agent_github_token.nix`，`agent_github_app_token_module.nix` | オプトインのエージェント用 GitHub トークンの合成と，その GitHub App によるリフレッシュのジョブ（[0019]–[0023]）． |
+| `nix/lib.nix`                                                     | `buildSkillFromCommand` と `buildHookBundleFromCommands`．                                                        |
+| `generation/hooks`                                                | フックの配線を描画する．                                                                                          |
+| `generation/bridges`，`provider/spec`，`install_plan`             | ブリッジ asset の契約を検証し，spec の埋め込み asset と出力先から書き込みを計画する．                             |
+| `generation/command_permissions`                                  | 中立なルールを Claude，Codex，Devin の権限の構文に対応させる．                                                    |
+| `generation/claude_config`，`codex_config`，`dsh_config`          | プロバイダの設定と，dsh の bundle 登録を組み立てる．                                                              |
+| `generation/protection`，`secret_path_policy`                     | 保護パスと，秘密ファイルの deny ルールを計算する．                                                                |
+| `generation/pi_sandbox`                                           | Claude のサンドボックス設定と秘密パスポリシーから，Pi の srt ポリシーを組み立てる（[0030]）．                     |
+| `generation/guarded_path`，`guarded_conflict`                     | Codex のガード用エントリを比べ，厳しいエントリの下に緩いエントリがあれば生成を失敗させる．                        |
+| `generation/skills`，`external_hooks`，`hook_bundle`              | スキルを生成し，外部のバンドルを合成する．                                                                        |
+| `inventory`                                                       | ソースが提供するスキルとフックを一覧にする．                                                                      |
+| `runtime_root`                                                    | プロジェクトローカルのインストール向けにフックのコマンドを移し替える．                                            |
+| `github_app`                                                      | エージェント用トークンのために GitHub App のインストールトークンを発行する（[0021]）．                            |
+| `runtime`                                                         | manifest の実行時コマンドが `PATH` にあるかを確認する．                                                           |
+
+### Pi の srt ポリシー
+
+pi の bash ツールは srt の内側で動き，read，write，edit，grep，find，ls の各ツールは，同じ srt の境界の中のヘルパープロセスでファイル I/O を行う．そのため，フックでファイルシステムの検査を再現するのではなく，カーネルが生成された読み書きの制限を強制する（[0030]）．ヘルパーは信頼せず，権限の強制をヘルパーに頼ることはない．ポリシーは Claude のサンドボックス設定から導出し，Nix デーモンのソケットを `allowUnixSockets` に加え，`~/.pi/agent/auth.json` の読み取りを拒否する．
+
+秘密パスポリシーは，Codex と同じ規則で，srt ポリシーの `filesystem.denyRead` エントリとして Pi に渡る．読み取りを禁止するルールだけを生成し，書き込みのみのルールは，srt の制限がエージェントが起動するすべてのプロセスに及ぶため，フックに任せる．srt は各エントリをグロブとして読む（`*`，`**`，`?`，`[...]`．エスケープ，波括弧，否定は使えない）．また `~` と `~/` を展開する．相対エントリは，作業ディレクトリではなく，ツール呼び出しの作業ディレクトリの Git の toplevel（リポジトリ外では作業ディレクトリ自体）に固定する．そのため `/repo/src` で動くツールも `/repo/.env` の読み取りを拒否する．エントリは拒否しかしないため，各エントリは作業ディレクトリでも解決する．toplevel は共通の git dir と同じく作業ディレクトリごとに固定する．サンドボックスは `.git` のポインタを書き換えることがあるため，最初の解決結果が後で変わると，その呼び出しは失敗する．1 セグメントの名前（`.env`，`*.pem`）は `**/pattern` になり，Claude と同じくどの深さにも一致する．`//x` は `/x` になる．末尾以外に `/` を含み，`**/` で始まらない相対パターン（`secrets/**`，`config/x.json`，`./secrets/**`）は，秘密パスポリシーの読み込み時に拒否する．gitignore と Codex はリポジトリルートに，srt は任意の深さに，Claude は作業ディレクトリに固定するため，1 つのパターンで 3 通りの異なるファイル集合を守ってしまうからである．任意の深さを意味するときは `**/<pattern>` と書く．先頭の `/`，`.` や `..` の要素，バックスラッシュ，波括弧，先頭の `!`，否定の文字クラス（`[!a]`，`[^a]`），絶対パスの最初の要素のワイルドカード（Linux の srt はこれを無視する）があると，パターンを名指しして生成を失敗させる．`**/` のパターンは，Codex の `:workspace_roots` と同様に，リポジトリルートの下だけを守る．
 
 ### Codex のガード用ファイルシステム
 
@@ -183,14 +191,14 @@ Codex はより具体的なエントリを優先するため，厳しいエン�
 
 ## 検証
 
-以下の数値は v0.9.2 で計測した．
+以下の数値は v0.9.13 の後に計測した．
 
-| 層                      | 場所                                                                                             | 数         |
-| ----------------------- | ------------------------------------------------------------------------------------------------ | ---------- |
-| ユニットテスト          | `src/` の `#[test]`                                                                              | 77         |
-| 統合テスト              | `tests/*.rs`（ビルドしたバイナリを実行する）                                                     | 36         |
-| Codex への適合          | `tests/codex/execpolicy.bats`                                                                    | 3 ケース   |
-| Home Manager モジュール | `nix flake check` で実行する `tests/home_manager_module.nix`，`tests/home_manager_pure_eval.nix` | 2 チェック |
+| 層                      | 場所                                                                                                                                                     | 数         |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| ユニットテスト          | `src/` の `#[test]`                                                                                                                                      | 303        |
+| 統合テスト              | `tests/` の `#[test]`（ビルドしたバイナリを実行する）                                                                                                    | 68         |
+| Codex への適合          | `tests/codex/execpolicy.bats`                                                                                                                            | 3 ケース   |
+| Home Manager モジュール | `nix flake check` で実行する `tests/home_manager_module.nix`，`tests/home_manager_pure_eval.nix`，`agent_github_token.nix`，`agent_github_app_token.nix` | 4 チェック |
 
 flake は，スキルとフックバンドルのビルダーもチェックとしてビルドする．モジュールは評価時に読むファイル（`settings.json`，`config.toml`，`secret_path_policy.json`，`profiles/`）をすべて `source.tree` から読み，`tree` がなければ `source` を読む．ビルド済みの `source` はビルド時にコピーするファイルの供給だけに使うので，評価でビルドは起きず，import-from-derivation は使わない（[furedea/agent-harness#196](https://github.com/furedea/agent-harness/issues/196)）．共有の `nix-check` ワークフローは，import-from-derivation を禁止して `nix flake check --all-systems` を実行する．GitHub Actions では 3 本のワークフローが動く．
 
@@ -215,6 +223,9 @@ CodeQL による解析はワークフローファイルではなく，GitHub の
 - **v0.7.0**: Herdr 専用の連携を取り除き，外部のフックを合成する手段を v0.6.0 で追加した汎用のフックバンドルに一本化した（[0006]）．
 - **v0.8.0**: 個人の設定を製品から切り離し，フラットなソースツリーを採用し，command policy を command permissions に改名した（[0012]，[0014]，[0015]）．
 - **v0.9.2**: 生成するすべてのプロバイダのファイルから保護パスを導出し，生成時にソースの Claude 権限ルールを残すようにした（[#140]，[0018]）．
+- **v0.9.3–v0.9.5**: Claude サンドボックスと Codex のシェルコマンドのためのオプトインのエージェント用 GitHub トークンを追加し，GitHub App から更新するようにした（[0019]–[0023]）．
+- **v0.9.10**: DeepSeek Harness（dsh）プロバイダを，埋め込みのフックブリッジ付きで追加した（[0025]）．
+- **v0.9.13**: Pi のシェルとファイルのツールを srt の内側で動かし，秘密パスポリシーを Codex のガード用ファイルシステムと Pi の srt ポリシーに適用した（[0030]）．
 
 [#140]: https://github.com/furedea/agent-harness/pull/140
 [0001]: adr/0001_separate_codex_conformance_from_required_ci.md
@@ -227,9 +238,14 @@ CodeQL による解析はワークフローファイルではなく，GitHub の
 [0016]: adr/0016_materialize_mutable_claude_settings.md
 [0017]: adr/0017_separate_output_and_runtime_roots.md
 [0018]: adr/0018_preserve_source_claude_permission_rules.md
+[0019]: adr/0019_opt_in_agent_github_token_in_claude_sandbox.md
 [0020]: adr/0020_keep_git_push_outside_the_claude_sandbox.md
 [0021]: adr/0021_refresh_the_agent_token_from_a_github_app.md
+[0023]: adr/0023_default_codex_to_the_guarded_profile_with_the_agent_token.md
+[0024]: adr/0024_track_managed_codex_env_keys_in_a_sidecar.md
+[0025]: adr/0025_embed_the_dsh_hook_bridge.md
 [0026]: adr/0026_declare_providers_in_a_registry.md
 [0027]: adr/0027_declare_claude_and_codex_in_the_provider_registry.md
 [0028]: adr/0028_return_file_operations_as_values.md
 [0029]: adr/0029_declare_config_ownership_and_sync_with_one_engine.md
+[0030]: adr/0030_run_pi_file_operations_inside_srt.md

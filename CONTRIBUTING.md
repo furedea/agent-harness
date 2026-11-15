@@ -48,7 +48,8 @@ nix flake check
 
 ## Provider registry
 
-`src/provider/spec.rs` is the single source of truth for providers. `nix/providers.json`, which
+`PROVIDERS` in `src/provider/registry.rs` is the single source of truth for providers; the types it
+uses live in `src/provider/spec.rs`. `nix/providers.json`, which
 drives the Home Manager module, is generated from it and must not be edited by hand. After you
 change `PROVIDERS` or the projection in `tests/nix_provider_registry.rs`, regenerate the file:
 
@@ -68,7 +69,11 @@ CODEX_BIN="$PWD/node_modules/.bin/codex" \
 ```
 
 CI additionally runs Nix linting, dependency audits, GitHub Actions linting, dependency review, and
-CodeQL.
+Claude and Codex reviews. CodeQL runs through GitHub's default setup, not a workflow file.
+
+Lefthook runs the format and lint gates before each commit (nixfmt, statix, deadnix, `cargo fmt`,
+clippy, ls-lint, and a 500-line limit for Rust files) and commitlint on each commit message. Tests
+run in CI.
 
 ## Release
 
