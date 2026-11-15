@@ -75,7 +75,7 @@ agent breaks in predictable ways:
     sandbox exclusions.
 - Reason: agents keep writing their own state, but a settings overlay must never weaken or remove
     generated enforcement.
-- ADRs: [0016], [0018], [0020], [0029].
+- ADRs: [0016], [0018], [0020], [0024], [0029].
 
 **6. Separate provider declarations, functions, and I/O capabilities.**
 
@@ -143,10 +143,10 @@ flowchart LR
     Functions, and `FileOp` lists flow from generation, rendering, planning, and sync to the executor,
     the only writer ([0028]).
 - Three layers keep computation from writing, in one crate. `clippy.toml` bans std's write APIs and
-    lifts the ban only in `shell::io`; the port is `pub(in crate::shell)`, so computation cannot reach
-    it even through a wrapper; and `#![forbid(...)]` on `generation`, `provider::spec`,
-    `provider::renderer`, `install_plan`, `file_op`, `source_model`, `layout`, `manifest`, `inventory`, and
-    `render` stops them from allowing the ban again. A crate split was rejected: `std::fs` is callable
+    lifts the ban in `shell::io` and the imperative edge listed below; the port is `pub(in crate::shell)`, so computation
+    cannot reach it even through a wrapper; and `#![forbid(...)]` on `generation`, `provider::spec`,
+    `provider::registry`, `provider::ownership`, `provider::renderer`, `config_sync`, `install_plan`,
+    `file_op`, `source_model`, `layout`, `manifest`, `inventory`, and `render` stops them from allowing the ban again. A crate split was rejected: `std::fs` is callable
     from every crate, so the clippy ban stays necessary and the split would only replace visibility
     ([0028]). Tests are outside the lint.
 - The same ban covers reads, so a result depends only on the inputs it was given and not on the disk
@@ -155,9 +155,9 @@ flowchart LR
     directory that is only copied as a location and a file list), and computation reads only that.
     It bans `std::fs` reads, the `Path` probes (`exists`, `is_dir`, `read_dir`, `metadata`),
     `std::env`, and `std::process::Command`. The modules that are the program's imperative edge (`cli`,
-    `source`, `runtime`, `github_app`, `shell::load`, `shell::hook_bundle`, and the build script) lift
-    the ban for themselves with `#![expect(...)]` and a reason, which fails to compile once it stops
-    being needed ([0028]).
+    `source`, `runtime`, `github_app`, `shell::load`, and `shell::hook_bundle`) lift the ban for
+    themselves with `#![expect(...)]` and a reason, which fails to compile once it stops being needed
+    ([0028]). The build script runs before the crate exists and uses `#![allow(...)]` instead.
 - Only secret files (GitHub App tokens) are written `0600`; other files use the process's default
     mode, copies keep their source's permission bits, and replacing an existing file keeps its bits.
 - Claude and Codex are declared in the registry like the other four providers; the registry declares
@@ -187,51 +187,61 @@ sequenceDiagram
   participant S as staging (temporary directory)
   participant H as install target (~/.claude, ~/.codex, ~/.devin, ...)
   U->>A: agent-harness install --source <dir>
-  A->>A: read the source tree and choose providers from PROVIDERS
-  A->>S: copy the existing Codex config so its own state is kept
+  A->>A: load the source tree and installed configs into a typed Source; choose providers from PROVIDERS
+  A->>A: merge installed Claude, Codex, and pi configs with the generated ones so their own state is kept
   A->>S: write each provider's configs, hooks, permission rules and protected paths
   A->>S: place fixed files (assets) such as bridge scripts
-  A->>A: decide the list of managed files and directories
-  loop each managed path
-    A->>S: read the finished file
-    S-->>A: file contents
-    A->>H: replace the same path
+  A->>A: plan the managed files and directories as FileOp values
+  loop each planned FileOp
+    A->>H: replace the managed path from staging or embedded content
   end
   A-->>U: done
 ```
 
 - The staging directory is the assembly area, so a failure while rendering leaves the install
     target untouched.
-- The loop replaces each managed path by reading the finished file from staging.
+- `install_plan` turns the finished staging tree into `FileOp` values, and `shell::execute` applies
+    them to each managed path.
 - Files that are not managed, such as state an agent wrote itself, are left as they are.
 
 `sync-config --provider <id>` commands merge managed keys into configs that agents also write.
 
-| Module                                                                                    | Responsibility                                                                                                 |
-| ----------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `cli`                                                                                     | Parses subcommands and dispatches to rendering, sync, list, and verify.                                        |
-| `source`, `layout`, `manifest`                                                            | Resolve the source tree and validate its layout and required runtime commands.                                 |
-| `profile`                                                                                 | Names the packaged built-in source (`minimal`).                                                                |
-| `render`                                                                                  | Generates the staging tree and passes its publication plan to the executor.                                    |
-| `provider/spec`, `provider/ownership`, `provider/registry`                                | Data: provider metadata, asset destinations, the `ConfigSync` ownership declaration, and the registry.         |
-| `config_sync` (`codec`, `engine`, `installed`)                                            | Functions: format codecs, the one engine that applies declared ownership, and the parsed `Installed` config.   |
-| `install_plan`                                                                            | Functions: plan publication of rendered staging files and embedded assets.                                     |
-| `shell` (`io`, `load`, `executor`, `sync`, `hook_bundle`)                                 | Capabilities: the filesystem port, the `Source` loader, the `FileOp` executor, config sync, and hook bundles.    |
-| `source_model`                                                                            | Functions: the typed `Source` (hook config, permissions, skills, settings, bundles) computation reads.         |
-| `nix/providers.json`, `nix/home_manager_module.nix`                                       | Nix provider list generated from the registry, and the Home Manager options, links, and sync built from it.    |
-| `generation/hooks`                                                                        | Render hook wiring.                                                                                            |
-| `generation/bridges`, `provider/spec`, `install_plan`                                     | Verify bridge asset contracts; declare embedded bridge assets and destinations in specs and plan their writes. |
-| `generation/command_permissions`                                                          | Maps neutral rules to Claude, Codex, and Devin permission syntax.                                              |
-| `generation/claude_config`, `codex_config`, `dsh_config`                                  | Build provider configs and the dsh bundle registration.                                                        |
-| `generation/protection`, `secret_path_policy`                                             | Compute protected paths and secret-file deny rules.                                                            |
-| `generation/guarded_path`, `guarded_conflict`                                             | Compare Codex guarded filesystem entries and fail when a looser entry sits under a stricter one.               |
-| `generation/skills`, `external_hooks`, `hook_bundle`                                      | Render skills and compose external bundles.                                                                    |
-| `inventory`                                                                               | Lists the skills and hooks a source provides.                                                                  |
-| `runtime_root`                                                                            | Relocates hook commands for project-local installs.                                                            |
-| `github_app`                                                                              | Mints GitHub App installation tokens for the agent token option ([0021]).                                      |
-| `runtime`                                                                                 | Checks that the manifest's runtime commands are on `PATH`.                                                     |
+| Module                                                            | Responsibility                                                                                                 |
+| ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `cli`                                                             | Parses subcommands and dispatches to install, `generate-*`, sync, list, verify, and `github-app-token`.        |
+| `source`, `layout`, `manifest`                                    | Resolve the source tree and validate its layout and required runtime commands.                                 |
+| `profile`                                                         | Names the packaged built-in source (`minimal`).                                                                |
+| `render`                                                          | Generates the staging tree and passes its publication plan to the executor.                                    |
+| `provider/spec`, `provider/ownership`, `provider/registry`        | Data: provider metadata, asset destinations, the `ConfigSync` ownership declaration, and the registry.         |
+| `config_sync` (`codec`, `engine`, `installed`)                    | Functions: format codecs, the one engine that applies declared ownership, and the parsed `Installed` config.   |
+| `provider/renderer`                                               | Functions: `ProviderRenderer` renders each provider's declared files as `FileOp` values.                       |
+| `file_op`                                                         | Data: the `FileOp` and `FileMode` values computation returns instead of writing ([0028]).                      |
+| `install_plan`                                                    | Functions: plan publication of rendered staging files and embedded assets.                                     |
+| `shell` (`io`, `load`, `executor`, `sync`, `hook_bundle`)         | Capabilities: the filesystem port, the `Source` loader, the `FileOp` executor, config sync, and hook bundles.  |
+| `source_model`                                                    | Functions: the typed `Source` (hook config, permissions, skills, settings, bundles) computation reads.         |
+| `nix/providers.json`, `nix/home_manager_module.nix`               | Nix provider list generated from the registry, and the Home Manager options, links, and sync built from it.    |
+| `nix/agent_github_token.nix`, `agent_github_app_token_module.nix` | The opt-in agent GitHub token composition and its GitHub App refresh job ([0019]–[0023]).                      |
+| `nix/lib.nix`                                                     | `buildSkillFromCommand` and `buildHookBundleFromCommands`.                                                     |
+| `generation/hooks`                                                | Render hook wiring.                                                                                            |
+| `generation/bridges`, `provider/spec`, `install_plan`             | Verify bridge asset contracts; declare embedded bridge assets and destinations in specs and plan their writes. |
+| `generation/command_permissions`                                  | Maps neutral rules to Claude, Codex, and Devin permission syntax.                                              |
+| `generation/claude_config`, `codex_config`, `dsh_config`          | Build provider configs and the dsh bundle registration.                                                        |
+| `generation/protection`, `secret_path_policy`                     | Compute protected paths and secret-file deny rules.                                                            |
+| `generation/pi_sandbox`                                           | Build Pi's srt policy from the Claude sandbox settings and the secret path policy ([0030]).                    |
+| `generation/guarded_path`, `guarded_conflict`                     | Compare Codex guarded filesystem entries and fail when a looser entry sits under a stricter one.               |
+| `generation/skills`, `external_hooks`, `hook_bundle`              | Render skills and compose external bundles.                                                                    |
+| `inventory`                                                       | Lists the skills and hooks a source provides.                                                                  |
+| `runtime_root`                                                    | Relocates hook commands for project-local installs.                                                            |
+| `github_app`                                                      | Mints GitHub App installation tokens for the agent token option ([0021]).                                      |
+| `runtime`                                                         | Checks that the manifest's runtime commands are on `PATH`.                                                     |
 
 ### Pi srt policy
+
+Pi's bash tool runs inside srt, and its read, write, edit, grep, find, and ls tools run their file
+I/O in a helper process inside the same srt boundary, so the kernel enforces the generated read and
+write restrictions instead of hooks reproducing filesystem checks ([0030]). The helper is untrusted
+and never relied on to enforce permissions. The policy is derived from the Claude sandbox settings,
+adds the Nix daemon socket to `allowUnixSockets`, and denies reading `~/.pi/agent/auth.json`.
 
 The secret path policy reaches Pi as `filesystem.denyRead` entries of the srt policy, under the same
 rule as Codex: only a rule that denies reads is rendered, and write-only rules stay with the hooks
@@ -282,14 +292,14 @@ hooks. Hook-time enforcement remains the primary guard.
 
 ## Verification
 
-Figures below were measured on v0.9.2.
+Figures below were counted after v0.9.13.
 
-| Layer               | Location                                                                                  | Count    |
-| ------------------- | ----------------------------------------------------------------------------------------- | -------- |
-| Unit tests          | `#[test]` in `src/`                                                                       | 77       |
-| Integration tests   | `tests/*.rs`, running the built binary                                                    | 36       |
-| Codex conformance   | `tests/codex/execpolicy.bats`                                                             | 3 cases  |
-| Home Manager module | `tests/home_manager_module.nix`, `tests/home_manager_pure_eval.nix` via `nix flake check` | 2 checks |
+| Layer               | Location                                                                                                                                    | Count    |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| Unit tests          | `#[test]` in `src/`                                                                                                                         | 303      |
+| Integration tests   | `#[test]` in `tests/`, running the built binary                                                                                             | 68       |
+| Codex conformance   | `tests/codex/execpolicy.bats`                                                                                                               | 3 cases  |
+| Home Manager module | `tests/home_manager_module.nix`, `home_manager_pure_eval.nix`, `agent_github_token.nix`, `agent_github_app_token.nix` via `nix flake check` | 4 checks |
 
 The flake also builds the skill and hook-bundle builders as checks. The module reads every
 evaluation-time file (`settings.json`, `config.toml`, `secret_path_policy.json`, `profiles/`) from
@@ -331,6 +341,11 @@ CodeQL analysis is not a workflow file: it runs through GitHub's CodeQL default 
     command policy to command permissions ([0012], [0014], [0015]).
 - **v0.9.2**: derived protected paths from every rendered provider file and kept source Claude
     permission rules during generation ([#140], [0018]).
+- **v0.9.3–v0.9.5**: added the opt-in agent GitHub token for the Claude sandbox and Codex shell
+    commands, refreshed from a GitHub App ([0019]–[0023]).
+- **v0.9.10**: added the DeepSeek Harness (dsh) provider with an embedded hook bridge ([0025]).
+- **v0.9.13**: ran Pi's shell and file tools inside srt and applied the secret path policy to the
+    Codex guarded filesystem and the Pi srt policy ([0030]).
 
 [#140]: https://github.com/furedea/agent-harness/pull/140
 [0001]: adr/0001_separate_codex_conformance_from_required_ci.md
@@ -343,9 +358,14 @@ CodeQL analysis is not a workflow file: it runs through GitHub's CodeQL default 
 [0016]: adr/0016_materialize_mutable_claude_settings.md
 [0017]: adr/0017_separate_output_and_runtime_roots.md
 [0018]: adr/0018_preserve_source_claude_permission_rules.md
+[0019]: adr/0019_opt_in_agent_github_token_in_claude_sandbox.md
 [0020]: adr/0020_keep_git_push_outside_the_claude_sandbox.md
 [0021]: adr/0021_refresh_the_agent_token_from_a_github_app.md
+[0023]: adr/0023_default_codex_to_the_guarded_profile_with_the_agent_token.md
+[0024]: adr/0024_track_managed_codex_env_keys_in_a_sidecar.md
+[0025]: adr/0025_embed_the_dsh_hook_bridge.md
 [0026]: adr/0026_declare_providers_in_a_registry.md
 [0027]: adr/0027_declare_claude_and_codex_in_the_provider_registry.md
 [0028]: adr/0028_return_file_operations_as_values.md
 [0029]: adr/0029_declare_config_ownership_and_sync_with_one_engine.md
+[0030]: adr/0030_run_pi_file_operations_inside_srt.md

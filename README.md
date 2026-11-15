@@ -9,7 +9,7 @@
 
 `agent-harness` is a Nix-native composition layer for hooks, skills, agent instructions, command
 permissions, and provider settings. Define one environment, then render the native files expected
-by Claude Code, Codex, Devin, Hermes Agent, and pi.
+by Claude Code, Codex, Devin, Hermes Agent, pi, and DeepSeek Harness (dsh).
 
 The packaged default stays deliberately small. Personal or team behavior lives in a complete
 source tree beside the rest of its configuration and can compose local or Nix-built skills and
@@ -27,22 +27,23 @@ Provider settings
         |-- Codex: config, hooks, adapters, rules, and skills
         |-- Devin: config, hooks, and command permissions
         |-- Hermes Agent: hook manifest, plugin, and config
-        `-- pi: hook manifest and bridge extension
+        |-- pi: hook manifest, bridge and srt sandbox extensions, settings, and skills
+        `-- dsh: hook manifest, bridge bundle, and skills
 ```
 
 ## Why
 
-- **Shared hooks**: reuse hook behavior across Claude Code, Codex, Devin, Hermes Agent, and pi,
-  including tools whose CLI normally writes directly into each provider's config directory.
+- **Shared hooks**: reuse hook behavior across Claude Code, Codex, Devin, Hermes Agent, pi, and dsh,
+    including tools whose CLI normally writes directly into each provider's config directory.
 - **One set of guardrails**: generate Claude Bash permissions, Codex execpolicy, and Devin Exec
-  permissions from one neutral `allow` / `ask` / `deny` source.
+    permissions from one neutral `allow` / `ask` / `deny` source.
 - **Composable extensions**: combine built-in behavior with external skills and hook bundles.
 - **CLI-to-Nix bridge**: turn command output into a skill, or capture supported files created by
-  hook installers inside an isolated build home.
+    hook installers inside an isolated build home.
 - **Provider-native output**: render the adapters, hook wiring, permissions, rules, and
-  configuration expected by each agent.
+    configuration expected by each agent.
 - **State-aware config sync**: replace harness-owned keys while preserving tool-owned and
-  user-owned state in the Claude Code, Codex, Devin, and Hermes Agent configs.
+    user-owned state in the Claude Code, Codex, Devin, Hermes Agent, pi, and dsh configs.
 
 For the problems this design addresses, the core decisions, and the alternatives considered, see
 [docs/DESIGN.md](docs/DESIGN.md).
@@ -127,14 +128,16 @@ in
 
 `buildSkillFromCommand` writes the command's standard output to `SKILL.md` and rejects empty output.
 `buildHookBundleFromCommands` runs commands in order with an isolated `HOME`, captures supported
-Claude and Codex artifacts, and writes a versioned bundle. Each command is an argument list: the
+provider hook artifacts, and writes a versioned bundle. Each command is an argument list: the
 first item is the executable and the remaining items are passed as arguments without a shell.
 Hook installer executables must be absolute; absolute Nix package paths are recommended for skill
 commands as well. Builds should be deterministic and must not depend on interactive input or
 network access.
 
-The hook builder captures `.claude/settings.json`, `.claude/hooks/`, `.codex/hooks.json`,
-`.codex/hooks/`, `.codex/config.toml`, and top-level `.codex/*.sh` files. If generated hook commands
+The hook builder captures each provider's hook file (`.claude/settings.json`, `.codex/hooks.json`,
+`.devin/hooks.v1.json`, `.hermes/hooks.json`, `.pi/hooks.json`, `.dsh/hooks.json`) and hook
+directory (`.claude/hooks/`, `.codex/hooks/`, `.devin/hooks/`, `.hermes/hooks/`, `.pi/hooks/`,
+`.dsh/hooks/`), plus `.codex/config.toml` and top-level `.codex/*.sh` files. If generated hook commands
 embed a build-time path that must differ at runtime, pass
 `commandReplacements = [{ from = "..."; to = "..."; }]`.
 
@@ -157,11 +160,11 @@ runs sandboxed, fails authentication, and ends in an approval prompt. The opt-in
 option gives Claude Code its own token that is readable inside the sandbox:
 
 1. Create a [fine-grained personal access token](https://github.com/settings/personal-access-tokens/new)
-   limited to the repositories agents may change, with Contents, Pull requests, and Issues set to
-   read and write, Actions and Metadata set to read, and an expiry such as 90 days.
+    limited to the repositories agents may change, with Contents, Pull requests, and Issues set to
+    read and write, Actions and Metadata set to read, and an expiry such as 90 days.
 2. Store it in the agent config directory. `--insecure-storage` writes the token to `hosts.yml` in
-   that directory instead of the system keyring, which the sandbox cannot reach and which already
-   holds the user's own token:
+    that directory instead of the system keyring, which the sandbox cannot reach and which already
+    holds the user's own token:
 
     ```bash
     GH_CONFIG_DIR="$HOME/.config/agent-harness/gh" gh auth login --with-token --insecure-storage < token.txt
@@ -206,43 +209,43 @@ Commit signing works only outside the sandbox, so the source settings pick one o
 agent git:
 
 - **(a) Sign agent commits.** List `git add *`, `git status *`, `git commit *`, and `git push *` in
-  `sandbox.excludedCommands` so a chained `git add x && git commit -m y && git push` runs outside
-  the sandbox, where signing works. An excluded `git push` still inherits `GH_CONFIG_DIR` and
-  authenticates with the agent token. Repository git hooks then also run outside the sandbox, so an
-  agent can run unsandboxed code by editing a hook configuration such as `lefthook.yml`, a script a
-  hook calls, or build settings that a hook's tool reads.
+    `sandbox.excludedCommands` so a chained `git add x && git commit -m y && git push` runs outside
+    the sandbox, where signing works. An excluded `git push` still inherits `GH_CONFIG_DIR` and
+    authenticates with the agent token. Repository git hooks then also run outside the sandbox, so an
+    agent can run unsandboxed code by editing a hook configuration such as `lefthook.yml`, a script a
+    hook calls, or build settings that a hook's tool reads.
 - **(b) Leave agent commits unsigned (recommended when hooks or the tools they run read repository
-  files).** Disable signing for Claude Code only and exclude no git commands, so git, its hooks, and
-  push all run inside the sandbox and push authenticates with the agent token, from either source.
-  Commits that reach the default branch through squash merges are still signed, by GitHub
-  ([ADR-0022](docs/adr/0022_leave_agent_commits_unsigned_inside_the_claude_sandbox.md)).
+    files).** Disable signing for Claude Code only and exclude no git commands, so git, its hooks, and
+    push all run inside the sandbox and push authenticates with the agent token, from either source.
+    Commits that reach the default branch through squash merges are still signed, by GitHub
+    ([ADR-0022](docs/adr/0022_leave_agent_commits_unsigned_inside_the_claude_sandbox.md)).
 
 For (b), set `GIT_CONFIG_*` in the Claude source settings' `env`. It overrides git's config files
 for Claude Code processes only, while the user's own commits stay signed (git 2.31 or later):
 
 ```json
 {
-    "env": {
-        "GIT_CONFIG_COUNT": "2",
-        "GIT_CONFIG_KEY_0": "commit.gpgsign",
-        "GIT_CONFIG_VALUE_0": "false",
-        "GIT_CONFIG_KEY_1": "tag.gpgsign",
-        "GIT_CONFIG_VALUE_1": "false"
-    }
+  "env": {
+    "GIT_CONFIG_COUNT": "2",
+    "GIT_CONFIG_KEY_0": "commit.gpgsign",
+    "GIT_CONFIG_VALUE_0": "false",
+    "GIT_CONFIG_KEY_1": "tag.gpgsign",
+    "GIT_CONFIG_VALUE_1": "false"
+  }
 }
 ```
 
 Threat model:
 
 - Anything running inside the sandbox can use the token within its permissions, including direct
-  API calls; the token's fine-grained scope, not the command rules, is the safety boundary.
+    API calls; the token's fine-grained scope, not the command rules, is the safety boundary.
 - gh runs inside the sandbox on purpose: outside it, gh could upload any readable local file, for
-  example with `gh gist create`, `gh release upload`, or `gh api --input`. git push outside the
-  sandbox in setup (a) can only send repository commits.
+    example with `gh gist create`, `gh release upload`, or `gh api --input`. git push outside the
+    sandbox in setup (a) can only send repository commits.
 - git authenticates through `gh auth git-credential` (set up with `gh auth setup-git`), so remotes
-  must use HTTPS. SSH remotes keep using the user's SSH keys outside this mechanism.
+    must use HTTPS. SSH remotes keep using the user's SSH keys outside this mechanism.
 - Claude Code and Codex shell commands receive the token. Devin, Hermes, and pi still use the
-  default behavior.
+    default behavior.
 
 #### GitHub App token source
 
@@ -254,9 +257,9 @@ systemd user service with a persistent timer on Linux. Everything the option doe
 Codex settings is the same for both sources.
 
 1. [Register a GitHub App](https://github.com/settings/apps/new) with webhooks disabled and these
-   repository permissions: Contents, Pull requests, and Issues set to read and write; Actions and
-   Metadata set to read. Do not grant Workflows: it would let sandboxed code rewrite workflows that
-   run with repository secrets.
+    repository permissions: Contents, Pull requests, and Issues set to read and write; Actions and
+    Metadata set to read. Do not grant Workflows: it would let sandboxed code rewrite workflows that
+    run with repository secrets.
 2. Install the App on the repositories agents may change.
 3. Generate a private key and store it with mode 0600 outside `configDir`:
 
@@ -291,22 +294,22 @@ start failing within the hour, so check it with:
 agent-harness github-app-token status --config-dir ~/.config/agent-harness/gh
 ```
 
-The command prints the expiry and exits with status 1 when no token exists, the last refresh
-failed, `hosts.yml` is missing or holds a different token than the last refresh recorded, or the
+The command prints the expiry and exits with status 1 when no token exists, the token was recorded
+by an older release, the last refresh failed, `hosts.yml` is missing or holds a different token than the last refresh recorded, or the
 token has five minutes or less left. Job output goes to
 `~/Library/Logs/agent-harness-github-app-token.log` on macOS and to the user journal on Linux.
 `agent-harness github-app-token refresh --force` mints a token on demand with the same arguments as
 the job; without `--force` it keeps a token that has 20 minutes or more left, is still in
-`hosts.yml`, and was issued for the configured App and installation.
+`hosts.yml`, and was issued for the configured App and installation, unless the last refresh failed.
 
 Additional threat model for the App source:
 
 - The private key is a long-lived secret equivalent to an SSH key: anyone holding it can mint tokens
-  for every installation. Keep it at mode 0600 and out of backups that others can read.
+    for every installation. Keep it at mode 0600 and out of backups that others can read.
 - Installation tokens expire within an hour, so a leaked token is short-lived.
 - Pushes, pull requests, and comments appear as the App's bot account.
 - A token with Pull requests write can approve pull requests. If branch protection ever requires
-  approvals, do not let the bot count as an approver.
+    approvals, do not let the bot count as an approver.
 
 ## Quick Install
 
@@ -398,7 +401,7 @@ Use the Home Manager module when your agent config is managed by Nix. The module
 ```nix
 {
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-25.11-darwin";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-26.05-darwin";
     home-manager = {
       url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -428,47 +431,53 @@ Use the Home Manager module when your agent config is managed by Nix. The module
 ```
 
 As shown in [Compose with Nix](#compose-with-nix), additional skill directories and external hook
-bundles can be composed into both providers without copying them into this repository. Skill
-directories must contain `SKILL.md`. Installed names may contain only lowercase ASCII letters,
+bundles can be composed without copying them into this repository. Skill directories are rendered for
+Claude, Codex, pi, and dsh (Devin and Hermes have no skill destination), and hook bundles apply to
+every provider. Skill directories must contain `SKILL.md`. Installed names may contain only lowercase ASCII letters,
 digits, and hyphens, and may not shadow a built-in skill. Regular files are copied verbatim;
 symlinks are ignored.
 
-Each bundle must contain `hook_bundle.json` with `{"version":1}` and may provide Claude settings,
-Codex hooks, Codex feature flags, and provider hook scripts. Scripts are installed below
-`~/.claude/hooks/external/<name>/` or `~/.codex/hooks/external/<name>/`. Hook JSON is merged
-structurally; external Codex configuration may add only `[features]` entries.
+Each bundle must contain `hook_bundle.json` with `{"version":1}` and may provide any provider's hook
+file and hook scripts, plus Codex feature flags. Scripts are installed below each provider's hook
+directory as `hooks/external/<name>/` (for example `~/.claude/hooks/external/<name>/`). Hook JSON
+is merged structurally; external Codex configuration may add only `[features]` entries. The CLI
+equivalent of `hooks` is `--extra-hook NAME=PATH` on `install` and on the `generate-*` commands that take `--source` and
+`--output` (all except `generate-hook-bundle` and `generate-skills`).
 
-The complete module interface is:
+The module interface is:
 
-| Option               | Default       | Meaning                                                       |
-| -------------------- | ------------- | ------------------------------------------------------------- |
-| `enable`             | `false`       | Enable the package and managed files.                         |
-| `package`            | flake package | Select the `agent-harness` executable.                        |
-| `source`             | this flake    | Profile collection or complete flat profile source tree.      |
-| `profile`            | `"minimal"`   | Select the packaged composition base.                         |
-| `agentsMd`           | profile file  | Replace the shared `AGENTS.md` / `CLAUDE.md` source.          |
-| `commandPermissions` | profile file  | Replace provider-neutral `allow` / `ask` / `deny` rules.      |
-| `skills`             | `{}`          | Add skill directories or derivations by installed name.       |
-| `hooks`              | `{}`          | Add versioned hook bundle directories or derivations by name. |
-| `claude.enable`      | `true`        | Install Claude Code files.                                    |
-| `claude.settings`    | `{}`          | Optionally override keys in the selected Claude base.         |
-| `codex.enable`       | `true`        | Install Codex files.                                          |
-| `codex.settings`     | `{}`          | Optionally override keys in the selected Codex base.          |
-| `devin.enable`       | `true`        | Install Devin files.                                          |
-| `hermes.enable`      | `true`        | Install Hermes Agent files.                                   |
-| `pi.enable`          | `true`        | Install pi files.                                             |
+| Option               | Default       | Meaning                                                                     |
+| -------------------- | ------------- | --------------------------------------------------------------------------- |
+| `enable`             | `false`       | Enable the package and managed files.                                       |
+| `package`            | flake package | Select the `agent-harness` executable.                                      |
+| `source`             | this flake    | Profile collection or complete flat profile source tree.                    |
+| `profile`            | `"minimal"`   | Select the packaged composition base.                                       |
+| `agentsMd`           | profile file  | Replace the shared `AGENTS.md` / `CLAUDE.md` source.                        |
+| `commandPermissions` | profile file  | Replace provider-neutral `allow` / `ask` / `deny` rules.                    |
+| `skills`             | `{}`          | Add skill directories or derivations by installed name.                     |
+| `hooks`              | `{}`          | Add versioned hook bundle directories or derivations by name.               |
+| `claude.enable`      | `true`        | Install Claude Code files.                                                  |
+| `claude.settings`    | `{}`          | Optionally override keys in the selected Claude base.                       |
+| `codex.enable`       | `true`        | Install Codex files.                                                        |
+| `codex.settings`     | `{}`          | Optionally override keys in the selected Codex base.                        |
+| `devin.enable`       | `true`        | Install Devin files.                                                        |
+| `hermes.enable`      | `true`        | Install Hermes Agent files.                                                 |
+| `pi.enable`          | `true`        | Install pi files.                                                           |
+| `dsh.enable`         | `true`        | Install DeepSeek Harness files.                                             |
+| `dsh.profile`        | `"web"`       | User-owned dsh profile that registers the hook bundle.                      |
+| `github.agentToken`  | disabled      | Agent GitHub token; see [below](#agent-github-token-in-the-claude-sandbox). |
 
 Generated hook wiring, Bash command permissions, and protected paths remain harness-managed after
 the provider settings merge. This prevents a settings overlay from silently removing enforcement.
 Protected paths cover every file the harness renders or syncs for Claude Code, Codex, Devin, Hermes,
-and pi, including the mutable provider configs, but not skills.
+pi, and dsh, including the mutable provider configs, but not skills.
 Set a provider's `enable` option to `false` to skip its files.
 
 The Home Manager module materializes `~/.claude/settings.json` as a writable regular file because
 Claude Code may update it. On activation, generated top-level keys replace the corresponding
 existing values, while top-level keys absent from the generated settings are preserved. Other
-Claude Code files remain Home Manager-managed symlinks. Activation also syncs the Codex, Devin, and
-Hermes Agent configs as described in [What Gets Installed](#what-gets-installed).
+Claude Code files remain Home Manager-managed symlinks. Activation also syncs the Codex, Devin,
+Hermes Agent, pi, and dsh configs as described in [What Gets Installed](#what-gets-installed).
 
 ## Optional Integrity Check
 
@@ -485,35 +494,41 @@ sha256sum -c agent-harness-x86_64-unknown-linux-musl.tar.xz.sha256
 ## What Gets Installed
 
 `agent-harness install --prefix "$HOME"` writes the rendered harness into the Claude Code, Codex,
-Devin, Hermes Agent, and pi config directories.
+Devin, Hermes Agent, pi, and dsh config directories.
 
-| Path                                     | Purpose                                      |
-| ---------------------------------------- | -------------------------------------------- |
-| `~/.codex/AGENTS.md`                     | Codex agent instructions                     |
-| `~/.codex/config.toml`                   | Managed Codex config                         |
-| `~/.codex/hooks.json`                    | Codex hook wiring                            |
-| `~/.codex/hooks/`                        | Codex hook adapters                          |
-| `~/.codex/rules/default.rules`           | Codex command permissions                    |
-| `~/.codex/skills/`                       | Rendered Codex skills                        |
-| `~/.claude/CLAUDE.md`                    | Claude Code agent instructions               |
-| `~/.claude/settings.json`                | Claude Code settings                         |
-| `~/.claude/hooks/`                       | Claude Code hooks and policy guards          |
-| `~/.claude/skills/`                      | Rendered Claude Code skills                  |
-| `~/.claude/statusline/`                  | Claude Code status line command              |
-| `~/.devin/hooks/`                        | Devin hook adapters                          |
-| `~/.config/devin/config.json`            | Devin hooks and command permissions          |
-| `~/.hermes/hooks.json`                   | Hermes Agent hook manifest                   |
-| `~/.hermes/hooks/`                       | Hermes Agent hook adapters                   |
-| `~/.hermes/plugins/agent-harness-hooks/` | Hermes Agent plugin that runs the manifest   |
-| `~/.hermes/managed-config.yaml`          | Hermes Agent keys to sync into `config.yaml` |
-| `~/.pi/agent/AGENTS.md`                  | Shared agent instructions                    |
-| `~/.pi/agent/skills/`                    | Skills with Claude-compatible frontmatter    |
-| `~/.pi/agent/settings.json`              | Managed model defaults merged with user keys |
-| `~/.pi/agent/hooks.json`                 | pi hook manifest                             |
-| `~/.pi/agent/extensions/hook_bridge.ts`  | pi extension that runs the manifest          |
-| `~/.pi/agent/extensions/bash_sandbox.ts` | pi bash tool replacement using srt           |
-| `~/.pi/agent/extensions/sandbox_policy.json` | Generated srt policy                     |
-| `~/.pi/hooks/`                           | pi hook adapters                             |
+| Path                                                 | Purpose                                      |
+| ---------------------------------------------------- | -------------------------------------------- |
+| `~/.codex/AGENTS.md`                                 | Codex agent instructions                     |
+| `~/.codex/config.toml`                               | Managed Codex config                         |
+| `~/.codex/hooks.json`                                | Codex hook wiring                            |
+| `~/.codex/hooks/`                                    | Codex hook adapters                          |
+| `~/.codex/rules/default.rules`                       | Codex command permissions                    |
+| `~/.codex/skills/`                                   | Rendered Codex skills                        |
+| `~/.claude/CLAUDE.md`                                | Claude Code agent instructions               |
+| `~/.claude/settings.json`                            | Claude Code settings                         |
+| `~/.claude/hooks/`                                   | Claude Code hooks and policy guards          |
+| `~/.claude/skills/`                                  | Rendered Claude Code skills                  |
+| `~/.claude/statusline/`                              | Claude Code status line command              |
+| `~/.devin/hooks/`                                    | Devin hook adapters                          |
+| `~/.config/devin/config.json`                        | Devin hooks and command permissions          |
+| `~/.hermes/hooks.json`                               | Hermes Agent hook manifest                   |
+| `~/.hermes/hooks/`                                   | Hermes Agent hook adapters                   |
+| `~/.hermes/plugins/agent-harness-hooks/`             | Hermes Agent plugin that runs the manifest   |
+| `~/.hermes/managed-config.yaml`                      | Hermes Agent keys to sync into `config.yaml` |
+| `~/.pi/agent/AGENTS.md`                              | Shared agent instructions                    |
+| `~/.pi/agent/skills/`                                | Skills with Claude-compatible frontmatter    |
+| `~/.pi/agent/settings.json`                          | Managed model defaults merged with user keys |
+| `~/.pi/agent/hooks.json`                             | pi hook manifest                             |
+| `~/.pi/agent/extensions/hook_bridge.ts`              | pi extension that runs the manifest          |
+| `~/.pi/agent/extensions/bash_sandbox.ts`             | pi bash tool replacement using srt           |
+| `~/.pi/agent/extensions/sandbox_policy.json`         | Generated srt policy                         |
+| `~/.pi/agent/extensions/sandbox/file_operations.mjs` | pi file tool helper run under srt            |
+| `~/.pi/hooks/`                                       | pi hook adapters                             |
+| `~/.dsh/AGENTS.md`                                   | dsh agent instructions                       |
+| `~/.dsh/hooks.json`                                  | dsh hook manifest                            |
+| `~/.dsh/hooks/`                                      | dsh hook adapters                            |
+| `~/.dsh/bridge/`                                     | dsh bridge bundle that runs the manifest     |
+| `~/.dsh/skills/`                                     | Skills copied from the Codex rendering       |
 
 Pi's agent bash tool requires `srt` on `PATH` with recursive `denyGlobRegex`
 support; nixpkgs sandbox-runtime 0.0.52 does not satisfy this requirement.
@@ -564,6 +579,13 @@ next sync; add persistent command rules to `command_permissions.json` instead.
 `install` does not edit `~/.hermes/config.yaml`. `sync-config --provider hermes` merges
 `~/.hermes/managed-config.yaml` into it: generated `plugins.enabled` entries are appended once, and
 all other Hermes Agent state is preserved. The Home Manager module runs this sync on activation.
+
+`sync-config --provider dsh` registers the bridge bundle in a user-owned dsh profile's
+`~/.dsh/profiles/<profile>/package.json`, the Home Manager option `dsh.profile` (default `web`;
+`install --dsh-profile` protects the same file): it owns the
+`dependencies` entries and adds the bundle to `dsh.profile.bundles` once, and it skips a profile
+that dsh has not created yet. The bridge design is recorded in
+[ADR-0025](docs/adr/0025_embed_the_dsh_hook_bridge.md).
 
 `verify` checks the required paths and runtime commands declared by the resolved source manifest. It
 does not compare installed file contents with the selected source.
@@ -669,24 +691,24 @@ agent-harness generate-claude-settings \
 ```
 
 A hook bundle spec lists absolute installer executables and their arguments. Installers run in an
-isolated temporary home, and only supported Claude and Codex hook artifacts are captured. Optional
+isolated temporary home, and only the supported provider hook artifacts are captured. Optional
 command replacements let a build-time executable path become a stable runtime path:
 
 ```json
 {
-    "version": 1,
-    "installers": [
-        {
-            "executable": "/nix/store/example/bin/example-hook",
-            "arguments": ["install", "--target", "claude,codex"]
-        }
-    ],
-    "command_replacements": [
-        {
-            "from": "/nix/store/example/bin/example-hook",
-            "to": "/opt/homebrew/bin/example-hook"
-        }
-    ]
+  "version": 1,
+  "installers": [
+    {
+      "executable": "/nix/store/example/bin/example-hook",
+      "arguments": ["install", "--target", "claude,codex"]
+    }
+  ],
+  "command_replacements": [
+    {
+      "from": "/nix/store/example/bin/example-hook",
+      "to": "/opt/homebrew/bin/example-hook"
+    }
+  ]
 }
 ```
 
@@ -696,20 +718,22 @@ For Nix-managed customization, prefer a complete flat source tree or the direct 
 options above. Render a custom tree with
 `agent-harness install --source <path> --prefix "$HOME"`.
 
-| Goal                                    | Edit                                                   |
-| --------------------------------------- | ------------------------------------------------------ |
-| Declare runtime command requirements    | `agents/manifest.json`                                 |
-| Change shared agent instructions        | `agents/AGENTS.md`                                     |
-| Add or edit a skill                     | `agents/skills/<skill>/SKILL.md`                       |
-| Change provider-specific skill metadata | `agents/skill_rendering.json`                          |
-| Change shared command permissions       | `agents/command_permissions.json`                      |
-| Change precise global command forms     | `agents/hooks/rules/{allowed,forbidden}_commands.json` |
-| Add or change hook wiring               | `agents/hooks.json`                                    |
-| Add or change Claude hooks              | `agents/hooks/*.sh`                                    |
-| Add or change Codex hook adapters       | `agents/codex/hooks/*.sh`                              |
-| Add or change Devin, Hermes, pi hooks   | `agents/{devin,hermes,pi}/hooks/`                      |
-| Change Codex base config                | `agents/codex/config.toml`                             |
-| Change Claude base settings             | `agents/claude/settings.json`                          |
+| Goal                                       | Edit                                                   |
+| ------------------------------------------ | ------------------------------------------------------ |
+| Declare runtime command requirements       | `agents/manifest.json`                                 |
+| Change shared agent instructions           | `agents/AGENTS.md`                                     |
+| Add or edit a skill                        | `agents/skills/<skill>/SKILL.md`                       |
+| Change provider-specific skill metadata    | `agents/skill_rendering.json`                          |
+| Change shared command permissions          | `agents/command_permissions.json`                      |
+| Change precise global command forms        | `agents/hooks/rules/{allowed,forbidden}_commands.json` |
+| Add or change hook wiring                  | `agents/hooks.json`                                    |
+| Add or change Claude hooks                 | `agents/hooks/*.sh`                                    |
+| Add or change Codex hook adapters          | `agents/codex/hooks/*.sh`                              |
+| Add or change Devin, Hermes, pi, dsh hooks | `agents/{devin,hermes,pi,dsh}/hooks/`                  |
+| Change secret path or commit policy        | `agents/hooks/rules/secret_{path,commit}_policy.json`  |
+| Change pi model defaults                   | `agents/pi/settings.json`                              |
+| Change Codex base config                   | `agents/codex/config.toml`                             |
+| Change Claude base settings                | `agents/claude/settings.json`                          |
 
 Command permissions have two layers. `command_permissions.json` at the profile root is the
 provider-neutral source of shared token prefixes. Each rule has a `decision` (`allow`, `ask`, or
@@ -717,47 +741,45 @@ provider-neutral source of shared token prefixes. Each rule has a `decision` (`a
 
 ```json
 {
-    "version": 1,
-    "rules": [
-        {
-            "decision": "ask",
-            "prefix": ["git", "push"],
-            "justification": "Publishing changes requires user confirmation."
-        }
-    ]
+  "version": 1,
+  "rules": [
+    {
+      "decision": "ask",
+      "prefix": ["git", "push"],
+      "justification": "Publishing changes requires user confirmation."
+    }
+  ]
 }
 ```
 
 The generator maps these rules to Claude Code's `allow`, `ask`, and `deny` Bash permissions and to
-Codex's `allow`, `prompt`, and `forbidden` execpolicy decisions. The JSON files under `hooks/rules/`
-contain POSIX extended regular expressions for precise global command forms.
-
-A repository may add precise rules without changing agent-harness by creating either of these
-optional files:
-
-```text
-<git-root>/.agents/hooks/rules/allowed_commands.json
-<git-root>/.agents/hooks/rules/forbidden_commands.json
-```
-
-Both files use this schema:
+Codex's `allow`, `prompt`, and `forbidden` execpolicy decisions, and to Devin's `Exec(...)`
+`allow`, `ask`, and `deny` permissions. The `allowed_commands.json` and `forbidden_commands.json`
+files under `hooks/rules/` contain POSIX extended regular expressions for precise global command
+forms:
 
 ```json
 {
-    "version": 1,
-    "rules": [
-        {
-            "patterns": ["^uv run --frozen example$"],
-            "justification": "Allow the repository's validated example task."
-        }
-    ]
+  "version": 1,
+  "rules": [
+    {
+      "programs": ["uv"],
+      "patterns": ["^uv run --frozen example$"],
+      "exceptions": ["^uv run --frozen example --unsafe$"],
+      "justification": "Allow the repository's validated example task."
+    }
+  ]
 }
 ```
 
-Project allow rules only approve precise forms within an allow prefix already declared in the
-active profile's `command_permissions.json`; they cannot introduce a new shared prefix.
-Project forbidden rules may reject any matching command segment. A forbidden match takes
-precedence over an allow match, and an invalid project rule file fails closed.
+`programs` and `exceptions` are optional. agent-harness validates these files and installs them
+next to the hooks; enforcing them at runtime, including any project-local rule files, is the job
+of the source's hook scripts. The built-in `minimal` source ships no such hooks.
+
+`hooks/rules/secret_path_policy.json` and `hooks/rules/secret_commit_policy.json` are required as
+well. A secret path rule that denies reads also becomes a Codex `[permissions.guarded.filesystem]`
+`"none"` entry and a `filesystem.denyRead` entry of Pi's srt policy; see
+[docs/DESIGN.md](docs/DESIGN.md) for the pattern rules.
 
 Use the installed binary with a local source tree:
 
@@ -784,8 +806,10 @@ When `--source` is omitted, `agent-harness` resolves assets in this order:
 6. embedded packaged assets
 
 After resolving the source root, the CLI selects `profiles/<profile>` when present. Otherwise, it
-treats the root as a complete flat profile containing `manifest.json`, `AGENTS.md`, `hooks/`,
-`skills/`, `claude/`, and `codex/`. This lets a dotfiles repository expose `agents/` directly while
+treats the root as a complete flat profile. It must contain `manifest.json`, `AGENTS.md`,
+`command_permissions.json`, `hooks.json`, `skill_rendering.json`, `claude/settings.json`,
+`codex/config.toml`, and `hooks/rules/{allowed_commands,forbidden_commands,secret_commit_policy,secret_path_policy}.json`;
+`skills/` and the other providers' hook directories are optional. This lets a dotfiles repository expose `agents/` directly while
 the same binary continues to work from release tarballs, Nix builds, Cargo installs, and local
 checkouts.
 
