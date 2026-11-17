@@ -123,6 +123,19 @@ jobs:
     secrets:
       codex_review_token: ${{ secrets.CODEX_REVIEW_TOKEN }}
 
+  adr-lint:
+    uses: furedea/reusable-workflows/.github/workflows/adr-lint.yml@5e16a8d7d92a84a4392de97e3ccc1ccac9c8579b # v1.6.0
+    permissions:
+      contents: read
+    with:
+      madr-from: 31
+
+  ast-grep:
+    uses: furedea/reusable-workflows/.github/workflows/ast-grep.yml@5e16a8d7d92a84a4392de97e3ccc1ccac9c8579b # v1.6.0
+    permissions:
+      contents: read
+      pull-requests: read
+
   all-green:
     if: always()
     needs:
@@ -136,6 +149,8 @@ jobs:
       - nix-check
       - claude-review
       - codex-review
+      - adr-lint
+      - ast-grep
     runs-on: ubuntu-latest
     timeout-minutes: 1
     permissions: {}
