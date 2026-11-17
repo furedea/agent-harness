@@ -1,7 +1,9 @@
-# ADR-0024: Track managed Codex env keys in a sidecar
+---
+status: accepted
+date: 2026-10-26
+---
 
-- Status: Accepted
-- Date: 2026-10-26
+# ADR-0024: Track managed Codex env keys in a sidecar
 
 In the context of syncing the generated `shell_environment_policy.set` into the user's
 `~/.codex/config.toml`, which Codex and the user also write to, facing the fact that a key absent

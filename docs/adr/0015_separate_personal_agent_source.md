@@ -1,8 +1,10 @@
-# ADR-0015: Separate personal agent source
+---
+status: accepted
+date: 2026-08-28
+related: [ADR-0013]
+---
 
-- Status: Accepted
-- Date: 2026-08-28
-- Related: ADR-0013
+# ADR-0015: Separate personal agent source
 
 In the context of publishing a reusable renderer while frequently changing one user's hooks,
 skills, instructions, and provider settings, facing release work in this repository for every

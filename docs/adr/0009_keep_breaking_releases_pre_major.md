@@ -1,8 +1,10 @@
-# ADR-0009: Keep breaking releases pre-major
+---
+status: superseded
+date: 2026-08-24
+superseded-by: [ADR-0010]
+---
 
-- Status: Superseded
-- Date: 2026-08-24
-- Superseded by: ADR-0010
+# ADR-0009: Keep breaking releases pre-major
 
 In the context of agent-harness remaining below 1.0 while its public CLI and Home Manager
 interfaces are still evolving, facing release-please's default promotion of any breaking commit to

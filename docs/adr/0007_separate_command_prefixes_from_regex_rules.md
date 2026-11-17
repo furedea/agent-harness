@@ -1,7 +1,10 @@
-# ADR-0007: Separate command prefixes from precise regex rules
+---
+status: superseded
+date: 2026-08-24
+superseded-by: [ADR-0012]
+---
 
-- Status: Superseded by ADR-0012
-- Date: 2026-08-24
+# ADR-0007: Separate command prefixes from precise regex rules
 
 In the context of sharing command permissions across Claude Code and Codex while individual
 repositories need narrowly scoped local command forms, facing provider permission formats based on

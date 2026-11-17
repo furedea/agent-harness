@@ -1,7 +1,9 @@
-# ADR-0030: Run Pi file operations inside srt
+---
+status: accepted
+date: 2026-11-12
+---
 
-- Status: Accepted
-- Date: 2026-11-12
+# ADR-0030: Run Pi file operations inside srt
 
 In the context of [Pi sandboxing](https://github.com/furedea/agent-harness/issues/221),
 facing path aliases, hard links, filesystem case folding, and incomplete hook coverage,

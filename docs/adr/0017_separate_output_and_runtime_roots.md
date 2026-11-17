@@ -1,7 +1,9 @@
-# ADR-0017: Separate output and runtime roots
+---
+status: accepted
+date: 2026-09-04
+---
 
-- Status: Accepted
-- Date: 2026-09-04
+# ADR-0017: Separate output and runtime roots
 
 In the context of rendering the same source into both user-level and project-local provider
 configuration, facing hook commands and protection rules that previously assumed `$HOME` even when

@@ -1,7 +1,10 @@
-# ADR-0026: Declare providers in a registry
+---
+status: superseded
+date: 2026-11-05
+superseded-by: [ADR-0027]
+---
 
-- Status: Superseded
-- Date: 2026-11-05
+# ADR-0026: Declare providers in a registry
 
 In the context of adding providers across hook generation, installation, inventory, CLI, and
 Home Manager, facing parallel provider lists that drift and omit protected paths, we decided

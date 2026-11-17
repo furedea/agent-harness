@@ -1,7 +1,9 @@
-# ADR-0023: Default Codex to the guarded profile with the agent token
+---
+status: accepted
+date: 2026-10-19
+---
 
-- Status: Accepted
-- Date: 2026-10-19
+# ADR-0023: Default Codex to the guarded profile with the agent token
 
 In the context of the opt-in agent GitHub token of ADR-0019, which Codex shell commands receive
 through `shell_environment_policy.set.GH_CONFIG_DIR`, facing a Codex sandbox whose legacy

@@ -1,7 +1,9 @@
-# ADR-0025: Embed the dsh hook bridge
+---
+status: accepted
+date: 2026-11-05
+---
 
-- Status: Accepted
-- Date: 2026-11-05
+# ADR-0025: Embed the dsh hook bridge
 
 In the context of adding DeepSeek Harness hooks ([#187](https://github.com/furedea/agent-harness/issues/187)),
 facing a release-candidate plugin protocol and a manifest that must match its bridge,

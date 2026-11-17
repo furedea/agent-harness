@@ -1,7 +1,9 @@
-# ADR-0016: Materialize mutable Claude settings
+---
+status: accepted
+date: 2026-08-29
+---
 
-- Status: Accepted
-- Date: 2026-08-29
+# ADR-0016: Materialize mutable Claude settings
 
 In the context of deploying generated Claude Code settings through Home Manager while Claude Code
 may update the same file, facing immutable Nix store symlinks and provider-owned state, we decided

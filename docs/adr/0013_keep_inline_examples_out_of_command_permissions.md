@@ -1,7 +1,9 @@
-# ADR-0013: Keep inline examples out of command permissions
+---
+status: accepted
+date: 2026-08-29
+---
 
-- Status: Accepted
-- Date: 2026-08-29
+# ADR-0013: Keep inline examples out of command permissions
 
 In the context of a provider-neutral command-permissions source, facing Codex's optional inline
 `match` and `not_match` tests without equivalent fields in other supported agents, we decided for

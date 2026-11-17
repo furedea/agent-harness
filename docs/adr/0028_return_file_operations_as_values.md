@@ -1,7 +1,12 @@
-# ADR-0028: Return file operations as values
+---
+status: accepted
+date: 2026-11-12
+amended:
+  - "2026-11-12: computation does not read either"
+  - "2026-11-12: the boundary parses the source into a typed model"
+---
 
-- Status: Accepted
-- Date: 2026-11-12
+# ADR-0028: Return file operations as values
 
 In the context of three filesystem paths with different guarantees (`filesystem.rs`, `fs_ops.rs`,
 and `generation/io.rs`), generators that wrote straight to disk, a renderer that called the real

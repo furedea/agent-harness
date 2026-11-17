@@ -1,8 +1,10 @@
-# ADR-0010: Use pre-major compatibility versions
+---
+status: accepted
+date: 2026-08-25
+supersedes: [ADR-0009]
+---
 
-- Status: Accepted
-- Date: 2026-08-25
-- Supersedes: ADR-0009
+# ADR-0010: Use pre-major compatibility versions
 
 In the context of agent-harness remaining below 1.0 while its public CLI and Home Manager
 interfaces are still evolving, facing minor releases that do not distinguish compatible features
