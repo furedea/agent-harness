@@ -1,8 +1,10 @@
-# ADR-0012: Name provider-neutral command permissions
+---
+status: accepted
+date: 2026-08-25
+supersedes: [ADR-0007]
+---
 
-- Status: Accepted
-- Date: 2026-08-25
-- Supersedes: ADR-0007
+# ADR-0012: Name provider-neutral command permissions
 
 In the context of generating Claude Code Bash permissions and Codex execpolicy rules from one
 provider-neutral file while hook guards also consume precise regular-expression rules, facing

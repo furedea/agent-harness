@@ -1,7 +1,11 @@
-# ADR-0021: Refresh the agent token from a GitHub App
+---
+status: accepted
+date: 2026-10-17
+amended:
+  - "2026-10-20: refresh the token early and often"
+---
 
-- Status: Accepted
-- Date: 2026-10-17
+# ADR-0021: Refresh the agent token from a GitHub App
 
 In the context of the opt-in agent GitHub token of ADR-0020, facing fine-grained personal access
 tokens that expire and must be recreated by hand, we decided for an opt-in

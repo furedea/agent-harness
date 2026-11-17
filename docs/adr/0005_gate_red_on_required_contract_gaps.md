@@ -1,7 +1,9 @@
-# ADR-0005: Gate Red on required contract gaps
+---
+status: accepted
+date: 2026-08-16
+---
 
-- Status: Accepted
-- Date: 2026-08-16
+# ADR-0005: Gate Red on required contract gaps
 
 In the context of AI agents following TSDD, facing brittle assertions manufactured to satisfy an
 unconditional Red requirement, we decided for requiring Red only when current behavior has a real

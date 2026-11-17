@@ -1,7 +1,9 @@
-# ADR-0008: Generate the runtime protection policy
+---
+status: accepted
+date: 2026-08-24
+---
 
-- Status: Accepted
-- Date: 2026-08-24
+# ADR-0008: Generate the runtime protection policy
 
 In the context of protecting installed harness files across Claude permissions, Claude sandboxing,
 Codex filesystem guards, and explanatory runtime hooks, facing duplicated path lists that can drift

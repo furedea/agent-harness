@@ -1,7 +1,9 @@
-# ADR-0022: Leave agent commits unsigned inside the Claude sandbox
+---
+status: accepted
+date: 2026-10-17
+---
 
-- Status: Accepted
-- Date: 2026-10-17
+# ADR-0022: Leave agent commits unsigned inside the Claude sandbox
 
 In the context of the opt-in agent GitHub token of ADR-0020, whose README advised excluding
 `git add *`, `git status *`, `git commit *`, and `git push *` so that agent commits are signed outside

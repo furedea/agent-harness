@@ -1,8 +1,10 @@
-# ADR-0020: Keep git push outside the Claude sandbox with the agent token
+---
+status: accepted
+date: 2026-10-15
+supersedes: [ADR-0019]
+---
 
-- Status: Accepted
-- Date: 2026-10-15
-- Supersedes: ADR-0019
+# ADR-0020: Keep git push outside the Claude sandbox with the agent token
 
 In the context of the opt-in `programs.agent-harness.github.agentToken` option, which points
 `GH_CONFIG_DIR` at an agent-scoped fine-grained token readable inside the Claude Code sandbox,

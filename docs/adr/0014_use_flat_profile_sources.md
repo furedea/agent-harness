@@ -1,9 +1,11 @@
-# ADR-0014: Use flat profile sources
+---
+status: accepted
+date: 2026-08-28
+supersedes: [ADR-0011]
+related: [ADR-0012]  # amends ADR-0012
+---
 
-- Status: Accepted
-- Date: 2026-08-28
-- Supersedes: ADR-0011
-- Amends: ADR-0012
+# ADR-0014: Use flat profile sources
 
 In the context of keeping a personal multi-provider configuration directly under a dotfiles
 `agents/` directory, facing redundant `agents/agents/` nesting and runtime requirements hardcoded

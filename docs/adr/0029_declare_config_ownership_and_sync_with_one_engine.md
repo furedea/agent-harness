@@ -1,7 +1,9 @@
-# ADR-0029: Declare config ownership and sync with one engine
+---
+status: accepted
+date: 2026-11-12
+---
 
-- Status: Accepted
-- Date: 2026-11-12
+# ADR-0029: Declare config ownership and sync with one engine
 
 In the context of six providers whose mutable configs the harness keeps in step with the rendered
 ones, each by its own code (Claude `existing.extend(generated)`, Devin `starts_with("Exec(")`,

@@ -1,8 +1,10 @@
-# ADR-0027: Declare Claude and Codex in the provider registry
+---
+status: accepted
+date: 2026-11-09
+supersedes: [ADR-0026]
+---
 
-- Status: Accepted
-- Date: 2026-11-09
-- Supersedes: ADR-0026
+# ADR-0027: Declare Claude and Codex in the provider registry
 
 In the context of a provider registry that covered only Devin, Hermes, pi, and dsh while Claude and
 Codex kept separate hook, settings, rules, statusline, CLI, inventory, and Home Manager paths, facing

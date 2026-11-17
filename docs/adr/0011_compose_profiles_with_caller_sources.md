@@ -1,8 +1,10 @@
-# ADR-0011: Compose profiles with caller sources
+---
+status: superseded
+date: 2026-08-25
+superseded-by: [ADR-0014]
+---
 
-- Status: Superseded
-- Date: 2026-08-25
-- Superseded by: ADR-0014
+# ADR-0011: Compose profiles with caller sources
 
 In the context of publishing agent-harness as a reusable Codex and Claude Code composition layer
 while the repository also contains personal skills, hooks, and policies, facing a choice between

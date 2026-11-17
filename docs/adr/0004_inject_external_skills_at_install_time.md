@@ -1,7 +1,9 @@
-# ADR-0004: Inject external skills at install time
+---
+status: accepted
+date: 2026-08-09
+---
 
-- Status: Accepted
-- Date: 2026-08-09
+# ADR-0004: Inject external skills at install time
 
 In the context of agent-harness installing shared skills while upstream tools such as Herdr own
 release-matched agent instructions, facing stale vendored copies and undesirable dependencies on

@@ -1,8 +1,10 @@
-# ADR-0006: Compose external hook bundles
+---
+status: accepted
+date: 2026-08-20
+supersedes: [ADR-0003]
+---
 
-- Status: Accepted
-- Date: 2026-08-20
-- Supersedes: ADR-0003
+# ADR-0006: Compose external hook bundles
 
 In the context of agent-harness owning shared Claude and Codex configuration while tools such as
 Herdr and Moshi own their hook protocols, facing stale vendored artifacts and an increasing number

@@ -1,7 +1,9 @@
-# ADR-0018: Preserve source Claude permission rules
+---
+status: accepted
+date: 2026-09-26
+---
 
-- Status: Accepted
-- Date: 2026-09-26
+# ADR-0018: Preserve source Claude permission rules
 
 In the context of generating Claude Code `permissions` from a source `claude/settings.json` and the
 provider-neutral `command_permissions.json`, facing Claude-only rules such as
