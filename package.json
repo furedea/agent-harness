@@ -4,7 +4,7 @@
   "private": true,
   "description": "Locked JavaScript tools used by agent-harness CI.",
   "devDependencies": {
-    "@openai/codex": "0.167.0"
+    "@openai/codex": "0.171.0"
   },
   "scripts": {
     "test": "node tests/dsh_bridge_smoke.mjs && node tests/pi_bridge_smoke.mjs && node tests/pi_sandbox_smoke.mjs"
