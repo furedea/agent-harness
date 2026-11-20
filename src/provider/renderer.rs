@@ -36,6 +36,8 @@ pub(crate) struct ProviderRenderer<'a> {
     pub(crate) providers: &'a [ProviderSpec],
     pub(crate) installed: &'a InstalledConfigs,
     pub(crate) out: &'a Path,
+    /// The home directory when `out` is installed into it.
+    pub(crate) home: Option<&'a Path>,
 }
 
 impl ProviderRenderer<'_> {
@@ -230,12 +232,22 @@ impl ProviderRenderer<'_> {
         self.merge_into_installed(target, &ConfigDocument::Json(generated))
     }
 
+    fn merging<'m>(&self, merge: Merge<'m>) -> Merge<'m>
+    where
+        Self: 'm,
+    {
+        match self.home {
+            Some(home) => merge.expanding_home(home),
+            None => merge,
+        }
+    }
+
     fn merge_into_installed(
         &self,
         target: InstalledConfig<'_>,
         generated: &ConfigDocument,
     ) -> Result<Vec<FileOp>> {
-        Merge::new(target.sync, generated)
+        self.merging(Merge::new(target.sync, generated))
             .apply(self.installed.get(target.relative))?
             .into_ops(target.sync, target.path)
     }

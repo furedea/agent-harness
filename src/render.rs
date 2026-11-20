@@ -35,6 +35,8 @@ pub(crate) struct RenderRequest<'a> {
     pub(crate) source: &'a Path,
     pub(crate) external_hooks: &'a [ExternalHookBundle],
     pub(crate) runtime_root: &'a RuntimeRoot,
+    /// The home directory when the install prefix is it, so home-relative rules become absolute.
+    pub(crate) home: Option<&'a Path>,
 }
 
 impl RenderRequest<'_> {
@@ -92,6 +94,7 @@ pub(crate) fn install(request: &RenderRequest<'_>, out: &Path) -> Result<()> {
         providers: PROVIDERS,
         installed: &installed,
         out: staging.path(),
+        home: request.home,
     };
     let mut plan = plan_installation(&renderer)?;
     plan.push_stage(crate::install_plan::plan_install(
@@ -114,6 +117,7 @@ pub(crate) fn render_installation_for(
         providers,
         installed: &installed,
         out,
+        home: request.home,
     };
     execute_stages(&plan_installation(&renderer)?)
 }

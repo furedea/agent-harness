@@ -117,12 +117,17 @@ fn install_preserves_existing_files_when_source_generation_fails() -> Result<()>
 }
 
 fn install_home(source: &Path, out: &Path) -> Result<()> {
+    install_with_home(source, out, None)
+}
+
+fn install_with_home(source: &Path, out: &Path, home: Option<&Path>) -> Result<()> {
     let runtime_root = RuntimeRoot::home();
     let request = RenderRequest {
         dsh_profile: "web",
         source,
         external_hooks: &[],
         runtime_root: &runtime_root,
+        home,
     };
     install(&request, out)
 }
@@ -404,6 +409,40 @@ fn install_rejects_a_source_without_hooks_and_keeps_the_installed_hooks() -> Res
         crate::shell::fixtures::read_to_string(out.join(".claude/hooks/installed.sh"))?,
         "installed\n"
     );
+    crate::shell::fixtures::remove_dir_all(root)?;
+    Ok(())
+}
+
+#[test]
+fn install_into_the_home_writes_absolute_antigravity_path_rules() -> Result<()> {
+    let root = test_root("install_into_the_home_writes_absolute_antigravity_rules")?;
+    let source = root.join("source");
+    let out = root.join("out");
+    write_minimal_source(&source)?;
+
+    install_with_home(&source, &out, Some(&out))?;
+
+    let settings =
+        crate::shell::fixtures::read_to_string(out.join(".gemini/antigravity-cli/settings.json"))?;
+    let home = out.display();
+    assert!(settings.contains(&format!("write_file({home}/.gemini/config)")));
+    assert!(!settings.contains("(~"), "{settings}");
+    crate::shell::fixtures::remove_dir_all(root)?;
+    Ok(())
+}
+
+#[test]
+fn install_elsewhere_leaves_antigravity_path_rules_to_the_sync() -> Result<()> {
+    let root = test_root("install_elsewhere_leaves_antigravity_rules")?;
+    let source = root.join("source");
+    let out = root.join("out");
+    write_minimal_source(&source)?;
+
+    install_home(&source, &out)?;
+
+    let settings =
+        crate::shell::fixtures::read_to_string(out.join(".gemini/antigravity-cli/settings.json"))?;
+    assert!(settings.contains("write_file(~/.gemini/config)"));
     crate::shell::fixtures::remove_dir_all(root)?;
     Ok(())
 }

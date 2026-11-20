@@ -113,6 +113,7 @@ fn extra_spec_flows_through_layout_protection_rendering_and_publication() -> Res
         source: &source,
         external_hooks: &[],
         runtime_root: &runtime_root,
+        home: None,
     };
     render::render_installation_for(&request, staging.path(), &providers)?;
     assert_policy_protects_bridge(staging.path())?;
@@ -414,6 +415,7 @@ fn rendering_writes_command_rules_where_the_provider_declares_them() -> Result<(
         providers: PROVIDERS,
         installed: &installed,
         out: out.path(),
+        home: None,
     };
     let codex_elsewhere = ProviderSpec {
         command_rule: Some(CommandRuleSpec::ExecpolicyFile {

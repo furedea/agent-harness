@@ -16,6 +16,9 @@ use crate::{
 /// Directories `agy --sandbox` must read for `git` and `nix` to run; `agy` rejects globs.
 const SANDBOX_READ_PATHS: [&str; 2] = ["/nix", "/run"];
 
+/// Well-known secret mounts under `/run`, which the allow above would otherwise cover.
+const RUN_SECRET_PATHS: [&str; 3] = ["/run/secrets", "/run/agenix", "/run/keys"];
+
 /// The Antigravity settings: the source settings with the generated parts merged in.
 ///
 /// `agy` reads `permissions` rules for six resource kinds, takes absolute paths only, and fails
@@ -46,6 +49,7 @@ fn merge_permissions(root: &mut Map<String, Value>, context: GenerationContext<'
     rules.extend_allow(command_permissions::antigravity_allow_permissions(source));
     rules.extend_ask(command_permissions::antigravity_ask_permissions(source));
     rules.extend_deny(command_permissions::antigravity_deny_permissions(source));
+    rules.extend_deny(RUN_SECRET_PATHS.map(read_file_rule));
     rules.extend_deny(
         secret_path_policy::antigravity_denied_paths(source, PathAccess::Read)
             .into_iter()

@@ -397,11 +397,13 @@ fn install(args: InstallArgs, profile: Profile) -> Result<()> {
         .map(RuntimeRoot::directory)
         .transpose()?
         .unwrap_or_else(RuntimeRoot::home);
+    let home = home_dir().ok().filter(|home| *home == prefix);
     let request = RenderRequest {
         dsh_profile: &args.dsh_profile,
         source: source.as_path(),
         external_hooks: &args.extra_hook,
         runtime_root: &runtime_root,
+        home: home.as_deref(),
     };
     render::install(&request, &prefix)
 }

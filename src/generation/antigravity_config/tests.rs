@@ -32,7 +32,8 @@ const SECRET_POLICY: &str = r#"{"version":1,"rules":[
   {"pattern":"~/keys/*.pem","access":["read"]},
   {"pattern":"~/vault/**/token","access":["read"]},
   {"pattern":"~/.aws/**","access":["write"]},
-  {"pattern":"~/**","access":["read"]}
+  {"pattern":"~/**","access":["read"]},
+  {"pattern":"//","access":["write"]}
 ]}"#;
 
 const COMMANDS: &str = r#"{"version":1,"rules":[
@@ -126,6 +127,25 @@ fn secret_reads_are_denied_only_where_agy_can_name_one_location() -> Result<()> 
         !deny.contains(&"write_file(~/.ssh)".to_owned()),
         "a read-only rule denies no write: {deny:?}"
     );
+    Ok(())
+}
+
+#[test]
+fn the_home_and_the_root_are_named_when_a_rule_denies_all_of_them() -> Result<()> {
+    let deny = rules(&generated(&json!({}))?, "deny");
+
+    assert!(deny.contains(&"read_file(~)".to_owned()), "{deny:?}");
+    assert!(deny.contains(&"write_file(/)".to_owned()), "{deny:?}");
+    Ok(())
+}
+
+#[test]
+fn the_run_allow_does_not_cover_the_well_known_secret_mounts() -> Result<()> {
+    let deny = rules(&generated(&json!({}))?, "deny");
+
+    for mount in ["/run/secrets", "/run/agenix", "/run/keys"] {
+        assert!(deny.contains(&format!("read_file({mount})")), "{mount}");
+    }
     Ok(())
 }
 
