@@ -24,22 +24,22 @@ the agent's reach?
 Chosen option: "sandbox plus generated permissions", because hooks alone cannot stop the agent from
 rewriting the hook registration that carries them.
 
-- Only concrete files and directories are emitted. Protected paths are `write_file(...)` denials; the
+* Only concrete files and directories are emitted. Protected paths are `write_file(...)` denials; the
   whole `~/.gemini/config` directory and `settings.json` are denied.
-- A secret path rule converts only when it names one location: `//x` becomes `/x`, `~` and `~/x` stay
+* A secret path rule converts only when it names one location: `//x` becomes `/x`, `~` and `~/x` stay
   for the install or sync to expand, and a trailing `/**` names the directory. Any other glob and any
   project-relative pattern stays with the `PreToolUse` hook.
-- `agy` reads absolute paths, so a sync, and an install whose prefix is the home directory, expand the
+* `agy` reads absolute paths, so a sync, and an install whose prefix is the home directory, expand the
   leading `~` of path rules. A Nix build leaves them for the activation sync.
-- The sandbox needs `read_file(/nix)` and `read_file(/run)` for `git` and `nix`. Narrower `/run` entries
+* The sandbox needs `read_file(/nix)` and `read_file(/run)` for `git` and `nix`. Narrower `/run` entries
   were not verified to be enough, so the grant stays broad and the well-known secret mounts under it
   are denied. Whether a deny wins over an allow is unverified.
-- The harness owns only `command(`, `read_file(` and `write_file(` entries and pins `agentMode` to `""`
+* The harness owns only `command(`, `read_file(` and `write_file(` entries and pins `agentMode` to `""`
   (Default; Auto mode must not run) and `enableTerminalSandbox` to `true`. The rest of the user's
   settings is kept. `SandboxBypassDisabled` is not a settings key and is not managed.
-- `~/.gemini/antigravity-cli` as a whole stays writable because `agy` keeps its own conversation and
+* `~/.gemini/antigravity-cli` as a whole stays writable because `agy` keeps its own conversation and
   scratch files there; only `settings.json` is denied.
-- With `github.agentToken`, the normal `gh` token and the App private key are denied with
+* With `github.agentToken`, the normal `gh` token and the App private key are denied with
   `read_file(...)`. `agy` settings have no key for the environment of its commands, so `GH_CONFIG_DIR`
   is not set by the harness and must come from the launch environment.
 
