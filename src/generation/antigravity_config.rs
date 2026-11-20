@@ -5,6 +5,7 @@ use serde_json::{Map, Value};
 
 use crate::{
     config_sync::codec::Json,
+    generation::permission_rule::PathAccess,
     generation::{
         GenerationContext, claude_permissions::PermissionRules, command_permissions, protection,
         secret_path_policy,
@@ -46,9 +47,14 @@ fn merge_permissions(root: &mut Map<String, Value>, context: GenerationContext<'
     rules.extend_ask(command_permissions::antigravity_ask_permissions(source));
     rules.extend_deny(command_permissions::antigravity_deny_permissions(source));
     rules.extend_deny(
-        secret_path_policy::antigravity_denied_read_paths(source)
+        secret_path_policy::antigravity_denied_paths(source, PathAccess::Read)
             .into_iter()
             .map(|path| read_file_rule(&path)),
+    );
+    rules.extend_deny(
+        secret_path_policy::antigravity_denied_paths(source, PathAccess::Write)
+            .into_iter()
+            .map(|path| write_file_rule(&path)),
     );
     rules.extend_deny(
         protected_write_paths(context)?

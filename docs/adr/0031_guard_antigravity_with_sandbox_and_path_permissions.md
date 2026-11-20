@@ -20,7 +20,10 @@ converts only when it names one location: `//x` becomes `/x`, `~/x` stays, a tra
 `/**` names the directory. Every other pattern remains with the `PreToolUse` hook.
 `agy` reads absolute paths, so the sync expands the leading `~/` of path rules.
 
-The sandbox needs `read_file(/nix)` and `read_file(/run)` for `git` and `nix`. The
+The sandbox needs `read_file(/nix)` and `read_file(/run)` for `git` and `nix`; narrower `/run`
+entries were not verified to be enough, so the grant stays this broad and relies on the
+generated denials beneath it. `~/.gemini/antigravity-cli` as a whole stays writable because
+`agy` keeps its own conversation and scratch files there; only `settings.json` is denied. The
 harness owns only `command(`, `read_file(` and `write_file(` entries, and pins
 `agentMode` to `""` (Default; Auto mode must not run) and `enableTerminalSandbox` to
 `true`. Everything else in the user's settings is kept. `SandboxBypassDisabled` is not

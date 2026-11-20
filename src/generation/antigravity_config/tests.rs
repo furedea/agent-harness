@@ -31,7 +31,8 @@ const SECRET_POLICY: &str = r#"{"version":1,"rules":[
   {"pattern":"*.pem","access":["read"]},
   {"pattern":"~/keys/*.pem","access":["read"]},
   {"pattern":"~/vault/**/token","access":["read"]},
-  {"pattern":"~/.aws/**","access":["write"]}
+  {"pattern":"~/.aws/**","access":["write"]},
+  {"pattern":"~/**","access":["read"]}
 ]}"#;
 
 const COMMANDS: &str = r#"{"version":1,"rules":[
@@ -116,6 +117,14 @@ fn secret_reads_are_denied_only_where_agy_can_name_one_location() -> Result<()> 
     assert!(
         !deny.contains(&"read_file(~/.aws)".to_owned()),
         "a write-only rule denies no read: {deny:?}"
+    );
+    assert!(
+        deny.contains(&"write_file(~/.aws)".to_owned()),
+        "a write rule denies the write: {deny:?}"
+    );
+    assert!(
+        !deny.contains(&"write_file(~/.ssh)".to_owned()),
+        "a read-only rule denies no write: {deny:?}"
     );
     Ok(())
 }

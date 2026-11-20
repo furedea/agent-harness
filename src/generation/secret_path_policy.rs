@@ -23,9 +23,13 @@ struct SecretPathRule {
 
 impl SecretPathRule {
     fn denies_read(&self) -> bool {
+        self.denies(PathAccess::Read)
+    }
+
+    fn denies(&self, wanted: PathAccess) -> bool {
         self.access
             .iter()
-            .any(|access| matches!(access, SecretPathAccess::Read))
+            .any(|&access| PathAccess::from(access) == wanted)
     }
 }
 
@@ -91,19 +95,19 @@ pub(crate) fn codex_filesystem_entries(source: &Source) -> Result<Vec<CodexFiles
         .collect()
 }
 
-/// The `read_file(...)` paths the policy requires for Antigravity, one per rule that denies
-/// reads and names a concrete location.
+/// The paths the policy requires for Antigravity under `access`, one per rule that denies that
+/// access and names a concrete location.
 ///
 /// `agy` rejects a glob in a path rule and takes absolute paths only, so a rule converts only when
 /// it names one location outside the project: `//x` becomes `/x`, `~/x` stays for the sync to
 /// expand, and a trailing `/**` names the directory itself. Any other glob, and any project
 /// relative pattern, has no `agy` form; the `PreToolUse` hook keeps enforcing those.
-pub(crate) fn antigravity_denied_read_paths(source: &Source) -> Vec<String> {
+pub(crate) fn antigravity_denied_paths(source: &Source, access: PathAccess) -> Vec<String> {
     source
         .secret_paths
         .rules
         .iter()
-        .filter(|rule| rule.denies_read())
+        .filter(|rule| rule.denies(access))
         .filter_map(|rule| antigravity_path(rule.pattern.as_str()))
         .collect()
 }
