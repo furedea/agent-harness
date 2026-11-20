@@ -34,9 +34,10 @@ rewriting the hook registration that carries them.
 * The sandbox needs `read_file(/nix)` and `read_file(/run)` for `git` and `nix`. Narrower `/run` entries
   were not verified to be enough, so the grant stays broad and the well-known secret mounts under it
   are denied. Whether a deny wins over an allow is unverified.
-* The harness owns only `command(`, `read_file(` and `write_file(` entries and pins `agentMode` to `""`
-  (Default; Auto mode must not run) and `enableTerminalSandbox` to `true`. The rest of the user's
-  settings is kept. `SandboxBypassDisabled` is not a settings key and is not managed.
+* The harness owns only `command(`, `read_file(` and `write_file(` entries of `permissions`, and every
+  other top-level key the source settings declare. It pins `agentMode` to `""` (Default; Auto mode
+  must not run) and `enableTerminalSandbox` to `true`. Settings and rules the source does not declare
+  are the user's and are kept, and a source rule of another kind is added once. `SandboxBypassDisabled` is not a settings key and is not managed.
 * `~/.gemini/antigravity-cli` as a whole stays writable because `agy` keeps its own conversation and
   scratch files there; only `settings.json` is denied.
 * With `github.agentToken`, the normal `gh` token and the App private key are denied with

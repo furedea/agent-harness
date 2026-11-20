@@ -96,6 +96,35 @@ fn antigravity_expands_the_home_prefix_of_path_rules_only() -> Result<()> {
 }
 
 #[test]
+fn antigravity_applies_source_settings_and_keeps_a_source_rule_once_across_syncs() -> Result<()> {
+    let sandbox = Sandbox::new("antigravity-source-settings")?;
+    let source = sandbox.put_json(
+        "generated.json",
+        &json!({
+            "modelProvider": "gemini",
+            "permissions": {"allow": ["mcp(github/get_issue)", "read_file(/nix)"]}
+        }),
+    )?;
+    let target = sandbox.path("settings.json");
+    let paths = super::SyncPaths {
+        source: &source,
+        target: &target,
+    };
+
+    sandbox.sync(ProviderId::Antigravity, &paths)?;
+    sandbox.sync(ProviderId::Antigravity, &paths)?;
+
+    assert_eq!(
+        sandbox.json("settings.json")?,
+        json!({
+            "modelProvider": "gemini",
+            "permissions": {"allow": ["mcp(github/get_issue)", "read_file(/nix)"]}
+        }),
+    );
+    Ok(())
+}
+
+#[test]
 fn antigravity_sync_is_idempotent() -> Result<()> {
     let sandbox = Sandbox::new("antigravity-idempotent")?;
     let source = sandbox.put_json(

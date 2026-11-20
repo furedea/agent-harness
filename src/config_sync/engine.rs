@@ -184,7 +184,8 @@ fn replace_owned_entries<T: ConfigTree>(
     Ok(())
 }
 
-/// The installed list without the entries the harness owns, followed by the generated ones.
+/// The installed list without the entries the harness owns, followed by the generated ones that
+/// are not already in it, so an entry the user also lists is not repeated by every sync.
 fn replaced_list<T: ConfigTree>(
     owned: EntryMatch,
     generated: &T::Value,
@@ -195,10 +196,20 @@ fn replaced_list<T: ConfigTree>(
         .map(|list| T::sequence(list).context("the installed value must be a list"))
         .transpose()?
         .unwrap_or_default();
-    let kept = installed
+    let mut merged: Vec<T::Value> = installed
         .into_iter()
-        .filter(|entry| !is_owned::<T>(owned, entry));
-    Ok(T::from_sequence(kept.chain(generated).collect()))
+        .filter(|entry| !is_owned::<T>(owned, entry))
+        .collect();
+    for entry in generated {
+        push_new::<T>(&mut merged, entry);
+    }
+    Ok(T::from_sequence(merged))
+}
+
+fn push_new<T: ConfigTree>(list: &mut Vec<T::Value>, entry: T::Value) {
+    if !list.iter().any(|known| T::same(known, &entry)) {
+        list.push(entry);
+    }
 }
 
 fn is_owned<T: ConfigTree>(owned: EntryMatch, entry: &T::Value) -> bool {

@@ -377,9 +377,6 @@ const DSH: ProviderSpec = ProviderSpec {
     }),
 };
 
-/// Antigravity's settings keys that the harness pins; the rest of the file is the user's.
-const ANTIGRAVITY_MANAGED_KEYS: &[&str] = &["agentMode", "enableTerminalSandbox"];
-
 /// Rule kinds of `permissions` the harness writes. `agy` has no `edit_file(...)` kind.
 const ANTIGRAVITY_MANAGED_RULES: &[&str] = &["command(", "read_file(", "write_file("];
 
@@ -418,7 +415,7 @@ const ANTIGRAVITY: ProviderSpec = ProviderSpec {
                     owned: EntryMatch::AnyStringPrefix(ANTIGRAVITY_MANAGED_RULES),
                 },
                 Ownership::Keys {
-                    scope: KeyScope::Listed(ANTIGRAVITY_MANAGED_KEYS),
+                    scope: KeyScope::EveryExcept(&["permissions"]),
                     when_absent: WhenAbsent::Keep,
                 },
             ],
