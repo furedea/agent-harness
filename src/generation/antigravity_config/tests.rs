@@ -177,6 +177,20 @@ fn no_path_rule_contains_a_glob_and_none_is_edit_file() -> Result<()> {
 }
 
 #[test]
+fn a_source_path_rule_agy_cannot_start_with_is_rejected() {
+    for rule in [
+        "read_file(**/.env)",
+        "write_file(relative/path)",
+        "read_file(/nix/store/*)",
+        "write_file(.env)",
+    ] {
+        let error = generated(&json!({"permissions": {"deny": [rule]}})).unwrap_err();
+
+        assert!(format!("{error:#}").contains(rule), "{rule}: {error:#}");
+    }
+}
+
+#[test]
 fn agent_mode_is_default_and_the_terminal_sandbox_is_on() -> Result<()> {
     let settings = generated(&json!({"agentMode": "auto", "enableTerminalSandbox": false}))?;
 

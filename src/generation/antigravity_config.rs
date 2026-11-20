@@ -53,6 +53,7 @@ fn merge_permissions(root: &mut Map<String, Value>, context: GenerationContext<'
         .or_insert_with(|| Value::Object(Map::new()))
         .as_object_mut()
         .context("permissions must be a JSON object")?;
+    reject_unusable_path_rules(permissions)?;
     let mut rules = PermissionRules::parse(permissions)?;
 
     rules.extend_allow(SANDBOX_READ_PATHS.map(read_file_rule));
@@ -81,6 +82,34 @@ fn merge_permissions(root: &mut Map<String, Value>, context: GenerationContext<'
 
 /// The installed harness files, plus the whole Antigravity config directory and its settings
 /// file: the hook registration and the settings that carry these rules must not be editable.
+/// Fails on a source `read_file(...)` or `write_file(...)` rule `agy` cannot start with: it takes
+/// absolute paths, and a glob makes the sandbox fail to start.
+fn reject_unusable_path_rules(permissions: &Map<String, Value>) -> Result<()> {
+    let mut rules = ["allow", "ask", "deny"]
+        .iter()
+        .filter_map(|list| permissions.get(*list)?.as_array())
+        .flatten()
+        .filter_map(Value::as_str);
+    match rules.find(|rule| is_unusable_path_rule(rule)) {
+        Some(rule) => bail!(
+            "the Antigravity rule {rule:?} must name an absolute path or one starting with ~/ \
+             and contain no glob; agy fails to start its sandbox on a glob"
+        ),
+        None => Ok(()),
+    }
+}
+
+fn is_unusable_path_rule(rule: &str) -> bool {
+    let Some(path) = rule
+        .strip_prefix("read_file(")
+        .or_else(|| rule.strip_prefix("write_file("))
+    else {
+        return false;
+    };
+    let is_anchored = path.starts_with(['/', '~']);
+    path.contains(['*', '?', '[', ']', '{', '}']) || !is_anchored
+}
+
 fn protected_write_paths(context: GenerationContext<'_>) -> Result<Vec<String>> {
     let spec = ProviderId::Antigravity.spec();
     let Some(settings) = spec.config_file() else {
