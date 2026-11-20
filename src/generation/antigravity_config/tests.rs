@@ -184,6 +184,7 @@ fn a_source_path_rule_agy_cannot_start_with_is_rejected() {
         "read_file(/nix/store/*)",
         "write_file(.env)",
         "read_file(/home/me/.ssh",
+        "read_file(~user/.ssh)",
     ] {
         let error = generated(&json!({"permissions": {"deny": [rule]}})).unwrap_err();
 

@@ -109,7 +109,7 @@ fn is_unusable_path_rule(rule: &str) -> bool {
     let Some(path) = wrapped.strip_suffix(')') else {
         return true;
     };
-    let is_anchored = path.starts_with(['/', '~']);
+    let is_anchored = path.starts_with('/') || path == "~" || path.starts_with("~/");
     path.contains(['*', '?', '[', ']', '{', '}', '(', ')']) || !is_anchored
 }
 
