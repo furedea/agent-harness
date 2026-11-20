@@ -92,22 +92,25 @@ fn reject_unusable_path_rules(permissions: &Map<String, Value>) -> Result<()> {
         .filter_map(Value::as_str);
     match rules.find(|rule| is_unusable_path_rule(rule)) {
         Some(rule) => bail!(
-            "the Antigravity rule {rule:?} must name an absolute path or one starting with ~/ \
-             and contain no glob; agy fails to start its sandbox on a glob"
+            "the Antigravity rule {rule:?} must be `tool(path)` with an absolute path or one starting with ~/ \
+             and no glob; agy fails to start its sandbox on a glob"
         ),
         None => Ok(()),
     }
 }
 
 fn is_unusable_path_rule(rule: &str) -> bool {
-    let Some(path) = rule
+    let Some(wrapped) = rule
         .strip_prefix("read_file(")
         .or_else(|| rule.strip_prefix("write_file("))
     else {
         return false;
     };
+    let Some(path) = wrapped.strip_suffix(')') else {
+        return true;
+    };
     let is_anchored = path.starts_with(['/', '~']);
-    path.contains(['*', '?', '[', ']', '{', '}']) || !is_anchored
+    path.contains(['*', '?', '[', ']', '{', '}', '(', ')']) || !is_anchored
 }
 
 fn protected_write_paths(context: GenerationContext<'_>) -> Result<Vec<String>> {
