@@ -51,6 +51,8 @@ fn complete_source_protects_every_rendered_provider_file_and_sync_target() {
     let deny_edit = string_set(&settings["permissions"]["deny"]);
     let codex_config = read_toml(&prefix.join(".codex/config.toml"));
     let guarded = &codex_config["permissions"]["guarded"]["filesystem"];
+    let antigravity = read_json(&prefix.join(".gemini/antigravity-cli/settings.json"));
+    let antigravity_deny = string_set(&antigravity["permissions"]["deny"]);
     let mut expected = rendered_harness_files(&prefix);
     expected.extend(
         [
@@ -75,6 +77,10 @@ fn complete_source_protects_every_rendered_provider_file_and_sync_target() {
             Some("read"),
             "{path} is not guarded"
         );
+        assert!(
+            antigravity_deny.contains(&format!("write_file({path})")),
+            "{path} is not denied to Antigravity"
+        );
     }
 
     remove_dir(root);
@@ -86,6 +92,7 @@ fn rendered_harness_files(prefix: &Path) -> BTreeSet<String> {
         prefix.join(".codex/skills"),
         prefix.join(".dsh/skills"),
         prefix.join(".pi/agent/skills"),
+        prefix.join(".gemini/config/skills"),
     ];
     let mut pending = vec![prefix.to_path_buf()];
     let mut files = BTreeSet::new();

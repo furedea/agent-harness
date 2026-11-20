@@ -126,9 +126,11 @@ fn default_content(relative: &str, providers: &[crate::provider::spec::ProviderS
 }
 
 fn default_section(format: crate::provider::spec::HookFormat) -> serde_json::Value {
-    use crate::provider::spec::HookFormat::{BareEvents, SettingsSection, WrappedEvents};
+    use crate::provider::spec::HookFormat::{
+        BareEvents, NamedSpecs, SettingsSection, WrappedEvents,
+    };
     match format {
-        SettingsSection => serde_json::json!({}),
+        SettingsSection | NamedSpecs => serde_json::json!({}),
         WrappedEvents | BareEvents => serde_json::json!({"hooks": {}}),
     }
 }

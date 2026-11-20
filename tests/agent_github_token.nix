@@ -66,6 +66,8 @@ let
     builtins.readFile (source + "/codex/config.toml")
   )) codexSourceSettings;
 
+  composedAntigravitySettings = config: config.programs.agent-harness.antigravity.composedSettings;
+
   disabled = configure { };
   enabled = configure { github.agentToken.enable = true; };
   enabledSettings = composedSettings enabled;
@@ -157,6 +159,12 @@ assert lib.assertMsg enabledCodexSettings.permissions.guarded.network.enabled
 assert lib.assertMsg (
   (composedCodexSettings customDir).shell_environment_policy.set.GH_CONFIG_DIR == "/opt/agent-gh"
 ) "agent token must use a configured config directory for Codex";
+assert lib.assertMsg (
+  composedAntigravitySettings disabled == { }
+) "disabled agent token must leave composed Antigravity settings unchanged";
+assert lib.assertMsg (
+  (composedAntigravitySettings enabled).permissions.deny == [ "read_file(~/.config/gh/hosts.yml)" ]
+) "agent token must keep the normal gh token unreadable for Antigravity";
 assert lib.assertMsg (
   !isRejected enabled
 ) "default agent token config directory must be readable inside the sandbox";

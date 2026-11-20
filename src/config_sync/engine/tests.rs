@@ -14,6 +14,7 @@ const fn sync(format: ConfigFormat, ownership: &'static [Ownership]) -> ConfigSy
         ownership,
         when_missing: WhenMissing::Create,
         home_command_lists: &[],
+        home_rule_lists: &[],
     }
 }
 
@@ -297,6 +298,7 @@ fn home_command_lists_expand_a_leading_home_prefix_only_when_asked() -> Result<(
         ownership: &[keys(KeyScope::Every, WhenAbsent::Keep)],
         when_missing: WhenMissing::Create,
         home_command_lists: &[&["sandbox", "commands"]],
+        home_rule_lists: &[],
     };
     let generated = ConfigDocument::parse(
         ConfigFormat::Json,
@@ -317,6 +319,44 @@ fn home_command_lists_expand_a_leading_home_prefix_only_when_asked() -> Result<(
     assert_eq!(
         json_of(&expanded)["sandbox"]["commands"],
         json!(["/h/bin/tool *", "git *", 1]),
+    );
+    Ok(())
+}
+
+#[test]
+fn home_rule_lists_expand_the_home_prefix_of_a_rule_argument_only_when_asked() -> Result<()> {
+    const HOME: ConfigSync = ConfigSync {
+        format: ConfigFormat::Json,
+        ownership: &[keys(KeyScope::Every, WhenAbsent::Keep)],
+        when_missing: WhenMissing::Create,
+        home_command_lists: &[],
+        home_rule_lists: &[&["permissions", "deny"]],
+    };
+    let generated = ConfigDocument::parse(
+        ConfigFormat::Json,
+        r#"{"permissions": {"deny": ["write_file(~/x)", "read_file(/a/~/b)", "plain", 1, "a b(~/c)"]}}"#,
+        Role::Generated,
+    )?;
+    let merge = Merge::new(&HOME, &generated);
+
+    let kept = merge.apply(parse_installed(&HOME, None, None)?)?;
+    let expanded = merge
+        .expanding_home(Path::new("/h"))
+        .apply(parse_installed(&HOME, None, None)?)?;
+
+    assert_eq!(
+        json_of(&kept)["permissions"]["deny"][0],
+        json!("write_file(~/x)")
+    );
+    assert_eq!(
+        json_of(&expanded)["permissions"]["deny"],
+        json!([
+            "write_file(/h/x)",
+            "read_file(/a/~/b)",
+            "plain",
+            1,
+            "a b(~/c)"
+        ]),
     );
     Ok(())
 }

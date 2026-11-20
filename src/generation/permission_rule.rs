@@ -23,6 +23,10 @@ impl PrefixRule {
         format!("Bash({}:*)", self.0.join(" "))
     }
 
+    pub(crate) fn antigravity(&self) -> String {
+        format!("command({})", self.0.join(" "))
+    }
+
     pub(crate) fn devin(&self) -> String {
         format!("Exec({})", self.0.join(" "))
     }

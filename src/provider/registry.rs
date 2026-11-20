@@ -17,6 +17,7 @@ impl ProviderId {
             Self::Hermes => &HERMES,
             Self::Pi => &PI,
             Self::Dsh => &DSH,
+            Self::Antigravity => &ANTIGRAVITY,
         }
     }
 }
@@ -86,6 +87,7 @@ const CODEX: ProviderSpec = ProviderSpec {
             ],
             when_missing: WhenMissing::Create,
             home_command_lists: &[],
+            home_rule_lists: &[],
         },
         sync_target: SyncTarget::SameAsRendered,
         directories: &[],
@@ -137,6 +139,7 @@ const CLAUDE: ProviderSpec = ProviderSpec {
             }],
             when_missing: WhenMissing::Create,
             home_command_lists: &[&["sandbox", "excludedCommands"]],
+            home_rule_lists: &[],
         },
         sync_target: SyncTarget::SameAsRendered,
         directories: &[SyncedDirectory {
@@ -187,6 +190,7 @@ const DEVIN: ProviderSpec = ProviderSpec {
             ],
             when_missing: WhenMissing::Create,
             home_command_lists: &[],
+            home_rule_lists: &[],
         },
         sync_target: SyncTarget::SameAsRendered,
         directories: &[],
@@ -239,6 +243,7 @@ const HERMES: ProviderSpec = ProviderSpec {
             ],
             when_missing: WhenMissing::Create,
             home_command_lists: &[],
+            home_rule_lists: &[],
         },
         sync_target: SyncTarget::File(".hermes/config.yaml"),
         directories: &[],
@@ -302,6 +307,7 @@ const PI: ProviderSpec = ProviderSpec {
             }],
             when_missing: WhenMissing::Create,
             home_command_lists: &[],
+            home_rule_lists: &[],
         },
         sync_target: SyncTarget::SameAsRendered,
         directories: &[],
@@ -361,6 +367,7 @@ const DSH: ProviderSpec = ProviderSpec {
             // The profile is the user's, and dsh creates it on its first run.
             when_missing: WhenMissing::Skip,
             home_command_lists: &[],
+            home_rule_lists: &[],
         },
         sync_target: SyncTarget::InProfile {
             profiles_dir: ".dsh/profiles",
@@ -370,4 +377,63 @@ const DSH: ProviderSpec = ProviderSpec {
     }),
 };
 
-pub(crate) const PROVIDERS: &[ProviderSpec] = &[CODEX, CLAUDE, DEVIN, HERMES, PI, DSH];
+/// Antigravity's settings keys that the harness pins; the rest of the file is the user's.
+const ANTIGRAVITY_MANAGED_KEYS: &[&str] = &["agentMode", "enableTerminalSandbox"];
+
+/// Rule kinds of `permissions` the harness writes. `agy` has no `edit_file(...)` kind.
+const ANTIGRAVITY_MANAGED_RULES: &[&str] = &["command(", "read_file(", "write_file("];
+
+const ANTIGRAVITY: ProviderSpec = ProviderSpec {
+    id: ProviderId::Antigravity,
+    key: "antigravity",
+    display_name: "Antigravity",
+    home_dir: ".gemini/config",
+    hook: HookSpec {
+        source: "antigravity/hooks",
+        scripts_dir: ".gemini/config/hooks",
+        registration: HookRegistration::File(".gemini/config/hooks.json"),
+        format: HookFormat::NamedSpecs,
+        section: HookSection::Optional,
+        external_file: ".gemini/config/hooks.json",
+        bundle: BundleCapture::NOTHING,
+        bridge: Bridge {
+            directory: None,
+            assets: &[],
+        },
+    },
+    skill: Some(&SkillSpec {
+        destination: ".gemini/config/skills",
+        source: SkillSource::RenderFrontmatter,
+    }),
+    instructions: Some(".gemini/config/AGENTS.md"),
+    command_rule: None,
+    config: Some(ConfigSpec {
+        location: ConfigLocation::File(".gemini/antigravity-cli/settings.json"),
+        rendered: RenderedConfig::SourceJsonWithToolPermissions("antigravity/settings.json"),
+        sync: ConfigSync {
+            format: ConfigFormat::Json,
+            ownership: &[
+                Ownership::Entries {
+                    path: &["permissions"],
+                    owned: EntryMatch::AnyStringPrefix(ANTIGRAVITY_MANAGED_RULES),
+                },
+                Ownership::Keys {
+                    scope: KeyScope::Listed(ANTIGRAVITY_MANAGED_KEYS),
+                    when_absent: WhenAbsent::Keep,
+                },
+            ],
+            when_missing: WhenMissing::Create,
+            // `agy` reads absolute paths only, so the sync expands the home prefix.
+            home_command_lists: &[],
+            home_rule_lists: &[
+                &["permissions", "allow"],
+                &["permissions", "ask"],
+                &["permissions", "deny"],
+            ],
+        },
+        sync_target: SyncTarget::SameAsRendered,
+        directories: &[],
+    }),
+};
+
+pub(crate) const PROVIDERS: &[ProviderSpec] = &[CODEX, CLAUDE, DEVIN, HERMES, PI, DSH, ANTIGRAVITY];

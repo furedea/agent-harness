@@ -175,6 +175,7 @@ mod tests {
             ownership: &[],
             when_missing: WhenMissing::Create,
             home_command_lists: &[],
+            home_rule_lists: &[],
         };
         let synced = Synced {
             config: String::new(),

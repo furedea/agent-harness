@@ -54,6 +54,9 @@ pub(crate) enum HookFormat {
     WrappedEvents,
     /// The section is `{"hooks": events}`; a bundle file is the event map itself.
     BareEvents,
+    /// The section is a map from hook name to its event map, and a bundle file is such a map
+    /// too, so a bundle's hooks merge in under their own names.
+    NamedSpecs,
 }
 
 impl HookFormat {
@@ -61,7 +64,7 @@ impl HookFormat {
     /// section is the event map itself.
     pub(crate) fn merge_target_key(self) -> Option<&'static str> {
         match self {
-            Self::SettingsSection => None,
+            Self::SettingsSection | Self::NamedSpecs => None,
             Self::WrappedEvents | Self::BareEvents => Some("hooks"),
         }
     }
@@ -71,7 +74,7 @@ impl HookFormat {
     pub(crate) fn bundle_events_key(self) -> Option<&'static str> {
         match self {
             Self::SettingsSection | Self::WrappedEvents => Some("hooks"),
-            Self::BareEvents => None,
+            Self::BareEvents | Self::NamedSpecs => None,
         }
     }
 }
@@ -225,13 +228,21 @@ pub(crate) enum RenderedConfig {
     /// The source's TOML config with the generated protection and external hook features merged in,
     /// applied to the installed config.
     SourceTomlWithProtection,
+    /// The source JSON file at this path with the safety settings and the generated tool
+    /// `permissions` merged in, applied to the installed config; a missing file adds nothing.
+    SourceJsonWithToolPermissions(&'static str),
 }
 
 impl RenderedConfig {
     /// Whether rendering applies the generated config to the installed one, so the installed
     /// config must be carried into the output first.
     pub(crate) fn merges_into_installed(self) -> bool {
-        matches!(self, Self::SourceFile(_) | Self::SourceTomlWithProtection)
+        matches!(
+            self,
+            Self::SourceFile(_)
+                | Self::SourceTomlWithProtection
+                | Self::SourceJsonWithToolPermissions(_)
+        )
     }
 }
 

@@ -91,6 +91,34 @@ pub(crate) fn codex_filesystem_entries(source: &Source) -> Result<Vec<CodexFiles
         .collect()
 }
 
+/// The `read_file(...)` paths the policy requires for Antigravity, one per rule that denies
+/// reads and names a concrete location.
+///
+/// `agy` rejects a glob in a path rule and takes absolute paths only, so a rule converts only when
+/// it names one location outside the project: `//x` becomes `/x`, `~/x` stays for the sync to
+/// expand, and a trailing `/**` names the directory itself. Any other glob, and any project
+/// relative pattern, has no `agy` form; the `PreToolUse` hook keeps enforcing those.
+pub(crate) fn antigravity_denied_read_paths(source: &Source) -> Vec<String> {
+    source
+        .secret_paths
+        .rules
+        .iter()
+        .filter(|rule| rule.denies_read())
+        .filter_map(|rule| antigravity_path(rule.pattern.as_str()))
+        .collect()
+}
+
+fn antigravity_path(pattern: &str) -> Option<String> {
+    let trimmed = pattern.trim_end_matches('/');
+    let path = trimmed.strip_suffix("/**").unwrap_or(trimmed);
+    let is_concrete = !path.contains(['*', '?', '[', ']', '{', '}', '!', '\\']);
+    let location = match path.strip_prefix("//") {
+        Some(absolute) => Some(format!("/{absolute}")),
+        None => (path == "~" || path.starts_with("~/")).then(|| path.to_owned()),
+    };
+    location.filter(|_| is_concrete && !path.is_empty())
+}
+
 /// The srt `denyRead` entries the policy requires, one per rule that denies reads.
 ///
 /// As for Codex, a rule that only denies writes has no entry: srt's restrictions apply to every

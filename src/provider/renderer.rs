@@ -12,8 +12,8 @@ use crate::{
     },
     file_op::FileOp,
     generation::{
-        GenerationContext, claude_config, codex_config, command_permissions, hooks, pi_sandbox,
-        protection, skills,
+        GenerationContext, antigravity_config, claude_config, codex_config, command_permissions,
+        hooks, pi_sandbox, protection, skills,
     },
     layout::SourceLayout,
     provider::spec::{
@@ -188,6 +188,7 @@ impl ProviderRenderer<'_> {
             RenderedConfig::Fixed(content) => Ok(vec![FileOp::write(target.path, content)]),
             RenderedConfig::SourceFile(relative) => self.merge_source_file(target, relative),
             RenderedConfig::SourceTomlWithProtection => self.merge_protected_toml(target),
+            RenderedConfig::SourceJsonWithToolPermissions(p) => self.merge_tool_rules(target, p),
         }
     }
 
@@ -196,13 +197,16 @@ impl ProviderRenderer<'_> {
         target: InstalledConfig<'_>,
         source_relative: &str,
     ) -> Result<Vec<FileOp>> {
-        let generated = self
-            .context
+        let generated = self.source_config(source_relative)?;
+        self.merge_into_installed(target, generated)
+    }
+
+    fn source_config(&self, source_relative: &str) -> Result<&ConfigDocument> {
+        self.context
             .source
             .provider_configs
             .get(source_relative)
-            .with_context(|| format!("source config {source_relative} was not loaded"))?;
-        self.merge_into_installed(target, generated)
+            .with_context(|| format!("source config {source_relative} was not loaded"))
     }
 
     fn merge_protected_toml(&self, target: InstalledConfig<'_>) -> Result<Vec<FileOp>> {
@@ -211,6 +215,19 @@ impl ProviderRenderer<'_> {
             target,
             &ConfigDocument::Toml(Toml::from_document(generated)),
         )
+    }
+
+    fn merge_tool_rules(
+        &self,
+        target: InstalledConfig<'_>,
+        source_relative: &str,
+    ) -> Result<Vec<FileOp>> {
+        let source = self
+            .source_config(source_relative)?
+            .as_json()
+            .with_context(|| format!("source config {source_relative} is not JSON"))?;
+        let generated = antigravity_config::settings_for_runtime(self.context, source)?;
+        self.merge_into_installed(target, &ConfigDocument::Json(generated))
     }
 
     fn merge_into_installed(

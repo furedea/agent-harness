@@ -96,6 +96,9 @@ enum Command {
     /// Merge generated top-level keys into an existing Devin CLI config.
     #[command(hide = true)]
     SyncDevinConfig(SyncConfigArgs),
+    /// Merge generated tool permissions into an existing Antigravity CLI settings file.
+    #[command(hide = true)]
+    SyncAntigravityConfig(SyncConfigArgs),
     /// Merge managed keys into an existing Hermes Agent config.
     #[command(hide = true)]
     SyncHermesConfig(SyncConfigArgs),
@@ -293,6 +296,7 @@ pub fn run() -> Result<()> {
         Command::SyncCodexConfig(args) => sync_config(ProviderId::Codex, &args),
         Command::SyncClaudeSettings(args) => sync_config(ProviderId::Claude, &args),
         Command::SyncDevinConfig(args) => sync_config(ProviderId::Devin, &args),
+        Command::SyncAntigravityConfig(args) => sync_config(ProviderId::Antigravity, &args),
         Command::SyncHermesConfig(args) => sync_config(ProviderId::Hermes, &args),
         Command::SyncDshConfig(args) => sync_config(ProviderId::Dsh, &args),
         Command::Verify(args) => {

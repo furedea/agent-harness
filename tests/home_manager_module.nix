@@ -78,4 +78,15 @@ assert pkgs.lib.assertMsg (builtins.all hasHomeFile [
   ".dsh/skills"
   ".dsh/AGENTS.md"
 ]) "dsh files should be installed";
+assert pkgs.lib.assertMsg (hasActivation "agentHarnessAntigravityConfig")
+  "Antigravity settings should be materialized during activation";
+assert pkgs.lib.assertMsg (
+  !hasHomeFile ".gemini/antigravity-cli/settings.json"
+) "Antigravity settings should not be a Home Manager symlink";
+assert pkgs.lib.assertMsg (builtins.all hasHomeFile [
+  ".gemini/config/hooks"
+  ".gemini/config/hooks.json"
+  ".gemini/config/skills"
+  ".gemini/config/AGENTS.md"
+]) "Antigravity files should be installed";
 configuration.activationPackage

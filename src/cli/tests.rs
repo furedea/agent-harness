@@ -42,6 +42,13 @@ fn exposes_claude_settings_sync() {
 }
 
 #[test]
+fn exposes_antigravity_config_sync() {
+    let command = Cli::command();
+
+    assert!(command.find_subcommand("sync-antigravity-config").is_some());
+}
+
+#[test]
 fn github_app_token_command_exposes_refresh_and_status() {
     let cli = Cli::try_parse_from([
         "agent-harness",

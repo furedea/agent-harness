@@ -289,7 +289,8 @@ fn load_provider_configs(
 
 fn source_config_path(config: &ConfigSpec) -> Option<&'static str> {
     match config.rendered {
-        RenderedConfig::SourceFile(relative) => Some(relative),
+        RenderedConfig::SourceFile(relative)
+        | RenderedConfig::SourceJsonWithToolPermissions(relative) => Some(relative),
         RenderedConfig::WithHooks
         | RenderedConfig::Fixed(_)
         | RenderedConfig::SourceTomlWithProtection => None,

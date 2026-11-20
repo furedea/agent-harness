@@ -134,5 +134,27 @@
       "source": ".dsh/bridge",
       "target": ".dsh/profiles/${profile}/package.json"
     }
+  },
+  {
+    "display_name": "Antigravity",
+    "extra_options": {},
+    "home_dir": ".gemini/config",
+    "hook_manifest": ".gemini/config/hooks.json",
+    "id": "antigravity",
+    "linked_paths": {
+      ".gemini/config/AGENTS.md": {},
+      ".gemini/config/hooks": {},
+      ".gemini/config/hooks.json": {},
+      ".gemini/config/skills": {
+        "skills_provider": "claude"
+      }
+    },
+    "option_description": "Whether to install Antigravity harness files.",
+    "sync": {
+      "activation": "agentHarnessAntigravityConfig",
+      "command": "sync-antigravity-config",
+      "source": ".gemini/antigravity-cli/settings.json",
+      "target": ".gemini/antigravity-cli/settings.json"
+    }
   }
 ]

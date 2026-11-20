@@ -6,7 +6,7 @@ use serde::Deserialize;
 use serde_json::{Map, Value, map::Entry};
 
 use crate::{
-    provider::spec::ProviderSpec,
+    provider::spec::{HookFormat, ProviderSpec},
     source_model::{HookAsset, HookBundle, SourceDir},
 };
 
@@ -110,6 +110,7 @@ pub(crate) fn merge_provider_hooks(
             path: spec.hook.external_file,
             target_key: spec.hook.format.merge_target_key(),
             events_key: spec.hook.format.bundle_events_key(),
+            named: spec.hook.format == HookFormat::NamedSpecs,
         },
     )
 }
@@ -122,9 +123,12 @@ fn merge_hooks(bundle: &HookBundle, hooks: &mut Value, file: &HookFile) -> Resul
         assets: &bundle.assets,
         source: &bundle.root,
     };
-    relocation
-        .merge_events(file.target(hooks), file.events(generated))
-        .with_context(|| format!("failed to merge external hook bundle {}", bundle.name))
+    let merged = if file.named {
+        relocation.merge_named(file.target(hooks), file.events(generated))
+    } else {
+        relocation.merge_events(file.target(hooks), file.events(generated))
+    };
+    merged.with_context(|| format!("failed to merge external hook bundle {}", bundle.name))
 }
 
 /// A provider hook file inside a bundle, where its events live in that file, and
@@ -133,6 +137,8 @@ struct HookFile {
     path: &'static str,
     target_key: Option<&'static str>,
     events_key: Option<&'static str>,
+    /// Whether the events sit under hook names.
+    named: bool,
 }
 
 impl HookFile {
@@ -160,6 +166,24 @@ struct CommandRelocation<'a> {
 }
 
 impl CommandRelocation<'_> {
+    /// Merges each named spec of the bundle into the spec of that name, which a new name starts.
+    fn merge_named(&self, target: &mut Value, generated: &Value) -> Result<()> {
+        let target = target
+            .as_object_mut()
+            .context("hook root must be a JSON object")?;
+        let generated = generated
+            .as_object()
+            .context("external hooks must be a JSON object")?;
+        generated
+            .iter()
+            .try_for_each(|(name, events)| self.merge_named_spec(target.entry(name), events))
+    }
+
+    fn merge_named_spec(&self, target: Entry<'_>, events: &Value) -> Result<()> {
+        let spec = target.or_insert_with(|| Value::Object(Map::new()));
+        self.merge_events(spec, events)
+    }
+
     fn merge_events(&self, target: &mut Value, generated: &Value) -> Result<()> {
         let target = target
             .as_object_mut()

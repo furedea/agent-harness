@@ -59,14 +59,21 @@ pub(crate) enum WhenAbsent {
 pub(crate) enum EntryMatch {
     /// String entries that start with this prefix.
     StringPrefix(&'static str),
+    /// String entries that start with any of these prefixes.
+    AnyStringPrefix(&'static [&'static str]),
 }
 
 impl EntryMatch {
     pub(crate) fn matches_text(self, text: &str) -> bool {
         match self {
             Self::StringPrefix(prefix) => text.starts_with(prefix),
+            Self::AnyStringPrefix(prefixes) => starts_with_any(text, prefixes),
         }
     }
+}
+
+fn starts_with_any(text: &str, prefixes: &[&str]) -> bool {
+    prefixes.iter().any(|prefix| text.starts_with(prefix))
 }
 
 /// One part of a config the harness owns, addressed by the keys that lead to it.
@@ -110,6 +117,9 @@ pub(crate) struct ConfigSync {
     pub(crate) when_missing: WhenMissing,
     /// Lists of shell commands whose leading `~/` words become the home directory on a sync.
     pub(crate) home_command_lists: &'static [&'static [&'static str]],
+    /// Lists of tool rules such as `write_file(~/x)` whose argument starting with `~/` becomes
+    /// the home directory on a sync, for tools that read absolute paths only.
+    pub(crate) home_rule_lists: &'static [&'static [&'static str]],
 }
 
 impl ConfigSync {

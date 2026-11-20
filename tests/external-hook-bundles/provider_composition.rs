@@ -192,3 +192,51 @@ fn copy_entry(entry: &std::fs::DirEntry, target: &Path) {
         std::fs::copy(entry.path(), destination).unwrap();
     }
 }
+
+#[test]
+fn external_antigravity_hooks_merge_under_their_own_hook_name() {
+    let root = test_root("external-antigravity-hooks");
+    let bundle = root.join("moshi");
+    let manifest_path = root.join("hooks.json");
+    std::fs::create_dir_all(bundle.join(".gemini/config/hooks")).unwrap();
+    std::fs::write(bundle.join("hook_bundle.json"), r#"{"version":1}"#).unwrap();
+    std::fs::write(
+        bundle.join(".gemini/config/hooks/moshi-agy.sh"),
+        "#!/bin/bash\n",
+    )
+    .unwrap();
+    let command = format!(
+        "bash '{}/.gemini/config/hooks/moshi-agy.sh' notify",
+        bundle.display()
+    );
+    std::fs::write(
+        bundle.join(".gemini/config/hooks.json"),
+        format!(r#"{{"moshi":{{"Stop":[{{"type":"command","command":"{command}"}}]}}}}"#),
+    )
+    .unwrap();
+
+    run_harness([
+        "generate-hooks",
+        "--provider",
+        "antigravity",
+        "--source",
+        complete_source_root().to_str().unwrap(),
+        "--extra-hook",
+        &format!("moshi={}", bundle.display()),
+        "--output",
+        manifest_path.to_str().unwrap(),
+    ]);
+
+    let manifest = read_json(&manifest_path);
+    assert_eq!(
+        manifest["moshi"]["Stop"][0]["command"].as_str(),
+        Some("bash \"$HOME/.gemini/config/hooks/external/moshi/moshi-agy.sh\" notify"),
+    );
+    assert_eq!(
+        manifest["agent-harness"]["PreToolUse"][0]["hooks"][0]["command"].as_str(),
+        Some("$HOME/.gemini/config/hooks/hook_adapter.py shell forbidden"),
+        "the built-in spec stays beside the bundle's"
+    );
+
+    remove_dir(root);
+}

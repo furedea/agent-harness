@@ -66,6 +66,7 @@ impl Drop for Sandbox {
     }
 }
 
+mod antigravity;
 mod claude;
 mod codex;
 mod devin;

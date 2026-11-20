@@ -54,7 +54,7 @@ impl HookConfig {
 
 fn empty_section(format: HookFormat) -> Value {
     match format {
-        HookFormat::SettingsSection => serde_json::json!({}),
+        HookFormat::SettingsSection | HookFormat::NamedSpecs => serde_json::json!({}),
         HookFormat::WrappedEvents | HookFormat::BareEvents => serde_json::json!({ "hooks": {} }),
     }
 }
@@ -148,10 +148,53 @@ fn section_hook_metadata(spec: &ProviderSpec, section: &Value) -> Result<Vec<Hoo
     if spec.hook.format == HookFormat::SettingsSection {
         return hook_metadata(spec.id, section);
     }
+    if spec.hook.format == HookFormat::NamedSpecs {
+        return named_hook_metadata(spec.id, section);
+    }
     let hooks = section
         .get("hooks")
         .with_context(|| format!("hook config {} section must contain hooks", spec.key))?;
     hook_metadata(spec.id, hooks)
+}
+
+/// Every named spec holds an event map; its lifecycle events list handlers directly, so they are
+/// wrapped into the group shape the tool events have.
+fn named_hook_metadata(provider: ProviderId, specs: &Value) -> Result<Vec<HookMetadata>> {
+    let specs = specs
+        .as_object()
+        .context("hook provider section must be a JSON object")?;
+    let mut metadata = Vec::new();
+    for events in specs.values() {
+        metadata.extend(hook_metadata(provider, &grouped_events(events))?);
+    }
+    Ok(metadata)
+}
+
+fn grouped_events(events: &Value) -> Value {
+    let Some(events) = events.as_object() else {
+        return events.clone();
+    };
+    Value::Object(
+        events
+            .iter()
+            .map(|(event, groups)| (event.clone(), grouped_handlers(groups)))
+            .collect(),
+    )
+}
+
+fn grouped_handlers(groups: &Value) -> Value {
+    let Some(groups) = groups.as_array() else {
+        return groups.clone();
+    };
+    Value::Array(
+        groups
+            .iter()
+            .map(|group| match group.get("hooks") {
+                Some(_) => group.clone(),
+                None => serde_json::json!({ "hooks": [group] }),
+            })
+            .collect(),
+    )
 }
 
 fn hook_event_rank(event: &str) -> usize {
