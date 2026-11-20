@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
-use anyhow::{Context, Result, ensure};
+use anyhow::{Context, Result, bail, ensure};
 use serde::Deserialize;
 use serde_json::{Map, Value, map::Entry};
 
@@ -166,7 +166,8 @@ struct CommandRelocation<'a> {
 }
 
 impl CommandRelocation<'_> {
-    /// Merges each named spec of the bundle into the spec of that name, which a new name starts.
+    /// Adds each named spec of the bundle under its own name; a name a spec already has is an
+    /// error, so a bundle can neither extend nor switch off a built-in spec.
     fn merge_named(&self, target: &mut Value, generated: &Value) -> Result<()> {
         let target = target
             .as_object_mut()
@@ -174,25 +175,25 @@ impl CommandRelocation<'_> {
         let generated = generated
             .as_object()
             .context("external hooks must be a JSON object")?;
-        generated
+        ensure_unused_names(target, generated)?;
+        let specs = generated
             .iter()
-            .try_for_each(|(name, events)| self.merge_named_spec(target.entry(name), events))
+            .map(|(name, spec)| Ok((name.clone(), self.relocated_spec(spec)?)))
+            .collect::<Result<Vec<_>>>()?;
+        target.extend(specs);
+        Ok(())
     }
 
-    fn merge_named_spec(&self, target: Entry<'_>, bundle_spec: &Value) -> Result<()> {
-        let spec = target.or_insert_with(|| Value::Object(Map::new()));
-        let (events, fields): (Map<String, Value>, Map<String, Value>) = bundle_spec
+    fn relocated_spec(&self, spec: &Value) -> Result<Value> {
+        let (events, fields): (Map<String, Value>, Map<String, Value>) = spec
             .as_object()
             .context("external hook spec must be a JSON object")?
             .clone()
             .into_iter()
             .partition(|(_, value)| value.is_array());
-        self.merge_events(spec, &Value::Object(events))?;
-        let target_fields = spec
-            .as_object_mut()
-            .context("hook spec must be a JSON object")?;
-        keep_existing_fields(target_fields, fields);
-        Ok(())
+        let mut relocated = Value::Object(fields);
+        self.merge_events(&mut relocated, &Value::Object(events))?;
+        Ok(relocated)
     }
 
     fn merge_events(&self, target: &mut Value, generated: &Value) -> Result<()> {
@@ -271,10 +272,10 @@ impl CommandRelocation<'_> {
     }
 }
 
-/// A field the built-in spec sets, such as `enabled`, wins over the bundle's.
-fn keep_existing_fields(target: &mut Map<String, Value>, fields: Map<String, Value>) {
-    for (key, value) in fields {
-        target.entry(key).or_insert(value);
+fn ensure_unused_names(target: &Map<String, Value>, generated: &Map<String, Value>) -> Result<()> {
+    match generated.keys().find(|name| target.contains_key(*name)) {
+        Some(name) => bail!("external hook spec {name:?} has the name of an existing hook spec"),
+        None => Ok(()),
     }
 }
 

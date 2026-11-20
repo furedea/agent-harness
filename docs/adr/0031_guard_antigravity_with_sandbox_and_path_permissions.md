@@ -28,7 +28,11 @@ rewriting the hook registration that carries them.
   whole `~/.gemini/config` directory and `settings.json` are denied.
 * A secret path rule converts only when it names one location: `//x` becomes `/x`, `~` and `~/x` stay
   for the install or sync to expand, and a trailing `/**` names the directory. Any other glob and any
-  project-relative pattern stays with the `PreToolUse` hook.
+  project-relative pattern stays with the `PreToolUse` hook, so the source's `hooks.json` must register
+  that guard under `antigravity`; generation does not check it, because failing every existing
+  profile without the section would break installs before the hooks are supplied.
+* A hook bundle adds specs under names of its own; a name a spec already has is rejected, so a bundle
+  cannot switch off the built-in guard.
 * `agy` reads absolute paths, so a sync, and an install whose prefix is the home directory, expand the
   leading `~` of path rules. A Nix build leaves them for the activation sync.
 * The sandbox needs `read_file(/nix)` and `read_file(/run)` for `git` and `nix`. Narrower `/run` entries
