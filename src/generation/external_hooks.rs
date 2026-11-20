@@ -179,9 +179,20 @@ impl CommandRelocation<'_> {
             .try_for_each(|(name, events)| self.merge_named_spec(target.entry(name), events))
     }
 
-    fn merge_named_spec(&self, target: Entry<'_>, events: &Value) -> Result<()> {
+    fn merge_named_spec(&self, target: Entry<'_>, bundle_spec: &Value) -> Result<()> {
         let spec = target.or_insert_with(|| Value::Object(Map::new()));
-        self.merge_events(spec, events)
+        let (events, fields): (Map<String, Value>, Map<String, Value>) = bundle_spec
+            .as_object()
+            .context("external hook spec must be a JSON object")?
+            .clone()
+            .into_iter()
+            .partition(|(_, value)| value.is_array());
+        self.merge_events(spec, &Value::Object(events))?;
+        let target_fields = spec
+            .as_object_mut()
+            .context("hook spec must be a JSON object")?;
+        keep_existing_fields(target_fields, fields);
+        Ok(())
     }
 
     fn merge_events(&self, target: &mut Value, generated: &Value) -> Result<()> {
@@ -257,6 +268,13 @@ impl CommandRelocation<'_> {
             .iter()
             .for_each(|asset| relocated = relocate_asset(asset, &relocated));
         relocated
+    }
+}
+
+/// A field the built-in spec sets, such as `enabled`, wins over the bundle's.
+fn keep_existing_fields(target: &mut Map<String, Value>, fields: Map<String, Value>) {
+    for (key, value) in fields {
+        target.entry(key).or_insert(value);
     }
 }
 

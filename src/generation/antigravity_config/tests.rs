@@ -143,7 +143,15 @@ fn the_home_and_the_root_are_named_when_a_rule_denies_all_of_them() -> Result<()
 fn the_run_allow_does_not_cover_the_well_known_secret_mounts() -> Result<()> {
     let deny = rules(&generated(&json!({}))?, "deny");
 
-    for mount in ["/run/secrets", "/run/agenix", "/run/keys"] {
+    for mount in [
+        "/run/secrets",
+        "/run/secrets.d",
+        "/run/secrets-for-users",
+        "/run/agenix",
+        "/run/agenix.d",
+        "/run/keys",
+        "/run/user",
+    ] {
         assert!(deny.contains(&format!("read_file({mount})")), "{mount}");
     }
     Ok(())

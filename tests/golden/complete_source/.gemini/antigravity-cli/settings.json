@@ -13,8 +13,12 @@
     "deny": [
       "command(fixture destroy)",
       "read_file(/run/secrets)",
+      "read_file(/run/secrets.d)",
+      "read_file(/run/secrets-for-users)",
       "read_file(/run/agenix)",
+      "read_file(/run/agenix.d)",
       "read_file(/run/keys)",
+      "read_file(/run/user)",
       "write_file(~/.gemini/config)",
       "write_file(~/.gemini/antigravity-cli/settings.json)",
       "write_file(~/.codex/hooks/adapt.sh)",

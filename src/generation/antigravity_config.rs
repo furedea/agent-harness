@@ -16,8 +16,17 @@ use crate::{
 /// Directories `agy --sandbox` must read for `git` and `nix` to run; `agy` rejects globs.
 const SANDBOX_READ_PATHS: [&str; 2] = ["/nix", "/run"];
 
-/// Well-known secret mounts under `/run`, which the allow above would otherwise cover.
-const RUN_SECRET_PATHS: [&str; 3] = ["/run/secrets", "/run/agenix", "/run/keys"];
+/// Well-known secret mounts under `/run` (sops-nix and agenix link the first names to their
+/// generation directories), which the allow above would otherwise cover.
+const RUN_SECRET_PATHS: [&str; 7] = [
+    "/run/secrets",
+    "/run/secrets.d",
+    "/run/secrets-for-users",
+    "/run/agenix",
+    "/run/agenix.d",
+    "/run/keys",
+    "/run/user",
+];
 
 /// The Antigravity settings: the source settings with the generated parts merged in.
 ///

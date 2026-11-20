@@ -453,3 +453,29 @@ fn hook_metadata_lists_tool_and_lifecycle_handlers_of_every_named_spec() -> Resu
     crate::shell::fixtures::remove_dir_all(root)?;
     Ok(())
 }
+
+#[test]
+fn hook_metadata_skips_a_disabled_named_spec_and_ignores_its_non_event_fields() -> Result<()> {
+    let root = test_root("hook_metadata_skips_disabled_named_spec")?;
+    write_file(
+        &root.join("hooks.json"),
+        r#"{
+  "version": 1, "claude": {}, "codex": {"hooks": {}},
+  "antigravity": {
+    "off": {"enabled": false, "Stop": [{"type": "command", "command": "off.sh"}]},
+    "on": {"enabled": true, "Stop": [{"type": "command", "command": "on.sh"}]}
+  }
+}"#,
+    )?;
+
+    let metadata = built_in_hook_metadata(&load_source(&root)?)?;
+
+    let commands: Vec<_> = metadata
+        .iter()
+        .filter(|hook| hook.provider == ProviderId::Antigravity)
+        .map(|hook| hook.command.as_str())
+        .collect();
+    assert_eq!(commands, ["on.sh"]);
+    crate::shell::fixtures::remove_dir_all(root)?;
+    Ok(())
+}

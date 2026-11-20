@@ -211,7 +211,9 @@ fn external_antigravity_hooks_merge_under_their_own_hook_name() {
     );
     std::fs::write(
         bundle.join(".gemini/config/hooks.json"),
-        format!(r#"{{"moshi":{{"Stop":[{{"type":"command","command":"{command}"}}]}}}}"#),
+        format!(
+            r#"{{"moshi":{{"enabled":false,"Stop":[{{"type":"command","command":"{command}"}}]}}}}"#
+        ),
     )
     .unwrap();
 
@@ -232,6 +234,7 @@ fn external_antigravity_hooks_merge_under_their_own_hook_name() {
         manifest["moshi"]["Stop"][0]["command"].as_str(),
         Some("bash \"$HOME/.gemini/config/hooks/external/moshi/moshi-agy.sh\" notify"),
     );
+    assert_eq!(manifest["moshi"]["enabled"], false, "spec fields are kept");
     assert_eq!(
         manifest["agent-harness"]["PreToolUse"][0]["hooks"][0]["command"].as_str(),
         Some("$HOME/.gemini/config/hooks/hook_adapter.py shell forbidden"),

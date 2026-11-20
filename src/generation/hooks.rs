@@ -164,19 +164,25 @@ fn named_hook_metadata(provider: ProviderId, specs: &Value) -> Result<Vec<HookMe
         .as_object()
         .context("hook provider section must be a JSON object")?;
     let mut metadata = Vec::new();
-    for events in specs.values() {
-        metadata.extend(hook_metadata(provider, &grouped_events(events))?);
+    for spec in specs.values().filter(|spec| is_enabled(spec)) {
+        metadata.extend(hook_metadata(provider, &grouped_events(spec))?);
     }
     Ok(metadata)
 }
 
-fn grouped_events(events: &Value) -> Value {
-    let Some(events) = events.as_object() else {
-        return events.clone();
+/// A named spec may be switched off with `"enabled": false`, and then runs nothing.
+fn is_enabled(spec: &Value) -> bool {
+    spec.get("enabled") != Some(&Value::Bool(false))
+}
+
+/// The event arrays of a named spec; its other fields, such as `enabled`, are not events.
+fn grouped_events(spec: &Value) -> Value {
+    let Some(spec) = spec.as_object() else {
+        return spec.clone();
     };
     Value::Object(
-        events
-            .iter()
+        spec.iter()
+            .filter(|(_, groups)| groups.is_array())
             .map(|(event, groups)| (event.clone(), grouped_handlers(groups)))
             .collect(),
     )
