@@ -53,7 +53,6 @@ fn merge_permissions(root: &mut Map<String, Value>, context: GenerationContext<'
         .or_insert_with(|| Value::Object(Map::new()))
         .as_object_mut()
         .context("permissions must be a JSON object")?;
-    reject_unusable_path_rules(permissions)?;
     let mut rules = PermissionRules::parse(permissions)?;
 
     rules.extend_allow(SANDBOX_READ_PATHS.map(read_file_rule));
@@ -77,12 +76,13 @@ fn merge_permissions(root: &mut Map<String, Value>, context: GenerationContext<'
             .map(|path| write_file_rule(path)),
     );
     rules.write_into(permissions);
-    Ok(())
+    reject_unusable_path_rules(permissions)
 }
 
 /// The installed harness files, plus the whole Antigravity config directory and its settings
 /// file: the hook registration and the settings that carry these rules must not be editable.
-/// Fails on a source `read_file(...)` or `write_file(...)` rule `agy` cannot start with: it takes
+/// Fails on a `read_file(...)` or `write_file(...)` rule, from the source or generated from a
+/// path with a parenthesis or glob character, that `agy` cannot start with: it takes
 /// absolute paths, and a glob makes the sandbox fail to start.
 fn reject_unusable_path_rules(permissions: &Map<String, Value>) -> Result<()> {
     let mut rules = ["allow", "ask", "deny"]

@@ -244,3 +244,22 @@ fn a_directory_runtime_root_writes_absolute_protected_paths() -> Result<()> {
     remove_dir_all(root)?;
     Ok(())
 }
+
+#[test]
+fn a_generated_path_with_a_parenthesis_or_glob_character_is_rejected() -> Result<()> {
+    let root = test_root("unsafe-runtime-root")?;
+    let source = load_source(&root)?;
+    for directory in ["/work/a(b", "/work/a*b"] {
+        let project = RuntimeRoot::directory(PathBuf::from(directory))?;
+        let context = GenerationContext {
+            runtime_root: &project,
+            ..GenerationContext::home(&source)
+        };
+
+        let error = settings_for_runtime(context, &Json::parse("{}", Role::Generated)?);
+
+        assert!(error.is_err(), "{directory}");
+    }
+    remove_dir_all(root)?;
+    Ok(())
+}
