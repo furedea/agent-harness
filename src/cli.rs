@@ -24,7 +24,7 @@ use crate::{
     render::{self, RenderRequest},
     runtime,
     runtime_root::RuntimeRoot,
-    shell::{self, LoadInputs, hook_bundle, load_source, sync::SyncPaths},
+    shell::{self, LoadInputs, hook_bundle, load_source, real_path, sync::SyncPaths},
     source,
     source_model::Source,
 };
@@ -397,7 +397,9 @@ fn install(args: InstallArgs, profile: Profile) -> Result<()> {
         .map(RuntimeRoot::directory)
         .transpose()?
         .unwrap_or_else(RuntimeRoot::home);
-    let home = home_dir().ok().filter(|home| *home == prefix);
+    let home = home_dir()
+        .ok()
+        .filter(|home| is_same_directory(home, &prefix));
     let request = RenderRequest {
         dsh_profile: &args.dsh_profile,
         source: source.as_path(),
@@ -447,6 +449,14 @@ fn write_stdout(content: &str) -> Result<()> {
     std::io::stdout()
         .write_all(content.as_bytes())
         .context("failed to write command output")
+}
+
+/// Whether both paths name one existing directory, however each is spelled.
+fn is_same_directory(left: &Path, right: &Path) -> bool {
+    match (real_path(left), real_path(right)) {
+        (Ok(left), Ok(right)) => left == right,
+        _ => false,
+    }
 }
 
 fn resolve_prefix(prefix: Option<PathBuf>) -> Result<PathBuf> {

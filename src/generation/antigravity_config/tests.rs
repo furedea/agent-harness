@@ -151,6 +151,7 @@ fn the_run_allow_does_not_cover_the_well_known_secret_mounts() -> Result<()> {
         "/run/agenix.d",
         "/run/keys",
         "/run/user",
+        "/run/credentials",
     ] {
         assert!(deny.contains(&format!("read_file({mount})")), "{mount}");
     }

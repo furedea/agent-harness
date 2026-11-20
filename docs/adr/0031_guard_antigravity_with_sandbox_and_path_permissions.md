@@ -33,7 +33,7 @@ rewriting the hook registration that carries them.
   leading `~` of path rules. A Nix build leaves them for the activation sync.
 * The sandbox needs `read_file(/nix)` and `read_file(/run)` for `git` and `nix`. Narrower `/run` entries
   were not verified to be enough, so the grant stays broad and the well-known secret mounts under it
-  are denied. Whether a deny wins over an allow is unverified.
+  are denied, which is a best-effort list. Whether a deny wins over an allow is unverified.
 * The harness owns only `command(`, `read_file(` and `write_file(` entries of `permissions`, and every
   other top-level key the source settings declare. It pins `agentMode` to `""` (Default; Auto mode
   must not run) and `enableTerminalSandbox` to `true`. Settings and rules the source does not declare

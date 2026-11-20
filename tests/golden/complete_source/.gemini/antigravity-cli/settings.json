@@ -12,6 +12,7 @@
     ],
     "deny": [
       "command(fixture destroy)",
+      "read_file(/run/credentials)",
       "read_file(/run/secrets)",
       "read_file(/run/secrets.d)",
       "read_file(/run/secrets-for-users)",
