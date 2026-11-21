@@ -24,11 +24,12 @@ impl PrefixRule {
     }
 
     /// The `command(...)` rule of `agy`, which reads a target starting with `regex:` as a regular
-    /// expression and a lone `*` as every command, so those two cannot name a literal prefix.
+    /// expression and a lone `*` as every command, and parentheses delimit the rule, so none of these
+    /// can name a literal prefix.
     pub(crate) fn antigravity(&self) -> Result<String> {
         let target = self.0.join(" ");
         ensure!(
-            !target.starts_with("regex:") && target != "*",
+            !target.starts_with("regex:") && target != "*" && !target.contains(['(', ')']),
             "command prefix {target:?} has a special meaning in an Antigravity command rule"
         );
         Ok(format!("command({target})"))
@@ -261,6 +262,8 @@ mod tests {
         assert!(prefix(&["*"])?.antigravity().is_err());
         assert!(prefix(&["regex:^.*$"])?.antigravity().is_err());
         assert!(prefix(&["regex:a", "b"])?.antigravity().is_err());
+        assert!(prefix(&["tool)"])?.antigravity().is_err());
+        assert!(prefix(&["git", "(x"])?.antigravity().is_err());
         assert!(prefix(&["ls", "*"])?.antigravity().is_ok());
         Ok(())
     }
