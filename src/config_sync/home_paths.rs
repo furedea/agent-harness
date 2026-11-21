@@ -1,16 +1,17 @@
-/// `rule` of the form `tool(~)` or `tool(~/path)` with the home directory in place of `~`; any other rule is
+/// `rule` of the form `tool(~)` or `tool(~/path)` of a path tool with the home directory in place of `~`; any other rule is
 /// returned as it is.
 pub(super) fn expand_rule_home_paths(rule: &str, home: &str) -> String {
     match rule.split_once("(~") {
-        Some((tool, path)) if is_tool_name(tool) && is_home_relative(path) => {
+        Some((tool, path)) if is_path_tool(tool) && is_home_relative(path) => {
             format!("{tool}({home}{path}")
         }
         _ => rule.to_owned(),
     }
 }
 
-fn is_tool_name(tool: &str) -> bool {
-    !tool.contains(['(', ')', ' '])
+/// The tools whose target is a path; the target of any other, such as `command`, is text.
+fn is_path_tool(tool: &str) -> bool {
+    matches!(tool, "read_file" | "write_file")
 }
 
 /// What follows `~` in `tool(~...)`: nothing but the closing parenthesis, or a path below it.

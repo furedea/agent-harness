@@ -113,10 +113,10 @@ pub(crate) fn antigravity_denied_paths(source: &Source, access: PathAccess) -> V
 }
 
 fn antigravity_path(pattern: &str) -> Option<String> {
-    if pattern == "//" {
+    let trimmed = pattern.trim_end_matches('/');
+    if trimmed.is_empty() && pattern.starts_with("//") {
         return Some("/".to_owned());
     }
-    let trimmed = pattern.trim_end_matches('/');
     let path = trimmed.strip_suffix("/**").unwrap_or(trimmed);
     let is_concrete = !path.contains(['*', '?', '[', ']', '{', '}', '!', '\\']);
     let location = match path.strip_prefix("//") {

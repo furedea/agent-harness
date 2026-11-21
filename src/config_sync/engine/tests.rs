@@ -334,7 +334,7 @@ fn home_rule_lists_expand_the_home_prefix_of_a_rule_argument_only_when_asked() -
     };
     let generated = ConfigDocument::parse(
         ConfigFormat::Json,
-        r#"{"permissions": {"deny": ["write_file(~/x)", "read_file(~)", "read_file(/a/~/b)", "read_file(~user/x)", "plain", 1, "a b(~/c)"]}}"#,
+        r#"{"permissions": {"deny": ["write_file(~/x)", "read_file(~)", "read_file(/a/~/b)", "read_file(~user/x)", "plain", 1, "a b(~/c)", "command(~/bin/x)"]}}"#,
         Role::Generated,
     )?;
     let merge = Merge::new(&HOME, &generated);
@@ -357,7 +357,8 @@ fn home_rule_lists_expand_the_home_prefix_of_a_rule_argument_only_when_asked() -
             "read_file(~user/x)",
             "plain",
             1,
-            "a b(~/c)"
+            "a b(~/c)",
+            "command(~/bin/x)"
         ]),
     );
     Ok(())

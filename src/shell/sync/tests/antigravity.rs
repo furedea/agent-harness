@@ -88,7 +88,7 @@ fn antigravity_expands_the_home_prefix_of_path_rules_only() -> Result<()> {
     assert_eq!(
         sandbox.json("settings.json")?["permissions"],
         json!({
-            "ask": [format!("command({home}/bin/tool run)")],
+            "ask": ["command(~/bin/tool run)"],
             "deny": [format!("read_file({home}/.ssh)"), "write_file(/abs/path)"]
         }),
     );

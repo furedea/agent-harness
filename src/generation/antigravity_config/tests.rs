@@ -33,7 +33,8 @@ const SECRET_POLICY: &str = r#"{"version":1,"rules":[
   {"pattern":"~/vault/**/token","access":["read"]},
   {"pattern":"~/.aws/**","access":["write"]},
   {"pattern":"~/**","access":["read"]},
-  {"pattern":"//","access":["write"]}
+  {"pattern":"//","access":["write"]},
+  {"pattern":"///","access":["read"]}
 ]}"#;
 
 const COMMANDS: &str = r#"{"version":1,"rules":[
@@ -82,25 +83,25 @@ fn command_rules_render_as_command_prefixes_in_their_own_decision_list() -> Resu
 }
 
 #[test]
-fn an_allow_prefix_agy_would_read_as_a_pattern_is_left_out_but_a_deny_or_ask_one_fails()
--> Result<()> {
-    let with = |decision: &str| {
-        let root = test_root("pattern-prefix")?;
-        let policy = format!(
-            r#"{{"version":1,"rules":[{{"decision":"{decision}","prefix":["*"],"justification":"x"}}]}}"#
-        );
-        put(SourceLayout::new(&root).command_permissions(), &policy)?;
-        let source = load_source(&root)?;
-        let base = Json::parse("{}", Role::Generated)?;
-        let settings = settings_for_runtime(GenerationContext::home(&source), &base);
-        remove_dir_all(root)?;
-        Ok::<_, anyhow::Error>(settings)
-    };
+fn a_prefix_agy_would_read_as_a_pattern_is_left_out_of_every_decision() -> Result<()> {
+    let root = test_root("pattern-prefix")?;
+    let policy = r#"{"version":1,"rules":[
+      {"decision":"allow","prefix":["*"],"justification":"x"},
+      {"decision":"ask","prefix":["regex:a"],"justification":"x"},
+      {"decision":"deny","prefix":["tool)"],"justification":"x"},
+      {"decision":"deny","prefix":["rm"],"justification":"x"}
+    ]}"#;
+    put(SourceLayout::new(&root).command_permissions(), policy)?;
+    let source = load_source(&root)?;
+    let base = Json::parse("{}", Role::Generated)?;
 
-    let allowed = with("allow")?.map(Json::into_value)?;
-    assert!(!rules(&allowed, "allow").contains(&"command(*)".to_owned()));
-    assert!(with("ask")?.is_err());
-    assert!(with("deny")?.is_err());
+    let settings = settings_for_runtime(GenerationContext::home(&source), &base)?.into_value();
+
+    remove_dir_all(root)?;
+    assert!(!rules(&settings, "allow").contains(&"command(*)".to_owned()));
+    assert!(rules(&settings, "ask").is_empty());
+    assert!(rules(&settings, "deny").contains(&"command(rm)".to_owned()));
+    assert!(!rules(&settings, "deny").contains(&"command(tool))".to_owned()));
     Ok(())
 }
 
@@ -159,6 +160,10 @@ fn the_home_and_the_root_are_named_when_a_rule_denies_all_of_them() -> Result<()
 
     assert!(deny.contains(&"read_file(~)".to_owned()), "{deny:?}");
     assert!(deny.contains(&"write_file(/)".to_owned()), "{deny:?}");
+    assert!(
+        deny.contains(&"read_file(/)".to_owned()),
+        "a root spelled with a trailing slash: {deny:?}"
+    );
     Ok(())
 }
 
