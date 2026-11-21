@@ -168,6 +168,21 @@ fn the_home_and_the_root_are_named_when_a_rule_denies_all_of_them() -> Result<()
 }
 
 #[test]
+fn a_recursive_absolute_root_pattern_denies_the_root() -> Result<()> {
+    let root = test_root("recursive-root")?;
+    let policy = r#"{"version":1,"rules":[{"pattern":"//**","access":["write"]}]}"#;
+    put(SourceLayout::new(&root).secret_path_policy(), policy)?;
+    let source = load_source(&root)?;
+    let base = Json::parse("{}", Role::Generated)?;
+
+    let settings = settings_for_runtime(GenerationContext::home(&source), &base)?.into_value();
+
+    remove_dir_all(root)?;
+    assert!(rules(&settings, "deny").contains(&"write_file(/)".to_owned()));
+    Ok(())
+}
+
+#[test]
 fn the_run_allow_does_not_cover_the_well_known_secret_mounts() -> Result<()> {
     let deny = rules(&generated(&json!({}))?, "deny");
 
