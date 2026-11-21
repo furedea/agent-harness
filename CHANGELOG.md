@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.9.15](https://github.com/furedea/agent-harness/compare/agent-harness-v0.9.14...agent-harness-v0.9.15) (2026-11-21)
+
+
+### Features
+
+* **adr:** adopt the shared ADR checks ([#254](https://github.com/furedea/agent-harness/issues/254)) ([94125a0](https://github.com/furedea/agent-harness/commit/94125a095a7608253cd5977d3cbb000512bf7a8c))
+* **antigravity:** add the Antigravity provider ([#257](https://github.com/furedea/agent-harness/issues/257)) ([1727a70](https://github.com/furedea/agent-harness/commit/1727a70c055f4f290e32827b6b59f21dab299f0c))
+
 ## [0.9.14](https://github.com/furedea/agent-harness/compare/agent-harness-v0.9.13...agent-harness-v0.9.14) (2026-11-13)
 
 
