@@ -57,3 +57,7 @@ rewriting the hook registration that carries them.
 * Bad, because glob secret patterns are enforced by hooks only, and the `PreToolUse` matcher scope,
   deny/ask/allow precedence, `~/` interpretation, and `GH_CONFIG_DIR` delivery are unverified in an
   authenticated session.
+* Bad, because a shared command prefix that `agy` would read as a pattern (`regex:`, a lone `*`,
+  or a parenthesis) has no `command(...)` rule and is left to the command guard hook, so a profile
+  that registers no such hook for Antigravity loses that rule there. Failing the build instead
+  would reject policies that are valid for every other provider.
