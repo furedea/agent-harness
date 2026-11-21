@@ -364,6 +364,28 @@ fn home_rule_lists_expand_the_home_prefix_of_a_rule_argument_only_when_asked() -
 }
 
 #[test]
+fn a_home_agy_cannot_name_in_a_rule_is_rejected_before_it_is_expanded_into_one() -> Result<()> {
+    const HOME: ConfigSync = ConfigSync {
+        home_rule_lists: &[&["permissions", "deny"]],
+        ..EVERY_KEY
+    };
+    let generated = ConfigDocument::parse(
+        ConfigFormat::Json,
+        r#"{"permissions": {"deny": ["write_file(~/x)"]}}"#,
+        Role::Generated,
+    )?;
+
+    for home in ["/home/a(b", "/home/a*b", "/home/a)b"] {
+        let result = Merge::new(&HOME, &generated)
+            .expanding_home(Path::new(home))
+            .apply(parse_installed(&HOME, None, None)?);
+
+        assert!(result.is_err(), "{home}");
+    }
+    Ok(())
+}
+
+#[test]
 fn a_config_that_does_not_exist_is_skipped_only_when_declared() -> Result<()> {
     const SKIPPING: ConfigSync = ConfigSync {
         when_missing: WhenMissing::Skip,

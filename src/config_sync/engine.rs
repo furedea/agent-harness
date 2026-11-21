@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, bail, ensure};
 
 use super::{
     codec::{ConfigDocument, ConfigTree},
@@ -301,9 +301,20 @@ fn expand_home<T: ConfigTree>(sync: &ConfigSync, existing: &mut T, home: &Path) 
     sync.home_command_lists
         .iter()
         .try_for_each(|path| expand_list(&commands, existing, path))?;
+    ensure_home_fits_rules(sync, &home)?;
     sync.home_rule_lists
         .iter()
         .try_for_each(|path| expand_list(&rules, existing, path))
+}
+
+/// A rule `tool(path)` cannot hold a path with a glob or parenthesis, so a home with one cannot
+/// be written into the rule lists.
+fn ensure_home_fits_rules(sync: &ConfigSync, home: &str) -> Result<()> {
+    ensure!(
+        sync.home_rule_lists.is_empty() || !home.contains(['*', '?', '[', ']', '{', '}', '(', ')']),
+        "the home directory {home:?} has a glob or parenthesis character that a permission rule cannot hold"
+    );
+    Ok(())
 }
 
 /// How the entries of a list name the home directory, and what it is.
