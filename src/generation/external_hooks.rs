@@ -1,12 +1,12 @@
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
-use anyhow::{Context, Result, ensure};
+use anyhow::{Context, Result, bail, ensure};
 use serde::Deserialize;
 use serde_json::{Map, Value, map::Entry};
 
 use crate::{
-    provider::spec::ProviderSpec,
+    provider::spec::{HookFormat, ProviderSpec},
     source_model::{HookAsset, HookBundle, SourceDir},
 };
 
@@ -110,6 +110,7 @@ pub(crate) fn merge_provider_hooks(
             path: spec.hook.external_file,
             target_key: spec.hook.format.merge_target_key(),
             events_key: spec.hook.format.bundle_events_key(),
+            named: spec.hook.format == HookFormat::NamedSpecs,
         },
     )
 }
@@ -122,9 +123,12 @@ fn merge_hooks(bundle: &HookBundle, hooks: &mut Value, file: &HookFile) -> Resul
         assets: &bundle.assets,
         source: &bundle.root,
     };
-    relocation
-        .merge_events(file.target(hooks), file.events(generated))
-        .with_context(|| format!("failed to merge external hook bundle {}", bundle.name))
+    let merged = if file.named {
+        relocation.merge_named(file.target(hooks), file.events(generated))
+    } else {
+        relocation.merge_events(file.target(hooks), file.events(generated))
+    };
+    merged.with_context(|| format!("failed to merge external hook bundle {}", bundle.name))
 }
 
 /// A provider hook file inside a bundle, where its events live in that file, and
@@ -133,6 +137,8 @@ struct HookFile {
     path: &'static str,
     target_key: Option<&'static str>,
     events_key: Option<&'static str>,
+    /// Whether the events sit under hook names.
+    named: bool,
 }
 
 impl HookFile {
@@ -160,6 +166,36 @@ struct CommandRelocation<'a> {
 }
 
 impl CommandRelocation<'_> {
+    /// Adds each named spec of the bundle under its own name; a name a spec already has is an
+    /// error, so a bundle can neither extend nor switch off a built-in spec.
+    fn merge_named(&self, target: &mut Value, generated: &Value) -> Result<()> {
+        let target = target
+            .as_object_mut()
+            .context("hook root must be a JSON object")?;
+        let generated = generated
+            .as_object()
+            .context("external hooks must be a JSON object")?;
+        ensure_unused_names(target, generated)?;
+        let specs = generated
+            .iter()
+            .map(|(name, spec)| Ok((name.clone(), self.relocated_spec(spec)?)))
+            .collect::<Result<Vec<_>>>()?;
+        target.extend(specs);
+        Ok(())
+    }
+
+    fn relocated_spec(&self, spec: &Value) -> Result<Value> {
+        let (events, fields): (Map<String, Value>, Map<String, Value>) = spec
+            .as_object()
+            .context("external hook spec must be a JSON object")?
+            .clone()
+            .into_iter()
+            .partition(|(_, value)| value.is_array());
+        let mut relocated = Value::Object(fields);
+        self.merge_events(&mut relocated, &Value::Object(events))?;
+        Ok(relocated)
+    }
+
     fn merge_events(&self, target: &mut Value, generated: &Value) -> Result<()> {
         let target = target
             .as_object_mut()
@@ -233,6 +269,13 @@ impl CommandRelocation<'_> {
             .iter()
             .for_each(|asset| relocated = relocate_asset(asset, &relocated));
         relocated
+    }
+}
+
+fn ensure_unused_names(target: &Map<String, Value>, generated: &Map<String, Value>) -> Result<()> {
+    match generated.keys().find(|name| target.contains_key(*name)) {
+        Some(name) => bail!("external hook spec {name:?} has the name of an existing hook spec"),
+        None => Ok(()),
     }
 }
 

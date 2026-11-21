@@ -3,11 +3,11 @@
 
 use std::path::Path;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, bail, ensure};
 
 use super::{
     codec::{ConfigDocument, ConfigTree},
-    home_paths::expand_command_home_paths,
+    home_paths::{expand_command_home_paths, expand_rule_home_paths},
     installed::{Installed, Synced, Tracked},
 };
 use crate::provider::ownership::{
@@ -184,7 +184,8 @@ fn replace_owned_entries<T: ConfigTree>(
     Ok(())
 }
 
-/// The installed list without the entries the harness owns, followed by the generated ones.
+/// The installed list without the entries the harness owns, followed by the generated ones that
+/// are not already in it, so an entry the user also lists is not repeated by every sync.
 fn replaced_list<T: ConfigTree>(
     owned: EntryMatch,
     generated: &T::Value,
@@ -195,10 +196,20 @@ fn replaced_list<T: ConfigTree>(
         .map(|list| T::sequence(list).context("the installed value must be a list"))
         .transpose()?
         .unwrap_or_default();
-    let kept = installed
+    let mut merged: Vec<T::Value> = installed
         .into_iter()
-        .filter(|entry| !is_owned::<T>(owned, entry));
-    Ok(T::from_sequence(kept.chain(generated).collect()))
+        .filter(|entry| !is_owned::<T>(owned, entry))
+        .collect();
+    for entry in generated {
+        push_new::<T>(&mut merged, entry);
+    }
+    Ok(T::from_sequence(merged))
+}
+
+fn push_new<T: ConfigTree>(list: &mut Vec<T::Value>, entry: T::Value) {
+    if !list.iter().any(|known| T::same(known, &entry)) {
+        list.push(entry);
+    }
 }
 
 fn is_owned<T: ConfigTree>(owned: EntryMatch, entry: &T::Value) -> bool {
@@ -279,26 +290,58 @@ fn sync_tracked_keys<T: ConfigTree>(
 
 fn expand_home<T: ConfigTree>(sync: &ConfigSync, existing: &mut T, home: &Path) -> Result<()> {
     let home = home.to_string_lossy();
+    let commands = HomeExpansion {
+        home: &home,
+        expand: expand_command_home_paths,
+    };
+    let rules = HomeExpansion {
+        home: &home,
+        expand: expand_rule_home_paths,
+    };
     sync.home_command_lists
         .iter()
-        .try_for_each(|path| expand_command_list(existing, path, &home))
+        .try_for_each(|path| expand_list(&commands, existing, path))?;
+    ensure_home_fits_rules(sync, &home)?;
+    sync.home_rule_lists
+        .iter()
+        .try_for_each(|path| expand_list(&rules, existing, path))
 }
 
-fn expand_command_list<T: ConfigTree>(existing: &mut T, path: &[&str], home: &str) -> Result<()> {
-    let Some(commands) = existing.get(path).as_ref().and_then(T::sequence) else {
+/// A rule `tool(path)` cannot hold a path with a glob or parenthesis, so a home with one cannot
+/// be written into the rule lists.
+fn ensure_home_fits_rules(sync: &ConfigSync, home: &str) -> Result<()> {
+    ensure!(
+        sync.home_rule_lists.is_empty() || !home.contains(['*', '?', '[', ']', '{', '}', '(', ')']),
+        "the home directory {home:?} has a glob or parenthesis character that a permission rule cannot hold"
+    );
+    Ok(())
+}
+
+/// How the entries of a list name the home directory, and what it is.
+struct HomeExpansion<'a> {
+    home: &'a str,
+    expand: fn(&str, &str) -> String,
+}
+
+fn expand_list<T: ConfigTree>(
+    expansion: &HomeExpansion<'_>,
+    existing: &mut T,
+    path: &[&str],
+) -> Result<()> {
+    let Some(entries) = existing.get(path).as_ref().and_then(T::sequence) else {
         return Ok(());
     };
-    let expanded = commands
+    let expanded = entries
         .into_iter()
-        .map(|command| expand_command::<T>(command, home))
+        .map(|entry| expand_entry::<T>(expansion, entry))
         .collect();
     existing.set(path, T::from_sequence(expanded))
 }
 
-fn expand_command<T: ConfigTree>(item: T::Value, home: &str) -> T::Value {
-    match T::text(&item) {
-        Some(command) => T::from_text(expand_command_home_paths(&command, home)),
-        None => item,
+fn expand_entry<T: ConfigTree>(expansion: &HomeExpansion<'_>, entry: T::Value) -> T::Value {
+    match T::text(&entry) {
+        Some(text) => T::from_text((expansion.expand)(&text, expansion.home)),
+        None => entry,
     }
 }
 

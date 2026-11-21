@@ -360,3 +360,122 @@ fn write_file(path: &Path, content: &str) -> Result<()> {
     crate::shell::fixtures::write(path, content)?;
     Ok(())
 }
+
+const ANTIGRAVITY_HOOKS: &str = r#"{
+  "version": 1,
+  "claude": {},
+  "codex": {"hooks": {}},
+  "antigravity": {
+    "agent-harness": {
+      "PreToolUse": [
+        {"matcher": "*", "hooks": [{"type": "command", "command": "$HOME/.gemini/config/hooks/guard.sh"}]}
+      ],
+      "Stop": [{"type": "command", "command": "$HOME/.gemini/config/hooks/stop.sh"}]
+    }
+  }
+}"#;
+
+#[test]
+fn antigravity_hooks_keep_the_named_spec_map_the_source_declares() -> Result<()> {
+    let root = test_root("antigravity_hooks_keep_the_named_spec_map")?;
+    write_file(&root.join("hooks.json"), ANTIGRAVITY_HOOKS)?;
+    let output = root.join("antigravity-hooks.json");
+
+    write_hooks_for_runtime(
+        GenerationContext::home(&load_source(&root)?),
+        &output,
+        ProviderId::Antigravity.spec(),
+    )?;
+
+    let hooks: Value = serde_json::from_str(&crate::shell::fixtures::read_to_string(&output)?)?;
+    assert_eq!(
+        hooks["agent-harness"]["PreToolUse"][0]["matcher"].as_str(),
+        Some("*")
+    );
+    assert_eq!(
+        hooks["agent-harness"]["Stop"][0]["command"].as_str(),
+        Some("$HOME/.gemini/config/hooks/stop.sh"),
+        "a lifecycle event lists its handlers directly"
+    );
+
+    crate::shell::fixtures::remove_dir_all(root)?;
+    Ok(())
+}
+
+#[test]
+fn antigravity_hooks_are_an_empty_map_when_the_section_is_missing() -> Result<()> {
+    let root = test_root("antigravity_hooks_are_an_empty_map")?;
+    write_file(
+        &root.join("hooks.json"),
+        r#"{"version":1,"claude":{},"codex":{"hooks":{}}}"#,
+    )?;
+    let output = root.join("antigravity-hooks.json");
+
+    write_hooks_for_runtime(
+        GenerationContext::home(&load_source(&root)?),
+        &output,
+        ProviderId::Antigravity.spec(),
+    )?;
+
+    let hooks: Value = serde_json::from_str(&crate::shell::fixtures::read_to_string(&output)?)?;
+    assert_eq!(hooks, serde_json::json!({}));
+
+    crate::shell::fixtures::remove_dir_all(root)?;
+    Ok(())
+}
+
+#[test]
+fn hook_metadata_lists_tool_and_lifecycle_handlers_of_every_named_spec() -> Result<()> {
+    let root = test_root("hook_metadata_lists_named_spec_handlers")?;
+    write_file(&root.join("hooks.json"), ANTIGRAVITY_HOOKS)?;
+
+    let metadata = built_in_hook_metadata(&load_source(&root)?)?;
+
+    let antigravity: Vec<_> = metadata
+        .iter()
+        .filter(|hook| hook.provider == ProviderId::Antigravity)
+        .map(|hook| {
+            (
+                hook.event.as_str(),
+                hook.matcher.as_str(),
+                hook.command.as_str(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        antigravity,
+        [
+            ("PreToolUse", "*", "$HOME/.gemini/config/hooks/guard.sh"),
+            ("Stop", "*", "$HOME/.gemini/config/hooks/stop.sh"),
+        ]
+    );
+
+    crate::shell::fixtures::remove_dir_all(root)?;
+    Ok(())
+}
+
+#[test]
+fn hook_metadata_skips_a_disabled_named_spec_and_ignores_its_non_event_fields() -> Result<()> {
+    let root = test_root("hook_metadata_skips_disabled_named_spec")?;
+    write_file(
+        &root.join("hooks.json"),
+        r#"{
+  "version": 1, "claude": {}, "codex": {"hooks": {}},
+  "antigravity": {
+    "off": {"enabled": false, "Stop": [{"type": "command", "command": "off.sh"}]},
+    "on": {"enabled": true, "Stop": [{"type": "command", "command": "on.sh"}]}
+  }
+}"#,
+    )?;
+
+    let metadata = built_in_hook_metadata(&load_source(&root)?)?;
+
+    let commands: Vec<_> = metadata
+        .iter()
+        .filter(|hook| hook.provider == ProviderId::Antigravity)
+        .map(|hook| hook.command.as_str())
+        .collect();
+    assert_eq!(commands, ["on.sh"]);
+    crate::shell::fixtures::remove_dir_all(root)?;
+    Ok(())
+}

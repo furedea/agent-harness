@@ -24,7 +24,7 @@ use crate::{
     render::{self, RenderRequest},
     runtime,
     runtime_root::RuntimeRoot,
-    shell::{self, LoadInputs, hook_bundle, load_source, sync::SyncPaths},
+    shell::{self, LoadInputs, hook_bundle, load_source, real_path, sync::SyncPaths},
     source,
     source_model::Source,
 };
@@ -96,6 +96,9 @@ enum Command {
     /// Merge generated top-level keys into an existing Devin CLI config.
     #[command(hide = true)]
     SyncDevinConfig(SyncConfigArgs),
+    /// Merge generated tool permissions into an existing Antigravity CLI settings file.
+    #[command(hide = true)]
+    SyncAntigravityConfig(SyncConfigArgs),
     /// Merge managed keys into an existing Hermes Agent config.
     #[command(hide = true)]
     SyncHermesConfig(SyncConfigArgs),
@@ -293,6 +296,7 @@ pub fn run() -> Result<()> {
         Command::SyncCodexConfig(args) => sync_config(ProviderId::Codex, &args),
         Command::SyncClaudeSettings(args) => sync_config(ProviderId::Claude, &args),
         Command::SyncDevinConfig(args) => sync_config(ProviderId::Devin, &args),
+        Command::SyncAntigravityConfig(args) => sync_config(ProviderId::Antigravity, &args),
         Command::SyncHermesConfig(args) => sync_config(ProviderId::Hermes, &args),
         Command::SyncDshConfig(args) => sync_config(ProviderId::Dsh, &args),
         Command::Verify(args) => {
@@ -393,11 +397,15 @@ fn install(args: InstallArgs, profile: Profile) -> Result<()> {
         .map(RuntimeRoot::directory)
         .transpose()?
         .unwrap_or_else(RuntimeRoot::home);
+    let home = home_dir()
+        .ok()
+        .filter(|home| is_same_directory(home, &prefix));
     let request = RenderRequest {
         dsh_profile: &args.dsh_profile,
         source: source.as_path(),
         external_hooks: &args.extra_hook,
         runtime_root: &runtime_root,
+        home: home.as_deref(),
     };
     render::install(&request, &prefix)
 }
@@ -441,6 +449,14 @@ fn write_stdout(content: &str) -> Result<()> {
     std::io::stdout()
         .write_all(content.as_bytes())
         .context("failed to write command output")
+}
+
+/// Whether both paths name one existing directory, however each is spelled.
+fn is_same_directory(left: &Path, right: &Path) -> bool {
+    match (real_path(left), real_path(right)) {
+        (Ok(left), Ok(right)) => left == right,
+        _ => false,
+    }
 }
 
 fn resolve_prefix(prefix: Option<PathBuf>) -> Result<PathBuf> {

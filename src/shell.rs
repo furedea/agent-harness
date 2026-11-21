@@ -15,6 +15,6 @@ pub(crate) mod sync;
 pub(crate) use executor::{execute, execute_stages};
 pub(crate) use io::TemporaryDirectory;
 pub(crate) use load::{
-    LoadInputs, has_required_files, load_installed, load_source, validate_source_layout,
+    LoadInputs, has_required_files, load_installed, load_source, real_path, validate_source_layout,
     verify_paths,
 };

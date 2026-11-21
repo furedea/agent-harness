@@ -23,9 +23,13 @@ struct SecretPathRule {
 
 impl SecretPathRule {
     fn denies_read(&self) -> bool {
+        self.denies(PathAccess::Read)
+    }
+
+    fn denies(&self, wanted: PathAccess) -> bool {
         self.access
             .iter()
-            .any(|access| matches!(access, SecretPathAccess::Read))
+            .any(|&access| PathAccess::from(access) == wanted)
     }
 }
 
@@ -89,6 +93,37 @@ pub(crate) fn codex_filesystem_entries(source: &Source) -> Result<Vec<CodexFiles
         .filter(|rule| rule.denies_read())
         .map(|rule| rule.pattern.codex_denied_read())
         .collect()
+}
+
+/// The paths the policy requires for Antigravity under `access`, one per rule that denies that
+/// access and names a concrete location.
+///
+/// `agy` rejects a glob in a path rule and takes absolute paths only, so a rule converts only when
+/// it names one location outside the project: `//x` becomes `/x`, `~/x` stays for the sync to
+/// expand, and a trailing `/**` names the directory itself. Any other glob, and any project
+/// relative pattern, has no `agy` form; the `PreToolUse` hook keeps enforcing those.
+pub(crate) fn antigravity_denied_paths(source: &Source, access: PathAccess) -> Vec<String> {
+    source
+        .secret_paths
+        .rules
+        .iter()
+        .filter(|rule| rule.denies(access))
+        .filter_map(|rule| antigravity_path(rule.pattern.as_str()))
+        .collect()
+}
+
+fn antigravity_path(pattern: &str) -> Option<String> {
+    let trimmed = pattern.trim_end_matches('/');
+    let path = trimmed.strip_suffix("/**").unwrap_or(trimmed);
+    if path.trim_end_matches('/').is_empty() && pattern.starts_with("//") {
+        return Some("/".to_owned());
+    }
+    let is_concrete = !path.contains(['*', '?', '[', ']', '{', '}', '!', '\\']);
+    let location = match path.strip_prefix("//") {
+        Some(absolute) => Some(format!("/{absolute}")),
+        None => (path == "~" || path.starts_with("~/")).then(|| path.to_owned()),
+    };
+    location.filter(|_| is_concrete && !path.is_empty())
 }
 
 /// The srt `denyRead` entries the policy requires, one per rule that denies reads.

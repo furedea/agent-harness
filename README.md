@@ -28,7 +28,8 @@ Provider settings
         |-- Devin: config, hooks, and command permissions
         |-- Hermes Agent: hook manifest, plugin, and config
         |-- pi: hook manifest, bridge and srt sandbox extensions, settings, and skills
-        `-- dsh: hook manifest, bridge bundle, and skills
+        |-- dsh: hook manifest, bridge bundle, and skills
+        `-- antigravity: hook manifest, skills, AGENTS.md, and generated settings permissions
 ```
 
 ## Why
@@ -464,6 +465,7 @@ The module interface is:
 | `hermes.enable`      | `true`        | Install Hermes Agent files.                                                 |
 | `pi.enable`          | `true`        | Install pi files.                                                           |
 | `dsh.enable`         | `true`        | Install DeepSeek Harness files.                                             |
+| `antigravity.enable` | `true`        | Install Antigravity files (`~/.gemini/config`, `agy` settings permissions). |
 | `dsh.profile`        | `"web"`       | User-owned dsh profile that registers the hook bundle.                      |
 | `github.agentToken`  | disabled      | Agent GitHub token; see [below](#agent-github-token-in-the-claude-sandbox). |
 

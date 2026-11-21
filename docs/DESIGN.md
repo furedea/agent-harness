@@ -346,6 +346,7 @@ CodeQL analysis is not a workflow file: it runs through GitHub's CodeQL default 
 - **v0.9.10**: added the DeepSeek Harness (dsh) provider with an embedded hook bridge ([0025]).
 - **v0.9.13**: ran Pi's shell and file tools inside srt and applied the secret path policy to the
     Codex guarded filesystem and the Pi srt policy ([0030]).
+- **Unreleased**: added the Antigravity provider with sandbox and path-permission guards ([0031]).
 
 [#140]: https://github.com/furedea/agent-harness/pull/140
 [0001]: adr/0001_separate_codex_conformance_from_required_ci.md
@@ -369,3 +370,4 @@ CodeQL analysis is not a workflow file: it runs through GitHub's CodeQL default 
 [0028]: adr/0028_return_file_operations_as_values.md
 [0029]: adr/0029_declare_config_ownership_and_sync_with_one_engine.md
 [0030]: adr/0030_run_pi_file_operations_inside_srt.md
+[0031]: adr/0031_guard_antigravity_with_sandbox_and_path_permissions.md

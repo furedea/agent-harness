@@ -78,6 +78,12 @@ fn unified_sync_commands_match_legacy_files() -> Result<()> {
             "userKey: true\n",
         ),
         (
+            "antigravity",
+            "sync-antigravity-config",
+            ".gemini/antigravity-cli/settings.json",
+            "{\"userKey\":true}",
+        ),
+        (
             "dsh",
             "sync-dsh-config",
             ".dsh/bridge",

@@ -23,6 +23,18 @@ impl PrefixRule {
         format!("Bash({}:*)", self.0.join(" "))
     }
 
+    /// The `command(...)` rule of `agy`, which reads a target starting with `regex:` as a regular
+    /// expression and a lone `*` as every command, and parentheses delimit the rule, so none of these
+    /// can name a literal prefix.
+    pub(crate) fn antigravity(&self) -> Result<String> {
+        let target = self.0.join(" ");
+        ensure!(
+            !target.starts_with("regex:") && target != "*" && !target.contains(['(', ')']),
+            "command prefix {target:?} has a special meaning in an Antigravity command rule"
+        );
+        Ok(format!("command({target})"))
+    }
+
     pub(crate) fn devin(&self) -> String {
         format!("Exec({})", self.0.join(" "))
     }
@@ -232,6 +244,27 @@ mod tests {
         assert_eq!(rule.claude(), "Bash(git push:*)");
         assert_eq!(rule.devin(), "Exec(git push)");
         assert_eq!(rule.tokens(), ["git", "push"]);
+        Ok(())
+    }
+
+    #[test]
+    fn antigravity_prefix_renders_a_command_rule() -> Result<()> {
+        assert_eq!(
+            prefix(&["git", "push"])?.antigravity()?,
+            "command(git push)"
+        );
+        assert_eq!(prefix(&["regexp:x"])?.antigravity()?, "command(regexp:x)");
+        Ok(())
+    }
+
+    #[test]
+    fn antigravity_rejects_a_prefix_it_would_read_as_a_pattern() -> Result<()> {
+        assert!(prefix(&["*"])?.antigravity().is_err());
+        assert!(prefix(&["regex:^.*$"])?.antigravity().is_err());
+        assert!(prefix(&["regex:a", "b"])?.antigravity().is_err());
+        assert!(prefix(&["tool)"])?.antigravity().is_err());
+        assert!(prefix(&["git", "(x"])?.antigravity().is_err());
+        assert!(prefix(&["ls", "*"])?.antigravity().is_ok());
         Ok(())
     }
 

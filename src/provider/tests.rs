@@ -113,6 +113,7 @@ fn extra_spec_flows_through_layout_protection_rendering_and_publication() -> Res
         source: &source,
         external_hooks: &[],
         runtime_root: &runtime_root,
+        home: None,
     };
     render::render_installation_for(&request, staging.path(), &providers)?;
     assert_policy_protects_bridge(staging.path())?;
@@ -180,6 +181,8 @@ fn registry_derivation_preserves_install_order() {
             ".dsh/hooks",
             ".dsh/bridge",
             ".dsh/skills",
+            ".gemini/config/hooks",
+            ".gemini/config/skills",
         ]
         .map(PathBuf::from)
     );
@@ -204,6 +207,9 @@ fn registry_derivation_preserves_install_order() {
             ".pi/agent/extensions/sandbox_policy.json",
             ".dsh/AGENTS.md",
             ".dsh/hooks.json",
+            ".gemini/config/AGENTS.md",
+            ".gemini/config/hooks.json",
+            ".gemini/antigravity-cli/settings.json",
         ]
         .map(PathBuf::from)
     );
@@ -256,6 +262,7 @@ fn every_provider_declares_the_format_of_its_mutable_config() {
             ("hermes", Some(ConfigFormat::Yaml)),
             ("pi", Some(ConfigFormat::Json)),
             ("dsh", Some(ConfigFormat::Json)),
+            ("antigravity", Some(ConfigFormat::Json)),
         ]
     );
 }
@@ -359,7 +366,7 @@ fn every_provider_declares_how_it_enforces_command_rules() {
         .filter(|spec| spec.command_rule.is_none())
         .map(|spec| spec.key)
         .collect();
-    assert_eq!(without_rules, ["hermes", "pi", "dsh"]);
+    assert_eq!(without_rules, ["hermes", "pi", "dsh", "antigravity"]);
     assert_eq!(
         ProviderId::Codex.spec().command_rule,
         Some(CommandRuleSpec::ExecpolicyFile {
@@ -408,6 +415,7 @@ fn rendering_writes_command_rules_where_the_provider_declares_them() -> Result<(
         providers: PROVIDERS,
         installed: &installed,
         out: out.path(),
+        home: None,
     };
     let codex_elsewhere = ProviderSpec {
         command_rule: Some(CommandRuleSpec::ExecpolicyFile {

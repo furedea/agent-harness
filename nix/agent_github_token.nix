@@ -132,6 +132,29 @@ in
     };
 
   /**
+    Antigravity settings that hide the normal gh token. `agy` has no settings key for the
+    environment of its commands, so GH_CONFIG_DIR is not set here; only the denial is.
+  */
+  applyToAntigravitySettings =
+    settings:
+    lib.recursiveUpdate settings {
+      permissions.deny = lib.unique (
+        (settings.permissions.deny or [ ]) ++ [ "read_file(~/.config/gh/hosts.yml)" ]
+      );
+    };
+
+  /**
+    Antigravity settings that hide the GitHub App private key from `agy` tools and its sandbox.
+  */
+  denyAntigravityPrivateKeyRead =
+    privateKeyPath: settings:
+    lib.recursiveUpdate settings {
+      permissions.deny = lib.unique (
+        (settings.permissions.deny or [ ]) ++ [ "read_file(${privateKeyPath})" ]
+      );
+    };
+
+  /**
     Read deny patterns that would hide the token files in `configDir` from the sandbox.
   */
   readDenialsCovering =

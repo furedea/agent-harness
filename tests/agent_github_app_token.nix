@@ -44,6 +44,7 @@ let
   isRejected = config: !(builtins.tryEval config.home.username).success;
   composedSettings = config: config.programs.agent-harness.claude.composedSettings;
   composedCodexSettings = config: config.programs.agent-harness.codex.composedSettings;
+  composedAntigravitySettings = config: config.programs.agent-harness.antigravity.composedSettings;
 
   appToken = {
     enable = true;
@@ -118,6 +119,12 @@ assert lib.assertMsg (
 assert lib.assertMsg (
   (composedCodexSettings darwinApp).permissions.guarded.filesystem.${privateKeyPath} == "deny"
 ) "the App private key must be unreadable in the Codex guarded profile";
+assert lib.assertMsg (
+  (composedAntigravitySettings darwinApp).permissions.deny == [
+    "read_file(~/.config/gh/hosts.yml)"
+    "read_file(${privateKeyPath})"
+  ]
+) "the App private key must be unreadable to Antigravity tools and its sandbox";
 assert lib.assertMsg (
   darwinAppSettings.env.GH_CONFIG_DIR == configDir
   && darwinAppSettings.sandbox.excludedCommands == [ "git push *" ]

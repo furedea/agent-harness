@@ -1,6 +1,6 @@
 use clap::{CommandFactory, Parser};
 
-use super::{Cli, Command, GithubAppTokenCommand, Profile};
+use super::{Cli, Command, GithubAppTokenCommand, Profile, is_same_directory};
 
 #[test]
 fn commands_default_to_the_minimal_profile() {
@@ -39,6 +39,13 @@ fn exposes_claude_settings_sync() {
     let command = Cli::command();
 
     assert!(command.find_subcommand("sync-claude-settings").is_some());
+}
+
+#[test]
+fn exposes_antigravity_config_sync() {
+    let command = Cli::command();
+
+    assert!(command.find_subcommand("sync-antigravity-config").is_some());
 }
 
 #[test]
@@ -120,4 +127,22 @@ fn verify_command_accepts_a_source_tree() {
         .unwrap();
 
     assert_eq!(source.get_long(), Some("source"));
+}
+
+#[test]
+fn a_prefix_is_the_home_however_it_is_spelled() {
+    let root = std::env::temp_dir().join(format!("agent-harness-home-{}", std::process::id()));
+    let home = root.join("home");
+    let alias = root.join("alias");
+    let other = root.join("other");
+    crate::shell::fixtures::create_dir_all(&home).unwrap();
+    crate::shell::fixtures::create_dir_all(&other).unwrap();
+    crate::shell::fixtures::symlink(&home, &alias).unwrap();
+
+    assert!(is_same_directory(&home, &home.join(".")));
+    assert!(is_same_directory(&home, &alias));
+    assert!(!is_same_directory(&home, &other));
+    assert!(!is_same_directory(&home, &root.join("missing")));
+
+    crate::shell::fixtures::remove_dir_all(root).unwrap();
 }

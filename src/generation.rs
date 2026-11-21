@@ -2,6 +2,7 @@
 
 use crate::{runtime_root::RuntimeRoot, source_model::Source};
 
+pub(crate) mod antigravity_config;
 pub(crate) mod bridges;
 pub(crate) mod claude_config;
 mod claude_permissions;

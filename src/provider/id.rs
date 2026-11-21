@@ -10,4 +10,5 @@ pub(crate) enum ProviderId {
     Hermes,
     Pi,
     Dsh,
+    Antigravity,
 }

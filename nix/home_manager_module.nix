@@ -100,6 +100,16 @@ let
   codexSourceSettings = lib.recursiveUpdate codexBaseSettings cfg.codex.settings;
   codexSettings = codexFormat.generate "agent-harness-codex-settings.toml" cfg.codex.composedSettings;
 
+  antigravityBaseSettings =
+    if builtins.pathExists (evalProfileSource + "/antigravity/settings.json") then
+      builtins.fromJSON (builtins.readFile (evalProfileSource + "/antigravity/settings.json"))
+    else
+      { };
+  antigravitySourceSettings = lib.recursiveUpdate antigravityBaseSettings cfg.antigravity.settings;
+  antigravitySettings = pkgs.writeText "agent-harness-antigravity-settings.json" (
+    builtins.toJSON cfg.antigravity.composedSettings
+  );
+
   composedSource = pkgs.runCommand "agent-harness-${cfg.profile}-source" { } ''
     cp -R ${lib.escapeShellArg "${profileSource}/."} "$out"
     chmod -R u+w "$out"
@@ -108,6 +118,8 @@ let
       "$out/command_permissions.json"
     install -m 0644 ${claudeSettings} "$out/claude/settings.json"
     install -m 0644 ${codexSettings} "$out/codex/config.toml"
+    mkdir -p "$out/antigravity"
+    install -m 0644 ${antigravitySettings} "$out/antigravity/settings.json"
   '';
 
   namedSourceArgs =
@@ -211,6 +223,21 @@ in
       };
     };
 
+    antigravity = {
+      settings = lib.mkOption {
+        type = lib.types.attrsOf lib.types.anything;
+        default = { };
+        description = "Antigravity CLI settings recursively merged over the selected profile.";
+      };
+
+      composedSettings = lib.mkOption {
+        type = lib.types.attrsOf lib.types.anything;
+        readOnly = true;
+        internal = true;
+        description = "Antigravity CLI source settings after profile, override, and opt-in composition.";
+      };
+    };
+
     claude = {
       settings = lib.mkOption {
         type = lib.types.attrsOf lib.types.anything;
@@ -229,7 +256,8 @@ in
     github.agentToken = {
       enable = lib.mkEnableOption ''
         an agent-scoped GitHub token for gh inside the Claude Code sandbox, Codex shell
-        commands, and git push. The token's own permissions are the safety boundary: anything
+        commands, and git push. Antigravity only gets the denial of the normal gh token and the
+        App private key; it needs GH_CONFIG_DIR from its launch environment. The token's own permissions are the safety boundary: anything
         running in the sandbox can use it'';
 
       configDir = lib.mkOption {
@@ -243,42 +271,58 @@ in
   } providerOptions;
 
   config = lib.mkIf cfg.enable {
-    programs.agent-harness.claude.composedSettings = lib.pipe claudeSourceSettings [
-      (
-        settings:
-        if agentToken.enable then
-          agentGithubToken.applyToClaudeSettings agentToken.configDir settings
-        else
-          settings
-      )
-      (
-        settings:
-        if agentToken.enable && agentToken.source == "app" then
-          agentGithubToken.denyPrivateKeyRead agentToken.app.privateKeyPath settings
-        else
-          settings
-      )
-    ];
+    programs.agent-harness = {
+      claude.composedSettings = lib.pipe claudeSourceSettings [
+        (
+          settings:
+          if agentToken.enable then
+            agentGithubToken.applyToClaudeSettings agentToken.configDir settings
+          else
+            settings
+        )
+        (
+          settings:
+          if agentToken.enable && agentToken.source == "app" then
+            agentGithubToken.denyPrivateKeyRead agentToken.app.privateKeyPath settings
+          else
+            settings
+        )
+      ];
 
-    programs.agent-harness.codex.composedSettings = lib.pipe codexSourceSettings [
-      (
-        settings:
-        if agentToken.enable then
-          agentGithubToken.applyToCodexSettings {
-            inherit (agentToken) configDir;
-            claudeSettings = cfg.claude.composedSettings;
-          } settings
-        else
-          settings
-      )
-      (
-        settings:
-        if agentToken.enable && agentToken.source == "app" then
-          agentGithubToken.denyCodexPrivateKeyRead agentToken.app.privateKeyPath settings
-        else
-          settings
-      )
-    ];
+      codex.composedSettings = lib.pipe codexSourceSettings [
+        (
+          settings:
+          if agentToken.enable then
+            agentGithubToken.applyToCodexSettings {
+              inherit (agentToken) configDir;
+              claudeSettings = cfg.claude.composedSettings;
+            } settings
+          else
+            settings
+        )
+        (
+          settings:
+          if agentToken.enable && agentToken.source == "app" then
+            agentGithubToken.denyCodexPrivateKeyRead agentToken.app.privateKeyPath settings
+          else
+            settings
+        )
+      ];
+
+      antigravity.composedSettings = lib.pipe antigravitySourceSettings [
+        (
+          settings:
+          if agentToken.enable then agentGithubToken.applyToAntigravitySettings settings else settings
+        )
+        (
+          settings:
+          if agentToken.enable && agentToken.source == "app" then
+            agentGithubToken.denyAntigravityPrivateKeyRead agentToken.app.privateKeyPath settings
+          else
+            settings
+        )
+      ];
+    };
 
     assertions = lib.optionals agentToken.enable [
       {

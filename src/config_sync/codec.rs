@@ -71,6 +71,10 @@ fn split_path<'a, 'b>(path: &'a [&'b str]) -> Result<(&'a [&'b str], &'b str)> {
 pub(crate) struct Json(JsonValue);
 
 impl Json {
+    pub(crate) fn into_value(self) -> JsonValue {
+        self.0
+    }
+
     pub(crate) fn from_value(value: JsonValue) -> Result<Self> {
         match value {
             JsonValue::Object(_) => Ok(Self(value)),
@@ -420,6 +424,13 @@ impl ConfigDocument {
             ConfigFormat::Toml => Self::Toml(Toml::parse(text, role)?),
             ConfigFormat::Yaml => Self::Yaml(Yaml::parse(text, role)?),
         })
+    }
+
+    pub(crate) fn as_json(&self) -> Option<&Json> {
+        match self {
+            Self::Json(json) => Some(json),
+            Self::Toml(_) | Self::Yaml(_) => None,
+        }
     }
 
     pub(crate) fn blank(format: ConfigFormat) -> Self {

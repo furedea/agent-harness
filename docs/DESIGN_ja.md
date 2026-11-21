@@ -226,6 +226,7 @@ CodeQL による解析はワークフローファイルではなく，GitHub の
 - **v0.9.3–v0.9.5**: Claude サンドボックスと Codex のシェルコマンドのためのオプトインのエージェント用 GitHub トークンを追加し，GitHub App から更新するようにした（[0019]–[0023]）．
 - **v0.9.10**: DeepSeek Harness（dsh）プロバイダを，埋め込みのフックブリッジ付きで追加した（[0025]）．
 - **v0.9.13**: Pi のシェルとファイルのツールを srt の内側で動かし，秘密パスポリシーを Codex のガード用ファイルシステムと Pi の srt ポリシーに適用した（[0030]）．
+- **Unreleased**: Antigravity プロバイダを，サンドボックスとパス権限によるガード付きで追加した（[0031]）．
 
 [#140]: https://github.com/furedea/agent-harness/pull/140
 [0001]: adr/0001_separate_codex_conformance_from_required_ci.md
@@ -249,3 +250,4 @@ CodeQL による解析はワークフローファイルではなく，GitHub の
 [0028]: adr/0028_return_file_operations_as_values.md
 [0029]: adr/0029_declare_config_ownership_and_sync_with_one_engine.md
 [0030]: adr/0030_run_pi_file_operations_inside_srt.md
+[0031]: adr/0031_guard_antigravity_with_sandbox_and_path_permissions.md

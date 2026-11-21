@@ -5,6 +5,12 @@ use serde::{Deserialize, Serialize};
 
 use crate::{file_op::FileOp, generation::permission_rule::PrefixRule, source_model::Source};
 
+mod antigravity;
+
+pub(crate) use antigravity::{
+    antigravity_allow_permissions, antigravity_ask_permissions, antigravity_deny_permissions,
+};
+
 /// The shared command permission rules of a source, parsed and validated once.
 #[derive(Debug, Deserialize, Serialize)]
 pub(crate) struct CommandPermissions {
