@@ -343,10 +343,10 @@ CodeQL analysis is not a workflow file: it runs through GitHub's CodeQL default 
     permission rules during generation ([#140], [0018]).
 - **v0.9.3–v0.9.5**: added the opt-in agent GitHub token for the Claude sandbox and Codex shell
     commands, refreshed from a GitHub App ([0019]–[0023]).
-- **Unreleased**: added the Antigravity provider with sandbox and path-permission guards ([0031]).
 - **v0.9.10**: added the DeepSeek Harness (dsh) provider with an embedded hook bridge ([0025]).
 - **v0.9.13**: ran Pi's shell and file tools inside srt and applied the secret path policy to the
     Codex guarded filesystem and the Pi srt policy ([0030]).
+- **Unreleased**: added the Antigravity provider with sandbox and path-permission guards ([0031]).
 
 [#140]: https://github.com/furedea/agent-harness/pull/140
 [0001]: adr/0001_separate_codex_conformance_from_required_ci.md
@@ -365,9 +365,9 @@ CodeQL analysis is not a workflow file: it runs through GitHub's CodeQL default 
 [0023]: adr/0023_default_codex_to_the_guarded_profile_with_the_agent_token.md
 [0024]: adr/0024_track_managed_codex_env_keys_in_a_sidecar.md
 [0025]: adr/0025_embed_the_dsh_hook_bridge.md
-[0031]: adr/0031_guard_antigravity_with_sandbox_and_path_permissions.md
 [0026]: adr/0026_declare_providers_in_a_registry.md
 [0027]: adr/0027_declare_claude_and_codex_in_the_provider_registry.md
 [0028]: adr/0028_return_file_operations_as_values.md
 [0029]: adr/0029_declare_config_ownership_and_sync_with_one_engine.md
 [0030]: adr/0030_run_pi_file_operations_inside_srt.md
+[0031]: adr/0031_guard_antigravity_with_sandbox_and_path_permissions.md

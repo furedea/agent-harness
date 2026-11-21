@@ -24,7 +24,8 @@ Provider settings
         |-- Devin: config, hooks, and command permissions
         |-- Hermes Agent: hook manifest, plugin, and config
         |-- pi: hook manifest, bridge and srt sandbox extensions, settings, and skills
-        `-- dsh: hook manifest, bridge bundle, and skills
+        |-- dsh: hook manifest, bridge bundle, and skills
+        `-- antigravity: hook manifest, skills, AGENTS.md, and generated settings permissions
 ```
 
 ## なぜ使うのか
@@ -351,6 +352,7 @@ nix run github:furedea/agent-harness -- verify --prefix "$HOME"
 | `devin.enable`       | `true`                 | Devin のファイルをインストールする．                                                                      |
 | `hermes.enable`      | `true`                 | Hermes Agent のファイルをインストールする．                                                               |
 | `pi.enable`          | `true`                 | pi のファイルをインストールする．                                                                         |
+| `antigravity.enable` | `true`                 | Antigravity のファイル（`~/.gemini/config`，`agy` の settings の権限）をインストールする．                |
 | `dsh.enable`         | `true`                 | DeepSeek Harness のファイルをインストールする．                                                           |
 | `dsh.profile`        | `"web"`                | フックバンドルを登録する，ユーザー所有の dsh プロファイル．                                               |
 | `github.agentToken`  | disabled               | エージェント用 GitHub トークン．[下記](#claude-サンドボックス内のエージェント用-github-トークン) を参照． |
