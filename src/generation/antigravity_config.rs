@@ -56,7 +56,7 @@ fn merge_permissions(root: &mut Map<String, Value>, context: GenerationContext<'
     let mut rules = PermissionRules::parse(permissions)?;
 
     rules.extend_allow(SANDBOX_READ_PATHS.map(read_file_rule));
-    rules.extend_allow(command_permissions::antigravity_allow_permissions(source)?);
+    rules.extend_allow(command_permissions::antigravity_allow_permissions(source));
     rules.extend_ask(command_permissions::antigravity_ask_permissions(source)?);
     rules.extend_deny(command_permissions::antigravity_deny_permissions(source)?);
     rules.extend_deny(RUN_SECRET_PATHS.map(read_file_rule));

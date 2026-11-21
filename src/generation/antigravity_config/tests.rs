@@ -82,6 +82,29 @@ fn command_rules_render_as_command_prefixes_in_their_own_decision_list() -> Resu
 }
 
 #[test]
+fn an_allow_prefix_agy_would_read_as_a_pattern_is_left_out_but_a_deny_or_ask_one_fails()
+-> Result<()> {
+    let with = |decision: &str| {
+        let root = test_root("pattern-prefix")?;
+        let policy = format!(
+            r#"{{"version":1,"rules":[{{"decision":"{decision}","prefix":["*"],"justification":"x"}}]}}"#
+        );
+        put(SourceLayout::new(&root).command_permissions(), &policy)?;
+        let source = load_source(&root)?;
+        let base = Json::parse("{}", Role::Generated)?;
+        let settings = settings_for_runtime(GenerationContext::home(&source), &base);
+        remove_dir_all(root)?;
+        Ok::<_, anyhow::Error>(settings)
+    };
+
+    let allowed = with("allow")?.map(Json::into_value)?;
+    assert!(!rules(&allowed, "allow").contains(&"command(*)".to_owned()));
+    assert!(with("ask")?.is_err());
+    assert!(with("deny")?.is_err());
+    Ok(())
+}
+
+#[test]
 fn hooks_and_settings_cannot_be_written_by_the_agent() -> Result<()> {
     let deny = rules(&generated(&json!({}))?, "deny");
 

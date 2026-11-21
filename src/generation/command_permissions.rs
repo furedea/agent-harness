@@ -5,6 +5,12 @@ use serde::{Deserialize, Serialize};
 
 use crate::{file_op::FileOp, generation::permission_rule::PrefixRule, source_model::Source};
 
+mod antigravity;
+
+pub(crate) use antigravity::{
+    antigravity_allow_permissions, antigravity_ask_permissions, antigravity_deny_permissions,
+};
+
 /// The shared command permission rules of a source, parsed and validated once.
 #[derive(Debug, Deserialize, Serialize)]
 pub(crate) struct CommandPermissions {
@@ -115,27 +121,6 @@ pub(crate) fn devin_permissions(source: &Source) -> serde_json::Value {
         "ask": devin_permissions_for(policy, Decision::Ask),
         "deny": devin_permissions_for(policy, Decision::Deny),
     })
-}
-
-pub(crate) fn antigravity_allow_permissions(source: &Source) -> Result<Vec<String>> {
-    antigravity_rules(&source.command_permissions, Decision::Allow)
-}
-
-pub(crate) fn antigravity_ask_permissions(source: &Source) -> Result<Vec<String>> {
-    antigravity_rules(&source.command_permissions, Decision::Ask)
-}
-
-pub(crate) fn antigravity_deny_permissions(source: &Source) -> Result<Vec<String>> {
-    antigravity_rules(&source.command_permissions, Decision::Deny)
-}
-
-fn antigravity_rules(policy: &CommandPermissions, decision: Decision) -> Result<Vec<String>> {
-    policy
-        .rules
-        .iter()
-        .filter(|rule| rule.decision == decision)
-        .map(|rule| rule.prefix.antigravity())
-        .collect()
 }
 
 fn devin_permissions_for(policy: &CommandPermissions, decision: Decision) -> Vec<String> {
