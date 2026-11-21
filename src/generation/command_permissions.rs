@@ -117,19 +117,19 @@ pub(crate) fn devin_permissions(source: &Source) -> serde_json::Value {
     })
 }
 
-pub(crate) fn antigravity_allow_permissions(source: &Source) -> Vec<String> {
-    antigravity_permissions_for(&source.command_permissions, Decision::Allow)
+pub(crate) fn antigravity_allow_permissions(source: &Source) -> Result<Vec<String>> {
+    antigravity_rules(&source.command_permissions, Decision::Allow)
 }
 
-pub(crate) fn antigravity_ask_permissions(source: &Source) -> Vec<String> {
-    antigravity_permissions_for(&source.command_permissions, Decision::Ask)
+pub(crate) fn antigravity_ask_permissions(source: &Source) -> Result<Vec<String>> {
+    antigravity_rules(&source.command_permissions, Decision::Ask)
 }
 
-pub(crate) fn antigravity_deny_permissions(source: &Source) -> Vec<String> {
-    antigravity_permissions_for(&source.command_permissions, Decision::Deny)
+pub(crate) fn antigravity_deny_permissions(source: &Source) -> Result<Vec<String>> {
+    antigravity_rules(&source.command_permissions, Decision::Deny)
 }
 
-fn antigravity_permissions_for(policy: &CommandPermissions, decision: Decision) -> Vec<String> {
+fn antigravity_rules(policy: &CommandPermissions, decision: Decision) -> Result<Vec<String>> {
     policy
         .rules
         .iter()
