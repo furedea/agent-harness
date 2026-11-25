@@ -272,3 +272,36 @@ fn codex_starts_from_an_empty_config_when_the_target_is_a_dangling_symlink() -> 
     assert!(sandbox.text("config.toml")?.contains("model = \"m\""));
     Ok(())
 }
+
+#[test]
+fn codex_syncs_the_telemetry_and_update_keys_and_keeps_user_keys() -> Result<()> {
+    let sandbox = Sandbox::new("codex-telemetry")?;
+    let source = sandbox.put(
+        "generated.toml",
+        "check_for_update_on_startup = false\n\n[analytics]\nenabled = false\n\n[otel]\nmetrics_exporter = \"none\"\n\n[feedback]\nenabled = false\n",
+    )?;
+    let target = sandbox.put(
+        "config.toml",
+        "[features]\ndaemon_auto_start = false\n\n[projects.\"/work\"]\ntrust_level = \"trusted\"\n",
+    )?;
+
+    sandbox.sync(
+        ProviderId::Codex,
+        &super::SyncPaths {
+            source: &source,
+            target: &target,
+        },
+    )?;
+
+    let merged: toml_edit::DocumentMut = sandbox.text("config.toml")?.parse()?;
+    assert_eq!(merged["check_for_update_on_startup"].as_bool(), Some(false));
+    assert_eq!(merged["analytics"]["enabled"].as_bool(), Some(false));
+    assert_eq!(merged["otel"]["metrics_exporter"].as_str(), Some("none"));
+    assert_eq!(merged["feedback"]["enabled"].as_bool(), Some(false));
+    assert_eq!(
+        merged["projects"]["/work"]["trust_level"].as_str(),
+        Some("trusted"),
+    );
+    assert!(merged.get("features").is_none());
+    Ok(())
+}

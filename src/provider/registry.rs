@@ -36,6 +36,10 @@ const CODEX_MANAGED_KEYS: &[&str] = &[
     "features",
     "default_permissions",
     "permissions",
+    "analytics",
+    "otel",
+    "feedback",
+    "check_for_update_on_startup",
 ];
 
 const HERMES_MANAGED_CONFIG: &str = "plugins:\n  enabled:\n    - agent-harness-hooks\n";
