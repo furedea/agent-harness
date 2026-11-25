@@ -558,6 +558,9 @@ approvals_reviewer, cli_auth_credentials_store, notice, tui, plugins, features,
 default_permissions, permissions
 ```
 
+It also writes `analytics`, `otel`, `feedback`, and `check_for_update_on_startup` when the source
+sets them, and never removes them when the source does not.
+
 It also writes every key under the source's `shell_environment_policy.set` and removes keys a
 previous sync wrote that the source dropped, tracked in `.agent-harness-managed.json` next to the
 target. Keys Codex or the user added there stay. Without a sidecar, only `GH_CONFIG_DIR` is removed
