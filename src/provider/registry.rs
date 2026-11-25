@@ -36,6 +36,9 @@ const CODEX_MANAGED_KEYS: &[&str] = &[
     "features",
     "default_permissions",
     "permissions",
+];
+
+const CODEX_USER_KEPT_KEYS: &[&str] = &[
     "analytics",
     "otel",
     "feedback",
@@ -82,6 +85,10 @@ const CODEX: ProviderSpec = ProviderSpec {
                 Ownership::Keys {
                     scope: KeyScope::Listed(CODEX_MANAGED_KEYS),
                     when_absent: WhenAbsent::Remove,
+                },
+                Ownership::Keys {
+                    scope: KeyScope::Listed(CODEX_USER_KEPT_KEYS),
+                    when_absent: WhenAbsent::Keep,
                 },
                 Ownership::TrackedKeys {
                     path: &["shell_environment_policy", "set"],

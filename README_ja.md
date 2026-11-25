@@ -421,6 +421,8 @@ approvals_reviewer, cli_auth_credentials_store, notice, tui, plugins, features,
 default_permissions, permissions
 ```
 
+さらに，ソースが `analytics`，`otel`，`feedback`，`check_for_update_on_startup` を設定している場合はそれらを書き込み，設定していない場合は削除せずそのまま残す．
+
 また，ソースの `shell_environment_policy.set` の下にあるキーをすべて書き込み，前回の同期が書いたキーのうちソースから消えたものを削除する．記録はターゲットの隣の `.agent-harness-managed.json` にある．Codex やユーザーが追加したキーは残る．サイドカーがない場合は，ソースに `GH_CONFIG_DIR` がないときだけ `GH_CONFIG_DIR` を削除する．
 
 生成される Claude の設定は，ソースの `claude/settings.json` が宣言する `permissions.allow`，`permissions.ask`，`permissions.deny` のエントリをすべて残し，その後に生成した `Bash(...)`，`Read(...)`，`Edit(...)` のエントリを続ける．各ルールは 1 回だけ現れ，複数のリストで宣言されたルールは最も厳しいリスト（`deny` > `ask` > `allow`）にだけ残る．そのため，マージによって権限が広がることはない．`defaultMode` などの他の権限キーはそのまま引き継がれる．Claude の設定の同期は生成された `permissions` キー全体を置き換えるため，Claude Code が対話的に `~/.claude/settings.json` に保存した承認は次の同期で残らない．永続させたいルールは `command_permissions.json` かソースの `claude/settings.json` に書くこと．

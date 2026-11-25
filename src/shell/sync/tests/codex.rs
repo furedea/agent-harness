@@ -305,3 +305,28 @@ fn codex_syncs_the_telemetry_and_update_keys_and_keeps_user_keys() -> Result<()>
     assert!(merged.get("features").is_none());
     Ok(())
 }
+
+#[test]
+fn codex_keeps_the_user_telemetry_and_update_keys_the_source_does_not_set() -> Result<()> {
+    let sandbox = Sandbox::new("codex-telemetry-kept")?;
+    let source = sandbox.put("generated.toml", "model = \"gpt-5.5\"\n")?;
+    let target = sandbox.put(
+        "config.toml",
+        "check_for_update_on_startup = false\n\n[analytics]\nenabled = false\n\n[otel]\nmetrics_exporter = \"none\"\n\n[feedback]\nenabled = false\n",
+    )?;
+
+    sandbox.sync(
+        ProviderId::Codex,
+        &super::SyncPaths {
+            source: &source,
+            target: &target,
+        },
+    )?;
+
+    let merged: toml_edit::DocumentMut = sandbox.text("config.toml")?.parse()?;
+    assert_eq!(merged["check_for_update_on_startup"].as_bool(), Some(false));
+    assert_eq!(merged["analytics"]["enabled"].as_bool(), Some(false));
+    assert_eq!(merged["otel"]["metrics_exporter"].as_str(), Some("none"));
+    assert_eq!(merged["feedback"]["enabled"].as_bool(), Some(false));
+    Ok(())
+}
