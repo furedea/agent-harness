@@ -227,7 +227,6 @@ sequenceDiagram
 | `generation/command_permissions`                                  | Maps neutral rules to Claude, Codex, and Devin permission syntax.                                              |
 | `generation/claude_config`, `codex_config`, `dsh_config`          | Build provider configs and the dsh bundle registration.                                                        |
 | `generation/protection`, `secret_path_policy`                     | Compute protected paths and secret-file deny rules.                                                            |
-| `generation/pi_sandbox`                                           | Build Pi's srt policy from the Claude sandbox settings and the secret path policy ([0030]).                    |
 | `generation/guarded_path`, `guarded_conflict`                     | Compare Codex guarded filesystem entries and fail when a looser entry sits under a stricter one.               |
 | `generation/skills`, `external_hooks`, `hook_bundle`              | Render skills and compose external bundles.                                                                    |
 | `inventory`                                                       | Lists the skills and hooks a source provides.                                                                  |
@@ -235,29 +234,12 @@ sequenceDiagram
 | `github_app`                                                      | Mints GitHub App installation tokens for the agent token option ([0021]).                                      |
 | `runtime`                                                         | Checks that the manifest's runtime commands are on `PATH`.                                                     |
 
-### Pi srt policy
+### Secret path patterns
 
-Pi's bash tool runs inside srt, and its read, write, edit, grep, find, and ls tools run their file
-I/O in a helper process inside the same srt boundary, so the kernel enforces the generated read and
-write restrictions instead of hooks reproducing filesystem checks ([0030]). The helper is untrusted
-and never relied on to enforce permissions. The policy is derived from the Claude sandbox settings,
-adds the Nix daemon socket to `allowUnixSockets`, and denies reading `~/.pi/agent/auth.json`.
-
-The secret path policy reaches Pi as `filesystem.denyRead` entries of the srt policy, under the same
-rule as Codex: only a rule that denies reads is rendered, and write-only rules stay with the hooks
-because srt's restrictions apply to every process the agent starts. srt reads each entry as a glob
-(`*`, `**`, `?`, `[...]`, no escapes, no braces, no negation) and expands `~` and `~/`; a relative
-entry is anchored at the Git toplevel of the tool call's working directory (the working directory itself
-outside a repository), not at the working directory, so a tool running in `/repo/src` still denies
-`/repo/.env`; as the entries only deny, each is also resolved at the working directory. The toplevel is pinned per working directory like the common dir: the sandbox can rewrite `.git`
-pointers, so a first resolution that later changes fails the call. A single-segment name (`.env`, `*.pem`) becomes `**/pattern` so
-it matches at any depth as in Claude, and `//x` becomes `/x`. A relative pattern with a `/` other than a trailing one
-that does not start with `**/` (`secrets/**`, `config/x.json`, `./secrets/**`) is rejected when the secret path policy is
-loaded: gitignore and Codex anchor it at the repository root, srt matches it at any depth, and Claude anchors it at the working
-directory, so one pattern would guard three different sets of files. Write `**/<pattern>` for any depth. Generation fails, naming the pattern, for
-a leading `/`, `.` or `..` parts, backslashes, braces, a leading `!`, a negated character class (`[!a]`, `[^a]`), or a wildcard in the first
-component of an absolute pattern (srt on Linux skips it). A `**/` pattern guards only beneath the
-repository root, as `:workspace_roots` does for Codex.
+A relative secret path pattern with a `/` other than a trailing one that does not start with `**/`
+(`secrets/**`, `config/x.json`, `./secrets/**`) is rejected when the secret path policy is loaded:
+gitignore and Codex anchor it at the repository root and Claude anchors it at the working
+directory, so one pattern would guard different sets of files. Write `**/<pattern>` for any depth.
 
 ### Codex guarded filesystem
 
@@ -346,7 +328,8 @@ CodeQL analysis is not a workflow file: it runs through GitHub's CodeQL default 
 - **v0.9.10**: added the DeepSeek Harness (dsh) provider with an embedded hook bridge ([0025]).
 - **v0.9.13**: ran Pi's shell and file tools inside srt and applied the secret path policy to the
     Codex guarded filesystem and the Pi srt policy ([0030]).
-- **Unreleased**: added the Antigravity provider with sandbox and path-permission guards ([0031]).
+- **Unreleased**: added the Antigravity provider with sandbox and path-permission guards ([0031]),
+    and limited the harness to rendering and installing, removing the Pi srt extension ([0032]).
 
 [#140]: https://github.com/furedea/agent-harness/pull/140
 [0001]: adr/0001_separate_codex_conformance_from_required_ci.md
@@ -371,3 +354,4 @@ CodeQL analysis is not a workflow file: it runs through GitHub's CodeQL default 
 [0029]: adr/0029_declare_config_ownership_and_sync_with_one_engine.md
 [0030]: adr/0030_run_pi_file_operations_inside_srt.md
 [0031]: adr/0031_guard_antigravity_with_sandbox_and_path_permissions.md
+[0032]: adr/0032_limit_the_harness_to_rendering_and_installing.md

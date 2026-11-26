@@ -276,25 +276,10 @@ const PI: ProviderSpec = ProviderSpec {
         bundle: BundleCapture::NOTHING,
         bridge: Bridge {
             directory: None,
-            assets: &[
-                Asset {
-                    destination: ".pi/agent/extensions/hook_bridge.ts",
-                    content: include_str!("../generation/assets/pi/hook_bridge.ts"),
-                },
-                Asset {
-                    destination: ".pi/agent/extensions/sandbox/file_operations.mjs",
-                    content: include_str!("../generation/assets/pi/file_operations.mjs"),
-                },
-                Asset {
-                    destination: ".pi/agent/extensions/bash_sandbox.ts",
-                    content: include_str!("../generation/assets/pi/bash_sandbox.ts"),
-                },
-                Asset {
-                    destination: ".pi/agent/extensions/sandbox_policy.json",
-                    // Rendering replaces this invalid policy before publication.
-                    content: "{}\n",
-                },
-            ],
+            assets: &[Asset {
+                destination: ".pi/agent/extensions/hook_bridge.ts",
+                content: include_str!("../generation/assets/pi/hook_bridge.ts"),
+            }],
         },
     },
     skill: Some(&SkillSpec {

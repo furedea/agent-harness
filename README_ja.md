@@ -23,7 +23,7 @@ Provider settings
         |-- Codex: config, hooks, adapters, rules, and skills
         |-- Devin: config, hooks, and command permissions
         |-- Hermes Agent: hook manifest, plugin, and config
-        |-- pi: hook manifest, bridge and srt sandbox extensions, settings, and skills
+        |-- pi: hook manifest, bridge extension, settings, and skills
         |-- dsh: hook manifest, bridge bundle, and skills
         `-- antigravity: hook manifest, skills, AGENTS.md, and generated settings permissions
 ```
@@ -401,9 +401,6 @@ sha256sum -c agent-harness-x86_64-unknown-linux-musl.tar.xz.sha256
 | `~/.pi/agent/settings.json`                          | 管理対象のモデルのデフォルトをユーザーのキーとマージ |
 | `~/.pi/agent/hooks.json`                             | pi のフックマニフェスト                              |
 | `~/.pi/agent/extensions/hook_bridge.ts`              | マニフェストを実行する pi の拡張                     |
-| `~/.pi/agent/extensions/bash_sandbox.ts`             | srt を使う pi の bash ツールの置き換え               |
-| `~/.pi/agent/extensions/sandbox_policy.json`         | 生成した srt のポリシー                              |
-| `~/.pi/agent/extensions/sandbox/file_operations.mjs` | srt の下で動く pi のファイルツールのヘルパー         |
 | `~/.pi/hooks/`                                       | pi のフックアダプタ                                  |
 | `~/.dsh/AGENTS.md`                                   | dsh のエージェント指示                               |
 | `~/.dsh/hooks.json`                                  | dsh のフックマニフェスト                             |
@@ -411,7 +408,7 @@ sha256sum -c agent-harness-x86_64-unknown-linux-musl.tar.xz.sha256
 | `~/.dsh/bridge/`                                     | マニフェストを実行する dsh のブリッジバンドル        |
 | `~/.dsh/skills/`                                     | Codex の生成結果からコピーしたスキル                 |
 
-Pi のエージェントの bash ツールは，再帰的な `denyGlobRegex` に対応した `srt` を `PATH` 上に必要とする．nixpkgs の sandbox-runtime 0.0.52 はこの要件を満たさない．srt のインストールは harness のインストールとは別なので，`agent-harness verify` は確認しない．verify に確認させるには，ソースの manifest の `runtime_commands` に `srt` を宣言する．ポリシーは `claude/settings.json` の sandbox ブロックから作られ，Pi の認証ファイルの読み取り保護が加わる．拡張は各コマンドの作業ディレクトリについて worktree を解決し，Git リポジトリの内側では共通の Git ディレクトリも解決して，それらへの書き込みを許可し，Git のフック，設定，リンクされた worktree の `.git` ポインタファイルへの書き込みを拒否する．リポジトリの外では，基本ポリシーとそのディレクトリ自体だけが適用される．ディレクトリの最初の解決はセッション中固定される．その後 Git のレイアウトが変わると，Pi を再起動するまで bash は実行を拒否する．不正な設定や利用できない srt は bash の実行をブロックする．Pi 自体，フック，ユーザーの `!` コマンドはこのラッパーの外で動く．Pi の read，write，edit，grep，find，ls ツールは，同じ srt の設定の下で動くヘルパープロセスでファイル I/O を行うため，カーネルがこれらについても `allowWrite`，`denyWrite`，`denyRead` を強制する．ヘルパーがない場合や設定が不正な場合は，これらのツールもブロックされる．フックは方針の層にすぎない．Claude と同様に，フックが失敗すると呼び出しは続行される．
+agent-harness は Pi に OS レベルの隔離を与えない．隔離が必要なときは，Pi を自分で用意したサンドボックスの中で動かす（[ADR-0032](docs/adr/0032_limit_the_harness_to_rendering_and_installing.md)）．フックは方針の層にすぎない．Claude と同様に，フックが失敗すると呼び出しは続行される．
 
 インストールは，管理対象のフックとスキルのディレクトリを置き換え，Claude Code の管理対象の設定を書き直す．Codex の設定の同期は次の管理対象トップレベルキーだけを置き換え，プロジェクトの信頼情報やマーケットプレイスのデータなど，Codex やユーザーが所有する他の状態は残す．
 
@@ -596,7 +593,7 @@ Nix で管理するカスタマイズでは，完全でフラットなソース�
 
 `programs` と `exceptions` は省略できる．agent-harness はこれらのファイルを検証し，フックの隣にインストールする．実行時にこれらを強制するのは，プロジェクトローカルのルールファイルを含めて，ソースのフックスクリプトの役目である．組み込みの `minimal` ソースにはそのようなフックは含まれない．
 
-`hooks/rules/secret_path_policy.json` と `hooks/rules/secret_commit_policy.json` も必須である．読み取りを拒否するシークレットパスのルールは，Codex の `[permissions.guarded.filesystem]` の `"none"` のエントリと，Pi の srt ポリシーの `filesystem.denyRead` のエントリにもなる．パターンのルールは [docs/DESIGN_ja.md](docs/DESIGN_ja.md) を参照．
+`hooks/rules/secret_path_policy.json` と `hooks/rules/secret_commit_policy.json` も必須である．読み取りを拒否するシークレットパスのルールは，Codex の `[permissions.guarded.filesystem]` の `"none"` のエントリにもなる．パターンのルールは [docs/DESIGN_ja.md](docs/DESIGN_ja.md) を参照．
 
 インストールしたバイナリをローカルのソースツリーと使う：
 
