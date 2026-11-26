@@ -101,8 +101,8 @@ flowchart LR
 
 - 層をまたぐのは値だけである．`ProviderSpec` が Data から Functions と Capabilities へ渡り，loader が境界で組み立てた型付きの `Source` が loader から Functions へ渡り，`FileOp` の一覧が生成，レンダリング，計画，同期から唯一の書き込み口である executor へ渡る（[0028]）．
 - 計算の層が書き込めないことを，1 つの crate の中で 3 つの仕組みで保証する．`clippy.toml` が `std` の書き込み API を禁止し，`shell::io` と後述する命令的な端が禁止を外す．ポートは `pub(in crate::shell)` なので，計算の層は自前のラッパー経由でも到達できない．`generation`，`provider::spec`，`provider::registry`，`provider::ownership`，`provider::renderer`，`config_sync`，`install_plan`，`file_op`，`source_model`，`layout`，`manifest`，`inventory`，`render` の `#![forbid(...)]` が，禁止を再び許可することを防ぐ．crate の分割は採らなかった．`std::fs` はどの crate からも呼べるので clippy の禁止は結局必要で，分割で置き換わるのは可視性だけだからである（[0028]）．テストは検査の対象外である．
-- 同じ禁止が読み込みにも及ぶ．結果は与えられた入力だけで決まり，実行した瞬間のディスクには左右されない．`shell::load` が source，外部 bundle，インストール済みの設定を一度だけ型付きの `Source` に読み込む．文書はすべて境界で解析と検証を済ませ，失敗はそのファイルのパスとともに境界で出る．丸ごとコピーするだけのディレクトリは場所とファイル一覧だけを持つ．計算は `Source` だけを読む．禁止するのは `std::fs` の読み込み，`Path` の `exists`／`is_dir`／`read_dir`／`metadata`，`std::env`，`std::process::Command` である．プログラムの命令的な端である `cli`，`source`，`runtime`，`github_app`，`shell::load`，`shell::hook_bundle` は，理由を添えた `#![expect(...)]` で自分だけ禁止を外す．不要になると `expect` がコンパイルエラーになる（[0028]）．ビルドスクリプトは crate が存在する前に動くため，代わりに `#![allow(...)]` を使う．
-- 秘密のファイル（GitHub App のトークン）だけを `0600` で書く．それ以外はプロセスの既定のモードで書き，コピーは元のファイルの権限ビットを保ち，既存のファイルを置き換えるときはその権限ビットを保つ．
+- 同じ禁止が読み込みにも及ぶ．結果は与えられた入力だけで決まり，実行した瞬間のディスクには左右されない．`shell::load` が source，外部 bundle，インストール済みの設定を一度だけ型付きの `Source` に読み込む．文書はすべて境界で解析と検証を済ませ，失敗はそのファイルのパスとともに境界で出る．丸ごとコピーするだけのディレクトリは場所とファイル一覧だけを持つ．計算は `Source` だけを読む．禁止するのは `std::fs` の読み込み，`Path` の `exists`／`is_dir`／`read_dir`／`metadata`，`std::env`，`std::process::Command` である．プログラムの命令的な端である `cli`，`source`，`runtime`，`shell::load`，`shell::hook_bundle` は，理由を添えた `#![expect(...)]` で自分だけ禁止を外す．不要になると `expect` がコンパイルエラーになる（[0028]）．ビルドスクリプトは crate が存在する前に動くため，代わりに `#![allow(...)]` を使う．
+- ファイルはプロセスの既定のモードで書き，コピーは元のファイルの権限ビットを保ち，既存のファイルを置き換えるときはその権限ビットを保つ．
 - Claude と Codex も他の 4 つと同じく registry に宣言する．registry は各 provider が持つものを宣言し，中身は provider ごとの関数が生成する（[0027]）．
 
 ## 検討した代替案
@@ -148,7 +148,7 @@ sequenceDiagram
 
 | モジュール                                                        | 責務                                                                                                              |
 | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `cli`                                                             | サブコマンドを解析し，install，`generate-*`，同期，一覧，検証，`github-app-token` に振り分ける．                  |
+| `cli`                                                             | サブコマンドを解析し，install，`generate-*`，同期，一覧，検証に振り分ける．                                      |
 | `source`，`layout`，`manifest`                                    | ソースツリーを解決し，そのレイアウトと必要な実行時コマンドを検証する．                                            |
 | `profile`                                                         | 同梱の組み込みソース（`minimal`）の名前を定める．                                                                 |
 | `render`                                                          | ステージング生成を実行し，公開計画を executor に渡す．                                                            |
@@ -160,7 +160,6 @@ sequenceDiagram
 | `shell`（`io`，`load`，`executor`，`sync`，`hook_bundle`）        | Capabilities: ファイル I/O のポート，`Source` の loader，`FileOp` の executor，設定同期，hook bundle．            |
 | `source_model`                                                    | Functions: 計算が読む型付きの `Source`（フック設定，権限規則，スキル，設定，bundle）．                            |
 | `nix/providers.json`，`nix/home_manager_module.nix`               | registry から生成する Nix の一覧と，そこから作る Home Manager の option，リンク，同期．                           |
-| `nix/agent_github_token.nix`，`agent_github_app_token_module.nix` | オプトインのエージェント用 GitHub トークンの合成と，その GitHub App によるリフレッシュのジョブ（[0019]–[0023]）． |
 | `nix/lib.nix`                                                     | `buildSkillFromCommand` と `buildHookBundleFromCommands`．                                                        |
 | `generation/hooks`                                                | フックの配線を描画する．                                                                                          |
 | `generation/bridges`，`provider/spec`，`install_plan`             | ブリッジ asset の契約を検証し，spec の埋め込み asset と出力先から書き込みを計画する．                             |
@@ -171,7 +170,6 @@ sequenceDiagram
 | `generation/skills`，`external_hooks`，`hook_bundle`              | スキルを生成し，外部のバンドルを合成する．                                                                        |
 | `inventory`                                                       | ソースが提供するスキルとフックを一覧にする．                                                                      |
 | `runtime_root`                                                    | プロジェクトローカルのインストール向けにフックのコマンドを移し替える．                                            |
-| `github_app`                                                      | エージェント用トークンのために GitHub App のインストールトークンを発行する（[0021]）．                            |
 | `runtime`                                                         | manifest の実行時コマンドが `PATH` にあるかを確認する．                                                           |
 
 ### 秘密パスのパターン
@@ -195,9 +193,9 @@ Codex はより具体的なエントリを優先するため，厳しいエン�
 | ユニットテスト          | `src/` の `#[test]`                                                                                                                                      | 303        |
 | 統合テスト              | `tests/` の `#[test]`（ビルドしたバイナリを実行する）                                                                                                    | 68         |
 | Codex への適合          | `tests/codex/execpolicy.bats`                                                                                                                            | 3 ケース   |
-| Home Manager モジュール | `nix flake check` で実行する `tests/home_manager_module.nix`，`tests/home_manager_pure_eval.nix`，`agent_github_token.nix`，`agent_github_app_token.nix` | 4 チェック |
+| Home Manager モジュール | `nix flake check` で実行する `tests/home_manager_module.nix`，`tests/home_manager_pure_eval.nix`，`tests/removed_github_options.nix`                     | 3 チェック |
 
-flake は，スキルとフックバンドルのビルダーもチェックとしてビルドする．モジュールは評価時に読むファイル（`settings.json`，`config.toml`，`secret_path_policy.json`，`profiles/`）をすべて `source.tree` から読み，`tree` がなければ `source` を読む．ビルド済みの `source` はビルド時にコピーするファイルの供給だけに使うので，評価でビルドは起きず，import-from-derivation は使わない（[furedea/agent-harness#196](https://github.com/furedea/agent-harness/issues/196)）．共有の `nix-check` ワークフローは，import-from-derivation を禁止して `nix flake check --all-systems` を実行する．GitHub Actions では 3 本のワークフローが動く．
+flake は，スキルとフックバンドルのビルダーもチェックとしてビルドする．モジュールは評価時に読むファイル（`settings.json`，`config.toml`，`profiles/`）をすべて `source.tree` から読み，`tree` がなければ `source` を読む．ビルド済みの `source` はビルド時にコピーするファイルの供給だけに使うので，評価でビルドは起きず，import-from-derivation は使わない（[furedea/agent-harness#196](https://github.com/furedea/agent-harness/issues/196)）．共有の `nix-check` ワークフローは，import-from-derivation を禁止して `nix flake check --all-systems` を実行する．GitHub Actions では 3 本のワークフローが動く．
 
 - `ci`: clippy，rustfmt，`cargo test`，Rust の依存関係の監査に加え，`furedea/reusable-workflows` の共有ワークフロー（`nix-lint`，`nix-check`，`gha-lint`，`dependency-review`，`claude-review`，`codex-review`）を呼び出し，`all-green` ジョブで集約する．
 - `codex-conformance`: 生成した execpolicy ルールを固定した Codex CLI で確認する．設計上 `ci` から分けている（[0001]）．
@@ -213,7 +211,6 @@ CodeQL による解析はワークフローファイルではなく，GitHub の
 - 生成した Claude の設定から消えたキーは，既存の `settings.json` からは消えない（[0016]）．
 - Claude Code や Devin が対話的に保存した承認は，次の同期で置き換わる．永続させたいルールはソースに書く．
 - スキルは生成するが，保護の対象にはしない．
-- GitHub App のトークン供給元は github.com とだけ通信し，GitHub Enterprise Server には対応しない（[0021]）．
 
 ## 変更履歴の要点
 
@@ -223,7 +220,7 @@ CodeQL による解析はワークフローファイルではなく，GitHub の
 - **v0.9.3–v0.9.5**: Claude サンドボックスと Codex のシェルコマンドのためのオプトインのエージェント用 GitHub トークンを追加し，GitHub App から更新するようにした（[0019]–[0023]）．
 - **v0.9.10**: DeepSeek Harness（dsh）プロバイダを，埋め込みのフックブリッジ付きで追加した（[0025]）．
 - **v0.9.13**: Pi のシェルとファイルのツールを srt の内側で動かし，秘密パスポリシーを Codex のガード用ファイルシステムと Pi の srt ポリシーに適用した（[0030]）．
-- **Unreleased**: Antigravity プロバイダを，サンドボックスとパス権限によるガード付きで追加した（[0031]）．また harness を生成と配置に限定し，Pi の srt 拡張を削除した（[0032]）．
+- **Unreleased**: Antigravity プロバイダを，サンドボックスとパス権限によるガード付きで追加した（[0031]）．また harness を生成と配置に限定し，Pi の srt 拡張とエージェント用 GitHub トークンを削除した（[0032]）．
 
 [#140]: https://github.com/furedea/agent-harness/pull/140
 [0001]: adr/0001_separate_codex_conformance_from_required_ci.md

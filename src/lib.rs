@@ -2,7 +2,6 @@ mod cli;
 mod config_sync;
 mod file_op;
 mod generation;
-mod github_app;
 mod install_plan;
 mod inventory;
 mod layout;

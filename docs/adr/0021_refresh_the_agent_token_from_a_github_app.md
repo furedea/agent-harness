@@ -1,6 +1,7 @@
 ---
-status: accepted
+status: superseded
 date: 2026-10-17
+superseded-by: [ADR-0032]
 amended:
   - "2026-10-20: refresh the token early and often"
 ---

@@ -4,14 +4,12 @@ use std::path::{Path, PathBuf};
 
 /// Permissions of the files an operation creates.
 ///
-/// Only secrets are private. Everything else is created with the process's default mode, so a
-/// generated config is as readable as any file the user makes.
+/// Files are created with the process's default mode, so a generated config is as readable as
+/// any file the user makes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum FileMode {
     /// The process's default creation mode (`0666` less the umask).
     Standard,
-    /// Owner read/write only (`0600`), and `0700` for the directories created on its way.
-    Private,
     /// Exactly these permission bits, whatever the umask, to reproduce a packaged file.
     Bits(u32),
 }

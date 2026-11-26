@@ -1,6 +1,6 @@
 use clap::{CommandFactory, Parser};
 
-use super::{Cli, Command, GithubAppTokenCommand, Profile, is_same_directory};
+use super::{Cli, Profile, is_same_directory};
 
 #[test]
 fn commands_default_to_the_minimal_profile() {
@@ -49,50 +49,10 @@ fn exposes_antigravity_config_sync() {
 }
 
 #[test]
-fn github_app_token_command_exposes_refresh_and_status() {
-    let cli = Cli::try_parse_from([
-        "agent-harness",
-        "github-app-token",
-        "refresh",
-        "--app-id",
-        "12345",
-        "--private-key",
-        "/keys/app.pem",
-        "--config-dir",
-        "/home/test/.config/agent-harness/gh",
-    ]);
-    assert!(cli.is_ok(), "{}", cli.unwrap_err());
+fn credentials_are_not_a_harness_command() {
+    let command = Cli::command();
 
-    let cli = Cli::try_parse_from([
-        "agent-harness",
-        "github-app-token",
-        "status",
-        "--config-dir",
-        "/home/test/.config/agent-harness/gh",
-    ]);
-    assert!(cli.is_ok(), "{}", cli.unwrap_err());
-}
-
-#[test]
-fn github_app_token_refresh_accepts_force() {
-    let cli = Cli::try_parse_from([
-        "agent-harness",
-        "github-app-token",
-        "refresh",
-        "--app-id",
-        "12345",
-        "--private-key",
-        "/keys/app.pem",
-        "--config-dir",
-        "/home/test/.config/agent-harness/gh",
-        "--force",
-    ])
-    .unwrap();
-
-    let Command::GithubAppToken(GithubAppTokenCommand::Refresh(args)) = cli.command else {
-        panic!("expected github-app-token refresh");
-    };
-    assert!(args.force);
+    assert!(command.find_subcommand("github-app-token").is_none());
 }
 
 #[test]

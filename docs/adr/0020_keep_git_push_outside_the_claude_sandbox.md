@@ -1,6 +1,7 @@
 ---
-status: accepted
+status: superseded
 date: 2026-10-15
+superseded-by: [ADR-0032]
 supersedes: [ADR-0019]
 ---
 

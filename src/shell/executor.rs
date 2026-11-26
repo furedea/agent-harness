@@ -3,10 +3,7 @@ use std::path::{Path, PathBuf};
 use anyhow::Result;
 
 use super::io::{FileSystem, NewFile, RealFileSystem};
-use crate::{
-    file_op::{FileMode, FileOp},
-    install_plan::InstallPlan,
-};
+use crate::{file_op::FileOp, install_plan::InstallPlan};
 
 /// A replacement prepared next to the path it will replace, or `None` when the path is removed.
 struct Staged<'a> {
@@ -75,28 +72,12 @@ fn stage<'a, F: FileSystem>(
 ) -> Result<()> {
     let target = operation.target();
     if !matches!(operation, FileOp::RemoveFile { .. }) {
-        let created = transaction
-            .filesystem
-            .create_parents(target, mode_of(operation))?;
+        let created = transaction.filesystem.create_parents(target)?;
         transaction.created_parents.extend(created);
     }
     let path = stage_path(transaction.filesystem, operation)?;
     transaction.staged.push(Staged { target, path });
     Ok(())
-}
-
-fn mode_of(operation: &FileOp) -> FileMode {
-    match operation {
-        FileOp::WriteFile {
-            mode: FileMode::Private,
-            ..
-        } => FileMode::Private,
-        FileOp::WriteFile { .. }
-        | FileOp::CopyFile { .. }
-        | FileOp::CopyTree { .. }
-        | FileOp::ReplaceTree { .. }
-        | FileOp::RemoveFile { .. } => FileMode::Standard,
-    }
 }
 
 fn stage_path(filesystem: &impl FileSystem, operation: &FileOp) -> Result<Option<PathBuf>> {
