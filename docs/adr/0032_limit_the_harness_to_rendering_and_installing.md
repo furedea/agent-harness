@@ -42,8 +42,9 @@ anything the source cannot express.
     file tools that run outside it, written by the source. Token minting and refresh move to the
     user's system configuration, connected to the source only through `GH_CONFIG_DIR`. The Pi srt
     extension is removed without a replacement in this repository.
-- The removals land as separate changes, each superseding, deprecating, or amending the ADRs it
-    retires; ADR-0030 is deprecated by the first.
+- The removals land as separate changes, each superseding or amending the ADRs it retires.
+    Installing over an earlier release removes the files that release installed and this one no
+    longer does, so a retired extension does not keep loading.
 
 ### Consequences
 

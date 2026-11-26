@@ -530,8 +530,9 @@ Devin, Hermes Agent, pi, and dsh config directories.
 | `~/.dsh/skills/`                                     | Skills copied from the Codex rendering       |
 
 agent-harness gives Pi no OS-level isolation; run Pi inside a sandbox of your own when it needs
-one ([ADR-0032](docs/adr/0032_limit_the_harness_to_rendering_and_installing.md)). Hooks are a policy
-layer only: as with Claude, a hook failure lets the call proceed.
+one ([ADR-0032](docs/adr/0032_limit_the_harness_to_rendering_and_installing.md)). Installing over an
+earlier release removes the srt extension files that release put in `~/.pi/agent/extensions/`. Hooks
+are a policy layer only: as with Claude, a hook failure lets the call proceed.
 
 Installation replaces the managed hook and skill directories and rewrites Claude Code's managed
 settings. Codex config synchronization replaces only these managed top-level keys and preserves

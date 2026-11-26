@@ -52,6 +52,8 @@ pub(in crate::shell) trait FileSystem {
     fn stage_tree(&self, target: &Path, contents: &[FileOp]) -> Result<PathBuf>;
     /// Renames a staged path over `target`, returning the backup of what it replaced.
     fn swap(&self, staged: &Path, target: &Path) -> Result<Option<PathBuf>>;
+    /// Moves `target` to a backup and returns it, or `None` when nothing is there.
+    fn set_aside(&self, target: &Path) -> Result<Option<PathBuf>>;
     fn restore(&self, target: &Path, backup: Option<&Path>) -> Result<()>;
     /// Removes a staged path or a backup; a path that is already gone is not an error.
     fn discard(&self, path: &Path) -> Result<()>;
@@ -103,6 +105,10 @@ impl FileSystem for RealFileSystem {
 
     fn swap(&self, staged: &Path, target: &Path) -> Result<Option<PathBuf>> {
         swap_in(staged, target)
+    }
+
+    fn set_aside(&self, target: &Path) -> Result<Option<PathBuf>> {
+        move_aside(target)
     }
 
     fn restore(&self, target: &Path, backup: Option<&Path>) -> Result<()> {
@@ -183,6 +189,10 @@ fn relative_to<'a>(root: &Path, path: &'a Path) -> Result<&'a Path> {
 }
 
 fn build_entry(operation: &FileOp, target: &Path) -> Result<()> {
+    if matches!(operation, FileOp::RemoveFile { .. }) {
+        // A tree built from nothing holds no file to remove.
+        return Ok(());
+    }
     create_parent(target, FileMode::Standard)?;
     match operation {
         FileOp::WriteFile { content, mode, .. } => write_new_file(
@@ -205,6 +215,7 @@ fn build_entry(operation: &FileOp, target: &Path) -> Result<()> {
             target: root,
             contents,
         } => build_tree(root, target, contents),
+        FileOp::RemoveFile { .. } => Ok(()),
     }
 }
 

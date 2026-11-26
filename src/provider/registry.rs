@@ -103,6 +103,7 @@ const CODEX: ProviderSpec = ProviderSpec {
         sync_target: SyncTarget::SameAsRendered,
         directories: &[],
     }),
+    retired_files: &[],
 };
 
 const CLAUDE: ProviderSpec = ProviderSpec {
@@ -158,6 +159,7 @@ const CLAUDE: ProviderSpec = ProviderSpec {
             destination: ".claude/statusline",
         }],
     }),
+    retired_files: &[],
 };
 
 const DEVIN: ProviderSpec = ProviderSpec {
@@ -206,6 +208,7 @@ const DEVIN: ProviderSpec = ProviderSpec {
         sync_target: SyncTarget::SameAsRendered,
         directories: &[],
     }),
+    retired_files: &[],
 };
 
 const HERMES: ProviderSpec = ProviderSpec {
@@ -259,6 +262,7 @@ const HERMES: ProviderSpec = ProviderSpec {
         sync_target: SyncTarget::File(".hermes/config.yaml"),
         directories: &[],
     }),
+    retired_files: &[],
 };
 
 const PI: ProviderSpec = ProviderSpec {
@@ -308,6 +312,12 @@ const PI: ProviderSpec = ProviderSpec {
         sync_target: SyncTarget::SameAsRendered,
         directories: &[],
     }),
+    // Earlier releases installed an srt sandbox extension here (ADR-0032).
+    retired_files: &[
+        ".pi/agent/extensions/sandbox/file_operations.mjs",
+        ".pi/agent/extensions/bash_sandbox.ts",
+        ".pi/agent/extensions/sandbox_policy.json",
+    ],
 };
 
 const DSH: ProviderSpec = ProviderSpec {
@@ -371,6 +381,7 @@ const DSH: ProviderSpec = ProviderSpec {
         },
         directories: &[],
     }),
+    retired_files: &[],
 };
 
 /// Rule kinds of `permissions` the harness writes. `agy` has no `edit_file(...)` kind.
@@ -427,6 +438,7 @@ const ANTIGRAVITY: ProviderSpec = ProviderSpec {
         sync_target: SyncTarget::SameAsRendered,
         directories: &[],
     }),
+    retired_files: &[],
 };
 
 pub(crate) const PROVIDERS: &[ProviderSpec] = &[CODEX, CLAUDE, DEVIN, HERMES, PI, DSH, ANTIGRAVITY];

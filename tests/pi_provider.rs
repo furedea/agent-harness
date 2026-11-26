@@ -211,3 +211,39 @@ fn pi_install_ships_only_the_hook_bridge_extension() -> Result<()> {
     std::fs::remove_dir_all(root)?;
     Ok(())
 }
+
+#[test]
+fn pi_install_removes_the_retired_sandbox_extension_and_keeps_user_extensions() -> Result<()> {
+    let root = std::env::temp_dir().join(format!("pi-retired-{}", std::process::id()));
+    let extensions = root.join(".pi/agent/extensions");
+    std::fs::create_dir_all(extensions.join("sandbox"))?;
+    for retired in [
+        "bash_sandbox.ts",
+        "sandbox_policy.json",
+        "sandbox/file_operations.mjs",
+    ] {
+        std::fs::write(extensions.join(retired), "old\n")?;
+    }
+    std::fs::write(extensions.join("mine.ts"), "mine\n")?;
+    let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/complete-source");
+    let output = Command::new(env!("CARGO_BIN_EXE_agent-harness"))
+        .args(["install", "--source"])
+        .arg(source)
+        .arg("--prefix")
+        .arg(&root)
+        .output()?;
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(!extensions.join("bash_sandbox.ts").exists());
+    assert!(!extensions.join("sandbox_policy.json").exists());
+    assert!(!extensions.join("sandbox/file_operations.mjs").exists());
+    assert_eq!(
+        std::fs::read_to_string(extensions.join("mine.ts"))?,
+        "mine\n"
+    );
+    std::fs::remove_dir_all(root)?;
+    Ok(())
+}

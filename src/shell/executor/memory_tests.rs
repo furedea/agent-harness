@@ -158,6 +158,14 @@ impl FileSystem for MemoryFileSystem {
         Ok(existed.then_some(backup))
     }
 
+    fn set_aside(&self, target: &Path) -> Result<Option<PathBuf>> {
+        self.check_failure(FailureMode::Swap, target)?;
+        let backup = PathBuf::from("backup").join(target);
+        let existed = self.has_files_under(target);
+        self.relocate(target, &backup);
+        Ok(existed.then_some(backup))
+    }
+
     fn restore(&self, target: &Path, backup: Option<&Path>) -> Result<()> {
         self.check_failure(FailureMode::Restore, target)?;
         self.files
@@ -298,6 +306,48 @@ fn installed_state() -> (MemoryFileSystem, Vec<FileOp>) {
     fs.write_file(Path::new("home/.claude/hooks/old.sh"), b"old\n");
     fs.write_file(Path::new("home/.claude/CLAUDE.md"), b"old instructions\n");
     (fs, plan_install(&rendered, &installed))
+}
+
+const RETIRED_PI_EXTENSIONS: [&str; 3] = [
+    "home/.pi/agent/extensions/sandbox/file_operations.mjs",
+    "home/.pi/agent/extensions/bash_sandbox.ts",
+    "home/.pi/agent/extensions/sandbox_policy.json",
+];
+
+#[test]
+fn install_removes_files_an_earlier_release_installed() -> Result<()> {
+    let (fs, plan) = installed_state();
+    for path in RETIRED_PI_EXTENSIONS {
+        fs.write_file(Path::new(path), b"old\n");
+    }
+    fs.write_file(Path::new("home/.pi/agent/extensions/mine.ts"), b"mine\n");
+
+    execute_on(&fs, &plan)?;
+
+    for path in RETIRED_PI_EXTENSIONS {
+        assert!(fs.read_file(Path::new(path)).is_err(), "{path} remains");
+    }
+    assert_eq!(
+        fs.read_file(Path::new("home/.pi/agent/extensions/mine.ts"))?,
+        b"mine\n"
+    );
+    assert!(fs.snapshot_under("backup").is_empty());
+    Ok(())
+}
+
+#[test]
+fn a_failed_install_restores_the_files_it_removed() {
+    let (fs, plan) = installed_state();
+    for path in RETIRED_PI_EXTENSIONS {
+        fs.write_file(Path::new(path), b"old\n");
+    }
+    fs.fail(FailureMode::Swap, RETIRED_PI_EXTENSIONS[2]);
+    let before = fs.snapshot_under("home");
+
+    assert!(execute_on(&fs, &plan).is_err());
+
+    assert_eq!(fs.snapshot_under("home"), before);
+    assert!(fs.snapshot_under("backup").is_empty());
 }
 
 #[test]

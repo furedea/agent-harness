@@ -408,7 +408,7 @@ sha256sum -c agent-harness-x86_64-unknown-linux-musl.tar.xz.sha256
 | `~/.dsh/bridge/`                                     | マニフェストを実行する dsh のブリッジバンドル        |
 | `~/.dsh/skills/`                                     | Codex の生成結果からコピーしたスキル                 |
 
-agent-harness は Pi に OS レベルの隔離を与えない．隔離が必要なときは，Pi を自分で用意したサンドボックスの中で動かす（[ADR-0032](docs/adr/0032_limit_the_harness_to_rendering_and_installing.md)）．フックは方針の層にすぎない．Claude と同様に，フックが失敗すると呼び出しは続行される．
+agent-harness は Pi に OS レベルの隔離を与えない．隔離が必要なときは，Pi を自分で用意したサンドボックスの中で動かす（[ADR-0032](docs/adr/0032_limit_the_harness_to_rendering_and_installing.md)）．以前のリリースの上にインストールすると，そのリリースが `~/.pi/agent/extensions/` に置いた srt 拡張のファイルを削除する．フックは方針の層にすぎない．Claude と同様に，フックが失敗すると呼び出しは続行される．
 
 インストールは，管理対象のフックとスキルのディレクトリを置き換え，Claude Code の管理対象の設定を書き直す．Codex の設定の同期は次の管理対象トップレベルキーだけを置き換え，プロジェクトの信頼情報やマーケットプレイスのデータなど，Codex やユーザーが所有する他の状態は残す．
 
