@@ -100,14 +100,17 @@ let
   );
 
   # Servers are replaced by name: an option entry replaces the source's entry of that name whole.
+  # Every other root key of the source stays, so the harness still rejects a malformed file.
   sourceMcpServersPath = evalProfileSource + "/mcp_servers.json";
   sourceMcpServers =
     if builtins.pathExists sourceMcpServersPath then
-      (builtins.fromJSON (builtins.readFile sourceMcpServersPath)).servers or { }
+      builtins.fromJSON (builtins.readFile sourceMcpServersPath)
     else
-      { };
+      { servers = { }; };
   mcpServers = pkgs.writeText "agent-harness-mcp-servers.json" (
-    builtins.toJSON { servers = sourceMcpServers // cfg.mcpServers; }
+    builtins.toJSON (
+      sourceMcpServers // { servers = (sourceMcpServers.servers or { }) // cfg.mcpServers; }
+    )
   );
 
   composedSource = pkgs.runCommand "agent-harness-${cfg.profile}-source" { } ''
