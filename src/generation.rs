@@ -14,7 +14,6 @@ mod guarded_path;
 pub(crate) mod hook_bundle;
 pub(crate) mod hooks;
 pub(crate) mod permission_rule;
-pub(crate) mod pi_sandbox;
 pub(crate) mod protection;
 pub(crate) mod secret_path_policy;
 pub(crate) mod skills;

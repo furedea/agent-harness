@@ -8,10 +8,10 @@ use crate::{
     install_plan::InstallPlan,
 };
 
-/// A replacement prepared next to the path it will replace.
+/// A replacement prepared next to the path it will replace, or `None` when the path is removed.
 struct Staged<'a> {
     target: &'a Path,
-    path: PathBuf,
+    path: Option<PathBuf>,
 }
 
 /// A path that now holds its replacement and the original it can be restored from.
@@ -74,10 +74,12 @@ fn stage<'a, F: FileSystem>(
     operation: &'a FileOp,
 ) -> Result<()> {
     let target = operation.target();
-    let created = transaction
-        .filesystem
-        .create_parents(target, mode_of(operation))?;
-    transaction.created_parents.extend(created);
+    if !matches!(operation, FileOp::RemoveFile { .. }) {
+        let created = transaction
+            .filesystem
+            .create_parents(target, mode_of(operation))?;
+        transaction.created_parents.extend(created);
+    }
     let path = stage_path(transaction.filesystem, operation)?;
     transaction.staged.push(Staged { target, path });
     Ok(())
@@ -92,12 +94,13 @@ fn mode_of(operation: &FileOp) -> FileMode {
         FileOp::WriteFile { .. }
         | FileOp::CopyFile { .. }
         | FileOp::CopyTree { .. }
-        | FileOp::ReplaceTree { .. } => FileMode::Standard,
+        | FileOp::ReplaceTree { .. }
+        | FileOp::RemoveFile { .. } => FileMode::Standard,
     }
 }
 
-fn stage_path(filesystem: &impl FileSystem, operation: &FileOp) -> Result<PathBuf> {
-    match operation {
+fn stage_path(filesystem: &impl FileSystem, operation: &FileOp) -> Result<Option<PathBuf>> {
+    let path = match operation {
         FileOp::WriteFile {
             target,
             content,
@@ -112,7 +115,9 @@ fn stage_path(filesystem: &impl FileSystem, operation: &FileOp) -> Result<PathBu
         FileOp::CopyFile { source, target } => filesystem.stage_copy(source, target),
         FileOp::CopyTree { source, target } => filesystem.stage_directory(source, target),
         FileOp::ReplaceTree { target, contents } => filesystem.stage_tree(target, contents),
-    }
+        FileOp::RemoveFile { .. } => return Ok(None),
+    }?;
+    Ok(Some(path))
 }
 
 fn swap<F: FileSystem>(transaction: &mut Transaction<'_, F>, index: usize) -> Result<()> {
@@ -120,7 +125,10 @@ fn swap<F: FileSystem>(transaction: &mut Transaction<'_, F>, index: usize) -> Re
         return Ok(());
     };
     let target = replacement.target;
-    let backup = transaction.filesystem.swap(&replacement.path, target)?;
+    let backup = match &replacement.path {
+        Some(staged) => transaction.filesystem.swap(staged, target)?,
+        None => transaction.filesystem.set_aside(target)?,
+    };
     transaction.swapped.push(Swapped { target, backup });
     Ok(())
 }
@@ -140,8 +148,12 @@ fn discard_backups<F: FileSystem>(transaction: &Transaction<'_, F>) {
 /// Directories this execution created are removed again only when they are empty, so they are
 /// cleaned up even after a failed restore without touching anything that restore left behind.
 fn abort<F: FileSystem>(transaction: &Transaction<'_, F>, cause: anyhow::Error) -> anyhow::Error {
-    for replacement in &transaction.staged {
-        let _ = transaction.filesystem.discard(&replacement.path);
+    for staged in transaction
+        .staged
+        .iter()
+        .filter_map(|staged| staged.path.as_deref())
+    {
+        let _ = transaction.filesystem.discard(staged);
     }
     let failures = restore_failures(transaction);
     transaction

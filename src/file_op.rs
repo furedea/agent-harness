@@ -36,6 +36,8 @@ pub(crate) enum FileOp {
         target: PathBuf,
         contents: Vec<FileOp>,
     },
+    /// Removes a file, keeping it until the whole operation succeeds; a missing file is fine.
+    RemoveFile { target: PathBuf },
 }
 
 impl FileOp {
@@ -96,6 +98,9 @@ impl FileOp {
                     .map(|operation| operation.relocated(from, to))
                     .collect(),
             },
+            Self::RemoveFile { target } => Self::RemoveFile {
+                target: move_target(target),
+            },
         }
     }
 
@@ -104,7 +109,8 @@ impl FileOp {
             Self::WriteFile { target, .. }
             | Self::CopyFile { target, .. }
             | Self::CopyTree { target, .. }
-            | Self::ReplaceTree { target, .. } => target,
+            | Self::ReplaceTree { target, .. }
+            | Self::RemoveFile { target } => target,
         }
     }
 }

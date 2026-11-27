@@ -51,6 +51,7 @@ fn collect_files(operation: &FileOp, source: &Source, files: &mut BTreeSet<PathB
         FileOp::ReplaceTree { contents, .. } => contents
             .iter()
             .for_each(|content| collect_files(content, source, files)),
+        FileOp::RemoveFile { .. } => (),
     }
 }
 
@@ -77,7 +78,11 @@ pub(crate) fn plan_install_for(
         .into_iter()
         .zip(installed.managed_files_for(providers))
         .map(|(source, target)| FileOp::CopyFile { source, target });
-    directories.chain(files).collect()
+    let retired = installed
+        .retired_files_for(providers)
+        .into_iter()
+        .map(|target| FileOp::RemoveFile { target });
+    directories.chain(files).chain(retired).collect()
 }
 
 #[cfg(test)]

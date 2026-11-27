@@ -268,6 +268,8 @@ pub(crate) struct ProviderSpec {
     pub(crate) instructions: Option<&'static str>,
     pub(crate) command_rule: Option<CommandRuleSpec>,
     pub(crate) config: Option<ConfigSpec>,
+    /// Files an earlier release installed and that installation now removes.
+    pub(crate) retired_files: &'static [&'static str],
 }
 
 impl ProviderSpec {

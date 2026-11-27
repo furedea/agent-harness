@@ -147,6 +147,15 @@ impl<'a> InstalledLayout<'a> {
             .collect()
     }
 
+    /// Files an earlier release installed, in registry order.
+    pub(crate) fn retired_files_for(self, providers: &[ProviderSpec]) -> Vec<PathBuf> {
+        providers
+            .iter()
+            .flat_map(|spec| spec.retired_files)
+            .map(|path| self.root.join(path))
+            .collect()
+    }
+
     /// Source and installed directory pairs that installation replaces from the source tree.
     pub(crate) fn synced_directories_for(
         self,

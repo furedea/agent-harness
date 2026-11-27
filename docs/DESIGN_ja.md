@@ -167,7 +167,6 @@ sequenceDiagram
 | `generation/command_permissions`                                  | 中立なルールを Claude，Codex，Devin の権限の構文に対応させる．                                                    |
 | `generation/claude_config`，`codex_config`，`dsh_config`          | プロバイダの設定と，dsh の bundle 登録を組み立てる．                                                              |
 | `generation/protection`，`secret_path_policy`                     | 保護パスと，秘密ファイルの deny ルールを計算する．                                                                |
-| `generation/pi_sandbox`                                           | Claude のサンドボックス設定と秘密パスポリシーから，Pi の srt ポリシーを組み立てる（[0030]）．                     |
 | `generation/guarded_path`，`guarded_conflict`                     | Codex のガード用エントリを比べ，厳しいエントリの下に緩いエントリがあれば生成を失敗させる．                        |
 | `generation/skills`，`external_hooks`，`hook_bundle`              | スキルを生成し，外部のバンドルを合成する．                                                                        |
 | `inventory`                                                       | ソースが提供するスキルとフックを一覧にする．                                                                      |
@@ -175,11 +174,9 @@ sequenceDiagram
 | `github_app`                                                      | エージェント用トークンのために GitHub App のインストールトークンを発行する（[0021]）．                            |
 | `runtime`                                                         | manifest の実行時コマンドが `PATH` にあるかを確認する．                                                           |
 
-### Pi の srt ポリシー
+### 秘密パスのパターン
 
-pi の bash ツールは srt の内側で動き，read，write，edit，grep，find，ls の各ツールは，同じ srt の境界の中のヘルパープロセスでファイル I/O を行う．そのため，フックでファイルシステムの検査を再現するのではなく，カーネルが生成された読み書きの制限を強制する（[0030]）．ヘルパーは信頼せず，権限の強制をヘルパーに頼ることはない．ポリシーは Claude のサンドボックス設定から導出し，Nix デーモンのソケットを `allowUnixSockets` に加え，`~/.pi/agent/auth.json` の読み取りを拒否する．
-
-秘密パスポリシーは，Codex と同じ規則で，srt ポリシーの `filesystem.denyRead` エントリとして Pi に渡る．読み取りを禁止するルールだけを生成し，書き込みのみのルールは，srt の制限がエージェントが起動するすべてのプロセスに及ぶため，フックに任せる．srt は各エントリをグロブとして読む（`*`，`**`，`?`，`[...]`．エスケープ，波括弧，否定は使えない）．また `~` と `~/` を展開する．相対エントリは，作業ディレクトリではなく，ツール呼び出しの作業ディレクトリの Git の toplevel（リポジトリ外では作業ディレクトリ自体）に固定する．そのため `/repo/src` で動くツールも `/repo/.env` の読み取りを拒否する．エントリは拒否しかしないため，各エントリは作業ディレクトリでも解決する．toplevel は共通の git dir と同じく作業ディレクトリごとに固定する．サンドボックスは `.git` のポインタを書き換えることがあるため，最初の解決結果が後で変わると，その呼び出しは失敗する．1 セグメントの名前（`.env`，`*.pem`）は `**/pattern` になり，Claude と同じくどの深さにも一致する．`//x` は `/x` になる．末尾以外に `/` を含み，`**/` で始まらない相対パターン（`secrets/**`，`config/x.json`，`./secrets/**`）は，秘密パスポリシーの読み込み時に拒否する．gitignore と Codex はリポジトリルートに，srt は任意の深さに，Claude は作業ディレクトリに固定するため，1 つのパターンで 3 通りの異なるファイル集合を守ってしまうからである．任意の深さを意味するときは `**/<pattern>` と書く．先頭の `/`，`.` や `..` の要素，バックスラッシュ，波括弧，先頭の `!`，否定の文字クラス（`[!a]`，`[^a]`），絶対パスの最初の要素のワイルドカード（Linux の srt はこれを無視する）があると，パターンを名指しして生成を失敗させる．`**/` のパターンは，Codex の `:workspace_roots` と同様に，リポジトリルートの下だけを守る．
+末尾以外に `/` を含み，`**/` で始まらない相対パターン（`secrets/**`，`config/x.json`，`./secrets/**`）は，秘密パスポリシーの読み込み時に拒否する．gitignore と Codex はリポジトリルートに，Claude は作業ディレクトリに固定するため，1 つのパターンで異なるファイル集合を守ってしまうからである．任意の深さを意味するときは `**/<pattern>` と書く．
 
 ### Codex のガード用ファイルシステム
 
@@ -226,7 +223,7 @@ CodeQL による解析はワークフローファイルではなく，GitHub の
 - **v0.9.3–v0.9.5**: Claude サンドボックスと Codex のシェルコマンドのためのオプトインのエージェント用 GitHub トークンを追加し，GitHub App から更新するようにした（[0019]–[0023]）．
 - **v0.9.10**: DeepSeek Harness（dsh）プロバイダを，埋め込みのフックブリッジ付きで追加した（[0025]）．
 - **v0.9.13**: Pi のシェルとファイルのツールを srt の内側で動かし，秘密パスポリシーを Codex のガード用ファイルシステムと Pi の srt ポリシーに適用した（[0030]）．
-- **Unreleased**: Antigravity プロバイダを，サンドボックスとパス権限によるガード付きで追加した（[0031]）．
+- **Unreleased**: Antigravity プロバイダを，サンドボックスとパス権限によるガード付きで追加した（[0031]）．また harness を生成と配置に限定し，Pi の srt 拡張を削除した（[0032]）．
 
 [#140]: https://github.com/furedea/agent-harness/pull/140
 [0001]: adr/0001_separate_codex_conformance_from_required_ci.md
@@ -251,3 +248,4 @@ CodeQL による解析はワークフローファイルではなく，GitHub の
 [0029]: adr/0029_declare_config_ownership_and_sync_with_one_engine.md
 [0030]: adr/0030_run_pi_file_operations_inside_srt.md
 [0031]: adr/0031_guard_antigravity_with_sandbox_and_path_permissions.md
+[0032]: adr/0032_limit_the_harness_to_rendering_and_installing.md
