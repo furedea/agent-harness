@@ -71,11 +71,10 @@ agent breaks in predictable ways:
     match a prefix, a list to union, a mapping's entries, or keys tracked by a sidecar), and one
     engine applies any declaration to JSON, TOML, or YAML. Source
     permission rules are kept, deduplicated, and a rule in several lists stays only in the most
-    restrictive one. The opt-in agent GitHub token is the one composition that overrides the source
-    sandbox exclusions.
+    restrictive one. Nothing overrides the source settings.
 - Reason: agents keep writing their own state, but a settings overlay must never weaken or remove
     generated enforcement.
-- ADRs: [0016], [0018], [0020], [0024], [0029].
+- ADRs: [0016], [0018], [0024], [0029], [0032].
 
 **6. Separate provider declarations, functions, and I/O capabilities.**
 
