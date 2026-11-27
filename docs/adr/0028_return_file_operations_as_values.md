@@ -4,6 +4,7 @@ date: 2026-11-12
 amended:
   - "2026-11-12: computation does not read either"
   - "2026-11-12: the boundary parses the source into a typed model"
+  - "2026-11-27: FileMode::Private and the github_app module are removed with the agent GitHub token (ADR-0032); the port has Standard and Bits modes, and github_app is no longer an imperative reader"
 ---
 
 # ADR-0028: Return file operations as values
