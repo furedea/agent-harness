@@ -156,7 +156,6 @@ fn claude_hooks_for_runtime_relocates_nested_commands_under_a_directory_root() -
     let runtime_root = RuntimeRoot::directory(PathBuf::from("/opt/agents"))?;
     let loaded = load_source(&root)?;
     let context = GenerationContext {
-        dsh_profile: "web",
         source: &loaded,
         runtime_root: &runtime_root,
     };

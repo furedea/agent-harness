@@ -1,7 +1,7 @@
 ---
 status: accepted
 date: 2026-11-26
-supersedes: [ADR-0020, ADR-0021, ADR-0022, ADR-0023, ADR-0030]
+supersedes: [ADR-0008, ADR-0020, ADR-0021, ADR-0022, ADR-0023, ADR-0030, ADR-0031]
 ---
 
 # Limit the harness to rendering and installing

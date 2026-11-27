@@ -31,7 +31,6 @@ pub(crate) enum Provider {
 /// What a rendering run is asked to do, before any of it is read from the disk.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct RenderRequest<'a> {
-    pub(crate) dsh_profile: &'a str,
     pub(crate) source: &'a Path,
     pub(crate) external_hooks: &'a [ExternalHookBundle],
     pub(crate) runtime_root: &'a RuntimeRoot,
@@ -51,7 +50,6 @@ impl RenderRequest<'_> {
     /// The computation context over the source loaded for this request.
     fn context<'s>(&'s self, source: &'s Source) -> GenerationContext<'s> {
         GenerationContext {
-            dsh_profile: self.dsh_profile,
             source,
             runtime_root: self.runtime_root,
         }

@@ -293,7 +293,7 @@ fn source_config_path(config: &ConfigSpec) -> Option<&'static str> {
         | RenderedConfig::SourceJsonWithToolPermissions(relative) => Some(relative),
         RenderedConfig::WithHooks
         | RenderedConfig::Fixed(_)
-        | RenderedConfig::SourceTomlWithProtection => None,
+        | RenderedConfig::SourceTomlWithGuardedFilesystem => None,
     }
 }
 

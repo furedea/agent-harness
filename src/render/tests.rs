@@ -49,8 +49,7 @@ fn install_places_codex_and_claude_files_under_output_root() -> Result<()> {
 
     let codex_config = crate::shell::fixtures::read_to_string(out.join(".codex/config.toml"))?;
     assert!(codex_config.contains("[permissions.guarded.filesystem]"));
-    assert!(codex_config.contains("\"~/.codex/hooks/hook.sh\" = \"read\""));
-    assert!(codex_config.contains("\"~/.claude/hooks/hook.sh\" = \"read\""));
+    assert!(!codex_config.contains("hooks/hook.sh"), "{codex_config}");
 
     crate::shell::fixtures::remove_dir_all(root)?;
     Ok(())
@@ -123,7 +122,6 @@ fn install_home(source: &Path, out: &Path) -> Result<()> {
 fn install_with_home(source: &Path, out: &Path, home: Option<&Path>) -> Result<()> {
     let runtime_root = RuntimeRoot::home();
     let request = RenderRequest {
-        dsh_profile: "web",
         source,
         external_hooks: &[],
         runtime_root: &runtime_root,
@@ -419,6 +417,7 @@ fn install_into_the_home_writes_absolute_antigravity_path_rules() -> Result<()> 
     let source = root.join("source");
     let out = root.join("out");
     write_minimal_source(&source)?;
+    write_antigravity_home_rule(&source)?;
 
     install_with_home(&source, &out, Some(&out))?;
 
@@ -437,6 +436,7 @@ fn install_elsewhere_leaves_antigravity_path_rules_to_the_sync() -> Result<()> {
     let source = root.join("source");
     let out = root.join("out");
     write_minimal_source(&source)?;
+    write_antigravity_home_rule(&source)?;
 
     install_home(&source, &out)?;
 
@@ -444,6 +444,16 @@ fn install_elsewhere_leaves_antigravity_path_rules_to_the_sync() -> Result<()> {
         crate::shell::fixtures::read_to_string(out.join(".gemini/antigravity-cli/settings.json"))?;
     assert!(settings.contains("write_file(~/.gemini/config)"));
     crate::shell::fixtures::remove_dir_all(root)?;
+    Ok(())
+}
+
+fn write_antigravity_home_rule(source: &Path) -> Result<()> {
+    let settings = source.join("antigravity/settings.json");
+    crate::shell::fixtures::create_dir_all(source.join("antigravity"))?;
+    crate::shell::fixtures::write(
+        settings,
+        r#"{"permissions": {"deny": ["write_file(~/.gemini/config)"]}}"#,
+    )?;
     Ok(())
 }
 

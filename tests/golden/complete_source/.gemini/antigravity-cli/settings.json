@@ -1,67 +1,13 @@
 {
-  "agentMode": "",
-  "enableTerminalSandbox": true,
   "permissions": {
     "allow": [
-      "read_file(/nix)",
-      "read_file(/run)",
       "command(fixture check)"
     ],
     "ask": [
       "command(fixture publish)"
     ],
     "deny": [
-      "command(fixture destroy)",
-      "read_file(/run/credentials)",
-      "read_file(/run/secrets)",
-      "read_file(/run/secrets.d)",
-      "read_file(/run/secrets-for-users)",
-      "read_file(/run/agenix)",
-      "read_file(/run/agenix.d)",
-      "read_file(/run/keys)",
-      "read_file(/run/user)",
-      "write_file(~/.gemini/config)",
-      "write_file(~/.gemini/antigravity-cli/settings.json)",
-      "write_file(~/.codex/hooks/adapt.sh)",
-      "write_file(~/.codex/hooks/guard.sh)",
-      "write_file(~/.claude/hooks/guard.sh)",
-      "write_file(~/.claude/hooks/lib/provider_adapter.py)",
-      "write_file(~/.claude/hooks/rules/allowed_commands.json)",
-      "write_file(~/.claude/hooks/rules/forbidden_commands.json)",
-      "write_file(~/.claude/hooks/rules/secret_commit_policy.json)",
-      "write_file(~/.claude/hooks/rules/secret_path_policy.json)",
-      "write_file(~/.devin/hooks/hook_adapter.py)",
-      "write_file(~/.hermes/hooks/hook_adapter.py)",
-      "write_file(~/.pi/hooks/hook_adapter.py)",
-      "write_file(~/.dsh/hooks/hook_adapter.py)",
-      "write_file(~/.gemini/config/hooks/hook_adapter.py)",
-      "write_file(~/.claude/statusline/statusline.py)",
-      "write_file(~/.hermes/plugins/agent-harness-hooks/plugin.yaml)",
-      "write_file(~/.hermes/plugins/agent-harness-hooks/__init__.py)",
-      "write_file(~/.dsh/bridge/package.json)",
-      "write_file(~/.dsh/bridge/cordis.patch.yml)",
-      "write_file(~/.dsh/bridge/hook_bridge.ts)",
-      "write_file(~/.codex/AGENTS.md)",
-      "write_file(~/.codex/hooks.json)",
-      "write_file(~/.codex/config.toml)",
-      "write_file(~/.codex/rules/default.rules)",
-      "write_file(~/.claude/CLAUDE.md)",
-      "write_file(~/.claude/settings.json)",
-      "write_file(~/.config/devin/config.json)",
-      "write_file(~/.hermes/hooks.json)",
-      "write_file(~/.hermes/managed-config.yaml)",
-      "write_file(~/.pi/agent/AGENTS.md)",
-      "write_file(~/.pi/agent/hooks.json)",
-      "write_file(~/.pi/agent/settings.json)",
-      "write_file(~/.pi/agent/extensions/hook_bridge.ts)",
-      "write_file(~/.dsh/AGENTS.md)",
-      "write_file(~/.dsh/hooks.json)",
-      "write_file(~/.gemini/config/AGENTS.md)",
-      "write_file(~/.gemini/config/hooks.json)",
-      "write_file(~/.claude/hooks/rules/command_permissions.json)",
-      "write_file(~/.claude/hooks/rules/protected_paths.json)",
-      "write_file(~/.hermes/config.yaml)",
-      "write_file(~/.dsh/profiles/web/package.json)"
+      "command(fixture destroy)"
     ]
   }
 }

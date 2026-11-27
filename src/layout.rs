@@ -125,10 +125,6 @@ impl<'a> InstalledLayout<'a> {
         Self { root }
     }
 
-    pub(crate) fn relative() -> Self {
-        Self::new(Path::new(""))
-    }
-
     /// Directories published as a whole, in registry order.
     pub(crate) fn managed_directories_for(self, providers: &[ProviderSpec]) -> Vec<PathBuf> {
         providers
@@ -172,33 +168,6 @@ impl<'a> InstalledLayout<'a> {
         hooks
             .chain(directories)
             .map(|(from, to)| (source.root.join(from), self.root.join(to)))
-            .collect()
-    }
-
-    /// Generated files plus the mutable provider configs that installation syncs them into.
-    pub(crate) fn generated_files_for(
-        self,
-        dsh_profile: &str,
-        providers: &[ProviderSpec],
-    ) -> Vec<PathBuf> {
-        let mut files = self.managed_files_for(providers);
-        files.extend(
-            providers
-                .iter()
-                .flat_map(ProviderSpec::generated_rule_files)
-                .map(|path| self.root.join(path)),
-        );
-        files.extend(self.sync_targets_for(dsh_profile, providers));
-        files
-    }
-
-    /// Files the rendered configs are merged into that are not themselves published.
-    fn sync_targets_for(self, profile: &str, providers: &[ProviderSpec]) -> Vec<PathBuf> {
-        providers
-            .iter()
-            .filter_map(|spec| spec.config)
-            .filter_map(|config| config.sync_target.path_in(profile))
-            .map(|path| self.root.join(path))
             .collect()
     }
 

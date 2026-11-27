@@ -59,8 +59,8 @@ fn assert_guarded_entry_survives_merge(base: &str) -> Result<()> {
 }
 
 #[test]
-fn write_config_source_appends_guarded_filesystem_fragment() -> Result<()> {
-    let root = test_root("write_config_source_appends_guarded_filesystem_fragment")?;
+fn write_config_source_adds_no_guarded_entry_for_installed_files() -> Result<()> {
+    let root = test_root("write_config_source_adds_no_guarded_entry_for_installed_files")?;
     write_minimal_source(&root)?;
     let out = root.join("config.toml");
 
@@ -69,7 +69,10 @@ fn write_config_source_appends_guarded_filesystem_fragment() -> Result<()> {
     let content = crate::shell::fixtures::read_to_string(&out)?;
     assert!(content.contains("model = \"gpt-5.5\""));
     assert!(content.contains("[permissions.guarded.filesystem]"));
-    assert!(content.contains("\"~/.codex/hooks/adapt.sh\" = \"read\""));
+    assert!(
+        !content.contains(".codex/hooks/adapt.sh"),
+        "installed harness files get no guarded entry: {content}"
+    );
 
     crate::shell::fixtures::remove_dir_all(root)?;
     Ok(())
@@ -90,7 +93,6 @@ fn write_config_source_keeps_guarded_filesystem_entries_from_the_source() -> Res
     let document = crate::shell::fixtures::read_to_string(&out)?.parse::<DocumentMut>()?;
     let guarded = &document["permissions"]["guarded"]["filesystem"];
     assert_eq!(guarded["~/.config/gh/hosts.yml"].as_str(), Some("deny"));
-    assert_eq!(guarded["~/.codex/hooks/adapt.sh"].as_str(), Some("read"));
 
     crate::shell::fixtures::remove_dir_all(root)?;
     Ok(())
@@ -114,7 +116,6 @@ fn write_config_source_renders_source_declared_write_denied_paths() -> Result<()
         guarded["~/.local/state/agent-harness/verification"].as_str(),
         Some("read"),
     );
-    assert_eq!(guarded["~/.codex/hooks/adapt.sh"].as_str(), Some("read"));
 
     crate::shell::fixtures::remove_dir_all(root)?;
     Ok(())
@@ -167,20 +168,6 @@ fn a_source_entry_on_the_same_path_with_another_access_is_a_conflict() {
 }
 
 #[test]
-fn a_source_ancestor_denial_over_a_generated_protected_path_is_a_conflict() {
-    let message = conflict_message(
-        "[permissions.guarded.filesystem]\n\"~/.config/../.codex\" = \"deny\"\n",
-        NO_RULES,
-    );
-
-    assert_conflict(
-        &message,
-        "= \"deny\" (",
-        "~/.codex/hooks/adapt.sh = \"read\" (generated)",
-    );
-}
-
-#[test]
 fn a_generated_glob_denial_over_a_source_concrete_path_is_a_conflict() {
     let message = conflict_message(
         "[permissions.guarded.filesystem]\n\"~/.aws/config\" = \"write\"\n",
@@ -206,84 +193,6 @@ fn a_generated_workspace_denial_over_a_scoped_source_entry_is_a_conflict() {
         "**/secrets/** = \"none\" (generated)",
         ":workspace_roots / secrets/key = \"read\" (",
     );
-}
-
-#[test]
-fn a_source_root_denial_over_a_generated_protected_path_is_a_conflict() {
-    let message = conflict_message(
-        "[permissions.guarded.filesystem]\n\":root\" = \"deny\"\n\"~/.codex\" = \"read\"\n",
-        NO_RULES,
-    );
-
-    // The `~/.codex` exception resolves the Codex paths; the other providers' paths still conflict.
-    assert_conflict(&message, ":root = \"deny\" (", "= \"read\" (generated)");
-    assert!(!message.contains("~/.codex/hooks"), "{message}");
-}
-
-#[test]
-fn a_source_exception_that_covers_the_generated_paths_resolves_the_conflict() -> Result<()> {
-    let document = merged_filesystem(
-        "[permissions.guarded.filesystem]\n\":root\" = \"deny\"\n\"~\" = \"read\"\n",
-        NO_RULES,
-    )?;
-
-    let filesystem = &document["permissions"]["guarded"]["filesystem"];
-    assert_eq!(filesystem["~/.codex/hooks/adapt.sh"].as_str(), Some("read"));
-    Ok(())
-}
-
-#[test]
-fn a_looser_intermediate_source_entry_resolves_the_generated_paths_below_it() -> Result<()> {
-    let document = merged_filesystem(
-        "[permissions.guarded.filesystem]\n\":root\" = \"deny\"\n\"~\" = \"write\"\n",
-        NO_RULES,
-    )?;
-
-    let filesystem = &document["permissions"]["guarded"]["filesystem"];
-    assert_eq!(filesystem["~/.codex/hooks/adapt.sh"].as_str(), Some("read"));
-    Ok(())
-}
-
-#[cfg(unix)]
-fn project_local_error(source_config: &str) -> Result<String> {
-    let root = test_root("project_local_error")?;
-    write_minimal_source(&root)?;
-    write_file(&root.join("codex/config.toml"), source_config)?;
-    let loaded = load_source_with(&root, &LoadInputs::new(PROVIDERS))?;
-    let runtime_root = crate::runtime_root::RuntimeRoot::directory("/work/proj".into())?;
-    let result = config_source_content_for_runtime(GenerationContext {
-        source: &loaded,
-        runtime_root: &runtime_root,
-        dsh_profile: "web",
-    });
-    crate::shell::fixtures::remove_dir_all(root)?;
-    Ok(result.map_or_else(|error| format!("{error:#}"), |_| String::new()))
-}
-
-#[cfg(unix)]
-#[test]
-fn a_workspace_denial_over_a_project_local_protected_path_is_a_conflict() -> Result<()> {
-    let message = project_local_error(
-        "[permissions.guarded.filesystem.\":workspace_roots\"]\n\".codex/hooks/**\" = \"deny\"\n",
-    )?;
-
-    assert_conflict(
-        &message,
-        ":workspace_roots / .codex/hooks/** = \"deny\" (",
-        "/work/proj/.codex/hooks/adapt.sh = \"read\" (generated)",
-    );
-    Ok(())
-}
-
-#[cfg(unix)]
-#[test]
-fn a_workspace_denial_beside_the_project_local_protected_paths_passes() -> Result<()> {
-    let message = project_local_error(
-        "[permissions.guarded.filesystem.\":workspace_roots\"]\n\"secrets/**\" = \"deny\"\n",
-    )?;
-
-    assert_eq!(message, "");
-    Ok(())
 }
 
 #[test]

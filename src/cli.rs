@@ -13,7 +13,7 @@ use crate::{
     generation::{
         GenerationContext, claude_config, codex_config, command_permissions,
         external_hooks::ExternalHookBundle,
-        hooks, protection,
+        guarded_filesystem, hooks,
         skills::{ExternalSkill, SkillTarget},
     },
     inventory::Inventory,
@@ -183,9 +183,6 @@ struct GenerateSkillsArgs {
 
 #[derive(Debug, clap::Args)]
 struct InstallArgs {
-    #[arg(long, default_value = "web")]
-    dsh_profile: String,
-
     #[arg(long)]
     source: Option<PathBuf>,
 
@@ -280,7 +277,10 @@ fn generate_codex_config_source(args: GenerateFileArgs, profile: Profile) -> Res
 
 fn write_codex_config_fragment(args: GenerateFileArgs, profile: Profile) -> Result<()> {
     let source = load_resolved_source(args.source, &args.extra_hook, profile)?;
-    shell::execute(&[protection::codex_config_fragment_op(&source, &args.output)?])
+    shell::execute(&[guarded_filesystem::codex_config_fragment_op(
+        &source,
+        &args.output,
+    )?])
 }
 
 fn write_hooks(provider: ProviderId, args: GenerateFileArgs, profile: Profile) -> Result<()> {
@@ -361,7 +361,6 @@ fn install(args: InstallArgs, profile: Profile) -> Result<()> {
         .ok()
         .filter(|home| is_same_directory(home, &prefix));
     let request = RenderRequest {
-        dsh_profile: &args.dsh_profile,
         source: source.as_path(),
         external_hooks: &args.extra_hook,
         runtime_root: &runtime_root,

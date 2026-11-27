@@ -13,7 +13,7 @@ use crate::{
     file_op::FileOp,
     generation::{
         GenerationContext, antigravity_config, claude_config, codex_config, command_permissions,
-        hooks, protection, skills,
+        hooks, skills,
     },
     layout::SourceLayout,
     provider::spec::{
@@ -134,33 +134,23 @@ impl ProviderRenderer<'_> {
         match spec.command_rule {
             // Devin's rules are written into its hook registration.
             None | Some(CommandRuleSpec::InHookRegistration) => Ok(Vec::new()),
-            Some(CommandRuleSpec::RuleFiles {
-                permissions,
-                protected_paths,
-                ..
-            }) => self
-                .write_policy_files(&self.out.join(permissions), &self.out.join(protected_paths)),
+            Some(CommandRuleSpec::RuleFiles { permissions, .. }) => self
+                .write_runtime_permissions(permissions)
+                .map(|operation| vec![operation]),
             Some(CommandRuleSpec::ExecpolicyFile { rules_file }) => self
                 .write_rules_file(rules_file)
                 .map(|operation| vec![operation]),
         }
     }
 
+    fn write_runtime_permissions(&self, permissions: &str) -> Result<FileOp> {
+        let path = self.out.join(permissions);
+        command_permissions::runtime_policy_op(self.context.source, &path)
+    }
+
     fn write_rules_file(&self, rules_file: &str) -> Result<FileOp> {
         let path = self.out.join(rules_file);
         command_permissions::codex_rules_op(self.context.source, &path)
-    }
-
-    fn write_policy_files(
-        &self,
-        permissions: &Path,
-        protected_paths: &Path,
-    ) -> Result<Vec<FileOp>> {
-        let paths = protection::protected_paths_for_providers(self.context, self.providers)?;
-        Ok(vec![
-            command_permissions::runtime_policy_op(self.context.source, permissions)?,
-            protection::runtime_policy_op(paths, protected_paths)?,
-        ])
     }
 
     fn write_config(&self, spec: &ProviderSpec) -> Result<Vec<FileOp>> {
@@ -181,7 +171,7 @@ impl ProviderRenderer<'_> {
             RenderedConfig::WithHooks => Ok(Vec::new()),
             RenderedConfig::Fixed(content) => Ok(vec![FileOp::write(target.path, content)]),
             RenderedConfig::SourceFile(relative) => self.merge_source_file(target, relative),
-            RenderedConfig::SourceTomlWithProtection => self.merge_protected_toml(target),
+            RenderedConfig::SourceTomlWithGuardedFilesystem => self.merge_guarded_toml(target),
             RenderedConfig::SourceJsonWithToolPermissions(p) => self.merge_tool_rules(target, p),
         }
     }
@@ -203,7 +193,7 @@ impl ProviderRenderer<'_> {
             .with_context(|| format!("source config {source_relative} was not loaded"))
     }
 
-    fn merge_protected_toml(&self, target: InstalledConfig<'_>) -> Result<Vec<FileOp>> {
+    fn merge_guarded_toml(&self, target: InstalledConfig<'_>) -> Result<Vec<FileOp>> {
         let generated = codex_config::generated_config_source(self.context)?;
         self.merge_into_installed(
             target,

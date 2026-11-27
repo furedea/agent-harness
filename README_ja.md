@@ -265,7 +265,7 @@ nix run github:furedea/agent-harness -- verify --prefix "$HOME"
 | `dsh.enable`         | `true`                 | DeepSeek Harness のファイルをインストールする．                                                           |
 | `dsh.profile`        | `"web"`                | フックバンドルを登録する，ユーザー所有の dsh プロファイル．                                               |
 
-生成されたフック配線，Bash のコマンド権限，保護パスは，プロバイダ設定のマージ後も harness の管理下に残る．これにより，設定のオーバーレイが強制力を黙って取り除くことを防ぐ．保護パスは，harness が Claude Code，Codex，Devin，Hermes，pi，dsh のために生成または同期するすべてのファイル（可変のプロバイダ設定を含む）を対象にし，スキルは対象にしない．プロバイダの `enable` を `false` にすると，そのプロバイダのファイルはインストールされない．
+生成されたフック配線と Bash のコマンド権限は，プロバイダ設定のマージ後も harness の管理下に残る．これにより，設定のオーバーレイが強制力を黙って取り除くことを防ぐ．harness はインストールしたファイルを保護しない．保護はソースの設定に書く．たとえばサンドボックスの書き込みの許可リストと，`Edit(~/.claude/**)` のようなハーネスのルートごとの拒否である（[ADR-0032](docs/adr/0032_limit_the_harness_to_rendering_and_installing.md)）．プロバイダの `enable` を `false` にすると，そのプロバイダのファイルはインストールされない．
 
 Claude Code が `~/.claude/settings.json` を更新することがあるため，Home Manager モジュールはこのファイルを書き込み可能な通常のファイルとして実体化する．activation のたびに，生成されたトップレベルのキーが既存の対応する値を置き換え，生成された設定にないトップレベルのキーは残る．その他の Claude Code のファイルは，Home Manager が管理するシンボリックリンクのままである．activation では，[インストールされるもの](#インストールされるもの) で説明する Codex，Devin，Hermes Agent，pi，dsh の設定の同期も行う．
 
@@ -336,7 +336,7 @@ Devin の設定の同期は管理対象のトップレベルキーを置き換�
 
 `install` は `~/.hermes/config.yaml` を編集しない．`sync-config --provider hermes` が `~/.hermes/managed-config.yaml` をそこへマージする．生成された `plugins.enabled` のエントリは重複なく追加され，Hermes Agent の他の状態は残る．Home Manager モジュールは activation でこの同期を実行する．
 
-`sync-config --provider dsh` は，ユーザー所有の dsh プロファイルの `~/.dsh/profiles/<profile>/package.json` にブリッジバンドルを登録する．プロファイル名は Home Manager のオプション `dsh.profile` で指定し（既定は `web`），`install --dsh-profile` も同じファイルを保護する．この同期が管理するのは `dependencies` のエントリで，`dsh.profile.bundles` にはバンドルを 1 回だけ追加する．dsh がまだ作成していないプロファイルはスキップする．ブリッジの設計は [ADR-0025](docs/adr/0025_embed_the_dsh_hook_bridge.md) に記録している．
+`sync-config --provider dsh` は，ユーザー所有の dsh プロファイルの `~/.dsh/profiles/<profile>/package.json` にブリッジバンドルを登録する．プロファイル名は Home Manager のオプション `dsh.profile` で指定し（既定は `web`）．この同期が管理するのは `dependencies` のエントリで，`dsh.profile.bundles` にはバンドルを 1 回だけ追加する．dsh がまだ作成していないプロファイルはスキップする．ブリッジの設計は [ADR-0025](docs/adr/0025_embed_the_dsh_hook_bridge.md) に記録している．
 
 `verify` は，解決したソースの manifest が宣言する必要なパスと実行時コマンドを確認する．インストールされたファイルの内容を選んだソースと比較はしない．
 
@@ -349,7 +349,7 @@ agent-harness install --prefix "$HOME"
 agent-harness verify --prefix "$HOME"
 ```
 
-プロジェクトローカルにインストールする場合は，出力先のプレフィックスと実行時ルートの両方を指定する．`--prefix` はファイルを書き込む場所を，`--runtime-root` は生成したフックのコマンドと保護ルールが実行時にファイルを期待する場所を決める．実行時ルートは絶対パスでなければならない．
+プロジェクトローカルにインストールする場合は，出力先のプレフィックスと実行時ルートの両方を指定する．`--prefix` はファイルを書き込む場所を，`--runtime-root` は生成したフックのコマンドが実行時にファイルを期待する場所を決める．実行時ルートは絶対パスでなければならない．
 
 ```bash
 agent-harness install \

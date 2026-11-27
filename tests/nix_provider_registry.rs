@@ -179,7 +179,7 @@ fn sync_json(spec: &ProviderSpec, config: ConfigSpec) -> Value {
         "source": source_path(spec, config),
         "target": sync_target(spec, config),
     });
-    if config.rendered == RenderedConfig::SourceTomlWithProtection {
+    if config.rendered == RenderedConfig::SourceTomlWithGuardedFilesystem {
         // Codex's merge runs at the write boundary; the others run after link generation.
         sync["after"] = json!("writeBoundary");
     }
