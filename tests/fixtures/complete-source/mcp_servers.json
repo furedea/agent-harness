@@ -1,0 +1,14 @@
+{
+  "servers": {
+    "docs": {
+      "url": "https://docs.example.com/mcp"
+    },
+    "github": {
+      "command": "github-mcp-server",
+      "args": ["stdio"],
+      "env": {
+        "GITHUB_TOOLSETS": "repos"
+      }
+    }
+  }
+}

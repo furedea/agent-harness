@@ -20,6 +20,14 @@ let
           inherit source;
           agentsMd = source + "/AGENTS.md";
           commandPermissions = source + "/command_permissions.json";
+          # Replaces the source's `docs` server and adds one beside its `github` server.
+          mcpServers = {
+            docs.url = "https://docs.example.org/mcp";
+            local = {
+              command = "/nix/store/example-mcp/bin/example-mcp";
+              args = [ "--stdio" ];
+            };
+          };
         };
       }
     ];
@@ -89,4 +97,22 @@ assert pkgs.lib.assertMsg (builtins.all hasHomeFile [
   ".gemini/config/skills"
   ".gemini/config/AGENTS.md"
 ]) "Antigravity files should be installed";
-configuration.activationPackage
+let
+  claudeSkills = configuration.config.home.file.".claude/skills".source;
+  piSkills = configuration.config.home.file.".pi/agent/skills".source;
+in
+pkgs.runCommand "home-manager-minimal-check" { } ''
+  plugin=${claudeSkills}/agent-harness/.claude-plugin/plugin.json
+  grep -q '"github-mcp-server"' "$plugin"
+  grep -q '"https://docs.example.org/mcp"' "$plugin"
+  grep -q '"/nix/store/example-mcp/bin/example-mcp"' "$plugin"
+  if grep -q 'docs.example.com' "$plugin"; then
+    echo "the option should replace the source's docs server" >&2
+    exit 1
+  fi
+  if [ -e ${piSkills}/agent-harness ]; then
+    echo "pi skills should not carry the Claude MCP plugin" >&2
+    exit 1
+  fi
+  ln -s ${configuration.activationPackage} "$out"
+''

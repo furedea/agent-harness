@@ -11,7 +11,7 @@ use crate::{
     install_plan::InstallPlan,
     layout::{InstalledLayout, SourceLayout},
     provider::{
-        renderer::ProviderRenderer,
+        renderer::{ProviderRenderer, SkillsDirectory},
         spec::{PROVIDERS, ProviderSpec},
     },
     runtime_root::RuntimeRoot,
@@ -70,17 +70,18 @@ pub(crate) fn generate_codex_config_source(source: &Path, out: &Path) -> Result<
     )?])
 }
 
+/// Renders a provider's skills directory.
 pub(crate) fn generate_skills(
     source: &Path,
     external_skills: &[skills::ExternalSkill],
-    target: skills::SkillTarget<'_>,
+    directory: SkillsDirectory<'_>,
 ) -> Result<()> {
     let inputs = LoadInputs {
         skills: external_skills,
         ..LoadInputs::new(PROVIDERS)
     };
     let source = load_source(source, &inputs)?;
-    execute(&[skills::render_skills(&source, target)?])
+    execute(&[directory.render(&source)?])
 }
 
 pub(crate) fn install(request: &RenderRequest<'_>, out: &Path) -> Result<()> {

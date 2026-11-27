@@ -3,7 +3,7 @@
 
 use super::spec::{
     Asset, Bridge, BundleCapture, CommandRuleSpec, ConfigFormat, ConfigLocation, ConfigSpec,
-    ConfigSync, EntryMatch, HookFormat, HookRegistration, HookSection, HookSpec, KeyScope,
+    ConfigSync, EntryMatch, HookFormat, HookRegistration, HookSection, HookSpec, KeyScope, McpSpec,
     Ownership, ProviderId, ProviderSpec, RenderedConfig, SkillSource, SkillSpec, SyncedDirectory,
     WhenAbsent, WhenMissing,
 };
@@ -44,6 +44,8 @@ const CODEX_USER_KEPT_KEYS: &[&str] = &[
     "feedback",
     "check_for_update_on_startup",
 ];
+
+const CODEX_MCP_SERVERS: &[&str] = &["mcp_servers"];
 
 const HERMES_MANAGED_CONFIG: &str = "plugins:\n  enabled:\n    - agent-harness-hooks\n";
 
@@ -95,12 +97,21 @@ const CODEX: ProviderSpec = ProviderSpec {
                     sidecar: ".agent-harness-managed.json",
                     formerly_managed: &["GH_CONFIG_DIR"],
                 },
+                // Servers the user or `codex mcp add` wrote stay.
+                Ownership::TrackedKeys {
+                    path: CODEX_MCP_SERVERS,
+                    sidecar: ".agent-harness-managed.json",
+                    formerly_managed: &[],
+                },
             ],
             when_missing: WhenMissing::Create,
             home_command_lists: &[],
             home_rule_lists: &[],
         },
         directories: &[],
+    }),
+    mcp: Some(McpSpec::ConfigMapping {
+        path: CODEX_MCP_SERVERS,
     }),
     retired_files: &[],
 };
@@ -156,6 +167,9 @@ const CLAUDE: ProviderSpec = ProviderSpec {
             destination: ".claude/statusline",
         }],
     }),
+    mcp: Some(McpSpec::SkillsDirectoryPlugin {
+        directory: "agent-harness",
+    }),
     retired_files: &[],
 };
 
@@ -204,6 +218,7 @@ const DEVIN: ProviderSpec = ProviderSpec {
         },
         directories: &[],
     }),
+    mcp: None,
     retired_files: &[],
 };
 
@@ -257,6 +272,7 @@ const HERMES: ProviderSpec = ProviderSpec {
         },
         directories: &[],
     }),
+    mcp: None,
     retired_files: &[],
 };
 
@@ -307,6 +323,7 @@ const PI: ProviderSpec = ProviderSpec {
         directories: &[],
     }),
     // Earlier releases installed an srt sandbox extension here (ADR-0032).
+    mcp: None,
     retired_files: &[
         ".pi/agent/extensions/sandbox/file_operations.mjs",
         ".pi/agent/extensions/bash_sandbox.ts",
@@ -371,6 +388,7 @@ const DSH: ProviderSpec = ProviderSpec {
         },
         directories: &[],
     }),
+    mcp: None,
     retired_files: &[],
 };
 
@@ -427,6 +445,7 @@ const ANTIGRAVITY: ProviderSpec = ProviderSpec {
         },
         directories: &[],
     }),
+    mcp: None,
     retired_files: &[],
 };
 

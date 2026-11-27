@@ -7,3 +7,13 @@ glob_scan_max_depth = 5
 
 [permissions.guarded.filesystem.":workspace_roots"]
 "**/secrets/**" = "none"
+
+[mcp_servers.docs]
+url = "https://docs.example.com/mcp"
+
+[mcp_servers.github]
+command = "github-mcp-server"
+args = ["stdio"]
+
+[mcp_servers.github.env]
+GITHUB_TOOLSETS = "repos"

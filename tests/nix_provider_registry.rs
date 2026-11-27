@@ -45,7 +45,7 @@ mod registry;
 #[path = "../src/provider/spec.rs"]
 mod spec;
 
-use spec::{ConfigFormat, ConfigLocation, ConfigSpec, ProviderSpec, RenderedConfig, SkillSource};
+use spec::{ConfigFormat, ConfigLocation, ConfigSpec, ProviderSpec, RenderedConfig};
 
 const UPDATE_VARIABLE: &str = "UPDATE_PROVIDERS_JSON";
 
@@ -146,19 +146,9 @@ fn bridge_destinations(spec: &ProviderSpec) -> BTreeSet<&'static str> {
 
 fn link_json(spec: &ProviderSpec, path: &str) -> Value {
     match spec.skill.filter(|skill| skill.destination == path) {
-        Some(skill) => json!({ "skills_provider": skills_provider(skill.source) }),
+        // `generate-skills --provider <id>` renders the provider's own skills directory.
+        Some(_) => json!({ "skills_provider": spec.key }),
         None => json!({}),
-    }
-}
-
-fn skills_provider(source: SkillSource) -> &'static str {
-    match source {
-        SkillSource::RenderFrontmatter => "claude",
-        SkillSource::RenderWithInvocationPolicy => "codex",
-        SkillSource::CopyRendered(from) => from
-            .spec()
-            .skill
-            .map_or("codex", |skill| skills_provider(skill.source)),
     }
 }
 

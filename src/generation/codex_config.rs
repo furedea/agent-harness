@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail, ensure};
 use toml_edit::{DocumentMut, Item, TableLike};
 
 use crate::{
@@ -9,6 +9,7 @@ use crate::{
         GenerationContext,
         guarded_conflict::{self, SourceConfig},
         guarded_filesystem,
+        mcp_servers::McpServers,
     },
     layout::SourceLayout,
     source_model::{HookBundle, Source},
@@ -42,7 +43,32 @@ fn config_source_content_for_runtime(context: GenerationContext<'_>) -> Result<S
     for bundle in &context.source.hook_bundles {
         merge_external_config(&mut document, bundle)?;
     }
+    add_mcp_servers(&mut document, &context.source.mcp_servers)?;
     Ok(document.to_string())
+}
+
+/// The source's MCP servers beside those `codex/config.toml` declares, where one name in both
+/// would leave it unclear which definition is meant.
+fn add_mcp_servers(document: &mut DocumentMut, servers: &McpServers) -> Result<()> {
+    if servers.is_empty() {
+        return Ok(());
+    }
+    let Item::Table(generated) = servers.codex_table() else {
+        bail!("the generated MCP servers must be a table");
+    };
+    let table = document
+        .entry("mcp_servers")
+        .or_insert_with(implicit_table)
+        .as_table_like_mut()
+        .context("codex/config.toml mcp_servers must be a table")?;
+    for (name, server) in generated {
+        ensure!(
+            !table.contains_key(&name),
+            "MCP server {name:?} is declared in both mcp_servers.json and codex/config.toml"
+        );
+        table.insert(&name, server);
+    }
+    Ok(())
 }
 
 fn check_guarded_conflicts(context: GenerationContext<'_>, generated: &DocumentMut) -> Result<()> {
@@ -97,6 +123,13 @@ fn guarded_filesystem_mut(document: &mut DocumentMut) -> Option<&mut dyn TableLi
         .get_mut("guarded")?
         .get_mut("filesystem")?
         .as_table_like_mut()
+}
+
+/// A table that renders only through its subtables, without a `[mcp_servers]` header.
+fn implicit_table() -> Item {
+    let mut table = toml_edit::Table::new();
+    table.set_implicit(true);
+    Item::Table(table)
 }
 
 fn merge_external_config(document: &mut DocumentMut, bundle: &HookBundle) -> Result<()> {

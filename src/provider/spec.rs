@@ -220,6 +220,17 @@ pub(crate) struct ConfigSpec {
     pub(crate) directories: &'static [SyncedDirectory],
 }
 
+/// Where a provider reads the MCP servers the source declares.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum McpSpec {
+    /// A plugin of its own in this directory of the skills destination, which the provider loads
+    /// in place and never writes to, so no sync races the provider for it.
+    SkillsDirectoryPlugin { directory: &'static str },
+    /// The mapping at this path of the provider's config, which its config sync must own as
+    /// tracked keys so servers the user added stay.
+    ConfigMapping { path: &'static [&'static str] },
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct ProviderSpec {
     pub(crate) id: ProviderId,
@@ -231,6 +242,7 @@ pub(crate) struct ProviderSpec {
     pub(crate) instructions: Option<&'static str>,
     pub(crate) command_rule: Option<CommandRuleSpec>,
     pub(crate) config: Option<ConfigSpec>,
+    pub(crate) mcp: Option<McpSpec>,
     /// Files an earlier release installed and that installation now removes.
     pub(crate) retired_files: &'static [&'static str],
 }

@@ -305,11 +305,18 @@ fn toml_parent_mut<'a>(
     for key in parents {
         table = table
             .entry(key)
-            .or_insert_with(toml_edit::table)
+            .or_insert_with(implicit_table)
             .as_table_like_mut()
             .with_context(|| format!("{key} is not a table"))?;
     }
     Ok(table)
+}
+
+/// A table created only to hold the path below it, so it gets no header of its own.
+fn implicit_table() -> Item {
+    let mut table = toml_edit::Table::new();
+    table.set_implicit(true);
+    Item::Table(table)
 }
 
 fn toml_set(root: &mut DocumentMut, path: &[&str], value: Item) -> Result<()> {

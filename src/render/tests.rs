@@ -221,8 +221,8 @@ fn generate_skills_writes_final_directory_output() -> Result<()> {
     generate_skills(
         &source,
         &[],
-        skills::SkillTarget {
-            provider: Provider::Codex,
+        SkillsDirectory {
+            provider: crate::provider::spec::ProviderId::Codex.spec(),
             path: &out,
         },
     )?;

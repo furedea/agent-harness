@@ -69,3 +69,43 @@ fn generate_skills_accepts_an_external_skill_directory() {
 
     remove_dir(root);
 }
+
+#[test]
+fn generate_skills_for_claude_adds_the_mcp_server_plugin_and_other_providers_do_not() {
+    let root = test_root("mcp-plugin-skills");
+    let plugin_manifest = "agent-harness/.claude-plugin/plugin.json";
+
+    for (provider, has_plugin) in [
+        ("claude", true),
+        ("pi", false),
+        ("antigravity", false),
+        ("codex", false),
+    ] {
+        let output = root.join(provider);
+        run_harness([
+            "generate-skills",
+            "--source",
+            complete_source_root().to_str().unwrap(),
+            "--provider",
+            provider,
+            "--output",
+            output.to_str().unwrap(),
+        ]);
+
+        assert!(
+            output.join("example-skill/SKILL.md").is_file(),
+            "{provider}"
+        );
+        assert_eq!(
+            output.join(plugin_manifest).is_file(),
+            has_plugin,
+            "{provider}"
+        );
+    }
+    assert_contains(
+        &root.join("claude").join(plugin_manifest),
+        "\"github-mcp-server\"",
+    );
+
+    remove_dir(root);
+}

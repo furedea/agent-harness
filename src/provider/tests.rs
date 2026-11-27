@@ -423,3 +423,5 @@ fn hook_bundle_capture_is_declared_by_codex_alone() {
         Some(".codex/config.toml")
     );
 }
+
+mod mcp;

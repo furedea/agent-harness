@@ -92,7 +92,7 @@
       ".pi/agent/extensions/hook_bridge.ts": {},
       ".pi/agent/hooks.json": {},
       ".pi/agent/skills": {
-        "skills_provider": "claude"
+        "skills_provider": "pi"
       },
       ".pi/hooks": {}
     },
@@ -121,7 +121,7 @@
       ".dsh/hooks": {},
       ".dsh/hooks.json": {},
       ".dsh/skills": {
-        "skills_provider": "codex"
+        "skills_provider": "dsh"
       }
     },
     "option_description": "Whether to install DeepSeek harness files.",
@@ -143,7 +143,7 @@
       ".gemini/config/hooks": {},
       ".gemini/config/hooks.json": {},
       ".gemini/config/skills": {
-        "skills_provider": "claude"
+        "skills_provider": "antigravity"
       }
     },
     "option_description": "Whether to install Antigravity harness files.",

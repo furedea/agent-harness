@@ -26,6 +26,7 @@ use crate::{
         command_permissions::{CommandPermissions, RegexPolicy},
         external_hooks::ExternalHookBundle,
         hooks::HookConfig,
+        mcp_servers::McpServers,
         secret_path_policy::SecretPathPolicy,
         skills::{ExternalSkill, SkillFiles, SourceSkills, SupportEntry},
     },
@@ -76,6 +77,7 @@ pub(crate) fn load_source(root: &Path, inputs: &LoadInputs<'_>) -> Result<Source
         skills,
         claude_settings: read_json(&layout.claude_settings())?,
         codex_config: read_toml(&layout.codex_config())?,
+        mcp_servers: load_mcp_servers(&layout)?,
         provider_configs: load_provider_configs(root, inputs.providers)?,
         directories,
         hook_bundles: load_bundles(inputs)?,
@@ -270,6 +272,14 @@ fn validate_allowed_commands(layout: &SourceLayout<'_>) -> Result<()> {
 fn load_secret_paths(layout: &SourceLayout<'_>) -> Result<SecretPathPolicy> {
     let path = layout.secret_path_policy();
     SecretPathPolicy::parse(&path, &read_text(&path)?)
+}
+
+fn load_mcp_servers(layout: &SourceLayout<'_>) -> Result<McpServers> {
+    let path = layout.mcp_servers();
+    read_text_if_present(&path)?.map_or_else(
+        || Ok(McpServers::default()),
+        |text| McpServers::parse(&path, &text),
+    )
 }
 
 fn load_provider_configs(

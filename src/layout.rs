@@ -14,6 +14,7 @@ const SECRET_PATH_POLICY_PATH: &str = "hooks/rules/secret_path_policy.json";
 const SKILL_RENDERING_PATH: &str = "skill_rendering.json";
 const CLAUDE_SETTINGS_SOURCE_PATH: &str = "claude/settings.json";
 const CODEX_CONFIG_SOURCE_PATH: &str = "codex/config.toml";
+const MCP_SERVERS_PATH: &str = "mcp_servers.json";
 const REQUIRED_SOURCE_FILES: &[&str] = &[
     MANIFEST_PATH,
     AGENT_INSTRUCTIONS_PATH,
@@ -108,6 +109,11 @@ impl<'a> SourceLayout<'a> {
 
     pub(crate) fn codex_config(self) -> PathBuf {
         self.root.join(CODEX_CONFIG_SOURCE_PATH)
+    }
+
+    /// The MCP servers file, which a source may omit.
+    pub(crate) fn mcp_servers(self) -> PathBuf {
+        self.root.join(MCP_SERVERS_PATH)
     }
 
     pub(crate) fn skills(self) -> PathBuf {

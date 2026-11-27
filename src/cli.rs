@@ -6,19 +6,20 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{Parser, Subcommand};
 
 use crate::{
     file_op::FileOp,
     generation::{
         GenerationContext, claude_config, codex_config, command_permissions,
-        external_hooks::ExternalHookBundle,
-        guarded_filesystem, hooks,
-        skills::{ExternalSkill, SkillTarget},
+        external_hooks::ExternalHookBundle, guarded_filesystem, hooks, skills::ExternalSkill,
     },
     inventory::Inventory,
     profile::Profile,
-    provider::spec::{PROVIDERS, ProviderId},
+    provider::{
+        renderer::SkillsDirectory,
+        spec::{PROVIDERS, ProviderId},
+    },
     render::{self, RenderRequest},
     runtime,
     runtime_root::RuntimeRoot,
@@ -171,8 +172,9 @@ struct GenerateSkillsArgs {
     #[arg(long)]
     source: Option<PathBuf>,
 
+    /// The provider whose skills directory to render.
     #[arg(long, value_enum)]
-    provider: Provider,
+    provider: ProviderId,
 
     #[arg(long, value_name = "NAME=PATH")]
     extra_skill: Vec<ExternalSkill>,
@@ -195,12 +197,6 @@ struct InstallArgs {
 
     #[arg(long, value_name = "NAME=PATH")]
     extra_hook: Vec<ExternalHookBundle>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
-enum Provider {
-    Claude,
-    Codex,
 }
 
 #[derive(Debug, clap::Args)]
@@ -342,8 +338,8 @@ fn generate_skills(args: GenerateSkillsArgs, profile: Profile) -> Result<()> {
     render::generate_skills(
         source.as_path(),
         &args.extra_skill,
-        SkillTarget {
-            provider: args.provider.into(),
+        SkillsDirectory {
+            provider: args.provider.spec(),
             path: &args.output,
         },
     )
@@ -407,15 +403,6 @@ fn home_dir() -> Result<PathBuf> {
     std::env::var_os("HOME")
         .map(PathBuf::from)
         .context("HOME is not set")
-}
-
-impl From<Provider> for render::Provider {
-    fn from(provider: Provider) -> Self {
-        match provider {
-            Provider::Claude => Self::Claude,
-            Provider::Codex => Self::Codex,
-        }
-    }
 }
 
 #[cfg(test)]

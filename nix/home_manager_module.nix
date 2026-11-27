@@ -99,6 +99,17 @@ let
     builtins.toJSON antigravitySourceSettings
   );
 
+  # Servers are replaced by name: an option entry replaces the source's entry of that name whole.
+  sourceMcpServersPath = evalProfileSource + "/mcp_servers.json";
+  sourceMcpServers =
+    if builtins.pathExists sourceMcpServersPath then
+      (builtins.fromJSON (builtins.readFile sourceMcpServersPath)).servers or { }
+    else
+      { };
+  mcpServers = pkgs.writeText "agent-harness-mcp-servers.json" (
+    builtins.toJSON { servers = sourceMcpServers // cfg.mcpServers; }
+  );
+
   composedSource = pkgs.runCommand "agent-harness-${cfg.profile}-source" { } ''
     cp -R ${lib.escapeShellArg "${profileSource}/."} "$out"
     chmod -R u+w "$out"
@@ -109,6 +120,7 @@ let
     install -m 0644 ${codexSettings} "$out/codex/config.toml"
     mkdir -p "$out/antigravity"
     install -m 0644 ${antigravitySettings} "$out/antigravity/settings.json"
+    install -m 0644 ${mcpServers} "$out/mcp_servers.json"
   '';
 
   namedSourceArgs =
@@ -191,6 +203,25 @@ in
       type = lib.types.nullOr lib.types.path;
       default = null;
       description = "Optional provider-neutral command permissions JSON source.";
+    };
+
+    mcpServers = lib.mkOption {
+      type = lib.types.attrsOf (lib.types.attrsOf lib.types.anything);
+      default = { };
+      example = lib.literalExpression ''
+        {
+          github = {
+            command = "''${pkgs.github-mcp-server}/bin/github-mcp-server";
+            args = [ "stdio" ];
+          };
+          docs.url = "https://docs.example.com/mcp";
+        }
+      '';
+      description = ''
+        MCP servers keyed by name, each with `command` (and optional `args` and `env`) or `url`.
+        An entry replaces the source `mcp_servers.json` entry of the same name. Values are written
+        to provider configs as they are, so never put a credential here.
+      '';
     };
 
     skills = lib.mkOption {

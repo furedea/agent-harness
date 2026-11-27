@@ -22,6 +22,7 @@ use crate::{
     generation::{
         command_permissions::{CommandPermissions, RegexPolicy},
         hooks::HookConfig,
+        mcp_servers::McpServers,
         secret_path_policy::SecretPathPolicy,
         skills::{ExternalSkill, SourceSkills},
     },
@@ -40,6 +41,8 @@ pub(crate) struct Source {
     pub(crate) skills: SourceSkills,
     pub(crate) claude_settings: Value,
     pub(crate) codex_config: DocumentMut,
+    /// The MCP servers to render; none when the source has no `mcp_servers.json`.
+    pub(crate) mcp_servers: McpServers,
     /// The source file of each provider config that is applied to the installed one, by the path
     /// the registry names it with; blank when the source has none.
     pub(crate) provider_configs: BTreeMap<String, ConfigDocument>,
