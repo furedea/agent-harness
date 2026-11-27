@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.10.0](https://github.com/furedea/agent-harness/compare/agent-harness-v0.9.16...agent-harness-v0.10.0) (2026-11-27)
+
+
+### ⚠ BREAKING CHANGES
+
+* remove the generated protection of installed files ([#265](https://github.com/furedea/agent-harness/issues/265))
+* remove the agent GitHub token ([#264](https://github.com/furedea/agent-harness/issues/264))
+* **pi:** remove the srt sandbox extension ([#263](https://github.com/furedea/agent-harness/issues/263))
+
+### Code Refactoring
+
+* **pi:** remove the srt sandbox extension ([#263](https://github.com/furedea/agent-harness/issues/263)) ([d1f8a11](https://github.com/furedea/agent-harness/commit/d1f8a1162b7edccd43f53516ed5374474c45d82d))
+* remove the agent GitHub token ([#264](https://github.com/furedea/agent-harness/issues/264)) ([ea5741d](https://github.com/furedea/agent-harness/commit/ea5741d3cc7a932df9b719cc3b9bf557feafb89f))
+* remove the generated protection of installed files ([#265](https://github.com/furedea/agent-harness/issues/265)) ([2008c43](https://github.com/furedea/agent-harness/commit/2008c43b46047b8b8b3a37de4a7df1626cd1d9ce))
+
 ## [0.9.16](https://github.com/furedea/agent-harness/compare/agent-harness-v0.9.15...agent-harness-v0.9.16) (2026-11-25)
 
 
