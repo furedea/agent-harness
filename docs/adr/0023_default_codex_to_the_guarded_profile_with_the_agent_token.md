@@ -1,6 +1,7 @@
 ---
-status: accepted
+status: superseded
 date: 2026-10-19
+superseded-by: [ADR-0032]
 ---
 
 # ADR-0023: Default Codex to the guarded profile with the agent token

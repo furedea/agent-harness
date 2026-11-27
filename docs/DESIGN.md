@@ -71,11 +71,10 @@ agent breaks in predictable ways:
     match a prefix, a list to union, a mapping's entries, or keys tracked by a sidecar), and one
     engine applies any declaration to JSON, TOML, or YAML. Source
     permission rules are kept, deduplicated, and a rule in several lists stays only in the most
-    restrictive one. The opt-in agent GitHub token is the one composition that overrides the source
-    sandbox exclusions.
+    restrictive one. Nothing overrides the source settings.
 - Reason: agents keep writing their own state, but a settings overlay must never weaken or remove
     generated enforcement.
-- ADRs: [0016], [0018], [0020], [0024], [0029].
+- ADRs: [0016], [0018], [0024], [0029], [0032].
 
 **6. Separate provider declarations, functions, and I/O capabilities.**
 
@@ -155,11 +154,11 @@ flowchart LR
     directory that is only copied as a location and a file list), and computation reads only that.
     It bans `std::fs` reads, the `Path` probes (`exists`, `is_dir`, `read_dir`, `metadata`),
     `std::env`, and `std::process::Command`. The modules that are the program's imperative edge (`cli`,
-    `source`, `runtime`, `github_app`, `shell::load`, and `shell::hook_bundle`) lift the ban for
+    `source`, `runtime`, `shell::load`, and `shell::hook_bundle`) lift the ban for
     themselves with `#![expect(...)]` and a reason, which fails to compile once it stops being needed
     ([0028]). The build script runs before the crate exists and uses `#![allow(...)]` instead.
-- Only secret files (GitHub App tokens) are written `0600`; other files use the process's default
-    mode, copies keep their source's permission bits, and replacing an existing file keeps its bits.
+- Files use the process's default mode, copies keep their source's permission bits, and replacing
+    an existing file keeps its bits.
 - Claude and Codex are declared in the registry like the other four providers; the registry declares
     what each owns, and provider functions render the content ([0027]).
 
@@ -208,7 +207,7 @@ sequenceDiagram
 
 | Module                                                            | Responsibility                                                                                                 |
 | ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `cli`                                                             | Parses subcommands and dispatches to install, `generate-*`, sync, list, verify, and `github-app-token`.        |
+| `cli`                                                             | Parses subcommands and dispatches to install, `generate-*`, sync, list, and verify.                            |
 | `source`, `layout`, `manifest`                                    | Resolve the source tree and validate its layout and required runtime commands.                                 |
 | `profile`                                                         | Names the packaged built-in source (`minimal`).                                                                |
 | `render`                                                          | Generates the staging tree and passes its publication plan to the executor.                                    |
@@ -220,7 +219,6 @@ sequenceDiagram
 | `shell` (`io`, `load`, `executor`, `sync`, `hook_bundle`)         | Capabilities: the filesystem port, the `Source` loader, the `FileOp` executor, config sync, and hook bundles.  |
 | `source_model`                                                    | Functions: the typed `Source` (hook config, permissions, skills, settings, bundles) computation reads.         |
 | `nix/providers.json`, `nix/home_manager_module.nix`               | Nix provider list generated from the registry, and the Home Manager options, links, and sync built from it.    |
-| `nix/agent_github_token.nix`, `agent_github_app_token_module.nix` | The opt-in agent GitHub token composition and its GitHub App refresh job ([0019]–[0023]).                      |
 | `nix/lib.nix`                                                     | `buildSkillFromCommand` and `buildHookBundleFromCommands`.                                                     |
 | `generation/hooks`                                                | Render hook wiring.                                                                                            |
 | `generation/bridges`, `provider/spec`, `install_plan`             | Verify bridge asset contracts; declare embedded bridge assets and destinations in specs and plan their writes. |
@@ -231,7 +229,6 @@ sequenceDiagram
 | `generation/skills`, `external_hooks`, `hook_bundle`              | Render skills and compose external bundles.                                                                    |
 | `inventory`                                                       | Lists the skills and hooks a source provides.                                                                  |
 | `runtime_root`                                                    | Relocates hook commands for project-local installs.                                                            |
-| `github_app`                                                      | Mints GitHub App installation tokens for the agent token option ([0021]).                                      |
 | `runtime`                                                         | Checks that the manifest's runtime commands are on `PATH`.                                                     |
 
 ### Secret path patterns
@@ -281,10 +278,10 @@ Figures below were counted after v0.9.13.
 | Unit tests          | `#[test]` in `src/`                                                                                                                         | 303      |
 | Integration tests   | `#[test]` in `tests/`, running the built binary                                                                                             | 68       |
 | Codex conformance   | `tests/codex/execpolicy.bats`                                                                                                               | 3 cases  |
-| Home Manager module | `tests/home_manager_module.nix`, `home_manager_pure_eval.nix`, `agent_github_token.nix`, `agent_github_app_token.nix` via `nix flake check` | 4 checks |
+| Home Manager module | `tests/home_manager_module.nix`, `home_manager_pure_eval.nix`, `removed_github_options.nix` via `nix flake check`                          | 3 checks |
 
 The flake also builds the skill and hook-bundle builders as checks. The module reads every
-evaluation-time file (`settings.json`, `config.toml`, `secret_path_policy.json`, `profiles/`) from
+evaluation-time file (`settings.json`, `config.toml`, `profiles/`) from
 `source.tree`, falling back to `source` when it has no `tree`. The built `source` only supplies files
 copied at build time, so evaluation never builds it: no import-from-derivation
 ([furedea/agent-harness#196](https://github.com/furedea/agent-harness/issues/196)). The shared
@@ -313,7 +310,6 @@ CodeQL analysis is not a workflow file: it runs through GitHub's CodeQL default 
 - Approvals that Claude Code or Devin save interactively are replaced on the next sync. Persistent
     rules belong in the source.
 - Skills are rendered but not protected.
-- The GitHub App token source talks only to github.com, not GitHub Enterprise Server ([0021]).
 
 ## Changelog highlights
 
@@ -329,7 +325,8 @@ CodeQL analysis is not a workflow file: it runs through GitHub's CodeQL default 
 - **v0.9.13**: ran Pi's shell and file tools inside srt and applied the secret path policy to the
     Codex guarded filesystem and the Pi srt policy ([0030]).
 - **Unreleased**: added the Antigravity provider with sandbox and path-permission guards ([0031]),
-    and limited the harness to rendering and installing, removing the Pi srt extension ([0032]).
+    and limited the harness to rendering and installing, removing the Pi srt extension and the agent
+    GitHub token ([0032]).
 
 [#140]: https://github.com/furedea/agent-harness/pull/140
 [0001]: adr/0001_separate_codex_conformance_from_required_ci.md
@@ -343,8 +340,6 @@ CodeQL analysis is not a workflow file: it runs through GitHub's CodeQL default 
 [0017]: adr/0017_separate_output_and_runtime_roots.md
 [0018]: adr/0018_preserve_source_claude_permission_rules.md
 [0019]: adr/0019_opt_in_agent_github_token_in_claude_sandbox.md
-[0020]: adr/0020_keep_git_push_outside_the_claude_sandbox.md
-[0021]: adr/0021_refresh_the_agent_token_from_a_github_app.md
 [0023]: adr/0023_default_codex_to_the_guarded_profile_with_the_agent_token.md
 [0024]: adr/0024_track_managed_codex_env_keys_in_a_sidecar.md
 [0025]: adr/0025_embed_the_dsh_hook_bridge.md

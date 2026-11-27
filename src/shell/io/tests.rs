@@ -64,18 +64,17 @@ fn a_write_replaces_a_symlink_with_a_regular_file_and_leaves_its_target() -> Res
 }
 
 #[test]
-fn only_private_files_are_owner_only() -> Result<()> {
+fn a_new_file_gets_the_default_mode() -> Result<()> {
     let root = root("io-modes")?;
     let default = default_file_mode(&root)?;
 
-    execute(&[
-        write_op(root.join("config.json"), "{}\n", FileMode::Standard),
-        write_op(root.join("secret/token"), "token\n", FileMode::Private),
-    ])?;
+    execute(&[write_op(
+        root.join("config.json"),
+        "{}\n",
+        FileMode::Standard,
+    )])?;
 
     assert_eq!(mode_of(&root.join("config.json"))?, default);
-    assert_eq!(mode_of(&root.join("secret/token"))?, 0o600);
-    assert_eq!(mode_of(&root.join("secret"))?, 0o700);
     std::fs::remove_dir_all(root)?;
     Ok(())
 }
@@ -100,20 +99,6 @@ fn replacing_a_restricted_file_never_widens_it() -> Result<()> {
 
     assert_eq!(mode_of(&root.join("config"))?, 0o600);
     assert_eq!(std::fs::read_to_string(root.join("config"))?, "generated\n");
-    std::fs::remove_dir_all(root)?;
-    Ok(())
-}
-
-#[test]
-fn a_replaced_private_file_stays_private() -> Result<()> {
-    let root = root("io-private-replace")?;
-    std::fs::write(root.join("token"), "old\n")?;
-    std::fs::set_permissions(root.join("token"), std::fs::Permissions::from_mode(0o644))?;
-
-    execute(&[write_op(root.join("token"), "new\n", FileMode::Private)])?;
-
-    assert_eq!(mode_of(&root.join("token"))?, 0o600);
-    assert_eq!(std::fs::read_to_string(root.join("token"))?, "new\n");
     std::fs::remove_dir_all(root)?;
     Ok(())
 }

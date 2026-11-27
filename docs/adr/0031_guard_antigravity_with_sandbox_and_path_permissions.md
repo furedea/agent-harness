@@ -1,6 +1,8 @@
 ---
 status: accepted
 date: 2026-11-20
+amended:
+  - "2026-11-26: the agent GitHub token denials are removed (ADR-0032)"
 ---
 
 # Guard Antigravity with the sandbox and path permissions

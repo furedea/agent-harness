@@ -1,6 +1,7 @@
 ---
-status: accepted
+status: superseded
 date: 2026-10-17
+superseded-by: [ADR-0032]
 ---
 
 # ADR-0022: Leave agent commits unsigned inside the Claude sandbox

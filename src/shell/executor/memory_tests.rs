@@ -86,7 +86,7 @@ impl MemoryFileSystem {
 }
 
 impl FileSystem for MemoryFileSystem {
-    fn create_parents(&self, target: &Path, _mode: FileMode) -> Result<Vec<PathBuf>> {
+    fn create_parents(&self, target: &Path) -> Result<Vec<PathBuf>> {
         let mut directories = self.directories.borrow_mut();
         let mut missing: Vec<PathBuf> = target
             .ancestors()

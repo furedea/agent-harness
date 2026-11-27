@@ -153,164 +153,16 @@ moshiHooks = agent-harness.lib.${pkgs.system}.buildHookBundleFromCommands {
 };
 ```
 
-### Agent GitHub token in the Claude sandbox
+### GitHub credentials
 
-By default the user's GitHub token is readable only outside the sandbox, so the Claude source
-settings list `gh *` in `sandbox.excludedCommands`. A call that chains gh with other commands then
-runs sandboxed, fails authentication, and ends in an approval prompt. The opt-in `github.agentToken`
-option gives Claude Code its own token that is readable inside the sandbox:
-
-1. Create a [fine-grained personal access token](https://github.com/settings/personal-access-tokens/new)
-    limited to the repositories agents may change, with Contents, Pull requests, and Issues set to
-    read and write, Actions and Metadata set to read, and an expiry such as 90 days.
-2. Store it in the agent config directory. `--insecure-storage` writes the token to `hosts.yml` in
-    that directory instead of the system keyring, which the sandbox cannot reach and which already
-    holds the user's own token:
-
-    ```bash
-    GH_CONFIG_DIR="$HOME/.config/agent-harness/gh" gh auth login --with-token --insecure-storage < token.txt
-    ```
-
-3. Enable the option and switch the Home Manager configuration:
-
-    ```nix
-    programs.agent-harness.github.agentToken.enable = true;
-    # configDir defaults to "${config.home.homeDirectory}/.config/agent-harness/gh".
-    ```
-
-The rendered Claude settings then set `env.GH_CONFIG_DIR` to the absolute `configDir`, add
-`github.com` and `api.github.com` to `sandbox.network.allowedDomains`, set
-`sandbox.enableWeakerNetworkIsolation` so gh can verify TLS, and remove `gh *` from
-`sandbox.excludedCommands` even when the source settings list it. That removal is the one exception
-to the source settings being authoritative ([ADR-0020](docs/adr/0020_keep_git_push_outside_the_claude_sandbox.md)).
-`git push *` and every other exclusion stay as the source lists them, so the source settings choose
-where git runs (see [Agent commits](#agent-commits)).
-Evaluation fails when `configDir` is relative or when a `Read(...)` denial, `sandbox.filesystem.denyRead`
-entry, or secret path policy rule hides it. Denials of the user's own `~/.config/gh/hosts.yml` stay
-in place. With the option disabled, the rendered output is unchanged.
-
-The rendered Codex config sets `shell_environment_policy.set.GH_CONFIG_DIR` to the same `configDir`
-and makes the `guarded` permissions profile the default (`default_permissions = "guarded"`, which
-takes precedence over `sandbox_mode`). The profile reads everything (`":root" = "read"`) except
-`~/.config/gh/hosts.yml`, writes the workspace (`:workspace_roots`), `:tmpdir`, `:slash_tmp`, and
-the absolute and `~/` paths in Claude's `sandbox.filesystem.allowWrite`, and enables network. Codex
-config synchronization writes every generated `shell_environment_policy.set` key and removes only
-keys it wrote earlier (tracked in `.agent-harness-managed.json` next to `config.toml`,
-[ADR-0024](docs/adr/0024_track_managed_codex_env_keys_in_a_sidecar.md)), so other entries Codex or
-the user keep there survive.
-
-Codex keeps the git directory of a linked worktree (`<repo>/.git/worktrees/<name>`) read-only unless
-the profile names that exact path, so commits from a worktree still need approval in Codex; commits
-in a main checkout run inside the sandbox
-([ADR-0023](docs/adr/0023_default_codex_to_the_guarded_profile_with_the_agent_token.md)).
-
-#### Agent commits
-
-Commit signing works only outside the sandbox, so the source settings pick one of two setups for
-agent git:
-
-- **(a) Sign agent commits.** List `git add *`, `git status *`, `git commit *`, and `git push *` in
-    `sandbox.excludedCommands` so a chained `git add x && git commit -m y && git push` runs outside
-    the sandbox, where signing works. An excluded `git push` still inherits `GH_CONFIG_DIR` and
-    authenticates with the agent token. Repository git hooks then also run outside the sandbox, so an
-    agent can run unsandboxed code by editing a hook configuration such as `lefthook.yml`, a script a
-    hook calls, or build settings that a hook's tool reads.
-- **(b) Leave agent commits unsigned (recommended when hooks or the tools they run read repository
-    files).** Disable signing for Claude Code only and exclude no git commands, so git, its hooks, and
-    push all run inside the sandbox and push authenticates with the agent token, from either source.
-    Commits that reach the default branch through squash merges are still signed, by GitHub
-    ([ADR-0022](docs/adr/0022_leave_agent_commits_unsigned_inside_the_claude_sandbox.md)).
-
-For (b), set `GIT_CONFIG_*` in the Claude source settings' `env`. It overrides git's config files
-for Claude Code processes only, while the user's own commits stay signed (git 2.31 or later):
-
-```json
-{
-  "env": {
-    "GIT_CONFIG_COUNT": "2",
-    "GIT_CONFIG_KEY_0": "commit.gpgsign",
-    "GIT_CONFIG_VALUE_0": "false",
-    "GIT_CONFIG_KEY_1": "tag.gpgsign",
-    "GIT_CONFIG_VALUE_1": "false"
-  }
-}
-```
-
-Threat model:
-
-- Anything running inside the sandbox can use the token within its permissions, including direct
-    API calls; the token's fine-grained scope, not the command rules, is the safety boundary.
-- gh runs inside the sandbox on purpose: outside it, gh could upload any readable local file, for
-    example with `gh gist create`, `gh release upload`, or `gh api --input`. git push outside the
-    sandbox in setup (a) can only send repository commits.
-- git authenticates through `gh auth git-credential` (set up with `gh auth setup-git`), so remotes
-    must use HTTPS. SSH remotes keep using the user's SSH keys outside this mechanism.
-- Claude Code and Codex shell commands receive the token. Devin, Hermes, and pi still use the
-    default behavior.
-
-#### GitHub App token source
-
-A personal access token has to be recreated when it expires. With `source = "app"`, a GitHub App
-supplies the agent token instead: a per-user scheduled job checks the token at login and every 5
-minutes, mints a one-hour installation access token when the current one has less than 20 minutes
-left, and writes it to `hosts.yml` in `configDir` atomically with mode 0600. The job is a launchd agent on macOS, which also runs a missed interval after wake, and a
-systemd user service with a persistent timer on Linux. Everything the option does to the Claude and
-Codex settings is the same for both sources.
-
-1. [Register a GitHub App](https://github.com/settings/apps/new) with webhooks disabled and these
-    repository permissions: Contents, Pull requests, and Issues set to read and write; Actions and
-    Metadata set to read. Do not grant Workflows: it would let sandboxed code rewrite workflows that
-    run with repository secrets.
-2. Install the App on the repositories agents may change.
-3. Generate a private key and store it with mode 0600 outside `configDir`:
-
-    ```bash
-    install -m 0600 ~/Downloads/my-agent-app.*.private-key.pem ~/.config/agent-harness/github_app.pem
-    ```
-
-4. Configure the source and switch:
-
-    ```nix
-    programs.agent-harness.github.agentToken = {
-      enable = true;
-      source = "app";
-      app = {
-        id = 123456;
-        privateKeyPath = "${config.home.homeDirectory}/.config/agent-harness/github_app.pem";
-        # installationId = 7890123;  # Required only when the App has several installations.
-      };
-    };
-    ```
-
-The private key path must be absolute. The rendered Claude settings add `Read(//<path>)` to
-`permissions.deny` and the path to `sandbox.filesystem.denyRead`, so neither Claude Code tools nor
-sandboxed commands can read the key. The rendered Codex config denies the key in
-`[permissions.guarded.filesystem]` as well. With `installationId` unset, the job uses the App's only
-installation and fails when it has several.
-
-The job records each refresh in `agent_harness_token.json` beside the token. If it stops, pushes
-start failing within the hour, so check it with:
-
-```bash
-agent-harness github-app-token status --config-dir ~/.config/agent-harness/gh
-```
-
-The command prints the expiry and exits with status 1 when no token exists, the token was recorded
-by an older release, the last refresh failed, `hosts.yml` is missing or holds a different token than the last refresh recorded, or the
-token has five minutes or less left. Job output goes to
-`~/Library/Logs/agent-harness-github-app-token.log` on macOS and to the user journal on Linux.
-`agent-harness github-app-token refresh --force` mints a token on demand with the same arguments as
-the job; without `--force` it keeps a token that has 20 minutes or more left, is still in
-`hosts.yml`, and was issued for the configured App and installation, unless the last refresh failed.
-
-Additional threat model for the App source:
-
-- The private key is a long-lived secret equivalent to an SSH key: anyone holding it can mint tokens
-    for every installation. Keep it at mode 0600 and out of backups that others can read.
-- Installation tokens expire within an hour, so a leaked token is short-lived.
-- Pushes, pull requests, and comments appear as the App's bot account.
-- A token with Pull requests write can approve pull requests. If branch protection ever requires
-    approvals, do not let the bot count as an approver.
+agent-harness does not supply or refresh a GitHub token
+([ADR-0032](docs/adr/0032_limit_the_harness_to_rendering_and_installing.md)). To let agents run
+`gh` and `git push` with their own token inside the sandbox, write the wiring in the source
+settings, which the harness renders as they are: for Claude, `env.GH_CONFIG_DIR`, the GitHub hosts
+in `sandbox.network.allowedDomains`, `sandbox.enableWeakerNetworkIsolation`, no `gh *` in
+`sandbox.excludedCommands`, and `Read(...)` and `sandbox.filesystem.denyRead` denials of any key
+that must stay unreadable; for Codex, `shell_environment_policy.set.GH_CONFIG_DIR` and a permissions
+profile that can read that directory. Mint and refresh the token with a tool outside the harness.
 
 ## Quick Install
 
@@ -467,7 +319,6 @@ The module interface is:
 | `dsh.enable`         | `true`        | Install DeepSeek Harness files.                                             |
 | `antigravity.enable` | `true`        | Install Antigravity files (`~/.gemini/config`, `agy` settings permissions). |
 | `dsh.profile`        | `"web"`       | User-owned dsh profile that registers the hook bundle.                      |
-| `github.agentToken`  | disabled      | Agent GitHub token; see [below](#agent-github-token-in-the-claude-sandbox). |
 
 Generated hook wiring, Bash command permissions, and protected paths remain harness-managed after
 the provider settings merge. This prevents a settings overlay from silently removing enforcement.

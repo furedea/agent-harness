@@ -7,9 +7,8 @@
 //! - Atomicity: `stage_*` build a replacement in a hidden sibling of the target and never touch
 //!   the target. `swap` then renames the replacement over it, which is atomic for one path, and
 //!   keeps a backup so `restore` can undo it. Nothing here writes a target in place.
-//! - File mode: `FileMode::Private` files are `0600` and the directories made for them `0700`.
-//!   A new file or directory otherwise gets the process's default mode, and a copy keeps the
-//!   permission bits of its source. A regular file that already exists keeps its own bits when it
+//! - File mode: a new file or directory gets the process's default mode unless the operation
+//!   asks for exact bits, and a copy keeps the permission bits of its source. A regular file that already exists keeps its own bits when it
 //!   is replaced, so rewriting a config the user restricted never widens it.
 #![expect(
     clippy::disallowed_methods,
@@ -20,7 +19,7 @@
 use std::fs::{File, OpenOptions};
 use std::io::Write;
 #[cfg(unix)]
-use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
+use std::os::unix::fs::DirBuilderExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -39,7 +38,7 @@ pub(in crate::shell) struct NewFile<'a> {
 
 pub(in crate::shell) trait FileSystem {
     /// Creates the missing parent directories of `target` and returns them, outermost first.
-    fn create_parents(&self, target: &Path, mode: FileMode) -> Result<Vec<PathBuf>>;
+    fn create_parents(&self, target: &Path) -> Result<Vec<PathBuf>>;
     /// Removes directories made by `create_parents`, innermost first, if they are still empty.
     fn remove_created(&self, directories: &[PathBuf]);
     /// Prepares a file replacement next to `target` without touching it.
@@ -62,8 +61,8 @@ pub(in crate::shell) trait FileSystem {
 pub(in crate::shell) struct RealFileSystem;
 
 impl FileSystem for RealFileSystem {
-    fn create_parents(&self, target: &Path, mode: FileMode) -> Result<Vec<PathBuf>> {
-        create_missing_parents(target, mode)
+    fn create_parents(&self, target: &Path) -> Result<Vec<PathBuf>> {
+        create_missing_parents(target)
     }
 
     fn remove_created(&self, directories: &[PathBuf]) {
@@ -71,7 +70,7 @@ impl FileSystem for RealFileSystem {
     }
 
     fn stage_file(&self, target: &Path, file: &NewFile<'_>) -> Result<PathBuf> {
-        let (path, handle) = create_temporary_file(target, file.mode)?;
+        let (path, handle) = create_temporary_file(target)?;
         let written = fill(handle, file)
             .and_then(|()| keep_existing_mode(&path, target, file.mode))
             .with_context(|| format!("failed to write temporary file for {}", target.display()));
@@ -193,7 +192,7 @@ fn build_entry(operation: &FileOp, target: &Path) -> Result<()> {
         // A tree built from nothing holds no file to remove.
         return Ok(());
     }
-    create_parent(target, FileMode::Standard)?;
+    create_parent(target)?;
     match operation {
         FileOp::WriteFile { content, mode, .. } => write_new_file(
             target,
@@ -221,7 +220,7 @@ fn build_entry(operation: &FileOp, target: &Path) -> Result<()> {
 
 /// Writes a file inside a directory that is still being staged, so it is never in use.
 fn write_new_file(target: &Path, file: &NewFile<'_>) -> Result<()> {
-    let handle = open_file(target, file.mode, false)
+    let handle = open_file(target, false)
         .with_context(|| format!("failed to create {}", target.display()))?;
     fill(handle, file).with_context(|| format!("failed to write {}", target.display()))
 }
@@ -264,7 +263,7 @@ fn apply_exact_mode(handle: &File, mode: FileMode) -> std::io::Result<()> {
 
     match mode {
         FileMode::Bits(bits) => handle.set_permissions(std::fs::Permissions::from_mode(bits)),
-        FileMode::Standard | FileMode::Private => Ok(()),
+        FileMode::Standard => Ok(()),
     }
 }
 
@@ -285,7 +284,7 @@ fn copy_tree(source: &Path, staged: &Path) -> Result<()> {
             .strip_prefix(source)
             .with_context(|| format!("failed to strip prefix {}", source.display()))?;
         let target = staged.join(relative);
-        create_parent(&target, FileMode::Standard)?;
+        create_parent(&target)?;
         copy_file(&file, &target)?;
     }
     Ok(())
@@ -337,7 +336,7 @@ fn back_up(target: &Path) -> Result<Option<PathBuf>> {
 }
 
 /// Creates the missing parent directories of `target` and returns them, outermost first.
-fn create_missing_parents(target: &Path, mode: FileMode) -> Result<Vec<PathBuf>> {
+fn create_missing_parents(target: &Path) -> Result<Vec<PathBuf>> {
     let Some(parent) = target.parent() else {
         return Ok(Vec::new());
     };
@@ -347,7 +346,7 @@ fn create_missing_parents(target: &Path, mode: FileMode) -> Result<Vec<PathBuf>>
         .map(Path::to_path_buf)
         .collect();
     missing.reverse();
-    if let Err(error) = create_parent(target, mode) {
+    if let Err(error) = create_parent(target) {
         remove_created_parents(&missing);
         return Err(error);
     }
@@ -361,25 +360,14 @@ fn remove_created_parents(created: &[PathBuf]) {
     }
 }
 
-fn create_parent(target: &Path, mode: FileMode) -> Result<()> {
+fn create_parent(target: &Path) -> Result<()> {
     let Some(parent) = target.parent() else {
         return Ok(());
     };
-    directory_builder(mode)
+    std::fs::DirBuilder::new()
+        .recursive(true)
         .create(parent)
         .with_context(|| format!("failed to create directory {}", parent.display()))
-}
-
-fn directory_builder(mode: FileMode) -> std::fs::DirBuilder {
-    let mut builder = std::fs::DirBuilder::new();
-    builder.recursive(true);
-    #[cfg(unix)]
-    if mode == FileMode::Private {
-        builder.mode(0o700);
-    }
-    #[cfg(not(unix))]
-    let _ = mode;
-    builder
 }
 
 /// Renames an existing `target` to a sibling backup, or returns `None` when nothing exists.
@@ -434,7 +422,7 @@ fn sibling_path(target: &Path, label: &str) -> Result<PathBuf> {
         .context("no free sibling path")
 }
 
-fn create_temporary_file(target: &Path, mode: FileMode) -> Result<(PathBuf, File)> {
+fn create_temporary_file(target: &Path) -> Result<(PathBuf, File)> {
     static NEXT_ID: AtomicU64 = AtomicU64::new(0);
     let name = target.file_name().context("output path must name a file")?;
     let failure = format!("failed to create temporary file for {}", target.display());
@@ -443,7 +431,7 @@ fn create_temporary_file(target: &Path, mode: FileMode) -> Result<(PathBuf, File
         let mut temporary_name = name.to_os_string();
         temporary_name.push(format!(".{}.{id}.tmp", std::process::id()));
         let path = target.with_file_name(temporary_name);
-        match open_file(&path, mode, true) {
+        match open_file(&path, true) {
             Ok(file) => return Ok((path, file)),
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => (),
             Err(error) => return Err(error).context(failure),
@@ -452,7 +440,7 @@ fn create_temporary_file(target: &Path, mode: FileMode) -> Result<(PathBuf, File
 }
 
 /// With `must_be_new` the open fails rather than reuse a file, which keeps temporary names safe.
-fn open_file(path: &Path, mode: FileMode, must_be_new: bool) -> std::io::Result<File> {
+fn open_file(path: &Path, must_be_new: bool) -> std::io::Result<File> {
     let mut options = OpenOptions::new();
     options.write(true);
     if must_be_new {
@@ -460,12 +448,6 @@ fn open_file(path: &Path, mode: FileMode, must_be_new: bool) -> std::io::Result<
     } else {
         options.create(true).truncate(true);
     }
-    #[cfg(unix)]
-    if mode == FileMode::Private {
-        options.mode(0o600);
-    }
-    #[cfg(not(unix))]
-    let _ = mode;
     options.open(path)
 }
 

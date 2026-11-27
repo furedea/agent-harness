@@ -40,9 +40,7 @@
             src = ./.;
 
             cargoLock.lockFile = ./Cargo.lock;
-            # Tests generate throwaway RSA keys with the openssl CLI instead of committing key material.
             nativeCheckInputs = [
-              pkgs.openssl
               pkgs.nodejs_22
               pkgs.python3
               pkgs.git
@@ -86,20 +84,9 @@
             tree = completeSource;
           };
 
-          agent-github-token = import ./tests/agent_github_token.nix {
+          removed-github-options = import ./tests/removed_github_options.nix {
             agentHarnessModule = self.homeManagerModules.default;
             inherit home-manager pkgs;
-            source = completeSource;
-          };
-
-          agent-github-app-token = import ./tests/agent_github_app_token.nix {
-            agentHarnessModule = self.homeManagerModules.default;
-            inherit home-manager;
-            # The test compares the launchd and systemd renderings, so it needs both hosts.
-            pkgs = pkgsFor.aarch64-darwin;
-            linuxPkgs = pkgsFor.x86_64-linux;
-            # The check itself is a derivation of the system being checked.
-            checkPkgs = pkgs;
             source = completeSource;
           };
 
@@ -173,7 +160,6 @@
               ls-lint
               nixfmt
               nodejs_22
-              openssl
               rustc
               rustfmt
               statix

@@ -4,7 +4,6 @@
 )]
 
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
@@ -17,7 +16,6 @@ use crate::{
         hooks, protection,
         skills::{ExternalSkill, SkillTarget},
     },
-    github_app::{self, GitHubRestApi, RefreshRequest},
     inventory::Inventory,
     profile::Profile,
     provider::spec::{PROVIDERS, ProviderId},
@@ -80,9 +78,6 @@ enum Command {
     GenerateHookBundle(GenerateHookBundleArgs),
     /// Render provider-specific skill directories.
     GenerateSkills(GenerateSkillsArgs),
-    /// Mint or inspect the GitHub App token used as the agent GitHub token.
-    #[command(subcommand)]
-    GithubAppToken(GithubAppTokenCommand),
     /// Install all managed files under a target prefix.
     Install(InstallArgs),
     /// Inspect the Agent Harness inventory.
@@ -107,40 +102,6 @@ enum Command {
     SyncDshConfig(SyncConfigArgs),
     /// Verify managed files and source-declared runtime commands.
     Verify(VerifyArgs),
-}
-
-#[derive(Debug, Subcommand)]
-enum GithubAppTokenCommand {
-    /// Mint an installation access token into a gh config directory when the current one expires soon.
-    Refresh(GithubAppTokenRefreshArgs),
-    /// Report the token expiry, failing when the token is stale or the last refresh failed.
-    Status(GithubAppTokenStatusArgs),
-}
-
-#[derive(Debug, clap::Args)]
-struct GithubAppTokenRefreshArgs {
-    #[arg(long)]
-    app_id: u64,
-
-    /// Defaults to the App's only installation.
-    #[arg(long)]
-    installation_id: Option<u64>,
-
-    #[arg(long, value_name = "PATH")]
-    private_key: PathBuf,
-
-    #[arg(long, value_name = "PATH")]
-    config_dir: PathBuf,
-
-    /// Mint even when the current token has at least 20 minutes left.
-    #[arg(long)]
-    force: bool,
-}
-
-#[derive(Debug, clap::Args)]
-struct GithubAppTokenStatusArgs {
-    #[arg(long, value_name = "PATH")]
-    config_dir: PathBuf,
 }
 
 #[derive(Debug, clap::Args)]
@@ -290,7 +251,6 @@ pub fn run() -> Result<()> {
         Command::GenerateForbiddenCommands(args) => write_forbidden_commands(args, profile),
         Command::GenerateHookBundle(args) => hook_bundle::generate(&args.spec, &args.output),
         Command::GenerateSkills(args) => generate_skills(args, profile),
-        Command::GithubAppToken(command) => github_app_token(command),
         Command::Install(args) => install(args, profile),
         Command::List(args) => list(args, profile),
         Command::SyncCodexConfig(args) => sync_config(ProviderId::Codex, &args),
@@ -408,28 +368,6 @@ fn install(args: InstallArgs, profile: Profile) -> Result<()> {
         home: home.as_deref(),
     };
     render::install(&request, &prefix)
-}
-
-fn github_app_token(command: GithubAppTokenCommand) -> Result<()> {
-    let now_unix = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .context("system clock is before the Unix epoch")?
-        .as_secs();
-    match command {
-        GithubAppTokenCommand::Refresh(args) => {
-            let request = RefreshRequest {
-                app_id: args.app_id,
-                installation_id: args.installation_id,
-                private_key: args.private_key,
-                config_dir: args.config_dir,
-                force: args.force,
-            };
-            github_app::refresh(&request, &GitHubRestApi::new(), now_unix)
-        }
-        GithubAppTokenCommand::Status(args) => {
-            write_stdout(&github_app::status(&args.config_dir, now_unix)?)
-        }
-    }
 }
 
 fn list(args: ListArgs, profile: Profile) -> Result<()> {
