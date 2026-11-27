@@ -66,7 +66,7 @@ impl McpServers {
             .map(|(name, server)| server_named(name, server))
             .collect::<Result<_>>()
             .map(Self)
-            .with_context(|| format!("invalid MCP servers {}", path.display()))
+            .with_context(|| format!("failed to parse MCP servers {}", path.display()))
     }
 
     pub(crate) fn is_empty(&self) -> bool {
@@ -135,9 +135,11 @@ fn string_table(entries: &BTreeMap<String, String>) -> Table {
 fn server_named(name: String, raw: RawServer) -> Result<(String, McpServer)> {
     ensure!(
         is_server_name(&name),
-        "MCP server name {name:?} may contain only ASCII letters, digits, hyphens, and underscores"
+        "failed to parse MCP server {name:?}: a name may contain only ASCII letters, digits, \
+         hyphens, and underscores"
     );
-    let server = server_from(raw).with_context(|| format!("MCP server {name:?}"))?;
+    let server =
+        server_from(raw).with_context(|| format!("failed to parse MCP server {name:?}"))?;
     Ok((name, server))
 }
 
@@ -157,16 +159,19 @@ fn server_from(raw: RawServer) -> Result<McpServer> {
             env: raw.env.unwrap_or_default(),
         })),
         (None, Some(url)) => url_server(url, raw.args.is_none() && raw.env.is_none()),
-        (Some(_), Some(_)) => bail!("set command or url, not both"),
-        (None, None) => bail!("set command or url"),
+        (Some(_), Some(_)) => bail!("failed to read the server: set command or url, not both"),
+        (None, None) => bail!("failed to read the server: set command or url"),
     }
 }
 
 fn url_server(url: String, without_command_fields: bool) -> Result<McpServer> {
-    ensure!(without_command_fields, "a url server takes no args or env");
+    ensure!(
+        without_command_fields,
+        "failed to read the url server: it takes no args or env"
+    );
     ensure!(
         url.starts_with("https://") || url.starts_with("http://"),
-        "url {url:?} must start with https:// or http://"
+        "failed to read the url server: {url:?} must start with https:// or http://"
     );
     Ok(McpServer::Url(url))
 }

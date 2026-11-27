@@ -9,7 +9,7 @@ use crate::shell::fixtures::load_source;
 fn an_mcp_mapping_in_a_config_is_tracked_so_servers_the_user_added_stay() {
     let mappings = PROVIDERS.iter().filter_map(|spec| match spec.mcp {
         Some(McpSpec::ConfigMapping { path }) => Some((spec, path)),
-        _ => None,
+        Some(McpSpec::SkillsDirectoryPlugin { .. }) | None => None,
     });
     for (spec, path) in mappings {
         let tracked: Vec<_> = spec
@@ -27,7 +27,10 @@ fn an_mcp_mapping_in_a_config_is_tracked_so_servers_the_user_added_stay() {
 fn tracked_path(claim: &Ownership) -> Option<&'static [&'static str]> {
     match claim {
         Ownership::TrackedKeys { path, .. } => Some(path),
-        _ => None,
+        Ownership::Keys { .. }
+        | Ownership::Entries { .. }
+        | Ownership::ListUnion { .. }
+        | Ownership::MappingEntries { .. } => None,
     }
 }
 
@@ -59,7 +62,7 @@ fn claude_skills_of(files: &[(&str, &str)]) -> Result<Vec<PathBuf>> {
     )
     .render(&loaded)?;
     let crate::file_op::FileOp::ReplaceTree { contents, .. } = rendered else {
-        anyhow::bail!("skills must replace their directory");
+        anyhow::bail!("failed to render the Claude skills: they must replace their directory");
     };
     Ok(contents
         .iter()

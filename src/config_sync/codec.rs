@@ -301,13 +301,14 @@ fn toml_parent_mut<'a>(
     root: &'a mut DocumentMut,
     parents: &[&str],
 ) -> Result<&'a mut dyn TableLike> {
+    let path = parents.join(".");
     let mut table: &mut dyn TableLike = root.as_table_mut();
     for key in parents {
         table = table
             .entry(key)
             .or_insert_with(implicit_table)
             .as_table_like_mut()
-            .with_context(|| format!("{key} is not a table"))?;
+            .with_context(|| format!("failed to set {path}: {key} is not a table"))?;
     }
     Ok(table)
 }

@@ -230,9 +230,7 @@ impl<'a> SkillsDirectory<'a> {
     /// takes the plugin's name.
     pub(crate) fn render(self, source: &Source) -> Result<FileOp> {
         let spec = self.provider;
-        let skill = spec
-            .skill
-            .with_context(|| format!("the {} provider spec declares no skills", spec.key))?;
+        let skill = spec.skill.with_context(|| no_skills("render", spec.key))?;
         let skills = render_declared_skill(source, skill, self.path)?;
         add_mcp_plugin(source, self, skills)
     }
@@ -251,9 +249,13 @@ fn reuse_rendered_skills(source: &Source, from: ProviderId, target: &Path) -> Re
     let rendered = from
         .spec()
         .skill
-        .with_context(|| format!("the {} provider spec declares no skills", from.spec().key))?;
+        .with_context(|| no_skills("copy", from.spec().key))?;
     let origin = Path::new(rendered.destination);
     Ok(render_declared_skill(source, rendered, origin)?.relocated(origin, target))
+}
+
+fn no_skills(operation: &str, provider: &str) -> String {
+    format!("failed to {operation} the {provider} skills: the provider spec declares none")
 }
 
 fn skills_for(source: &Source, provider: Provider, target: &Path) -> Result<FileOp> {
@@ -290,11 +292,11 @@ fn with_mcp_plugin(source: &Source, skills: FileOp, plugin: &Path) -> Result<Fil
         mut contents,
     } = skills
     else {
-        bail!("rendered skills must replace their directory");
+        bail!("failed to add the MCP server plugin: rendered skills must replace their directory");
     };
     ensure!(
         !writes_under(&contents, plugin),
-        "a skill named {} takes the directory of the MCP server plugin",
+        "failed to add the MCP server plugin at {}: a skill already uses that directory",
         plugin.display()
     );
     let manifest = json!({
@@ -304,7 +306,9 @@ fn with_mcp_plugin(source: &Source, skills: FileOp, plugin: &Path) -> Result<Fil
     });
     contents.push(FileOp::write(
         plugin.join(".claude-plugin/plugin.json"),
-        serde_json::to_string_pretty(&manifest)? + "\n",
+        serde_json::to_string_pretty(&manifest)
+            .context("failed to serialize the MCP server plugin manifest")?
+            + "\n",
     ));
     Ok(FileOp::ReplaceTree { target, contents })
 }

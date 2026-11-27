@@ -54,17 +54,20 @@ fn add_mcp_servers(document: &mut DocumentMut, servers: &McpServers) -> Result<(
         return Ok(());
     }
     let Item::Table(generated) = servers.codex_table() else {
-        bail!("the generated MCP servers must be a table");
+        bail!(
+            "failed to add MCP servers to the Codex config: the generated servers are not a table"
+        );
     };
     let table = document
         .entry("mcp_servers")
         .or_insert_with(implicit_table)
         .as_table_like_mut()
-        .context("codex/config.toml mcp_servers must be a table")?;
+        .context("failed to add MCP servers to the Codex config: codex/config.toml mcp_servers is not a table")?;
     for (name, server) in generated {
         ensure!(
             !table.contains_key(&name),
-            "MCP server {name:?} is declared in both mcp_servers.json and codex/config.toml"
+            "failed to add MCP server {name:?} to the Codex config: it is declared in both \
+             mcp_servers.json and codex/config.toml"
         );
         table.insert(&name, server);
     }
