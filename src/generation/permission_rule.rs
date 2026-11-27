@@ -91,11 +91,7 @@ impl PathPattern {
     /// Returns an error when the pattern is not a path Codex can address.
     pub(crate) fn codex_denied_read(&self) -> Result<CodexFilesystemEntry> {
         let (scope, path) = codex_location(self.as_str())?;
-        Ok(CodexFilesystemEntry {
-            scope,
-            path,
-            access: CodexAccess::None,
-        })
+        Ok(CodexFilesystemEntry { scope, path })
     }
 }
 
@@ -131,36 +127,12 @@ impl PathRule {
         Self { pattern, access }
     }
 
-    /// Denies writes to a path derived from the install root or synced file names.
-    ///
-    /// Such paths are not authored policy, so parentheses (for example in a root directory
-    /// name) are kept as before instead of failing generation.
-    pub(crate) fn write_installed_path(path: String) -> Self {
-        Self::new(PathPattern(path), PathAccess::Write)
-    }
-
     pub(crate) fn claude(&self) -> String {
         let tool = match self.access {
             PathAccess::Read => "Read",
             PathAccess::Write => "Edit",
         };
         format!("{tool}({})", self.pattern.as_str())
-    }
-}
-
-/// How much of a path Codex lets a command touch; a later variant is stricter.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) enum CodexAccess {
-    Read,
-    None,
-}
-
-impl CodexAccess {
-    pub(crate) fn as_str(self) -> &'static str {
-        match self {
-            Self::Read => "read",
-            Self::None => "none",
-        }
     }
 }
 
@@ -171,22 +143,11 @@ pub(crate) enum CodexScope {
     WorkspaceRoots,
 }
 
+/// A Codex filesystem entry that denies all access (`none`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct CodexFilesystemEntry {
     pub(crate) scope: CodexScope,
     pub(crate) path: String,
-    pub(crate) access: CodexAccess,
-}
-
-impl CodexFilesystemEntry {
-    /// A protected installed path: readable, never writable.
-    pub(crate) fn protected(path: String) -> Self {
-        Self {
-            scope: CodexScope::Absolute,
-            path,
-            access: CodexAccess::Read,
-        }
-    }
 }
 
 /// Claude writes a project-relative path as `./secrets/**`, and a directory may end in `/`; both
@@ -300,13 +261,6 @@ mod tests {
     }
 
     #[test]
-    fn installed_paths_keep_parentheses() {
-        let rule = PathRule::write_installed_path("/Users/me/Work (old)/x".to_owned());
-
-        assert_eq!(rule.claude(), "Edit(/Users/me/Work (old)/x)");
-    }
-
-    #[test]
     fn path_rule_renders_read_and_edit_for_claude() -> Result<()> {
         let pattern = PathPattern::try_from(".env*".to_owned())?;
 
@@ -330,8 +284,8 @@ mod tests {
         let entry = codex_entry("~/.ssh/**")?;
 
         assert_eq!(
-            (entry.scope, entry.path.as_str(), entry.access),
-            (CodexScope::Absolute, "~/.ssh/**", CodexAccess::None)
+            (entry.scope, entry.path.as_str()),
+            (CodexScope::Absolute, "~/.ssh/**")
         );
         assert_eq!(codex_entry("//etc/hosts")?.path, "/etc/hosts");
         Ok(())

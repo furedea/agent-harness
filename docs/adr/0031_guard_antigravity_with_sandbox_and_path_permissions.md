@@ -1,8 +1,10 @@
 ---
 status: accepted
 date: 2026-11-20
+partly-superseded-by: [ADR-0032]
 amended:
   - "2026-11-26: the agent GitHub token denials are removed (ADR-0032)"
+  - "2026-11-26: the harness no longer pins agentMode or enableTerminalSandbox, grants /nix and /run, denies the /run secret mounts, or denies writes to installed files; the source settings declare them (ADR-0032). The secret path and command rule conversion stays."
 ---
 
 # Guard Antigravity with the sandbox and path permissions

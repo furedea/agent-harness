@@ -1,6 +1,7 @@
 ---
-status: accepted
+status: superseded
 date: 2026-08-24
+superseded-by: [ADR-0032]
 ---
 
 # ADR-0008: Generate the runtime protection policy

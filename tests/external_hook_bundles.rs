@@ -208,53 +208,6 @@ fn install_copies_external_hook_assets_into_namespaces() {
 }
 
 #[test]
-fn install_protects_external_hook_assets_across_enforcement_layers() {
-    let root = test_root("protected-external-hook-assets");
-    let bundle = write_external_hook_asset_bundle(&root);
-    let prefix = root.join("home");
-
-    run_harness([
-        "install",
-        "--source",
-        repo_root().to_str().unwrap(),
-        "--extra-hook",
-        &format!("herdr={}", bundle.display()),
-        "--prefix",
-        prefix.to_str().unwrap(),
-    ]);
-
-    let protected_paths = [
-        "~/.claude/hooks/external/herdr/herdr-agent-state.sh",
-        "~/.codex/hooks/external/herdr/herdr-agent-state.sh",
-    ];
-    let policy = read_json(&prefix.join(".claude/hooks/rules/protected_paths.json"));
-    let settings = read_json(&prefix.join(".claude/settings.json"));
-    let codex_config = read_toml(&prefix.join(".codex/config.toml"));
-
-    for path in protected_paths {
-        assert!(json_array_contains(&policy["paths"], path));
-        assert!(json_array_contains(
-            &settings["permissions"]["deny"],
-            &format!("Edit({path})"),
-        ));
-        assert!(!json_array_contains(
-            &settings["permissions"]["deny"],
-            &format!("Write({path})"),
-        ));
-        assert!(json_array_contains(
-            &settings["sandbox"]["filesystem"]["denyWrite"],
-            path,
-        ));
-        assert_eq!(
-            codex_config["permissions"]["guarded"]["filesystem"][path].as_str(),
-            Some("read"),
-        );
-    }
-
-    remove_dir(root);
-}
-
-#[test]
 fn external_hook_commands_are_relocated_to_home() {
     let root = test_root("relocated-external-hooks");
     let bundle = root.join("herdr");
@@ -399,14 +352,6 @@ fn read_toml(path: &Path) -> DocumentMut {
         .unwrap()
         .parse::<DocumentMut>()
         .unwrap()
-}
-
-fn json_array_contains(value: &Value, expected: &str) -> bool {
-    value
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|value| value.as_str() == Some(expected))
 }
 
 fn collect_commands(value: &Value, commands: &mut Vec<String>) {

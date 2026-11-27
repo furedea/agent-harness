@@ -6,22 +6,18 @@
 use super::spec::{
     Asset, Bridge, BundleCapture, CommandRuleSpec, ConfigFormat, ConfigLocation, ConfigSpec,
     EntryMatch, HookFormat, HookRegistration, HookSection, HookSpec, KeyScope, Ownership,
-    PROVIDERS, ProviderId, ProviderSpec, RenderedConfig, SkillSource, SkillSpec, SyncTarget,
-    WhenAbsent,
+    PROVIDERS, ProviderId, ProviderSpec, RenderedConfig, SkillSource, SkillSpec, WhenAbsent,
 };
 use crate::{
     config_sync::installed::InstalledConfigs,
-    generation::{GenerationContext, protection},
+    generation::GenerationContext,
     install_plan,
     inventory::shorten_hook_path_for,
     layout::{InstalledLayout, SourceLayout},
     provider::renderer::ProviderRenderer,
     render::{self, RenderRequest},
     runtime_root::RuntimeRoot,
-    shell::{
-        LoadInputs,
-        fixtures::{load_source, load_source_with},
-    },
+    shell::fixtures::load_source,
 };
 use anyhow::Result;
 use clap::ValueEnum;
@@ -29,7 +25,7 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 #[test]
-fn extra_spec_flows_through_layout_protection_rendering_and_publication() -> Result<()> {
+fn extra_spec_flows_through_layout_rendering_and_publication() -> Result<()> {
     let extra = ProviderSpec {
         key: "example",
         display_name: "Example",
@@ -59,7 +55,6 @@ fn extra_spec_flows_through_layout_protection_rendering_and_publication() -> Res
             location: ConfigLocation::File(".example/managed.yaml"),
             rendered: RenderedConfig::Fixed("plugins:\n  enabled:\n    - agent-harness-hooks\n"),
             sync: ProviderId::Hermes.spec().config.unwrap().sync,
-            sync_target: SyncTarget::SameAsRendered,
             directories: &[],
         }),
         ..ProviderId::Hermes.spec().clone()
@@ -70,8 +65,6 @@ fn extra_spec_flows_through_layout_protection_rendering_and_publication() -> Res
     let destination = crate::shell::TemporaryDirectory::create()?;
     let layout = InstalledLayout::new(staging.path());
     let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/complete-source");
-    let loaded = load_source_with(&source, &LoadInputs::new(&providers))?;
-    let context = GenerationContext::home(&loaded);
     assert!(
         layout
             .managed_directories_for(&providers)
@@ -92,31 +85,18 @@ fn extra_spec_flows_through_layout_protection_rendering_and_publication() -> Res
             .synced_directories_for(SourceLayout::new(&source), &providers)
             .contains(&(source.join("hooks"), staging.path().join(".example/hooks")))
     );
-    let protected = protection::protected_paths_for_providers(context, &providers)?;
-    assert_protected(
-        &protected,
-        &[
-            "~/.example/hooks/guard.sh",
-            "~/.example/bridge/nested/entry.txt",
-            "~/.example/hooks.json",
-            "~/.example/AGENTS.md",
-            "~/.example/managed.yaml",
-        ],
-    );
     assert_eq!(
         shorten_hook_path_for("$HOME/.example/hooks/guard.sh", &providers),
         "guard.sh"
     );
     let runtime_root = RuntimeRoot::home();
     let request = RenderRequest {
-        dsh_profile: "web",
         source: &source,
         external_hooks: &[],
         runtime_root: &runtime_root,
         home: None,
     };
     render::render_installation_for(&request, staging.path(), &providers)?;
-    assert_policy_protects_bridge(staging.path())?;
     let plan = install_plan::plan_install_for(
         &layout,
         &InstalledLayout::new(destination.path()),
@@ -127,21 +107,6 @@ fn extra_spec_flows_through_layout_protection_rendering_and_publication() -> Res
         assert_example_published(root)?;
     }
     Ok(())
-}
-
-fn assert_policy_protects_bridge(staging: &Path) -> Result<()> {
-    let policy = std::fs::read_to_string(staging.join(".claude/hooks/rules/protected_paths.json"))?;
-    assert!(policy.contains("~/.example/bridge/nested/entry.txt"));
-    Ok(())
-}
-
-fn assert_protected(protected: &[String], expected: &[&str]) {
-    for path in expected {
-        assert!(
-            protected.iter().any(|entry| entry == path),
-            "missing protection: {path}"
-        );
-    }
 }
 
 fn assert_example_published(root: &Path) -> Result<()> {
@@ -164,7 +129,7 @@ fn assert_example_published(root: &Path) -> Result<()> {
 
 #[test]
 fn registry_derivation_preserves_install_order() {
-    let layout = InstalledLayout::relative();
+    let layout = InstalledLayout::new(Path::new(""));
     assert_eq!(
         layout.managed_directories_for(PROVIDERS),
         [
@@ -352,10 +317,7 @@ fn every_provider_declares_how_it_enforces_command_rules() {
     ));
     assert_eq!(
         claude.generated_rule_files(),
-        [
-            ".claude/hooks/rules/command_permissions.json",
-            ".claude/hooks/rules/protected_paths.json"
-        ]
+        [".claude/hooks/rules/command_permissions.json"]
     );
     assert_eq!(claude.source_rule_files().len(), 4);
     let without_rules: Vec<_> = PROVIDERS
@@ -440,27 +402,6 @@ fn rendering_writes_command_rules_where_the_provider_declares_them() -> Result<(
             .starts_with(rules_out.path().join(".codex/rules"))
     }));
     Ok(())
-}
-
-#[test]
-fn installed_layout_derives_sync_targets_from_the_registry() {
-    let layout = crate::layout::InstalledLayout::relative();
-    let files = layout.generated_files_for("web", PROVIDERS);
-    let tail: Vec<_> = files.iter().rev().take(2).rev().collect();
-    assert_eq!(
-        tail,
-        [
-            Path::new(".hermes/config.yaml"),
-            Path::new(".dsh/profiles/web/package.json"),
-        ]
-    );
-    assert_eq!(
-        layout
-            .generated_files_for("other", PROVIDERS)
-            .last()
-            .cloned(),
-        Some(PathBuf::from(".dsh/profiles/other/package.json"))
-    );
 }
 
 #[test]

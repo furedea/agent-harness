@@ -7,7 +7,6 @@
     reason = "integration tests build fixtures on disk and fail fast on any error"
 )]
 
-use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -19,8 +18,6 @@ use toml_edit::DocumentMut;
 mod config_sync;
 #[path = "neutral-generated-artifacts/dsh.rs"]
 mod dsh;
-#[path = "neutral-generated-artifacts/protection.rs"]
-mod protection;
 #[path = "neutral-generated-artifacts/provider_hooks.rs"]
 mod provider_hooks;
 #[path = "neutral-generated-artifacts/skills.rs"]
@@ -112,7 +109,6 @@ fn complete_source_uses_the_explicit_runtime_root() {
 
     let settings = read_json(&project.join(".claude/settings.json"));
     let codex_hooks = read_json(&project.join(".codex/hooks.json"));
-    let policy = read_json(&project.join(".claude/hooks/rules/protected_paths.json"));
     let runtime_root = project.to_str().unwrap();
 
     assert_eq!(
@@ -140,11 +136,6 @@ fn complete_source_uses_the_explicit_runtime_root() {
             .as_str(),
         ),
     );
-    assert!(json_array_contains(
-        &policy["paths"],
-        &format!("{runtime_root}/.claude/hooks/guard.sh"),
-    ));
-
     remove_dir(root);
 }
 
@@ -436,15 +427,6 @@ fn read_toml(path: &Path) -> DocumentMut {
         .unwrap()
         .parse::<DocumentMut>()
         .unwrap()
-}
-
-fn string_set(value: &Value) -> BTreeSet<String> {
-    value
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|item| item.as_str().unwrap().to_owned())
-        .collect()
 }
 
 fn json_array_contains(value: &Value, expected: &str) -> bool {

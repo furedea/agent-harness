@@ -320,10 +320,11 @@ The module interface is:
 | `antigravity.enable` | `true`        | Install Antigravity files (`~/.gemini/config`, `agy` settings permissions). |
 | `dsh.profile`        | `"web"`       | User-owned dsh profile that registers the hook bundle.                      |
 
-Generated hook wiring, Bash command permissions, and protected paths remain harness-managed after
-the provider settings merge. This prevents a settings overlay from silently removing enforcement.
-Protected paths cover every file the harness renders or syncs for Claude Code, Codex, Devin, Hermes,
-pi, and dsh, including the mutable provider configs, but not skills.
+Generated hook wiring and Bash command permissions remain harness-managed after the provider
+settings merge. This prevents a settings overlay from silently removing enforcement. The harness
+does not protect the files it installs: write the protection in the source settings, for example a
+sandbox write allowlist and one deny per harness root such as `Edit(~/.claude/**)`
+([ADR-0032](docs/adr/0032_limit_the_harness_to_rendering_and_installing.md)).
 Set a provider's `enable` option to `false` to skip its files.
 
 The Home Manager module materializes `~/.claude/settings.json` as a writable regular file because
@@ -425,8 +426,8 @@ next sync; add persistent command rules to `command_permissions.json` instead.
 all other Hermes Agent state is preserved. The Home Manager module runs this sync on activation.
 
 `sync-config --provider dsh` registers the bridge bundle in a user-owned dsh profile's
-`~/.dsh/profiles/<profile>/package.json`, the Home Manager option `dsh.profile` (default `web`;
-`install --dsh-profile` protects the same file): it owns the
+`~/.dsh/profiles/<profile>/package.json`, the Home Manager option `dsh.profile` (default `web`): it
+owns the
 `dependencies` entries and adds the bundle to `dsh.profile.bundles` once, and it skips a profile
 that dsh has not created yet. The bridge design is recorded in
 [ADR-0025](docs/adr/0025_embed_the_dsh_hook_bridge.md).
@@ -444,8 +445,8 @@ agent-harness verify --prefix "$HOME"
 ```
 
 For a project-local installation, set both the output prefix and runtime root. `--prefix` controls
-where files are written; `--runtime-root` controls where generated hook commands and protection
-rules expect those files at runtime. The runtime root must be absolute.
+where files are written; `--runtime-root` controls where generated hook commands expect those files
+at runtime. The runtime root must be absolute.
 
 ```bash
 agent-harness install \

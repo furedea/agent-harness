@@ -4,8 +4,8 @@
 use super::spec::{
     Asset, Bridge, BundleCapture, CommandRuleSpec, ConfigFormat, ConfigLocation, ConfigSpec,
     ConfigSync, EntryMatch, HookFormat, HookRegistration, HookSection, HookSpec, KeyScope,
-    Ownership, ProviderId, ProviderSpec, RenderedConfig, SkillSource, SkillSpec, SyncTarget,
-    SyncedDirectory, WhenAbsent, WhenMissing,
+    Ownership, ProviderId, ProviderSpec, RenderedConfig, SkillSource, SkillSpec, SyncedDirectory,
+    WhenAbsent, WhenMissing,
 };
 
 impl ProviderId {
@@ -78,7 +78,7 @@ const CODEX: ProviderSpec = ProviderSpec {
     }),
     config: Some(ConfigSpec {
         location: ConfigLocation::File(".codex/config.toml"),
-        rendered: RenderedConfig::SourceTomlWithProtection,
+        rendered: RenderedConfig::SourceTomlWithGuardedFilesystem,
         sync: ConfigSync {
             format: ConfigFormat::Toml,
             ownership: &[
@@ -100,7 +100,6 @@ const CODEX: ProviderSpec = ProviderSpec {
             home_command_lists: &[],
             home_rule_lists: &[],
         },
-        sync_target: SyncTarget::SameAsRendered,
         directories: &[],
     }),
     retired_files: &[],
@@ -131,7 +130,6 @@ const CLAUDE: ProviderSpec = ProviderSpec {
     instructions: Some(".claude/CLAUDE.md"),
     command_rule: Some(CommandRuleSpec::RuleFiles {
         permissions: ".claude/hooks/rules/command_permissions.json",
-        protected_paths: ".claude/hooks/rules/protected_paths.json",
         source_files: &[
             ".claude/hooks/rules/allowed_commands.json",
             ".claude/hooks/rules/forbidden_commands.json",
@@ -153,7 +151,6 @@ const CLAUDE: ProviderSpec = ProviderSpec {
             home_command_lists: &[&["sandbox", "excludedCommands"]],
             home_rule_lists: &[],
         },
-        sync_target: SyncTarget::SameAsRendered,
         directories: &[SyncedDirectory {
             source: "claude/statusline",
             destination: ".claude/statusline",
@@ -205,7 +202,6 @@ const DEVIN: ProviderSpec = ProviderSpec {
             home_command_lists: &[],
             home_rule_lists: &[],
         },
-        sync_target: SyncTarget::SameAsRendered,
         directories: &[],
     }),
     retired_files: &[],
@@ -259,7 +255,6 @@ const HERMES: ProviderSpec = ProviderSpec {
             home_command_lists: &[],
             home_rule_lists: &[],
         },
-        sync_target: SyncTarget::File(".hermes/config.yaml"),
         directories: &[],
     }),
     retired_files: &[],
@@ -309,7 +304,6 @@ const PI: ProviderSpec = ProviderSpec {
             home_command_lists: &[],
             home_rule_lists: &[],
         },
-        sync_target: SyncTarget::SameAsRendered,
         directories: &[],
     }),
     // Earlier releases installed an srt sandbox extension here (ADR-0032).
@@ -375,10 +369,6 @@ const DSH: ProviderSpec = ProviderSpec {
             home_command_lists: &[],
             home_rule_lists: &[],
         },
-        sync_target: SyncTarget::InProfile {
-            profiles_dir: ".dsh/profiles",
-            file: "package.json",
-        },
         directories: &[],
     }),
     retired_files: &[],
@@ -435,7 +425,6 @@ const ANTIGRAVITY: ProviderSpec = ProviderSpec {
                 &["permissions", "deny"],
             ],
         },
-        sync_target: SyncTarget::SameAsRendered,
         directories: &[],
     }),
     retired_files: &[],

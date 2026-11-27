@@ -8,7 +8,7 @@ use crate::{
     generation::{
         GenerationContext,
         guarded_conflict::{self, SourceConfig},
-        protection,
+        guarded_filesystem,
     },
     layout::SourceLayout,
     source_model::{HookBundle, Source},
@@ -30,14 +30,13 @@ fn config_source_content(source: &Source) -> Result<String> {
 
 fn config_source_content_for_runtime(context: GenerationContext<'_>) -> Result<String> {
     let mut document = context.source.codex_config.clone();
-    // Merge rather than concatenate: the source may already declare guarded entries, such as
-    // the agent GitHub token's read denials.
-    let protection = protection::codex_config_fragment_for_runtime(context)?
+    // Merge rather than concatenate: the source may already declare guarded entries.
+    let guarded = guarded_filesystem::codex_config_fragment_for_runtime(context)?
         .parse::<DocumentMut>()
         .context("failed to parse generated Codex config")?;
-    check_guarded_conflicts(context, &protection)?;
-    keep_scalar_workspace_grants(&mut document, &protection);
-    for (key, item) in protection.iter() {
+    check_guarded_conflicts(context, &guarded)?;
+    keep_scalar_workspace_grants(&mut document, &guarded);
+    for (key, item) in guarded.iter() {
         merge_item(document.entry(key).or_insert(Item::None), item);
     }
     for bundle in &context.source.hook_bundles {

@@ -1,11 +1,11 @@
 use std::path::Path;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Result, bail};
 use serde_json::{Map, Value};
 
 use crate::generation::{
     GenerationContext, claude_permissions::PermissionRules, command_permissions, hooks,
-    permission_rule::PathRule, protection, secret_path_policy,
+    secret_path_policy,
 };
 use crate::{file_op::FileOp, runtime_root::RuntimeRoot, source_model::Source};
 
@@ -34,14 +34,12 @@ fn build_settings(context: GenerationContext<'_>, mut settings: Value) -> Result
         "hooks".to_string(),
         hooks::claude_hooks_for_runtime(context)?,
     );
-    merge_permissions(root, context)?;
-    merge_sandbox(root, context)?;
+    merge_permissions(root, context.source)?;
 
     Ok(settings)
 }
 
-fn merge_permissions(root: &mut Map<String, Value>, context: GenerationContext<'_>) -> Result<()> {
-    let source = context.source;
+fn merge_permissions(root: &mut Map<String, Value>, source: &Source) -> Result<()> {
     let permissions = object_entry(root, "permissions")?;
     let mut rules = PermissionRules::parse(permissions)?;
 
@@ -49,57 +47,9 @@ fn merge_permissions(root: &mut Map<String, Value>, context: GenerationContext<'
     rules.extend_ask(command_permissions::claude_ask_permissions(source));
     rules.extend_deny(secret_path_policy::claude_deny_permissions(source));
     rules.extend_deny(command_permissions::claude_deny_permissions(source));
-    rules.extend_deny(
-        protected_paths(context)?
-            .into_iter()
-            .map(|path| PathRule::write_installed_path(path).claude()),
-    );
 
     rules.write_into(permissions);
     Ok(())
-}
-
-fn merge_sandbox(root: &mut Map<String, Value>, context: GenerationContext<'_>) -> Result<()> {
-    let sandbox = object_entry(root, "sandbox")?;
-    let filesystem = object_entry(sandbox, "filesystem")?;
-    let source_paths = source_deny_write(filesystem)?;
-    let deny_write = unique_in_order(source_paths.into_iter().chain(protected_paths(context)?));
-
-    filesystem.insert(
-        "denyWrite".to_string(),
-        Value::Array(deny_write.into_iter().map(Value::String).collect()),
-    );
-    Ok(())
-}
-
-fn source_deny_write(filesystem: &Map<String, Value>) -> Result<Vec<String>> {
-    let Some(entries) = filesystem.get("denyWrite") else {
-        return Ok(Vec::new());
-    };
-    let Value::Array(entries) = entries else {
-        bail!("sandbox.filesystem.denyWrite must be a JSON array");
-    };
-    entries
-        .iter()
-        .map(|entry| {
-            entry
-                .as_str()
-                .map(ToOwned::to_owned)
-                .context("sandbox.filesystem.denyWrite entries must be strings")
-        })
-        .collect()
-}
-
-fn unique_in_order(paths: impl IntoIterator<Item = String>) -> Vec<String> {
-    let mut seen = std::collections::HashSet::new();
-    paths
-        .into_iter()
-        .filter(|path| seen.insert(path.clone()))
-        .collect()
-}
-
-fn protected_paths(context: GenerationContext<'_>) -> Result<Vec<String>> {
-    protection::protected_paths_for_runtime(context)
 }
 
 fn relocate_status_line(root: &mut Map<String, Value>, runtime_root: &RuntimeRoot) -> Result<()> {
@@ -135,15 +85,15 @@ mod tests {
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
 
+    use anyhow::Context;
     use serde_json::json;
 
     use super::*;
     use crate::shell::fixtures::load_source;
 
     #[test]
-    fn build_settings_merges_hooks_command_permissions_and_protected_paths() -> Result<()> {
-        let root =
-            test_root("build_settings_merges_hooks_command_permissions_and_protected_paths")?;
+    fn build_settings_merges_hooks_command_permissions_and_secret_paths() -> Result<()> {
+        let root = test_root("build_settings_merges_hooks_command_permissions_and_secret_paths")?;
         write_minimal_source(&root)?;
         let base = json!({
             "permissions": {
@@ -194,67 +144,16 @@ mod tests {
             array_strings(&settings["permissions"]["deny"]).contains(&"Read(.env*)".to_string())
         );
         assert!(
-            array_strings(&settings["sandbox"]["filesystem"]["denyWrite"])
-                .contains(&"~/.claude/hooks/guard.sh".to_string())
+            !array_strings(&settings["permissions"]["deny"])
+                .iter()
+                .any(|rule| rule.contains("/.claude/")),
+            "installed harness files are not denied by the harness"
         );
-
-        crate::shell::fixtures::remove_dir_all(root)?;
-        Ok(())
-    }
-
-    #[test]
-    fn build_settings_keeps_source_deny_write_and_the_harness_paths() -> Result<()> {
-        let root = test_root("build_settings_keeps_source_deny_write_and_the_harness_paths")?;
-        write_minimal_source(&root)?;
-        let base = json!({
-            "sandbox": {
-                "filesystem": {
-                    "denyWrite": [
-                        "~/**/.git/hooks",
-                        "~/.local/state/agent-harness/verification",
-                        "~/.claude/hooks/guard.sh"
-                    ]
-                }
-            }
-        });
-
-        let loaded = load_source(&root)?;
-
-        let settings = build_settings(GenerationContext::home(&loaded), base)?;
-
-        let deny_write = array_strings(&settings["sandbox"]["filesystem"]["denyWrite"]);
         assert_eq!(
-            deny_write[..3],
-            [
-                "~/**/.git/hooks",
-                "~/.local/state/agent-harness/verification",
-                "~/.claude/hooks/guard.sh"
-            ],
+            settings["sandbox"],
+            json!({"filesystem": {"allowWrite": ["$HOME/.cache/nix"]}})
         );
-        assert!(deny_write.contains(&"~/.claude/hooks/rules/command_permissions.json".to_string()));
-        let guard_count = deny_write
-            .iter()
-            .filter(|path| *path == "~/.claude/hooks/guard.sh")
-            .count();
-        assert_eq!(guard_count, 1);
 
-        crate::shell::fixtures::remove_dir_all(root)?;
-        Ok(())
-    }
-
-    #[test]
-    fn build_settings_rejects_a_non_array_deny_write() -> Result<()> {
-        let root = test_root("build_settings_rejects_a_non_array_deny_write")?;
-        write_minimal_source(&root)?;
-        let base = json!({"sandbox": {"filesystem": {"denyWrite": "~/x"}}});
-
-        let loaded = load_source(&root)?;
-
-        let error = build_settings(GenerationContext::home(&loaded), base)
-            .unwrap_err()
-            .to_string();
-
-        assert!(error.contains("denyWrite"));
         crate::shell::fixtures::remove_dir_all(root)?;
         Ok(())
     }

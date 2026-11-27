@@ -1,7 +1,5 @@
 #![forbid(clippy::disallowed_methods, clippy::disallowed_types)]
 
-use std::path::{Path, PathBuf};
-
 pub(crate) use super::id::ProviderId;
 pub(crate) use super::ownership::{
     ConfigFormat, ConfigSync, EntryMatch, KeyScope, Ownership, WhenAbsent, WhenMissing,
@@ -140,7 +138,6 @@ pub(crate) enum CommandRuleSpec {
     /// Rules are files inside the hooks directory.
     RuleFiles {
         permissions: &'static str,
-        protected_paths: &'static str,
         /// Files the hooks directory takes from the source and verification requires.
         source_files: &'static [&'static str],
     },
@@ -160,11 +157,7 @@ impl CommandRuleSpec {
     /// Files rendered inside the hooks directory after it is synced.
     pub(crate) fn generated_files(self) -> Vec<&'static str> {
         match self {
-            Self::RuleFiles {
-                permissions,
-                protected_paths,
-                ..
-            } => vec![permissions, protected_paths],
+            Self::RuleFiles { permissions, .. } => vec![permissions],
             Self::InHookRegistration | Self::ExecpolicyFile { .. } => Vec::new(),
         }
     }
@@ -187,34 +180,6 @@ pub(crate) enum ConfigLocation {
     BundleDirectory(&'static str),
 }
 
-/// The file the rendered config is merged into at installation.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum SyncTarget {
-    /// The file the rendered config is published to.
-    SameAsRendered,
-    File(&'static str),
-    /// A file inside the user's profile directory, named by the profile at install time.
-    InProfile {
-        profiles_dir: &'static str,
-        file: &'static str,
-    },
-}
-
-fn join3(a: &str, b: &str, c: &str) -> PathBuf {
-    Path::new(a).join(b).join(c)
-}
-
-impl SyncTarget {
-    /// The target when it is not the published file, with `profile` filled in.
-    pub(crate) fn path_in(self, profile: &str) -> Option<PathBuf> {
-        match self {
-            Self::SameAsRendered => None,
-            Self::File(path) => Some(PathBuf::from(path)),
-            Self::InProfile { profiles_dir, file } => Some(join3(profiles_dir, profile, file)),
-        }
-    }
-}
-
 /// How the rendered config file of a provider is produced at render time.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum RenderedConfig {
@@ -225,11 +190,10 @@ pub(crate) enum RenderedConfig {
     Fixed(&'static str),
     /// The source file at this path, applied to the installed config; a missing file adds nothing.
     SourceFile(&'static str),
-    /// The source's TOML config with the generated protection and external hook features merged in,
-    /// applied to the installed config.
-    SourceTomlWithProtection,
-    /// The source JSON file at this path with the safety settings and the generated tool
-    /// `permissions` merged in, applied to the installed config; a missing file adds nothing.
+    /// The source's TOML config with the guarded filesystem entries of the secret path policy and
+    /// the external hook features merged in, applied to the installed config.
+    SourceTomlWithGuardedFilesystem,
+    /// The source JSON file at this path with the generated tool `permissions` merged in, applied to the installed config; a missing file adds nothing.
     SourceJsonWithToolPermissions(&'static str),
 }
 
@@ -240,7 +204,7 @@ impl RenderedConfig {
         matches!(
             self,
             Self::SourceFile(_)
-                | Self::SourceTomlWithProtection
+                | Self::SourceTomlWithGuardedFilesystem
                 | Self::SourceJsonWithToolPermissions(_)
         )
     }
@@ -252,7 +216,6 @@ pub(crate) struct ConfigSpec {
     pub(crate) location: ConfigLocation,
     pub(crate) rendered: RenderedConfig,
     pub(crate) sync: ConfigSync,
-    pub(crate) sync_target: SyncTarget,
     /// Source directories the config refers to, such as Claude's statusline command.
     pub(crate) directories: &'static [SyncedDirectory],
 }

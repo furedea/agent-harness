@@ -17,10 +17,6 @@ agent breaks in predictable ways:
 
 - **Guardrails drift.** A command denied in Claude Code stays allowed in Codex because only one of
     the two files was updated. Nothing reports the difference.
-- **Agents can rewrite their own guards.** Protection is enforced in several layers: permission
-    rules, sandbox write denials, filesystem guards, and an explanatory hook. A path missing from any
-    one list is writable. Before v0.9.2, the Devin, Hermes, and pi hook files and the mutable provider
-    configs were missing from the protected set ([#140]).
 - **Hooks are duplicated per agent.** The same check must be re-implemented against each agent's
     hook protocol, and the copies diverge.
 - **Provider-owned state collides with managed settings.** Claude Code and Codex write to their own
@@ -38,14 +34,15 @@ agent breaks in predictable ways:
     decisions, and Devin `Exec(...)` rules, so a change cannot reach one agent and miss another.
 - ADRs: [0012], [0014], [0015].
 
-**2. Derive protected paths from one Rust inventory and fail closed.**
+**2. Render policy, do not decide it.**
 
-- Decision: the protection module computes the protected paths from the same tables the installer
-    uses, then emits Claude deny rules, sandbox `denyWrite`, Codex guards, and a JSON policy that the
-    runtime hook reads.
-- Reason: enforcement layers cannot disagree when they share one generated list. If the policy file
-    is missing or invalid, the hook blocks instead of allowing.
-- ADRs: [0008].
+- Decision: agent-harness renders and installs what the source declares. What is protected or
+    allowed, credentials, and sandbox implementations belong to the source and the user's system
+    configuration, not to the harness.
+- Reason: per-user policy in a shared rendering tool forced exceptions to the source being
+    authoritative; a write allowlist plus one deny per harness root, written in the source, covers
+    files added later without a generated inventory.
+- ADRs: [0032], superseding [0008].
 
 **3. Keep Codex CLI conformance out of the required checks.**
 
@@ -188,7 +185,7 @@ sequenceDiagram
   U->>A: agent-harness install --source <dir>
   A->>A: load the source tree and installed configs into a typed Source; choose providers from PROVIDERS
   A->>A: merge installed Claude, Codex, and pi configs with the generated ones so their own state is kept
-  A->>S: write each provider's configs, hooks, permission rules and protected paths
+  A->>S: write each provider's configs, hooks, and permission rules
   A->>S: place fixed files (assets) such as bridge scripts
   A->>A: plan the managed files and directories as FileOp values
   loop each planned FileOp
@@ -224,7 +221,7 @@ sequenceDiagram
 | `generation/bridges`, `provider/spec`, `install_plan`             | Verify bridge asset contracts; declare embedded bridge assets and destinations in specs and plan their writes. |
 | `generation/command_permissions`                                  | Maps neutral rules to Claude, Codex, and Devin permission syntax.                                              |
 | `generation/claude_config`, `codex_config`, `dsh_config`          | Build provider configs and the dsh bundle registration.                                                        |
-| `generation/protection`, `secret_path_policy`                     | Compute protected paths and secret-file deny rules.                                                            |
+| `generation/guarded_filesystem`, `secret_path_policy`             | Render the secret path policy as deny rules and Codex guarded filesystem entries.                              |
 | `generation/guarded_path`, `guarded_conflict`                     | Compare Codex guarded filesystem entries and fail when a looser entry sits under a stricter one.               |
 | `generation/skills`, `external_hooks`, `hook_bundle`              | Render skills and compose external bundles.                                                                    |
 | `inventory`                                                       | Lists the skills and hooks a source provides.                                                                  |
@@ -249,8 +246,8 @@ trusted-owners,audit}/**`). Denying those writes in Codex's sandbox would break 
 keep enforcing them. This matches the Claude Code sandbox, which denies reading such paths but
 allows writing to `~/.local/state/agent-harness`.
 
-Codex applies the more specific entry, so a looser entry under a stricter one (a protected
-`~/.codex/hooks/adapt.sh = "read"` under `~/.codex/** = "none"`) reopens a denied path. The harness
+Codex applies the more specific entry, so a looser entry under a stricter one (a source
+`~/.aws/config = "write"` under a generated `~/.aws/** = "none"`) reopens a denied path. The harness
 never rewrites guarded entries to guess which side was meant. It compares the generated entries
 with each other and with the source `codex/config.toml` and fails, naming both entries, when one
 covers a looser one. A path resolves through the nearest entry that covers it, not every ancestor,
@@ -309,7 +306,6 @@ CodeQL analysis is not a workflow file: it runs through GitHub's CodeQL default 
     ([0016]).
 - Approvals that Claude Code or Devin save interactively are replaced on the next sync. Persistent
     rules belong in the source.
-- Skills are rendered but not protected.
 
 ## Changelog highlights
 
@@ -325,8 +321,8 @@ CodeQL analysis is not a workflow file: it runs through GitHub's CodeQL default 
 - **v0.9.13**: ran Pi's shell and file tools inside srt and applied the secret path policy to the
     Codex guarded filesystem and the Pi srt policy ([0030]).
 - **Unreleased**: added the Antigravity provider with sandbox and path-permission guards ([0031]),
-    and limited the harness to rendering and installing, removing the Pi srt extension and the agent
-    GitHub token ([0032]).
+    and limited the harness to rendering and installing, removing the Pi srt extension, the agent
+    GitHub token, and the generated protection of installed files ([0032]).
 
 [#140]: https://github.com/furedea/agent-harness/pull/140
 [0001]: adr/0001_separate_codex_conformance_from_required_ci.md
