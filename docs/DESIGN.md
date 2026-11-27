@@ -76,9 +76,9 @@ agent breaks in predictable ways:
 **6. Separate provider declarations, functions, and I/O capabilities.**
 
 - Decision: declare all six providers (Claude, Codex, Devin, Hermes, pi, and dsh) in
-    `ProviderSpec`, with Data / Functions / Capabilities boundaries. Every field is one of five
+    `ProviderSpec`, with Data / Functions / Capabilities boundaries. Every field is one of six
     concepts most providers share: hook (`HookSpec`: scripts, registration, bridge files), skill,
-    instructions, command rule, and config (`ConfigSpec`: path, how it is rendered, and the `ConfigSync` ownership declaration). Every
+    instructions, command rule, config (`ConfigSpec`: path, how it is rendered, and the `ConfigSync` ownership declaration), and MCP servers (`McpSpec`: a plugin in the skills directory or a tracked mapping of the config). Every
     provider has hooks; the other concepts are an `Option`. A provider difference is an enum
     variant, not a field only that provider has.
 - Reason: shared paths, asset destinations, and `ConfigSync` declarations prevent parallel lists
@@ -87,13 +87,13 @@ agent breaks in predictable ways:
     source: `nix/providers.json` is generated from it by a test that fails when the committed file
     differs (`UPDATE_PROVIDERS_JSON=1` regenerates it). Home Manager links explicit managed files
     and subdirectories to coexist with user-owned state.
-- ADRs: [0026], [0027], [0028], [0029].
+- ADRs: [0026], [0027], [0028], [0029], [0033].
 
 ```mermaid
 flowchart LR
   subgraph D["Data (declarations only)"]
     SPEC["PROVIDERS (six ProviderSpec)"]
-    CONCEPTS["five concepts: hooks, skills, instructions, command rules, config"]
+    CONCEPTS["six concepts: hooks, skills, instructions, command rules, config, MCP servers"]
     VARIANTS["variants: HookRegistration (InSettings, File), HookFormat (SettingsSection, WrappedEvents, BareEvents), CommandRuleSpec (InHookRegistration, RuleFiles, ExecpolicyFile), SkillSource (RenderFrontmatter, RenderWithInvocationPolicy, CopyRendered), ConfigLocation"]
     JSON["nix/providers.json (generated from PROVIDERS)"]
     KINDS["ConfigSync: ConfigFormat (Json, Toml, Yaml) and Ownership claims (Keys, Entries, ListUnion, MappingEntries, TrackedKeys)"]
@@ -322,7 +322,8 @@ CodeQL analysis is not a workflow file: it runs through GitHub's CodeQL default 
     Codex guarded filesystem and the Pi srt policy ([0030]).
 - **Unreleased**: added the Antigravity provider with sandbox and path-permission guards ([0031]),
     and limited the harness to rendering and installing, removing the Pi srt extension, the agent
-    GitHub token, and the generated protection of installed files ([0032]).
+    GitHub token, and the generated protection of installed files ([0032]); rendered MCP servers
+    declared once in the source for Claude Code and Codex ([0033]).
 
 [#140]: https://github.com/furedea/agent-harness/pull/140
 [0001]: adr/0001_separate_codex_conformance_from_required_ci.md
@@ -346,3 +347,4 @@ CodeQL analysis is not a workflow file: it runs through GitHub's CodeQL default 
 [0030]: adr/0030_run_pi_file_operations_inside_srt.md
 [0031]: adr/0031_guard_antigravity_with_sandbox_and_path_permissions.md
 [0032]: adr/0032_limit_the_harness_to_rendering_and_installing.md
+[0033]: adr/0033_render_mcp_servers_from_one_declaration.md

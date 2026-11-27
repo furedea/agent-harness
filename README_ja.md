@@ -126,6 +126,41 @@ moshiHooks = agent-harness.lib.${pkgs.system}.buildHookBundleFromCommands {
 
 agent-harness は GitHub のトークンを用意も更新もしない（[ADR-0032](docs/adr/0032_limit_the_harness_to_rendering_and_installing.md)）．エージェントが自分のトークンでサンドボックスの中から `gh` と `git push` を実行できるようにするには，配線をソースの設定に書く．harness はそれをそのまま生成する．Claude では `env.GH_CONFIG_DIR`，`sandbox.network.allowedDomains` の GitHub のホスト，`sandbox.enableWeakerNetworkIsolation`，`sandbox.excludedCommands` に `gh *` を含めないこと，読ませたくない鍵への `Read(...)` と `sandbox.filesystem.denyRead` の拒否を書く．Codex では `shell_environment_policy.set.GH_CONFIG_DIR` と，そのディレクトリを読める権限プロファイルを書く．トークンの発行と更新は harness の外のツールで行う．
 
+### MCP サーバー
+
+MCP サーバーは，ソースの任意のファイル `mcp_servers.json` に 1 回だけ宣言する．各サーバーはコマンド（`command` と，任意の `args`，`env`）か，リモートのエンドポイント（`url`，streamable HTTP）である．
+
+```json
+{
+  "servers": {
+    "github": {
+      "command": "github-mcp-server",
+      "args": ["stdio"],
+      "env": { "GITHUB_TOOLSETS": "repos,issues" }
+    },
+    "docs": { "url": "https://docs.example.com/mcp" }
+  }
+}
+```
+
+コマンドは `PATH` 上の名前でよく，そうすればソースはホストに依存しない．Nix ストアのパスのようにホスト固有の値には，Home Manager のオプション `mcpServers` を使う．エントリを追加するか，ソースの同名のエントリを丸ごと置き換える．
+
+```nix
+programs.agent-harness.mcpServers.github = {
+  command = "${pkgs.github-mcp-server}/bin/github-mcp-server";
+  args = [ "stdio" ];
+};
+```
+
+harness は値をそのままプロバイダのファイルに書くため，認証情報を書いてはならない．認証情報が必要なサーバーは自身の環境変数から読むか，`command` を，認証情報を（たとえばシステムのキーチェーンから）取り出してサーバーを起動するラッパースクリプトにする．
+
+| プロバイダ  | 生成先                                                                 | 自分で追加したサーバー                                     |
+| ----------- | ---------------------------------------------------------------------- | ---------------------------------------------------------- |
+| Claude Code | プラグイン `~/.claude/skills/agent-harness/.claude-plugin/plugin.json` | `~/.claude.json` に残る．harness はこのファイルに触れない  |
+| Codex       | `~/.codex/config.toml` の `[mcp_servers.<name>]`                       | 残る．削除するのは前回の同期が書いたサーバーだけである     |
+
+Claude Code はスキルディレクトリのプラグインをその場で読み込み，書き換えない．そのため，同期が実行中のエージェントと `~/.claude.json` を取り合うことはない．ツール名は `mcp__plugin_agent-harness_<server>__<tool>` になるので，権限ルールはこの接頭辞で書く．`mcp_servers.json` とソースの `codex/config.toml` の両方にある名前はエラーになる．Devin と Antigravity にはまだ生成しない．Pi は MCP に対応していない．[ADR-0033](docs/adr/0033_render_mcp_servers_from_one_declaration.md) を参照．
+
 ## クイックインストール
 
 リリースバイナリは現在 `x86_64-unknown-linux-musl` 向けにだけビルドしている．そのプラットフォームで最も手早いのは，cargo-dist が生成するシェルインストーラである．
@@ -252,6 +287,7 @@ nix run github:furedea/agent-harness -- verify --prefix "$HOME"
 | `profile`            | `"minimal"`            | 同梱の合成のベースを選ぶ．                                                                                |
 | `agentsMd`           | プロファイルのファイル | 共有の `AGENTS.md` / `CLAUDE.md` のソースを置き換える．                                                   |
 | `commandPermissions` | プロファイルのファイル | プロバイダ中立な `allow` / `ask` / `deny` ルールを置き換える．                                            |
+| `mcpServers`         | `{}`                   | MCP サーバーを追加するか，ソースの同名のサーバーを置き換える．                                            |
 | `skills`             | `{}`                   | スキルのディレクトリや derivation をインストール名で追加する．                                            |
 | `hooks`              | `{}`                   | バージョン付きフックバンドルのディレクトリや derivation を名前で追加する．                                |
 | `claude.enable`      | `true`                 | Claude Code のファイルをインストールする．                                                                |
@@ -297,6 +333,7 @@ sha256sum -c agent-harness-x86_64-unknown-linux-musl.tar.xz.sha256
 | `~/.claude/settings.json`                            | Claude Code の設定                                   |
 | `~/.claude/hooks/`                                   | Claude Code のフックとポリシーガード                 |
 | `~/.claude/skills/`                                  | 生成した Claude Code のスキル                        |
+| `~/.claude/skills/agent-harness/`                    | MCP サーバーを宣言する Claude Code のプラグイン      |
 | `~/.claude/statusline/`                              | Claude Code のステータスラインコマンド               |
 | `~/.devin/hooks/`                                    | Devin のフックアダプタ                               |
 | `~/.config/devin/config.json`                        | Devin のフックとコマンド権限                         |
@@ -328,7 +365,7 @@ default_permissions, permissions
 
 さらに，ソースが `analytics`，`otel`，`feedback`，`check_for_update_on_startup` を設定している場合はそれらを書き込み，設定していない場合は削除せずそのまま残す．
 
-また，ソースの `shell_environment_policy.set` の下にあるキーをすべて書き込み，前回の同期が書いたキーのうちソースから消えたものを削除する．記録はターゲットの隣の `.agent-harness-managed.json` にある．Codex やユーザーが追加したキーは残る．サイドカーがない場合は，ソースに `GH_CONFIG_DIR` がないときだけ `GH_CONFIG_DIR` を削除する．
+また，ソースの `shell_environment_policy.set` の下にあるキーをすべて書き込み，前回の同期が書いたキーのうちソースから消えたものを削除する．記録はターゲットの隣の `.agent-harness-managed.json` にある．Codex やユーザーが追加したキーは残る．サイドカーがない場合は，ソースに `GH_CONFIG_DIR` がないときだけ `GH_CONFIG_DIR` を削除する．`mcp_servers` のエントリも同じように記録するため，Codex やユーザーが追加したサーバーは残る．
 
 生成される Claude の設定は，ソースの `claude/settings.json` が宣言する `permissions.allow`，`permissions.ask`，`permissions.deny` のエントリをすべて残し，その後に生成した `Bash(...)`，`Read(...)`，`Edit(...)` のエントリを続ける．各ルールは 1 回だけ現れ，複数のリストで宣言されたルールは最も厳しいリスト（`deny` > `ask` > `allow`）にだけ残る．そのため，マージによって権限が広がることはない．`defaultMode` などの他の権限キーはそのまま引き継がれる．Claude の設定の同期は生成された `permissions` キー全体を置き換えるため，Claude Code が対話的に `~/.claude/settings.json` に保存した承認は次の同期で残らない．永続させたいルールは `command_permissions.json` かソースの `claude/settings.json` に書くこと．
 
@@ -384,7 +421,7 @@ CLI は，個々の出力を確認したり合成したりするための低レ�
 | `generate-command-permissions`   | 共有の実行時コマンド権限                         |
 | `generate-forbidden-commands`    | グローバルで厳密な禁止コマンドの正規表現ルール   |
 | `generate-hook-bundle`           | 隔離して作るバージョン付きの外部フックバンドル   |
-| `generate-skills`                | プロバイダ別の組み込みスキルと外部スキルのツリー |
+| `generate-skills --provider <id>` | プロバイダのスキルディレクトリ（組み込みと外部のスキル） |
 
 `generate-hooks` は `claude`，`codex`，`devin`，`hermes`，`pi`，`dsh` に対応する．`sync-config` も同じ指定を受け付ける．pi については，生成された設定から `defaultProvider`，`defaultModel`，`defaultThinkingLevel` だけをマージし，ユーザー所有のキーは残す．任意のソースのデフォルトは `pi/settings.json` に置く．Pi のスキルは `disable-model-invocation` を含む Claude の形式で生成し，`~/.pi/agent/skills/` の下にインストールする．共有の指示は `~/.pi/agent/AGENTS.md` としてインストールする．
 
