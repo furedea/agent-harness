@@ -234,8 +234,6 @@ CodeQL による解析はワークフローファイルではなく，GitHub の
 [0017]: adr/0017_separate_output_and_runtime_roots.md
 [0018]: adr/0018_preserve_source_claude_permission_rules.md
 [0019]: adr/0019_opt_in_agent_github_token_in_claude_sandbox.md
-[0020]: adr/0020_keep_git_push_outside_the_claude_sandbox.md
-[0021]: adr/0021_refresh_the_agent_token_from_a_github_app.md
 [0023]: adr/0023_default_codex_to_the_guarded_profile_with_the_agent_token.md
 [0024]: adr/0024_track_managed_codex_env_keys_in_a_sidecar.md
 [0025]: adr/0025_embed_the_dsh_hook_bridge.md
