@@ -29,6 +29,8 @@ and what happens to servers the user added through the agent?
 - Declaration: a source file, a Nix option, or a source file the Nix option can override.
 - Devin and Antigravity files: leave them to a later change, or sync each as a second config of
     the provider.
+- Where a config names its servers' mapping: in the provider's MCP spec with a matching tracked
+    claim and key exclusion in its sync, or once in the sync declaration with the rest derived.
 - dsh: insert client plugin rows into the harness's own bridge bundle patch, or render nothing.
 
 ## Decision Outcome
@@ -58,19 +60,20 @@ wrapper.
     replaces whole, so `generate-skills --provider <id>` renders a provider's own skills directory.
     Servers the user added with `claude mcp add` stay in `~/.claude.json`, which the harness never
     touches.
-- Codex: `mcp_servers` is a `TrackedKeys` claim in the existing sidecar. A server the source
-    dropped is removed, and one the user or `codex mcp add` added stays. A name declared in both
-    `mcp_servers.json` and the source `codex/config.toml` is an error.
-- Hermes: `mcp_servers` is a `TrackedKeys` claim of the config the harness already syncs into
-    `config.yaml`, and the rendered `managed-config.yaml` carries the servers.
+- A synced file that holds the servers says where, once, in its sync declaration
+    (`ConfigSync::mcp_servers`: the mapping's path and the form of a remote server). The engine
+    derives the rest from it: the mapping is tracked in the sidecar, so a server the source dropped
+    is removed and one the user or the agent's CLI added stays, and no key claim of the same file
+    replaces it. Nothing else names the path, so rendering, tracking, and the key claims cannot
+    disagree.
+- Codex and Hermes: the config the harness already syncs declares `mcp_servers`. A name declared
+    in both `mcp_servers.json` and the source `codex/config.toml` is an error.
 - Devin and Antigravity: the provider's own MCP file is a second `ConfigSpec` of the provider,
     rendered from the servers and synced by `sync-config --provider <id> --file mcp-servers`, so
     the sync engine, the sidecar, and the Home Manager activation are the ones every config uses.
-    Its only claim is the tracked `mcpServers` mapping, so servers the CLI added and every other key
-    stay. A missing file is created.
-- Each provider declares the form it reads a remote server in: `type: "http"` with `url` for
-    Claude Code, `url` for Codex and Hermes, `url` with `transport: "http"` for Devin, and
-    `serverUrl` for Antigravity. A command server is `command`, `args`, and `env` everywhere.
+    It claims nothing but `mcpServers`, so every other key stays. A missing file is created.
+- The forms of a remote server: `type: "http"` with `url` for Claude Code, `url` for Codex and
+    Hermes, `url` with `transport: "http"` for Devin, and `serverUrl` for Antigravity. A command server is `command`, `args`, and `env` everywhere.
 - Pi gets no servers: it has no MCP client, and the harness installs no MCP extension for it. dsh
     gets none either: its client plugin is not part of dsh, must match the dsh version, and is
     installed per profile by the user, so plugin rows the harness wrote would name a package that

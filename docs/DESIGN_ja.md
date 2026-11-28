@@ -49,7 +49,7 @@
 
 **6. プロバイダの宣言と処理，I/O を分離する．**
 
-- 判断：Claude，Codex，Devin，Hermes，pi，dsh の 6 つすべてを `ProviderSpec` に宣言し，Data / Functions / Capabilities に分ける．すべてのフィールドは，多くの provider が共有する 6 つの概念のどれかに属する．hook（`HookSpec`：スクリプト，登録先，ブリッジファイル），skill，instructions，コマンドルール，config（`ConfigSpec`：パス，生成のしかた，所有範囲を宣言する `ConfigSync`），MCP サーバー（`McpSpec`：スキルディレクトリのプラグイン，config の追跡対象のマッピング，2 つ目の `ConfigSpec` として同期する専用ファイルのいずれか）である．hook はすべての provider が持つので必須とし，ほかの概念は `Option` にする．provider ごとの違いは，その provider だけのフィールドではなく enum の variant で表す．
+- 判断：Claude，Codex，Devin，Hermes，pi，dsh の 6 つすべてを `ProviderSpec` に宣言し，Data / Functions / Capabilities に分ける．すべてのフィールドは，多くの provider が共有する 6 つの概念のどれかに属する．hook（`HookSpec`：スクリプト，登録先，ブリッジファイル），skill，instructions，コマンドルール，config（`ConfigSpec`：パス，生成のしかた，所有範囲を宣言する `ConfigSync`），MCP サーバー（`McpSpec`：スキルディレクトリのプラグインか，2 つ目の `ConfigSpec` として同期する専用ファイル．サーバーを持つ config は，その場所を `ConfigSync` で宣言する）である．hook はすべての provider が持つので必須とし，ほかの概念は `Option` にする．provider ごとの違いは，その provider だけのフィールドではなく enum の variant で表す．
 - 理由：パス，資産の出力先，同期の宣言を共有して一覧のずれを防ぎ，`HookRegistration` や `CommandRuleSpec` などの variant で違いを見える形にして網羅的に match する．一覧の並びは registry の順序に従う．Rust を唯一の source とし，`nix/providers.json` はそこから生成する．コミット済みのファイルと差があるとテストが失敗し，`UPDATE_PROVIDERS_JSON=1` で再生成できる．Home Manager は管理対象のファイルとサブディレクトリを明示してリンクする．
 - ADR: [0026]，[0027]，[0028]，[0029]，[0033]．
 
