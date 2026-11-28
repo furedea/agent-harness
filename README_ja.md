@@ -162,7 +162,7 @@ harness は値をそのままプロバイダのファイルに書くため，認
 | Hermes      | `~/.hermes/config.yaml` の `mcp_servers`                               | `url`                      | 残る．削除するのは前回の同期が書いたサーバーだけである    |
 | Antigravity | `~/.gemini/config/mcp_config.json` の `mcpServers`                     | `serverUrl`                | 残る．削除するのは前回の同期が書いたサーバーだけである    |
 
-Claude Code はスキルディレクトリのプラグインをその場で読み込み，書き換えない．そのため，同期が実行中のエージェントと `~/.claude.json` を取り合うことはない．ツール名は `mcp__plugin_agent-harness_<server>__<tool>` になるので，権限ルールはこの接頭辞で書く．`mcp_servers.json` とソースの `codex/config.toml` の両方にある名前はエラーになる．
+Claude Code はスキルディレクトリのプラグインをその場で読み込み，書き換えない．そのため，同期が実行中のエージェントと `~/.claude.json` を取り合うことはない．ツール名は `mcp__plugin_agent-harness_<server>__<tool>` になるので，権限ルールはこの接頭辞で書く．`mcp_servers.json` とソースの `codex/config.toml` の両方にある名前はエラーになる．harness が同期するファイルでは，宣言したサーバーが自分で追加した同名のサーバーを丸ごと置き換え，以後は harness の管理になる．自分のサーバーを残すには名前を変えること．
 
 Devin と Antigravity はサーバーを専用のファイルに持ち，`devin mcp add -s user` や Antigravity の MCP マネージャーもそこへ書く．インストールはこのファイルをプロバイダの設定の隣に生成し，`sync-config --provider <devin|antigravity> --file mcp-servers` が実際のファイルへマージする．Home Manager モジュールは activation でこの同期を実行する．同期が書いたサーバーは，Codex と同じく各ターゲットの隣の `.agent-harness-managed.json` に記録する．
 

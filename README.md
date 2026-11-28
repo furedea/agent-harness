@@ -208,7 +208,9 @@ that fetches the credential (for example from the system keychain) and starts th
 Claude Code loads the plugin from the skills directory in place and never writes to it, so a sync
 never races the running agent for `~/.claude.json`. It names the tools
 `mcp__plugin_agent-harness_<server>__<tool>`, so write permission rules with that prefix. A name in
-both `mcp_servers.json` and the source `codex/config.toml` is an error.
+both `mcp_servers.json` and the source `codex/config.toml` is an error. In the files the harness
+syncs, a declared server replaces one you added under the same name whole, and from then on the
+harness owns it: rename your own server to keep it.
 
 Devin and Antigravity keep servers in a file of their own that `devin mcp add -s user` and the
 Antigravity MCP manager also write. Installation renders it next to the provider's config, and
