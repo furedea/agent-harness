@@ -1,6 +1,6 @@
-use crate::provider::spec::ProviderId;
+use crate::provider::spec::{ProviderId, SyncedFile};
 use crate::shell::fixtures::regular_files;
-use crate::shell::sync::{SyncPaths, sync};
+use crate::shell::sync::{SyncPaths, SyncedConfig, sync};
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -380,7 +380,11 @@ fn install_matches_the_merge_the_home_manager_build_applies() -> Result<()> {
         source: &generated,
         target: &synced,
     };
-    sync(ProviderId::Claude.spec(), &paths, &root)?;
+    let target = SyncedConfig {
+        provider: ProviderId::Claude.spec(),
+        file: SyncedFile::Config,
+    };
+    sync(target, &paths, &root)?;
     install_home(&source, &out)?;
 
     assert_eq!(

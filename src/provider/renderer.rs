@@ -18,8 +18,8 @@ use crate::{
     },
     layout::SourceLayout,
     provider::spec::{
-        CommandRuleSpec, ConfigSpec, ConfigSync, HookRegistration, McpSpec, ProviderId,
-        ProviderSpec, RenderedConfig, SkillSource, SkillSpec,
+        CommandRuleSpec, ConfigSpec, ConfigSync, HookRegistration, McpEntry, McpMapping, McpSpec,
+        ProviderId, ProviderSpec, RenderedConfig, SkillSource, SkillSpec,
     },
     render::Provider,
     source_model::Source,
@@ -51,6 +51,7 @@ impl ProviderRenderer<'_> {
         operations.extend(self.render_skill(spec)?);
         operations.extend(self.write_command_rule(spec)?);
         operations.extend(self.write_config(spec)?);
+        operations.extend(self.write_mcp_file(spec)?);
         Ok(operations)
     }
 
@@ -130,25 +131,77 @@ impl ProviderRenderer<'_> {
 
     fn write_config(&self, spec: &ProviderSpec) -> Result<Vec<FileOp>> {
         match spec.config.zip(spec.config_file()) {
-            Some((config, path)) => self.write_config_file(config, path),
+            Some((config, relative)) => self.write_config_file(ConfigFile {
+                config,
+                relative,
+                mcp: spec.mcp_mapping(),
+            }),
             None => Ok(Vec::new()),
         }
     }
 
-    fn write_config_file(&self, config: ConfigSpec, relative: &str) -> Result<Vec<FileOp>> {
+    fn write_mcp_file(&self, spec: &ProviderSpec) -> Result<Vec<FileOp>> {
+        match spec.mcp_file() {
+            Some((config, relative)) => self.write_config_file(ConfigFile {
+                config,
+                relative,
+                mcp: None,
+            }),
+            None => Ok(Vec::new()),
+        }
+    }
+
+    fn write_config_file(&self, file: ConfigFile) -> Result<Vec<FileOp>> {
         let target = InstalledConfig {
-            sync: &config.sync,
-            relative,
-            path: &self.out.join(relative),
+            sync: &file.config.sync,
+            relative: file.relative,
+            path: &self.out.join(file.relative),
         };
-        match config.rendered {
+        match file.config.rendered {
             // The hook registration or the bridge directory, rendered with them.
             RenderedConfig::WithHooks => Ok(Vec::new()),
-            RenderedConfig::Fixed(content) => Ok(vec![FileOp::write(target.path, content)]),
+            RenderedConfig::Fixed(content) => self.write_fixed(file, content),
             RenderedConfig::SourceFile(relative) => self.merge_source_file(target, relative),
             RenderedConfig::SourceTomlWithGuardedFilesystem => self.merge_guarded_toml(target),
             RenderedConfig::SourceJsonWithToolPermissions(p) => self.merge_tool_rules(target, p),
+            RenderedConfig::McpServers(mcp) => self.merge_mcp_servers(target, mcp),
         }
+    }
+
+    /// The fixed document, with the source's MCP servers when the provider reads them from it.
+    fn write_fixed(&self, file: ConfigFile, content: &str) -> Result<Vec<FileOp>> {
+        let path = self.out.join(file.relative);
+        let sync = &file.config.sync;
+        let text = match file
+            .mcp
+            .filter(|_| !self.context.source.mcp_servers.is_empty())
+        {
+            Some(mcp) => self.with_mcp_servers(parse_generated(sync, &path, content)?, mcp)?,
+            None => content.to_owned(),
+        };
+        Ok(vec![FileOp::write(&path, text)])
+    }
+
+    fn with_mcp_servers(&self, mut document: ConfigDocument, mcp: McpMapping) -> Result<String> {
+        self.set_mcp_servers(&mut document, mcp)?;
+        document.render()
+    }
+
+    fn merge_mcp_servers(
+        &self,
+        target: InstalledConfig<'_>,
+        mcp: McpMapping,
+    ) -> Result<Vec<FileOp>> {
+        let mut generated = ConfigDocument::blank(target.sync.format);
+        self.set_mcp_servers(&mut generated, mcp)?;
+        self.merge_into_installed(target, &generated)
+    }
+
+    fn set_mcp_servers(&self, document: &mut ConfigDocument, mcp: McpMapping) -> Result<()> {
+        let servers = self.context.source.mcp_servers.json_map(mcp.entry);
+        document
+            .set_json(mcp.path, servers)
+            .context("failed to render the MCP servers")
     }
 
     fn merge_source_file(
@@ -277,7 +330,7 @@ fn add_mcp_plugin(
         Some(McpSpec::SkillsDirectoryPlugin { directory: plugin }) => {
             with_mcp_plugin(source, skills, &directory.path.join(plugin))
         }
-        Some(McpSpec::ConfigMapping { .. }) | None => Ok(skills),
+        Some(McpSpec::ConfigMapping { .. } | McpSpec::ConfigFile(_)) | None => Ok(skills),
     }
 }
 
@@ -302,7 +355,7 @@ fn with_mcp_plugin(source: &Source, skills: FileOp, plugin: &Path) -> Result<Fil
     let manifest = json!({
         "name": MCP_PLUGIN_NAME,
         "description": "MCP servers declared in the agent-harness source",
-        "mcpServers": source.mcp_servers.claude_plugin_servers(),
+        "mcpServers": source.mcp_servers.json_map(McpEntry::TypedUrl),
     });
     contents.push(FileOp::write(
         plugin.join(".claude-plugin/plugin.json"),
@@ -322,6 +375,16 @@ fn writes_under(operations: &[FileOp], directory: &Path) -> bool {
 /// The plugin name, which prefixes the tool names Claude Code gives the servers'
 /// tools: `mcp__plugin_agent-harness_<server>__<tool>`.
 const MCP_PLUGIN_NAME: &str = "agent-harness";
+
+/// A config file a provider declares, to render into the output.
+#[derive(Clone, Copy)]
+struct ConfigFile {
+    config: ConfigSpec,
+    /// The registry's path of the file.
+    relative: &'static str,
+    /// Where the provider reads the MCP servers inside the file, when it does.
+    mcp: Option<McpMapping>,
+}
 
 /// A mutable config in the output, which rendering merges the generated config into.
 #[derive(Clone, Copy)]

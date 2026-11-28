@@ -40,23 +40,31 @@ let
       }) provider.linked_paths
     )
   ) providers;
-  providerActivations = lib.listToAttrs (
-    map (
-      provider:
-      let
-        inherit (provider) sync;
-        target = lib.replaceStrings [ "\${profile}" ] [ (cfg.${provider.id}.profile or "") ] sync.target;
-      in
-      lib.nameValuePair sync.activation (
-        lib.mkIf cfg.${provider.id}.enable (
-          lib.hm.dag.entryAfter [ (sync.after or "linkGeneration") ] ''
-            ${lib.getExe cfg.package} ${sync.command} \
-              --source ${renderedHarness}/${sync.source} \
-              --target "$HOME/${target}"
-          ''
-        )
+  syncActivation =
+    provider: sync:
+    let
+      target = lib.replaceStrings [ "\${profile}" ] [ (cfg.${provider.id}.profile or "") ] sync.target;
+    in
+    lib.nameValuePair sync.activation (
+      lib.mkIf cfg.${provider.id}.enable (
+        lib.hm.dag.entryAfter [ (sync.after or "linkGeneration") ] ''
+          ${lib.getExe cfg.package} ${sync.command} \
+            --source ${renderedHarness}/${sync.source} \
+            --target "$HOME/${target}"
+        ''
       )
-    ) (builtins.filter (provider: provider.sync != null) providers)
+    );
+  # Each provider's config, and the MCP server file of its own when it has one.
+  providerActivations = lib.listToAttrs (
+    lib.concatMap (
+      provider:
+      map (syncActivation provider) (
+        builtins.filter (sync: sync != null) [
+          provider.sync
+          (provider.mcp_sync or null)
+        ]
+      )
+    ) providers
   );
   # Evaluation reads `tree` (a plain path) so it never builds `cfg.source`; the built
   # `cfg.source` only supplies files copied at build time. Path concatenation (`+`) keeps

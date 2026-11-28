@@ -2,14 +2,17 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 
-use super::super::spec::{McpSpec, Ownership, PROVIDERS, ProviderId};
+use super::super::spec::{
+    McpEntry, McpMapping, McpSpec, Ownership, PROVIDERS, ProviderId, ProviderSpec, RenderedConfig,
+    WhenMissing,
+};
 use crate::shell::fixtures::load_source;
 
 #[test]
 fn an_mcp_mapping_in_a_config_is_tracked_so_servers_the_user_added_stay() {
     let mappings = PROVIDERS.iter().filter_map(|spec| match spec.mcp {
-        Some(McpSpec::ConfigMapping { path }) => Some((spec, path)),
-        Some(McpSpec::SkillsDirectoryPlugin { .. }) | None => None,
+        Some(McpSpec::ConfigMapping(mapping)) => Some((spec, mapping.path)),
+        Some(McpSpec::SkillsDirectoryPlugin { .. } | McpSpec::ConfigFile(_)) | None => None,
     });
     for (spec, path) in mappings {
         let tracked: Vec<_> = spec
@@ -97,4 +100,82 @@ fn a_skill_named_like_the_mcp_plugin_is_rejected() {
 
     let message = result.map_or_else(|error| format!("{error:#}"), |_| String::new());
     assert!(message.contains("MCP server plugin"), "{message}");
+}
+
+#[test]
+fn every_provider_with_an_mcp_client_the_harness_can_reach_gets_the_servers() {
+    let rendered: Vec<_> = PROVIDERS
+        .iter()
+        .filter(|spec| spec.mcp.is_some())
+        .map(|spec| spec.id)
+        .collect();
+
+    // Pi has no MCP client, and dsh reaches servers only through a plugin the harness does not
+    // install.
+    assert_eq!(
+        rendered,
+        [
+            ProviderId::Codex,
+            ProviderId::Claude,
+            ProviderId::Devin,
+            ProviderId::Hermes,
+            ProviderId::Antigravity,
+        ]
+    );
+}
+
+#[test]
+fn an_mcp_file_of_its_own_tracks_its_servers_and_claims_nothing_else() {
+    let files = PROVIDERS.iter().filter_map(ProviderSpec::mcp_file);
+    for (config, path) in files {
+        let claims: Vec<_> = config.sync.ownership.iter().map(tracked_path).collect();
+        let rendered = rendered_mcp(config.rendered).map(|mapping| mapping.path);
+        assert!(
+            rendered.is_some(),
+            "{path} must be rendered from the MCP servers"
+        );
+        assert_eq!(claims, [rendered], "{path}");
+        assert_eq!(config.sync.when_missing, WhenMissing::Create, "{path}");
+    }
+}
+
+#[test]
+fn no_two_synced_files_in_one_directory_share_a_sidecar() {
+    let mut sidecars = std::collections::BTreeSet::new();
+    let tracked = PROVIDERS
+        .iter()
+        .flat_map(ProviderSpec::synced_files)
+        .filter_map(|(config, path)| config.sync.sidecar_file().map(|sidecar| (path, sidecar)));
+    for (path, sidecar) in tracked {
+        let directory = Path::new(path).parent();
+        assert!(
+            sidecars.insert((directory, sidecar)),
+            "{path} shares its sidecar with another synced file"
+        );
+    }
+}
+
+#[test]
+fn each_provider_reads_a_remote_server_in_its_own_form() {
+    let entry = |id: ProviderId| match id.spec().mcp {
+        Some(McpSpec::ConfigMapping(mapping)) => Some(mapping.entry),
+        Some(McpSpec::ConfigFile(config)) => rendered_mcp(config.rendered).map(|m| m.entry),
+        Some(McpSpec::SkillsDirectoryPlugin { .. }) | None => None,
+    };
+
+    assert_eq!(entry(ProviderId::Codex), Some(McpEntry::Url));
+    assert_eq!(entry(ProviderId::Hermes), Some(McpEntry::Url));
+    assert_eq!(entry(ProviderId::Devin), Some(McpEntry::UrlWithTransport));
+    assert_eq!(entry(ProviderId::Antigravity), Some(McpEntry::ServerUrl));
+}
+
+fn rendered_mcp(rendered: RenderedConfig) -> Option<McpMapping> {
+    match rendered {
+        RenderedConfig::McpServers(mapping) => Some(mapping),
+        RenderedConfig::WithHooks
+        | RenderedConfig::Fixed(_)
+        | RenderedConfig::SourceFile(_)
+        | RenderedConfig::SourceTomlWithGuardedFilesystem
+        | RenderedConfig::SourceJsonWithToolPermissions(_) => None,
+    }
 }

@@ -18,12 +18,15 @@ use crate::{
     profile::Profile,
     provider::{
         renderer::SkillsDirectory,
-        spec::{PROVIDERS, ProviderId},
+        spec::{PROVIDERS, ProviderId, SyncedFile},
     },
     render::{self, RenderRequest},
     runtime,
     runtime_root::RuntimeRoot,
-    shell::{self, LoadInputs, hook_bundle, load_source, real_path, sync::SyncPaths},
+    shell::{
+        self, LoadInputs, hook_bundle, load_source, real_path,
+        sync::{SyncPaths, SyncedConfig},
+    },
     source,
     source_model::Source,
 };
@@ -154,8 +157,28 @@ struct GenerateHooksArgs {
 struct ProviderSyncArgs {
     #[arg(long, value_enum)]
     provider: ProviderId,
+    /// Which of the provider's synced files to update.
+    #[arg(long, value_enum, default_value_t = SyncedFileArg::Config)]
+    file: SyncedFileArg,
     #[command(flatten)]
     config: SyncConfigArgs,
+}
+
+#[derive(Clone, Copy, Debug, clap::ValueEnum)]
+enum SyncedFileArg {
+    /// The provider's config.
+    Config,
+    /// The provider's own MCP server file.
+    McpServers,
+}
+
+impl From<SyncedFileArg> for SyncedFile {
+    fn from(file: SyncedFileArg) -> Self {
+        match file {
+            SyncedFileArg::Config => Self::Config,
+            SyncedFileArg::McpServers => Self::McpServers,
+        }
+    }
 }
 
 #[derive(Debug, clap::Args)]
@@ -229,7 +252,7 @@ pub fn run() -> Result<()> {
     let profile = cli.profile;
     match cli.command {
         Command::GenerateHooks(args) => write_hooks(args.provider, args.file, profile),
-        Command::SyncConfig(args) => sync_config(args.provider, &args.config),
+        Command::SyncConfig(args) => sync_file(args.provider, args.file.into(), &args.config),
         Command::GenerateClaudeSettings(args) => generate_claude_settings(args, profile),
         Command::GenerateClaudeHooks(args) => write_hooks(ProviderId::Claude, args, profile),
         Command::GenerateCodexConfigSource(args) => generate_codex_config_source(args, profile),
@@ -246,12 +269,16 @@ pub fn run() -> Result<()> {
         Command::GenerateSkills(args) => generate_skills(args, profile),
         Command::Install(args) => install(args, profile),
         Command::List(args) => list(args, profile),
-        Command::SyncCodexConfig(args) => sync_config(ProviderId::Codex, &args),
-        Command::SyncClaudeSettings(args) => sync_config(ProviderId::Claude, &args),
-        Command::SyncDevinConfig(args) => sync_config(ProviderId::Devin, &args),
-        Command::SyncAntigravityConfig(args) => sync_config(ProviderId::Antigravity, &args),
-        Command::SyncHermesConfig(args) => sync_config(ProviderId::Hermes, &args),
-        Command::SyncDshConfig(args) => sync_config(ProviderId::Dsh, &args),
+        Command::SyncCodexConfig(args) => sync_file(ProviderId::Codex, SyncedFile::Config, &args),
+        Command::SyncClaudeSettings(args) => {
+            sync_file(ProviderId::Claude, SyncedFile::Config, &args)
+        }
+        Command::SyncDevinConfig(args) => sync_file(ProviderId::Devin, SyncedFile::Config, &args),
+        Command::SyncAntigravityConfig(args) => {
+            sync_file(ProviderId::Antigravity, SyncedFile::Config, &args)
+        }
+        Command::SyncHermesConfig(args) => sync_file(ProviderId::Hermes, SyncedFile::Config, &args),
+        Command::SyncDshConfig(args) => sync_file(ProviderId::Dsh, SyncedFile::Config, &args),
         Command::Verify(args) => {
             let source = load_resolved_source(args.source, &[], profile)?;
             let prefix = resolve_prefix(args.prefix)?;
@@ -302,12 +329,16 @@ fn load_resolved_source(
     load_source(root.as_path(), &inputs)
 }
 
-fn sync_config(provider: ProviderId, args: &SyncConfigArgs) -> Result<()> {
+fn sync_file(provider: ProviderId, file: SyncedFile, args: &SyncConfigArgs) -> Result<()> {
     let paths = SyncPaths {
         source: &args.source,
         target: &args.target,
     };
-    shell::sync::sync(provider.spec(), &paths, &home_dir()?)
+    let target = SyncedConfig {
+        provider: provider.spec(),
+        file,
+    };
+    shell::sync::sync(target, &paths, &home_dir()?)
 }
 
 fn write_codex_rules(args: GenerateFileArgs, profile: Profile) -> Result<()> {

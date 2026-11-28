@@ -18,7 +18,7 @@ fn a_command_server_and_a_url_server_are_both_accepted() -> Result<()> {
     }}))?;
 
     assert_eq!(
-        servers.claude_plugin_servers(),
+        servers.json_map(McpEntry::TypedUrl),
         json!({
             "docs": {"type": "http", "url": "https://docs.example.com/mcp"},
             "github": {"command": "github-mcp-server", "args": ["stdio"], "env": {"GITHUB_TOOLSETS": "repos"}},
@@ -81,7 +81,7 @@ fn codex_tables_carry_command_args_env_and_url() -> Result<()> {
         "docs": {"url": "https://docs.example.com/mcp"},
     }}))?;
     let mut document = toml_edit::DocumentMut::new();
-    document.insert("mcp_servers", servers.codex_table());
+    document.insert("mcp_servers", servers.toml_table(McpEntry::Url)?);
 
     let expected = "[mcp_servers.docs]\nurl = \"https://docs.example.com/mcp\"\n\n\
         [mcp_servers.github]\ncommand = \"github-mcp-server\"\nargs = [\"stdio\"]\n\n\
@@ -93,5 +93,46 @@ fn codex_tables_carry_command_args_env_and_url() -> Result<()> {
             .to_string(),
         expected.parse::<toml_edit::DocumentMut>()?.to_string()
     );
+    Ok(())
+}
+
+#[test]
+fn a_url_server_takes_the_form_each_provider_reads() -> Result<()> {
+    let servers = parsed(&json!({"servers": {"docs": {"url": "https://docs.example.com/mcp"}}}))?;
+    let url = "https://docs.example.com/mcp";
+
+    assert_eq!(
+        servers.json_map(McpEntry::TypedUrl),
+        json!({"docs": {"type": "http", "url": url}})
+    );
+    assert_eq!(
+        servers.json_map(McpEntry::Url),
+        json!({"docs": {"url": url}})
+    );
+    assert_eq!(
+        servers.json_map(McpEntry::UrlWithTransport),
+        json!({"docs": {"url": url, "transport": "http"}})
+    );
+    assert_eq!(
+        servers.json_map(McpEntry::ServerUrl),
+        json!({"docs": {"serverUrl": url}})
+    );
+    Ok(())
+}
+
+#[test]
+fn a_command_server_takes_the_same_form_for_every_provider() -> Result<()> {
+    let servers =
+        parsed(&json!({"servers": {"github": {"command": "gh-mcp", "args": ["stdio"]}}}))?;
+    let expected = json!({"github": {"command": "gh-mcp", "args": ["stdio"]}});
+
+    for entry in [
+        McpEntry::TypedUrl,
+        McpEntry::Url,
+        McpEntry::UrlWithTransport,
+        McpEntry::ServerUrl,
+    ] {
+        assert_eq!(servers.json_map(entry), expected, "{entry:?}");
+    }
     Ok(())
 }

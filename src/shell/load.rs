@@ -172,7 +172,7 @@ pub(crate) fn load_installed(
 fn merged_configs(providers: &[ProviderSpec]) -> impl Iterator<Item = (ConfigSpec, &'static str)> {
     providers
         .iter()
-        .filter_map(|spec| spec.config.zip(spec.config_path()))
+        .flat_map(ProviderSpec::synced_files)
         .filter(|(config, _)| merges_installed(config))
 }
 
@@ -303,7 +303,8 @@ fn source_config_path(config: &ConfigSpec) -> Option<&'static str> {
         | RenderedConfig::SourceJsonWithToolPermissions(relative) => Some(relative),
         RenderedConfig::WithHooks
         | RenderedConfig::Fixed(_)
-        | RenderedConfig::SourceTomlWithGuardedFilesystem => None,
+        | RenderedConfig::SourceTomlWithGuardedFilesystem
+        | RenderedConfig::McpServers { .. } => None,
     }
 }
 

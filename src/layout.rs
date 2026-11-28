@@ -227,6 +227,7 @@ fn rendered_files(spec: &ProviderSpec) -> impl Iterator<Item = &'static str> {
         .into_iter()
         .chain([spec.hook.registration.path()])
         .chain(spec.config_file())
+        .chain(spec.mcp_file().map(|(_, path)| path))
         .chain(spec.published_rule_file())
 }
 

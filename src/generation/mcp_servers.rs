@@ -14,6 +14,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use toml_edit::{Array, Item, Table};
 
+pub(crate) use crate::provider::spec::McpEntry;
+
 /// The servers the source declares, parsed and validated, by name.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct McpServers(BTreeMap<String, McpServer>);
@@ -73,44 +75,62 @@ impl McpServers {
         self.0.is_empty()
     }
 
-    /// The `mcpServers` map of a Claude Code plugin manifest.
-    pub(crate) fn claude_plugin_servers(&self) -> Value {
+    /// The servers by name, each in the form `entry` gives a url server.
+    pub(crate) fn json_map(&self, entry: McpEntry) -> Value {
         self.0
             .iter()
-            .map(|(name, server)| (name.clone(), server.claude_entry()))
+            .map(|(name, server)| (name.clone(), server.json_entry(entry)))
             .collect::<serde_json::Map<_, _>>()
             .into()
     }
 
-    /// The `mcp_servers` table of a Codex config.
-    pub(crate) fn codex_table(&self) -> Item {
-        let mut table: Table = self
+    /// The servers as a TOML table without a header of its own, each in the form `entry` gives a
+    /// url server.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when a server holds a value TOML cannot express, which a validated server
+    /// never does.
+    pub(crate) fn toml_table(&self, entry: McpEntry) -> Result<Item> {
+        let mut table = self
             .0
             .iter()
-            .map(|(name, server)| (name.clone(), Item::Table(server.codex_table())))
-            .collect();
+            .map(|(name, server)| server.toml_item(name, entry))
+            .collect::<Result<Table>>()?;
         table.set_implicit(true);
-        Item::Table(table)
+        Ok(Item::Table(table))
     }
 }
 
 impl McpServer {
-    fn claude_entry(&self) -> Value {
+    fn json_entry(&self, entry: McpEntry) -> Value {
         match self {
             Self::Command(command) => json!(command),
-            Self::Url(url) => json!({"type": "http", "url": url}),
+            Self::Url(url) => url_entry(url, entry),
         }
     }
 
-    fn codex_table(&self) -> Table {
-        match self {
-            Self::Command(command) => codex_command_table(command),
-            Self::Url(url) => std::iter::once(("url", toml_edit::value(url))).collect(),
-        }
+    fn toml_item(&self, name: &str, entry: McpEntry) -> Result<(String, Item)> {
+        let table = match self {
+            Self::Command(command) => Ok(command_table(command)),
+            Self::Url(_) => flat_table(&self.json_entry(entry)),
+        };
+        table
+            .map(|table| (name.to_owned(), Item::Table(table)))
+            .with_context(|| format!("failed to render MCP server {name:?} as TOML"))
     }
 }
 
-fn codex_command_table(server: &ServerCommand) -> Table {
+fn url_entry(url: &str, entry: McpEntry) -> Value {
+    match entry {
+        McpEntry::TypedUrl => json!({"type": "http", "url": url}),
+        McpEntry::Url => json!({"url": url}),
+        McpEntry::UrlWithTransport => json!({"url": url, "transport": "http"}),
+        McpEntry::ServerUrl => json!({"serverUrl": url}),
+    }
+}
+
+fn command_table(server: &ServerCommand) -> Table {
     let mut table = Table::new();
     table.insert("command", toml_edit::value(&server.command));
     if !server.args.is_empty() {
@@ -129,6 +149,22 @@ fn string_table(entries: &BTreeMap<String, String>) -> Table {
     entries
         .iter()
         .map(|(key, value)| (key.clone(), toml_edit::value(value)))
+        .collect()
+}
+
+/// A JSON object of strings as a TOML table.
+fn flat_table(value: &Value) -> Result<Table> {
+    let Value::Object(object) = value else {
+        bail!("failed to convert {value} to a TOML table: it is not an object");
+    };
+    object
+        .iter()
+        .map(|(key, value)| {
+            let text = value
+                .as_str()
+                .with_context(|| format!("failed to convert {key} to TOML: not a string"))?;
+            Ok((key.clone(), toml_edit::value(text)))
+        })
         .collect()
 }
 

@@ -3,9 +3,9 @@
 
 use super::spec::{
     Asset, Bridge, BundleCapture, CommandRuleSpec, ConfigFormat, ConfigLocation, ConfigSpec,
-    ConfigSync, EntryMatch, HookFormat, HookRegistration, HookSection, HookSpec, KeyScope, McpSpec,
-    Ownership, ProviderId, ProviderSpec, RenderedConfig, SkillSource, SkillSpec, SyncedDirectory,
-    WhenAbsent, WhenMissing,
+    ConfigSync, EntryMatch, HookFormat, HookRegistration, HookSection, HookSpec, KeyScope,
+    McpEntry, McpMapping, McpSpec, Ownership, ProviderId, ProviderSpec, RenderedConfig,
+    SkillSource, SkillSpec, SyncedDirectory, WhenAbsent, WhenMissing,
 };
 
 impl ProviderId {
@@ -46,6 +46,8 @@ const CODEX_USER_KEPT_KEYS: &[&str] = &[
 ];
 
 const CODEX_MCP_SERVERS: &[&str] = &["mcp_servers"];
+
+const HERMES_MCP_SERVERS: &[&str] = &["mcp_servers"];
 
 const HERMES_MANAGED_CONFIG: &str = "plugins:\n  enabled:\n    - agent-harness-hooks\n";
 
@@ -110,9 +112,10 @@ const CODEX: ProviderSpec = ProviderSpec {
         },
         directories: &[],
     }),
-    mcp: Some(McpSpec::ConfigMapping {
+    mcp: Some(McpSpec::ConfigMapping(McpMapping {
         path: CODEX_MCP_SERVERS,
-    }),
+        entry: McpEntry::Url,
+    })),
     retired_files: &[],
 };
 
@@ -218,7 +221,11 @@ const DEVIN: ProviderSpec = ProviderSpec {
         },
         directories: &[],
     }),
-    mcp: None,
+    // `devin mcp add -s user` writes this file too.
+    mcp: Some(McpSpec::ConfigFile(ConfigSpec::mcp_server_file(
+        ".config/devin/mcp_config.json",
+        McpEntry::UrlWithTransport,
+    ))),
     retired_files: &[],
 };
 
@@ -259,11 +266,17 @@ const HERMES: ProviderSpec = ProviderSpec {
             format: ConfigFormat::Yaml,
             ownership: &[
                 Ownership::Keys {
-                    scope: KeyScope::EveryExcept(&["plugins"]),
+                    scope: KeyScope::EveryExcept(&["plugins", "mcp_servers"]),
                     when_absent: WhenAbsent::Keep,
                 },
                 Ownership::ListUnion {
                     path: &["plugins", "enabled"],
+                },
+                // Servers the user wrote stay.
+                Ownership::TrackedKeys {
+                    path: HERMES_MCP_SERVERS,
+                    sidecar: ".agent-harness-managed.json",
+                    formerly_managed: &[],
                 },
             ],
             when_missing: WhenMissing::Create,
@@ -272,7 +285,10 @@ const HERMES: ProviderSpec = ProviderSpec {
         },
         directories: &[],
     }),
-    mcp: None,
+    mcp: Some(McpSpec::ConfigMapping(McpMapping {
+        path: HERMES_MCP_SERVERS,
+        entry: McpEntry::Url,
+    })),
     retired_files: &[],
 };
 
@@ -322,8 +338,9 @@ const PI: ProviderSpec = ProviderSpec {
         },
         directories: &[],
     }),
-    // Earlier releases installed an srt sandbox extension here (ADR-0032).
+    // Pi has no MCP client; an MCP extension is not part of what the harness installs.
     mcp: None,
+    // Earlier releases installed an srt sandbox extension here (ADR-0032).
     retired_files: &[
         ".pi/agent/extensions/sandbox/file_operations.mjs",
         ".pi/agent/extensions/bash_sandbox.ts",
@@ -388,6 +405,8 @@ const DSH: ProviderSpec = ProviderSpec {
         },
         directories: &[],
     }),
+    // dsh reaches MCP servers only through a separate client plugin that the profile must
+    // install, which the harness does not.
     mcp: None,
     retired_files: &[],
 };
@@ -445,7 +464,11 @@ const ANTIGRAVITY: ProviderSpec = ProviderSpec {
         },
         directories: &[],
     }),
-    mcp: None,
+    // The editor, app, and `agy` share this file, which the MCP manager also writes.
+    mcp: Some(McpSpec::ConfigFile(ConfigSpec::mcp_server_file(
+        ".gemini/config/mcp_config.json",
+        McpEntry::ServerUrl,
+    ))),
     retired_files: &[],
 };
 

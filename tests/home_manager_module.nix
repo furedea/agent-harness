@@ -86,6 +86,16 @@ assert pkgs.lib.assertMsg (builtins.all hasHomeFile [
   ".dsh/skills"
   ".dsh/AGENTS.md"
 ]) "dsh files should be installed";
+assert pkgs.lib.assertMsg (builtins.all hasActivation [
+  "agentHarnessDevinMcpServers"
+  "agentHarnessAntigravityMcpServers"
+]) "Devin and Antigravity MCP server files should be synced during activation";
+assert pkgs.lib.assertMsg (
+  !(builtins.any hasHomeFile [
+    ".config/devin/mcp_config.json"
+    ".gemini/config/mcp_config.json"
+  ])
+) "MCP server files the agents also write should not be Home Manager symlinks";
 assert pkgs.lib.assertMsg (hasActivation "agentHarnessAntigravityConfig")
   "Antigravity settings should be materialized during activation";
 assert pkgs.lib.assertMsg (
@@ -114,5 +124,8 @@ pkgs.runCommand "home-manager-minimal-check" { } ''
     echo "pi skills should not carry the Claude MCP plugin" >&2
     exit 1
   fi
+  activation=${configuration.activationPackage}/activate
+  grep -q 'sync-config --provider devin --file mcp-servers' "$activation"
+  grep -q 'sync-config --provider antigravity --file mcp-servers' "$activation"
   ln -s ${configuration.activationPackage} "$out"
 ''

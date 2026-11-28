@@ -195,6 +195,9 @@ pub(crate) enum RenderedConfig {
     SourceTomlWithGuardedFilesystem,
     /// The source JSON file at this path with the generated tool `permissions` merged in, applied to the installed config; a missing file adds nothing.
     SourceJsonWithToolPermissions(&'static str),
+    /// The source's MCP servers as the mapping at `path`, each in the form `entry` gives, applied
+    /// to the installed file.
+    McpServers(McpMapping),
 }
 
 impl RenderedConfig {
@@ -206,6 +209,7 @@ impl RenderedConfig {
             Self::SourceFile(_)
                 | Self::SourceTomlWithGuardedFilesystem
                 | Self::SourceJsonWithToolPermissions(_)
+                | Self::McpServers(_)
         )
     }
 }
@@ -221,14 +225,47 @@ pub(crate) struct ConfigSpec {
 }
 
 /// Where a provider reads the MCP servers the source declares.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug)]
 pub(crate) enum McpSpec {
     /// A plugin of its own in this directory of the skills destination, which the provider loads
     /// in place and never writes to, so no sync races the provider for it.
     SkillsDirectoryPlugin { directory: &'static str },
-    /// The mapping at this path of the provider's config, which its config sync must own as
-    /// tracked keys so servers the user added stay.
-    ConfigMapping { path: &'static [&'static str] },
+    /// The mapping at `path` of the provider's config, which its config sync must own as tracked
+    /// keys so servers the user added stay.
+    ConfigMapping(McpMapping),
+    /// A file of its own that the provider's CLI also writes, synced like a second config. Its
+    /// rendered form is [`RenderedConfig::McpServers`] and its sync tracks the servers' mapping.
+    ConfigFile(ConfigSpec),
+}
+
+/// The mapping of a config that holds the MCP servers, and the form of each.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct McpMapping {
+    pub(crate) path: &'static [&'static str],
+    pub(crate) entry: McpEntry,
+}
+
+/// The form a provider reads a remote server in; a command server is `command`, `args`, and
+/// `env` everywhere.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum McpEntry {
+    /// `{"type": "http", "url": ...}`.
+    TypedUrl,
+    /// `{"url": ...}`.
+    Url,
+    /// `{"url": ..., "transport": "http"}`.
+    UrlWithTransport,
+    /// `{"serverUrl": ...}`.
+    ServerUrl,
+}
+
+/// Which of a provider's synced files a sync updates.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum SyncedFile {
+    /// The provider's config.
+    Config,
+    /// The provider's own MCP server file.
+    McpServers,
 }
 
 #[derive(Clone, Debug)]
@@ -246,6 +283,34 @@ pub(crate) struct ProviderSpec {
     /// Files an earlier release installed and that installation now removes.
     pub(crate) retired_files: &'static [&'static str],
 }
+
+impl ConfigSpec {
+    /// A provider's own MCP server file: the `mcpServers` mapping is tracked so servers the user
+    /// or the provider's CLI added stay, and every other key stays the user's.
+    pub(crate) const fn mcp_server_file(path: &'static str, entry: McpEntry) -> Self {
+        Self {
+            location: ConfigLocation::File(path),
+            rendered: RenderedConfig::McpServers(McpMapping {
+                path: MCP_SERVERS_KEY,
+                entry,
+            }),
+            sync: ConfigSync {
+                format: ConfigFormat::Json,
+                ownership: &[Ownership::TrackedKeys {
+                    path: MCP_SERVERS_KEY,
+                    sidecar: ".agent-harness-managed.json",
+                    formerly_managed: &[],
+                }],
+                when_missing: WhenMissing::Create,
+                home_command_lists: &[],
+                home_rule_lists: &[],
+            },
+            directories: &[],
+        }
+    }
+}
+
+const MCP_SERVERS_KEY: &[&str] = &["mcpServers"];
 
 impl ProviderSpec {
     /// The rules file published individually.
@@ -276,6 +341,43 @@ impl ProviderSpec {
             ConfigLocation::File(path) => Some(path),
             ConfigLocation::SameAsHookRegistration | ConfigLocation::BundleDirectory(_) => None,
         }
+    }
+
+    /// The provider's own MCP server file with its path, when it has one.
+    pub(crate) fn mcp_file(&self) -> Option<(ConfigSpec, &'static str)> {
+        let config = match self.mcp? {
+            McpSpec::ConfigFile(config) => config,
+            McpSpec::SkillsDirectoryPlugin { .. } | McpSpec::ConfigMapping(_) => return None,
+        };
+        match config.location {
+            ConfigLocation::File(path) => Some((config, path)),
+            ConfigLocation::SameAsHookRegistration | ConfigLocation::BundleDirectory(_) => None,
+        }
+    }
+
+    /// The path and entry form of the MCP servers inside the provider's config, when they live
+    /// there.
+    pub(crate) fn mcp_mapping(&self) -> Option<McpMapping> {
+        match self.mcp? {
+            McpSpec::ConfigMapping(mapping) => Some(mapping),
+            McpSpec::SkillsDirectoryPlugin { .. } | McpSpec::ConfigFile(_) => None,
+        }
+    }
+
+    /// The synced file `file` names, when the provider has it.
+    pub(crate) fn synced(&self, file: SyncedFile) -> Option<ConfigSpec> {
+        match file {
+            SyncedFile::Config => self.config,
+            SyncedFile::McpServers => self.mcp_file().map(|(config, _)| config),
+        }
+    }
+
+    /// Every synced file of the provider that is published on its own, with its path.
+    pub(crate) fn synced_files(&self) -> impl Iterator<Item = (ConfigSpec, &'static str)> {
+        self.config
+            .zip(self.config_path())
+            .into_iter()
+            .chain(self.mcp_file())
     }
 
     /// The path of the rendered config, whichever role the file or directory also plays.

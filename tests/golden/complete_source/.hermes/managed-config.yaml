@@ -1,3 +1,12 @@
 plugins:
   enabled:
-    - agent-harness-hooks
+  - agent-harness-hooks
+mcp_servers:
+  docs:
+    url: https://docs.example.com/mcp
+  github:
+    args:
+    - stdio
+    command: github-mcp-server
+    env:
+      GITHUB_TOOLSETS: repos

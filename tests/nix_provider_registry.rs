@@ -87,6 +87,7 @@ fn provider_json(spec: &ProviderSpec) -> Value {
         "hook_manifest": spec.hook.registration.path(),
         "linked_paths": linked_paths(spec),
         "sync": spec.config.map_or(Value::Null, |config| sync_json(spec, config)),
+        "mcp_sync": spec.mcp_file().map_or(Value::Null, |(_, path)| mcp_sync_json(spec, path)),
         "extra_options": extra_options(spec),
     })
 }
@@ -174,6 +175,16 @@ fn sync_json(spec: &ProviderSpec, config: ConfigSpec) -> Value {
         sync["after"] = json!("writeBoundary");
     }
     sync
+}
+
+/// The provider's own MCP server file, synced so servers its CLI added stay.
+fn mcp_sync_json(spec: &ProviderSpec, path: &str) -> Value {
+    json!({
+        "activation": format!("agentHarness{}McpServers", capitalized(spec.key)),
+        "command": format!("sync-config --provider {} --file mcp-servers", spec.key),
+        "source": path,
+        "target": path,
+    })
 }
 
 fn capitalized(key: &str) -> String {

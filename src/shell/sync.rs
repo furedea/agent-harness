@@ -8,7 +8,7 @@ use crate::{
     config_sync::{Merge, codec::ConfigDocument},
     file_op::FileOp,
     generation::dsh_config,
-    provider::spec::{ConfigLocation, ConfigSpec, ProviderSpec},
+    provider::spec::{ConfigLocation, ConfigSpec, ProviderSpec, SyncedFile},
 };
 
 /// The rendered config to read and the user-owned config to update.
@@ -17,9 +17,21 @@ pub(crate) struct SyncPaths<'a> {
     pub(crate) target: &'a Path,
 }
 
-pub(crate) fn sync(spec: &ProviderSpec, paths: &SyncPaths<'_>, home: &Path) -> Result<()> {
-    let Some(config) = spec.config else {
-        bail!("{} has no managed config to sync", spec.key);
+/// One synced file of a provider.
+#[derive(Clone, Copy)]
+pub(crate) struct SyncedConfig<'a> {
+    pub(crate) provider: &'a ProviderSpec,
+    pub(crate) file: SyncedFile,
+}
+
+pub(crate) fn sync(target: SyncedConfig<'_>, paths: &SyncPaths<'_>, home: &Path) -> Result<()> {
+    let spec = target.provider;
+    let Some(config) = spec.synced(target.file) else {
+        bail!(
+            "failed to sync the {} config: it has no {}",
+            spec.key,
+            file_name(target.file)
+        );
     };
     let Some(operations) = sync_ops(config, paths, home)? else {
         eprintln!(
@@ -31,6 +43,13 @@ pub(crate) fn sync(spec: &ProviderSpec, paths: &SyncPaths<'_>, home: &Path) -> R
         return Ok(());
     };
     execute(&operations)
+}
+
+fn file_name(file: SyncedFile) -> &'static str {
+    match file {
+        SyncedFile::Config => "managed config",
+        SyncedFile::McpServers => "MCP server file of its own",
+    }
 }
 
 /// Reads the rendered and installed configs once, parses them, and applies the declared ownership.

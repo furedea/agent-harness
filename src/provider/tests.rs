@@ -161,6 +161,7 @@ fn registry_derivation_preserves_install_order() {
             ".claude/CLAUDE.md",
             ".claude/settings.json",
             ".config/devin/config.json",
+            ".config/devin/mcp_config.json",
             ".hermes/hooks.json",
             ".hermes/managed-config.yaml",
             ".pi/agent/AGENTS.md",
@@ -172,6 +173,7 @@ fn registry_derivation_preserves_install_order() {
             ".gemini/config/AGENTS.md",
             ".gemini/config/hooks.json",
             ".gemini/antigravity-cli/settings.json",
+            ".gemini/config/mcp_config.json",
         ]
         .map(PathBuf::from)
     );

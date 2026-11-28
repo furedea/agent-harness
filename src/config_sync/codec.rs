@@ -456,6 +456,35 @@ impl ConfigDocument {
             Self::Yaml(_) => ConfigFormat::Yaml,
         }
     }
+
+    /// Sets `path` to the JSON `value`, converted to the document's format.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when a parent of `path` is not a mapping, or the document is TOML, whose
+    /// tables are built where the TOML is generated.
+    pub(crate) fn set_json(&mut self, path: &[&str], value: JsonValue) -> Result<()> {
+        let key = path.join(".");
+        match self {
+            Self::Json(json) => json.set(path, value),
+            Self::Yaml(yaml) => serde_norway::to_value(value)
+                .map_err(anyhow::Error::from)
+                .and_then(|value| yaml.set(path, value)),
+            Self::Toml(_) => bail!("a TOML config takes no JSON value"),
+        }
+        .with_context(|| format!("failed to set {key}"))
+    }
+
+    /// # Errors
+    ///
+    /// Returns an error when the document cannot be serialized.
+    pub(crate) fn render(&self) -> Result<String> {
+        match self {
+            Self::Json(json) => json.render(),
+            Self::Toml(toml) => toml.render(),
+            Self::Yaml(yaml) => yaml.render(),
+        }
+    }
 }
 
 #[cfg(test)]

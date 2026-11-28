@@ -12,6 +12,7 @@ use crate::{
         mcp_servers::McpServers,
     },
     layout::SourceLayout,
+    provider::spec::ProviderId,
     source_model::{HookBundle, Source},
 };
 
@@ -53,7 +54,10 @@ fn add_mcp_servers(document: &mut DocumentMut, servers: &McpServers) -> Result<(
     if servers.is_empty() {
         return Ok(());
     }
-    let Item::Table(generated) = servers.codex_table() else {
+    let Some(mapping) = ProviderId::Codex.spec().mcp_mapping() else {
+        bail!("failed to add MCP servers to the Codex config: the Codex spec declares no mapping");
+    };
+    let Item::Table(generated) = servers.toml_table(mapping.entry)? else {
         bail!(
             "failed to add MCP servers to the Codex config: the generated servers are not a table"
         );
