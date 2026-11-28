@@ -304,7 +304,7 @@ fn source_config_path(config: &ConfigSpec) -> Option<&'static str> {
         RenderedConfig::WithHooks
         | RenderedConfig::Fixed(_)
         | RenderedConfig::SourceTomlWithGuardedFilesystem
-        | RenderedConfig::McpServers { .. } => None,
+        | RenderedConfig::McpServers => None,
     }
 }
 

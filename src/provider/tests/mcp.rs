@@ -3,39 +3,9 @@ use std::path::{Path, PathBuf};
 use anyhow::Result;
 
 use super::super::spec::{
-    McpEntry, McpMapping, McpSpec, Ownership, PROVIDERS, ProviderId, ProviderSpec, RenderedConfig,
-    WhenMissing,
+    McpEntry, McpSpec, PROVIDERS, ProviderId, ProviderSpec, RenderedConfig, WhenMissing,
 };
 use crate::shell::fixtures::load_source;
-
-#[test]
-fn an_mcp_mapping_in_a_config_is_tracked_so_servers_the_user_added_stay() {
-    let mappings = PROVIDERS.iter().filter_map(|spec| match spec.mcp {
-        Some(McpSpec::ConfigMapping(mapping)) => Some((spec, mapping.path)),
-        Some(McpSpec::SkillsDirectoryPlugin { .. } | McpSpec::ConfigFile(_)) | None => None,
-    });
-    for (spec, path) in mappings {
-        let tracked: Vec<_> = spec
-            .config
-            .unwrap()
-            .sync
-            .ownership
-            .iter()
-            .filter_map(tracked_path)
-            .collect();
-        assert!(tracked.contains(&path), "{} must track {path:?}", spec.key);
-    }
-}
-
-fn tracked_path(claim: &Ownership) -> Option<&'static [&'static str]> {
-    match claim {
-        Ownership::TrackedKeys { path, .. } => Some(path),
-        Ownership::Keys { .. }
-        | Ownership::Entries { .. }
-        | Ownership::ListUnion { .. }
-        | Ownership::MappingEntries { .. } => None,
-    }
-}
 
 #[test]
 fn an_mcp_plugin_lives_in_a_skills_directory_the_provider_renders() {
@@ -106,7 +76,7 @@ fn a_skill_named_like_the_mcp_plugin_is_rejected() {
 fn every_provider_with_an_mcp_client_the_harness_can_reach_gets_the_servers() {
     let rendered: Vec<_> = PROVIDERS
         .iter()
-        .filter(|spec| spec.mcp.is_some())
+        .filter(|spec| spec.mcp.is_some() || spec.mcp_mapping().is_some())
         .map(|spec| spec.id)
         .collect();
 
@@ -125,16 +95,11 @@ fn every_provider_with_an_mcp_client_the_harness_can_reach_gets_the_servers() {
 }
 
 #[test]
-fn an_mcp_file_of_its_own_tracks_its_servers_and_claims_nothing_else() {
-    let files = PROVIDERS.iter().filter_map(ProviderSpec::mcp_file);
-    for (config, path) in files {
-        let claims: Vec<_> = config.sync.ownership.iter().map(tracked_path).collect();
-        let rendered = rendered_mcp(config.rendered).map(|mapping| mapping.path);
-        assert!(
-            rendered.is_some(),
-            "{path} must be rendered from the MCP servers"
-        );
-        assert_eq!(claims, [rendered], "{path}");
+fn an_mcp_file_of_its_own_claims_nothing_but_its_servers() {
+    for (config, path) in PROVIDERS.iter().filter_map(ProviderSpec::mcp_file) {
+        assert_eq!(config.rendered, RenderedConfig::McpServers, "{path}");
+        assert!(config.sync.ownership.is_empty(), "{path}");
+        assert!(config.sync.mcp_servers.is_some(), "{path}");
         assert_eq!(config.sync.when_missing, WhenMissing::Create, "{path}");
     }
 }
@@ -157,25 +122,16 @@ fn no_two_synced_files_in_one_directory_share_a_sidecar() {
 
 #[test]
 fn each_provider_reads_a_remote_server_in_its_own_form() {
-    let entry = |id: ProviderId| match id.spec().mcp {
-        Some(McpSpec::ConfigMapping(mapping)) => Some(mapping.entry),
-        Some(McpSpec::ConfigFile(config)) => rendered_mcp(config.rendered).map(|m| m.entry),
-        Some(McpSpec::SkillsDirectoryPlugin { .. }) | None => None,
+    let entry = |id: ProviderId| {
+        let spec = id.spec();
+        let own_file = spec
+            .mcp_file()
+            .and_then(|(config, _)| config.sync.mcp_servers);
+        spec.mcp_mapping().or(own_file).map(|mapping| mapping.entry)
     };
 
     assert_eq!(entry(ProviderId::Codex), Some(McpEntry::Url));
     assert_eq!(entry(ProviderId::Hermes), Some(McpEntry::Url));
     assert_eq!(entry(ProviderId::Devin), Some(McpEntry::UrlWithTransport));
     assert_eq!(entry(ProviderId::Antigravity), Some(McpEntry::ServerUrl));
-}
-
-fn rendered_mcp(rendered: RenderedConfig) -> Option<McpMapping> {
-    match rendered {
-        RenderedConfig::McpServers(mapping) => Some(mapping),
-        RenderedConfig::WithHooks
-        | RenderedConfig::Fixed(_)
-        | RenderedConfig::SourceFile(_)
-        | RenderedConfig::SourceTomlWithGuardedFilesystem
-        | RenderedConfig::SourceJsonWithToolPermissions(_) => None,
-    }
 }

@@ -131,22 +131,14 @@ impl ProviderRenderer<'_> {
 
     fn write_config(&self, spec: &ProviderSpec) -> Result<Vec<FileOp>> {
         match spec.config.zip(spec.config_file()) {
-            Some((config, relative)) => self.write_config_file(ConfigFile {
-                config,
-                relative,
-                mcp: spec.mcp_mapping(),
-            }),
+            Some((config, relative)) => self.write_config_file(ConfigFile { config, relative }),
             None => Ok(Vec::new()),
         }
     }
 
     fn write_mcp_file(&self, spec: &ProviderSpec) -> Result<Vec<FileOp>> {
         match spec.mcp_file() {
-            Some((config, relative)) => self.write_config_file(ConfigFile {
-                config,
-                relative,
-                mcp: None,
-            }),
+            Some((config, relative)) => self.write_config_file(ConfigFile { config, relative }),
             None => Ok(Vec::new()),
         }
     }
@@ -164,7 +156,7 @@ impl ProviderRenderer<'_> {
             RenderedConfig::SourceFile(relative) => self.merge_source_file(target, relative),
             RenderedConfig::SourceTomlWithGuardedFilesystem => self.merge_guarded_toml(target),
             RenderedConfig::SourceJsonWithToolPermissions(p) => self.merge_tool_rules(target, p),
-            RenderedConfig::McpServers(mcp) => self.merge_mcp_servers(target, mcp),
+            RenderedConfig::McpServers => self.merge_mcp_servers(target),
         }
     }
 
@@ -172,7 +164,7 @@ impl ProviderRenderer<'_> {
     fn write_fixed(&self, file: ConfigFile, content: &str) -> Result<Vec<FileOp>> {
         let path = self.out.join(file.relative);
         let sync = &file.config.sync;
-        let text = match file.mcp.filter(|_| !self.mcp_servers().is_empty()) {
+        let text = match sync.mcp_servers.filter(|_| !self.mcp_servers().is_empty()) {
             Some(mcp) => self.with_mcp_servers(parse_generated(sync, &path, content)?, mcp)?,
             None => content.to_owned(),
         };
@@ -184,11 +176,11 @@ impl ProviderRenderer<'_> {
         document.render()
     }
 
-    fn merge_mcp_servers(
-        &self,
-        target: InstalledConfig<'_>,
-        mcp: McpMapping,
-    ) -> Result<Vec<FileOp>> {
+    fn merge_mcp_servers(&self, target: InstalledConfig<'_>) -> Result<Vec<FileOp>> {
+        let mcp = target
+            .sync
+            .mcp_servers
+            .with_context(|| no_mcp_place(target.relative))?;
         let mut generated = ConfigDocument::blank(target.sync.format);
         self.set_mcp_servers(&mut generated, mcp)?;
         self.merge_into_installed(target, &generated)
@@ -331,7 +323,7 @@ fn add_mcp_plugin(
         Some(McpSpec::SkillsDirectoryPlugin { directory: plugin }) => {
             with_mcp_plugin(source, skills, &directory.path.join(plugin))
         }
-        Some(McpSpec::ConfigMapping { .. } | McpSpec::ConfigFile(_)) | None => Ok(skills),
+        Some(McpSpec::ConfigFile(_)) | None => Ok(skills),
     }
 }
 
@@ -367,6 +359,10 @@ fn with_mcp_plugin(source: &Source, skills: FileOp, plugin: &Path) -> Result<Fil
     Ok(FileOp::ReplaceTree { target, contents })
 }
 
+fn no_mcp_place(relative: &str) -> String {
+    format!("failed to render the MCP servers into {relative}: its sync declares no place for them")
+}
+
 fn writes_under(operations: &[FileOp], directory: &Path) -> bool {
     operations
         .iter()
@@ -383,8 +379,6 @@ struct ConfigFile {
     config: ConfigSpec,
     /// The registry's path of the file.
     relative: &'static str,
-    /// Where the provider reads the MCP servers inside the file, when it does.
-    mcp: Option<McpMapping>,
 }
 
 /// A mutable config in the output, which rendering merges the generated config into.

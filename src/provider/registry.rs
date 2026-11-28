@@ -4,7 +4,7 @@
 use super::spec::{
     Asset, Bridge, BundleCapture, CommandRuleSpec, ConfigFormat, ConfigLocation, ConfigSpec,
     ConfigSync, EntryMatch, HookFormat, HookRegistration, HookSection, HookSpec, KeyScope,
-    McpEntry, McpMapping, McpSpec, Ownership, ProviderId, ProviderSpec, RenderedConfig,
+    McpEntry, McpMapping, McpSpec, Ownership, ProviderId, ProviderSpec, RenderedConfig, SIDECAR,
     SkillSource, SkillSpec, SyncedDirectory, WhenAbsent, WhenMissing,
 };
 
@@ -44,10 +44,6 @@ const CODEX_USER_KEPT_KEYS: &[&str] = &[
     "feedback",
     "check_for_update_on_startup",
 ];
-
-const CODEX_MCP_SERVERS: &[&str] = &["mcp_servers"];
-
-const HERMES_MCP_SERVERS: &[&str] = &["mcp_servers"];
 
 const HERMES_MANAGED_CONFIG: &str = "plugins:\n  enabled:\n    - agent-harness-hooks\n";
 
@@ -96,26 +92,22 @@ const CODEX: ProviderSpec = ProviderSpec {
                 },
                 Ownership::TrackedKeys {
                     path: &["shell_environment_policy", "set"],
-                    sidecar: ".agent-harness-managed.json",
+                    sidecar: SIDECAR,
                     formerly_managed: &["GH_CONFIG_DIR"],
-                },
-                // Servers the user or `codex mcp add` wrote stay.
-                Ownership::TrackedKeys {
-                    path: CODEX_MCP_SERVERS,
-                    sidecar: ".agent-harness-managed.json",
-                    formerly_managed: &[],
                 },
             ],
             when_missing: WhenMissing::Create,
+            mcp_servers: Some(McpMapping {
+                path: &["mcp_servers"],
+                entry: McpEntry::Url,
+            }),
             home_command_lists: &[],
             home_rule_lists: &[],
         },
         directories: &[],
     }),
-    mcp: Some(McpSpec::ConfigMapping(McpMapping {
-        path: CODEX_MCP_SERVERS,
-        entry: McpEntry::Url,
-    })),
+    // `codex mcp add` writes the servers into the config too.
+    mcp: None,
     retired_files: &[],
 };
 
@@ -162,6 +154,7 @@ const CLAUDE: ProviderSpec = ProviderSpec {
                 when_absent: WhenAbsent::Keep,
             }],
             when_missing: WhenMissing::Create,
+            mcp_servers: None,
             home_command_lists: &[&["sandbox", "excludedCommands"]],
             home_rule_lists: &[],
         },
@@ -216,6 +209,7 @@ const DEVIN: ProviderSpec = ProviderSpec {
                 },
             ],
             when_missing: WhenMissing::Create,
+            mcp_servers: None,
             home_command_lists: &[],
             home_rule_lists: &[],
         },
@@ -266,29 +260,24 @@ const HERMES: ProviderSpec = ProviderSpec {
             format: ConfigFormat::Yaml,
             ownership: &[
                 Ownership::Keys {
-                    scope: KeyScope::EveryExcept(&["plugins", "mcp_servers"]),
+                    scope: KeyScope::EveryExcept(&["plugins"]),
                     when_absent: WhenAbsent::Keep,
                 },
                 Ownership::ListUnion {
                     path: &["plugins", "enabled"],
                 },
-                // Servers the user wrote stay.
-                Ownership::TrackedKeys {
-                    path: HERMES_MCP_SERVERS,
-                    sidecar: ".agent-harness-managed.json",
-                    formerly_managed: &[],
-                },
             ],
             when_missing: WhenMissing::Create,
+            mcp_servers: Some(McpMapping {
+                path: &["mcp_servers"],
+                entry: McpEntry::Url,
+            }),
             home_command_lists: &[],
             home_rule_lists: &[],
         },
         directories: &[],
     }),
-    mcp: Some(McpSpec::ConfigMapping(McpMapping {
-        path: HERMES_MCP_SERVERS,
-        entry: McpEntry::Url,
-    })),
+    mcp: None,
     retired_files: &[],
 };
 
@@ -333,6 +322,7 @@ const PI: ProviderSpec = ProviderSpec {
                 when_absent: WhenAbsent::Keep,
             }],
             when_missing: WhenMissing::Create,
+            mcp_servers: None,
             home_command_lists: &[],
             home_rule_lists: &[],
         },
@@ -400,6 +390,7 @@ const DSH: ProviderSpec = ProviderSpec {
             ],
             // The profile is the user's, and dsh creates it on its first run.
             when_missing: WhenMissing::Skip,
+            mcp_servers: None,
             home_command_lists: &[],
             home_rule_lists: &[],
         },
@@ -455,6 +446,7 @@ const ANTIGRAVITY: ProviderSpec = ProviderSpec {
             ],
             when_missing: WhenMissing::Create,
             // `agy` reads absolute paths only, so the sync expands the home prefix.
+            mcp_servers: None,
             home_command_lists: &[],
             home_rule_lists: &[
                 &["permissions", "allow"],

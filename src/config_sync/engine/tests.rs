@@ -6,13 +6,14 @@ use serde_json::{Value, json};
 use super::*;
 use crate::config_sync::codec::Role;
 use crate::config_sync::installed::InstalledText;
-use crate::provider::ownership::ConfigFormat;
+use crate::provider::ownership::{ConfigFormat, McpEntry, McpMapping, SIDECAR};
 
 const fn sync(format: ConfigFormat, ownership: &'static [Ownership]) -> ConfigSync {
     ConfigSync {
         format,
         ownership,
         when_missing: WhenMissing::Create,
+        mcp_servers: None,
         home_command_lists: &[],
         home_rule_lists: &[],
     }
@@ -297,6 +298,7 @@ fn home_command_lists_expand_a_leading_home_prefix_only_when_asked() -> Result<(
         format: ConfigFormat::Json,
         ownership: &[keys(KeyScope::Every, WhenAbsent::Keep)],
         when_missing: WhenMissing::Create,
+        mcp_servers: None,
         home_command_lists: &[&["sandbox", "commands"]],
         home_rule_lists: &[],
     };
@@ -329,6 +331,7 @@ fn home_rule_lists_expand_the_home_prefix_of_a_rule_argument_only_when_asked() -
         format: ConfigFormat::Json,
         ownership: &[keys(KeyScope::Every, WhenAbsent::Keep)],
         when_missing: WhenMissing::Create,
+        mcp_servers: None,
         home_command_lists: &[],
         home_rule_lists: &[&["permissions", "deny"]],
     };
@@ -420,5 +423,41 @@ fn configs_of_different_formats_cannot_be_merged() -> Result<()> {
     let installed = parse_installed(&EVERY_KEY, None, None)?;
 
     assert!(Merge::new(&EVERY_KEY, &generated).apply(installed).is_err());
+    Ok(())
+}
+
+/// Every key of the rendered config is the harness's, but the servers in it are tracked.
+const HOLDS_SERVERS: ConfigSync = ConfigSync {
+    mcp_servers: Some(McpMapping {
+        path: &["servers"],
+        entry: McpEntry::Url,
+    }),
+    ..EVERY_KEY
+};
+
+#[test]
+fn the_mcp_servers_a_config_holds_are_tracked_and_left_out_of_its_key_claims() -> Result<()> {
+    let first = run(
+        &HOLDS_SERVERS,
+        r#"{"model": "m", "servers": {"docs": {}, "github": {}}}"#,
+        Some(r#"{"servers": {"mine": {}}}"#),
+    )?;
+    let generated = ConfigDocument::parse(
+        ConfigFormat::Json,
+        r#"{"model": "m", "servers": {"github": {"args": []}}}"#,
+        Role::Generated,
+    )?;
+    let installed = parse_installed(
+        &HOLDS_SERVERS,
+        Some(&first.config),
+        first.sidecar.as_deref(),
+    )?;
+    let second = Merge::new(&HOLDS_SERVERS, &generated).apply(installed)?;
+
+    assert_eq!(
+        json_of(&second),
+        json!({"model": "m", "servers": {"mine": {}, "github": {"args": []}}})
+    );
+    assert_eq!(HOLDS_SERVERS.sidecar_file(), Some(SIDECAR));
     Ok(())
 }
