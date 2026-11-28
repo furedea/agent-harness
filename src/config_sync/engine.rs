@@ -31,6 +31,7 @@ pub(crate) struct Merge<'a> {
 
 /// What the engine threads through the claims of one merge.
 struct Pass<'a, T: ConfigTree> {
+    sync: &'a ConfigSync,
     generated: &'a T,
     existing: T,
     known: Option<Tracked>,
@@ -71,13 +72,19 @@ impl<'a> Merge<'a> {
 }
 
 impl<'a, T: ConfigTree> Pass<'a, T> {
-    fn new(generated: &'a T, existing: T, known: Option<Tracked>) -> Self {
+    fn new(sync: &'a ConfigSync, generated: &'a T, existing: T) -> Self {
         Self {
+            sync,
             generated,
             existing,
-            known,
+            known: None,
             written: Tracked::default(),
         }
+    }
+
+    /// The pass with what the sidecar says the previous sync wrote.
+    fn knowing(self, known: Option<Tracked>) -> Self {
+        Self { known, ..self }
     }
 }
 
@@ -85,15 +92,18 @@ fn merge_documents(merge: &Merge<'_>, installed: Installed) -> Result<Synced> {
     let (document, known) = installed.into_parts();
     let existing = document.unwrap_or_else(|| ConfigDocument::blank(merge.sync.format));
     match (merge.generated, existing) {
-        (ConfigDocument::Json(generated), ConfigDocument::Json(existing)) => {
-            run(merge, Pass::new(generated, existing, known))
-        }
-        (ConfigDocument::Toml(generated), ConfigDocument::Toml(existing)) => {
-            run(merge, Pass::new(generated, existing, known))
-        }
-        (ConfigDocument::Yaml(generated), ConfigDocument::Yaml(existing)) => {
-            run(merge, Pass::new(generated, existing, known))
-        }
+        (ConfigDocument::Json(generated), ConfigDocument::Json(existing)) => run(
+            merge,
+            Pass::new(merge.sync, generated, existing).knowing(known),
+        ),
+        (ConfigDocument::Toml(generated), ConfigDocument::Toml(existing)) => run(
+            merge,
+            Pass::new(merge.sync, generated, existing).knowing(known),
+        ),
+        (ConfigDocument::Yaml(generated), ConfigDocument::Yaml(existing)) => run(
+            merge,
+            Pass::new(merge.sync, generated, existing).knowing(known),
+        ),
         (generated, existing) => bail!(
             "the generated config is {:?} but the installed one is {:?}",
             generated.format(),
@@ -105,6 +115,9 @@ fn merge_documents(merge: &Merge<'_>, installed: Installed) -> Result<Synced> {
 fn run<T: ConfigTree>(merge: &Merge<'_>, mut pass: Pass<'_, T>) -> Result<Synced> {
     for claim in merge.sync.ownership {
         apply(*claim, &mut pass)?;
+    }
+    if let Some(mcp) = merge.sync.mcp_servers {
+        sync_tracked_keys(mcp.path, &[], &mut pass)?;
     }
     if let HomePaths::Expand(home) = merge.home {
         expand_home(merge.sync, &mut pass.existing, home)?;
@@ -139,12 +152,13 @@ fn replace_keys<T: ConfigTree>(
     match scope {
         KeyScope::Listed(keys) => keys
             .iter()
+            .filter(|key| pass.sync.key_owned(scope, key))
             .try_for_each(|key| replace_listed_key(key, when_absent, pass)),
         KeyScope::Every | KeyScope::EveryExcept(_) => pass
             .generated
             .entries()
             .into_iter()
-            .filter(|(key, _)| scope.owns(key))
+            .filter(|(key, _)| pass.sync.key_owned(scope, key))
             .try_for_each(|(key, value)| pass.existing.set(&[&key], value)),
     }
 }

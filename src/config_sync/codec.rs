@@ -301,15 +301,23 @@ fn toml_parent_mut<'a>(
     root: &'a mut DocumentMut,
     parents: &[&str],
 ) -> Result<&'a mut dyn TableLike> {
+    let path = parents.join(".");
     let mut table: &mut dyn TableLike = root.as_table_mut();
     for key in parents {
         table = table
             .entry(key)
-            .or_insert_with(toml_edit::table)
+            .or_insert_with(implicit_table)
             .as_table_like_mut()
-            .with_context(|| format!("{key} is not a table"))?;
+            .with_context(|| format!("failed to set {path}: {key} is not a table"))?;
     }
     Ok(table)
+}
+
+/// A table created only to hold the path below it, so it gets no header of its own.
+fn implicit_table() -> Item {
+    let mut table = toml_edit::Table::new();
+    table.set_implicit(true);
+    Item::Table(table)
 }
 
 fn toml_set(root: &mut DocumentMut, path: &[&str], value: Item) -> Result<()> {
@@ -446,6 +454,35 @@ impl ConfigDocument {
             Self::Json(_) => ConfigFormat::Json,
             Self::Toml(_) => ConfigFormat::Toml,
             Self::Yaml(_) => ConfigFormat::Yaml,
+        }
+    }
+
+    /// Sets `path` to the JSON `value`, converted to the document's format.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when a parent of `path` is not a mapping, or the document is TOML, whose
+    /// tables are built where the TOML is generated.
+    pub(crate) fn set_json(&mut self, path: &[&str], value: JsonValue) -> Result<()> {
+        let key = path.join(".");
+        match self {
+            Self::Json(json) => json.set(path, value),
+            Self::Yaml(yaml) => serde_norway::to_value(value)
+                .map_err(anyhow::Error::from)
+                .and_then(|value| yaml.set(path, value)),
+            Self::Toml(_) => bail!("failed to set {key}: a TOML config takes no JSON value"),
+        }
+        .with_context(|| format!("failed to set {key} in the {:?} config", self.format()))
+    }
+
+    /// # Errors
+    ///
+    /// Returns an error when the document cannot be serialized.
+    pub(crate) fn render(&self) -> Result<String> {
+        match self {
+            Self::Json(json) => json.render(),
+            Self::Toml(toml) => toml.render(),
+            Self::Yaml(yaml) => yaml.render(),
         }
     }
 }

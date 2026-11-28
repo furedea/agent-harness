@@ -81,7 +81,7 @@ fn codex_writes_generated_env_keys_and_records_them_in_the_sidecar() -> Result<(
     );
     assert_eq!(
         sandbox.text(".agent-harness-managed.json")?,
-        "{\n  \"shell_environment_policy_set\": [\n    \"NVIM_LOG_FILE\"\n  ]\n}\n",
+        "{\n  \"mcp_servers\": [],\n  \"shell_environment_policy_set\": [\n    \"NVIM_LOG_FILE\"\n  ]\n}\n",
     );
     Ok(())
 }
@@ -345,5 +345,62 @@ fn codex_keeps_the_user_telemetry_and_update_keys_the_source_does_not_set() -> R
     assert_eq!(merged["analytics"]["enabled"].as_bool(), Some(false));
     assert_eq!(merged["otel"]["metrics_exporter"].as_str(), Some("none"));
     assert_eq!(merged["feedback"]["enabled"].as_bool(), Some(false));
+    Ok(())
+}
+
+#[test]
+fn codex_mcp_servers_keep_those_the_user_added_and_drop_those_the_source_dropped() -> Result<()> {
+    let sandbox = Sandbox::new("codex-mcp")?;
+    let target = sandbox.path("config.toml");
+    let paths = |source| super::SyncPaths {
+        source,
+        target: &target,
+    };
+    sandbox.put(
+        "config.toml",
+        "[mcp_servers.mine]\ncommand = \"my-server\"\n",
+    )?;
+    let first = sandbox.put(
+        "first.toml",
+        "[mcp_servers.github]\ncommand = \"github-mcp-server\"\n\n[mcp_servers.docs]\nurl = \"https://docs.example.com/mcp\"\n",
+    )?;
+    sandbox.sync(ProviderId::Codex, &paths(&first))?;
+    let second = sandbox.put(
+        "second.toml",
+        "[mcp_servers.github]\ncommand = \"github-mcp-server\"\nargs = [\"stdio\"]\n",
+    )?;
+
+    sandbox.sync(ProviderId::Codex, &paths(&second))?;
+
+    let merged: toml_edit::DocumentMut = sandbox.text("config.toml")?.parse()?;
+    let servers = &merged["mcp_servers"];
+    assert_eq!(servers["mine"]["command"].as_str(), Some("my-server"));
+    assert_eq!(servers["github"]["args"][0].as_str(), Some("stdio"));
+    assert!(servers.get("docs").is_none());
+    Ok(())
+}
+
+#[test]
+fn codex_mcp_servers_the_user_added_survive_a_sync_without_a_sidecar() -> Result<()> {
+    let sandbox = Sandbox::new("codex-mcp-no-sidecar")?;
+    let source = sandbox.put("generated.toml", "model = \"gpt-5.5\"\n")?;
+    let target = sandbox.put(
+        "config.toml",
+        "[mcp_servers.mine]\ncommand = \"my-server\"\n",
+    )?;
+
+    sandbox.sync(
+        ProviderId::Codex,
+        &super::SyncPaths {
+            source: &source,
+            target: &target,
+        },
+    )?;
+
+    let merged: toml_edit::DocumentMut = sandbox.text("config.toml")?.parse()?;
+    assert_eq!(
+        merged["mcp_servers"]["mine"]["command"].as_str(),
+        Some("my-server")
+    );
     Ok(())
 }

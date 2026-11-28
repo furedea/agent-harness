@@ -2,7 +2,8 @@
 
 use std::path::Path;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail, ensure};
+use serde_json::json;
 
 use crate::{
     config_sync::{
@@ -13,14 +14,15 @@ use crate::{
     file_op::FileOp,
     generation::{
         GenerationContext, antigravity_config, claude_config, codex_config, command_permissions,
-        hooks, skills,
+        hooks, mcp_servers::McpServers, skills,
     },
     layout::SourceLayout,
     provider::spec::{
-        CommandRuleSpec, ConfigSpec, ConfigSync, HookRegistration, ProviderId, ProviderSpec,
-        RenderedConfig, SkillSource, SkillSpec,
+        CommandRuleSpec, ConfigSpec, ConfigSync, HookRegistration, McpEntry, McpMapping, McpSpec,
+        ProviderId, ProviderSpec, RenderedConfig, SkillSource, SkillSpec,
     },
     render::Provider,
+    source_model::Source,
 };
 
 /// Provider functions: what each provider's declared files contain.
@@ -49,6 +51,7 @@ impl ProviderRenderer<'_> {
         operations.extend(self.render_skill(spec)?);
         operations.extend(self.write_command_rule(spec)?);
         operations.extend(self.write_config(spec)?);
+        operations.extend(self.write_mcp_file(spec)?);
         Ok(operations)
     }
 
@@ -98,36 +101,9 @@ impl ProviderRenderer<'_> {
 
     fn render_skill(&self, spec: &ProviderSpec) -> Result<Option<FileOp>> {
         spec.skill
-            .map(|skill| self.render_declared_skill(skill, &self.out.join(skill.destination)))
+            .map(|skill| self.out.join(skill.destination))
+            .map(|path| SkillsDirectory::of(spec, &path).render(self.context.source))
             .transpose()
-    }
-
-    fn render_declared_skill(&self, skill: &SkillSpec, target: &Path) -> Result<FileOp> {
-        match skill.source {
-            SkillSource::RenderFrontmatter => self.skills_for(Provider::Claude, target),
-            SkillSource::RenderWithInvocationPolicy => self.skills_for(Provider::Codex, target),
-            SkillSource::CopyRendered(from) => self.reuse_rendered_skills(from, target),
-        }
-    }
-
-    /// Another provider's rendered skills, moved to `target` from where that provider puts them.
-    fn reuse_rendered_skills(&self, from: ProviderId, target: &Path) -> Result<FileOp> {
-        let rendered = from
-            .spec()
-            .skill
-            .with_context(|| format!("the {} provider spec declares no skills", from.spec().key))?;
-        let origin = self.out.join(rendered.destination);
-        Ok(self
-            .render_declared_skill(rendered, &origin)?
-            .relocated(&origin, target))
-    }
-
-    fn skills_for(&self, provider: Provider, target: &Path) -> Result<FileOp> {
-        let target = skills::SkillTarget {
-            provider,
-            path: target,
-        };
-        skills::render_skills(self.context.source, target)
     }
 
     fn write_command_rule(&self, spec: &ProviderSpec) -> Result<Vec<FileOp>> {
@@ -155,25 +131,70 @@ impl ProviderRenderer<'_> {
 
     fn write_config(&self, spec: &ProviderSpec) -> Result<Vec<FileOp>> {
         match spec.config.zip(spec.config_file()) {
-            Some((config, path)) => self.write_config_file(config, path),
+            Some((config, relative)) => self.write_config_file(ConfigFile { config, relative }),
             None => Ok(Vec::new()),
         }
     }
 
-    fn write_config_file(&self, config: ConfigSpec, relative: &str) -> Result<Vec<FileOp>> {
+    fn write_mcp_file(&self, spec: &ProviderSpec) -> Result<Vec<FileOp>> {
+        match spec.mcp_file() {
+            Some((config, relative)) => self.write_config_file(ConfigFile { config, relative }),
+            None => Ok(Vec::new()),
+        }
+    }
+
+    fn write_config_file(&self, file: ConfigFile) -> Result<Vec<FileOp>> {
         let target = InstalledConfig {
-            sync: &config.sync,
-            relative,
-            path: &self.out.join(relative),
+            sync: &file.config.sync,
+            relative: file.relative,
+            path: &self.out.join(file.relative),
         };
-        match config.rendered {
+        match file.config.rendered {
             // The hook registration or the bridge directory, rendered with them.
             RenderedConfig::WithHooks => Ok(Vec::new()),
-            RenderedConfig::Fixed(content) => Ok(vec![FileOp::write(target.path, content)]),
+            RenderedConfig::Fixed(content) => self.write_fixed(file, content),
             RenderedConfig::SourceFile(relative) => self.merge_source_file(target, relative),
             RenderedConfig::SourceTomlWithGuardedFilesystem => self.merge_guarded_toml(target),
             RenderedConfig::SourceJsonWithToolPermissions(p) => self.merge_tool_rules(target, p),
+            RenderedConfig::McpServers => self.merge_mcp_servers(target),
         }
+    }
+
+    /// The fixed document, with the source's MCP servers when the provider reads them from it.
+    fn write_fixed(&self, file: ConfigFile, content: &str) -> Result<Vec<FileOp>> {
+        let path = self.out.join(file.relative);
+        let sync = &file.config.sync;
+        let text = match sync.mcp_servers.filter(|_| !self.mcp_servers().is_empty()) {
+            Some(mcp) => self.with_mcp_servers(parse_generated(sync, &path, content)?, mcp)?,
+            None => content.to_owned(),
+        };
+        Ok(vec![FileOp::write(&path, text)])
+    }
+
+    fn with_mcp_servers(&self, mut document: ConfigDocument, mcp: McpMapping) -> Result<String> {
+        self.set_mcp_servers(&mut document, mcp)?;
+        document.render()
+    }
+
+    fn merge_mcp_servers(&self, target: InstalledConfig<'_>) -> Result<Vec<FileOp>> {
+        let mcp = target
+            .sync
+            .mcp_servers
+            .with_context(|| no_mcp_place(target.relative))?;
+        let mut generated = ConfigDocument::blank(target.sync.format);
+        self.set_mcp_servers(&mut generated, mcp)?;
+        self.merge_into_installed(target, &generated)
+    }
+
+    fn mcp_servers(&self) -> &McpServers {
+        &self.context.source.mcp_servers
+    }
+
+    fn set_mcp_servers(&self, document: &mut ConfigDocument, mcp: McpMapping) -> Result<()> {
+        let servers = self.mcp_servers().json_map(mcp.entry);
+        document
+            .set_json(mcp.path, servers)
+            .context("failed to render the MCP servers")
     }
 
     fn merge_source_file(
@@ -233,6 +254,131 @@ impl ProviderRenderer<'_> {
             .apply(self.installed.get(target.relative))?
             .into_ops(target.sync, target.path)
     }
+}
+
+/// A provider's skills directory and where it is rendered.
+#[derive(Clone, Copy)]
+pub(crate) struct SkillsDirectory<'a> {
+    pub(crate) provider: &'a ProviderSpec,
+    pub(crate) path: &'a Path,
+}
+
+impl<'a> SkillsDirectory<'a> {
+    pub(crate) fn of(provider: &'a ProviderSpec, path: &'a Path) -> Self {
+        Self { provider, path }
+    }
+
+    /// The provider's skills, with its MCP plugin when it reads the servers from one.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the provider has no skills, a skill cannot be rendered, or a skill
+    /// takes the plugin's name.
+    pub(crate) fn render(self, source: &Source) -> Result<FileOp> {
+        let spec = self.provider;
+        let skill = spec.skill.with_context(|| no_skills("render", spec.key))?;
+        let skills = render_declared_skill(source, skill, self.path)?;
+        add_mcp_plugin(source, self, skills)
+    }
+}
+
+fn render_declared_skill(source: &Source, skill: &SkillSpec, target: &Path) -> Result<FileOp> {
+    match skill.source {
+        SkillSource::RenderFrontmatter => skills_for(source, Provider::Claude, target),
+        SkillSource::RenderWithInvocationPolicy => skills_for(source, Provider::Codex, target),
+        SkillSource::CopyRendered(from) => reuse_rendered_skills(source, from, target),
+    }
+}
+
+/// Another provider's rendered skills, moved to `target` from where that provider puts them.
+fn reuse_rendered_skills(source: &Source, from: ProviderId, target: &Path) -> Result<FileOp> {
+    let rendered = from
+        .spec()
+        .skill
+        .with_context(|| no_skills("copy", from.spec().key))?;
+    let origin = Path::new(rendered.destination);
+    Ok(render_declared_skill(source, rendered, origin)?.relocated(origin, target))
+}
+
+fn no_skills(operation: &str, provider: &str) -> String {
+    format!("failed to {operation} the {provider} skills: the provider spec declares none")
+}
+
+fn skills_for(source: &Source, provider: Provider, target: &Path) -> Result<FileOp> {
+    skills::render_skills(
+        source,
+        skills::SkillTarget {
+            provider,
+            path: target,
+        },
+    )
+}
+
+fn add_mcp_plugin(
+    source: &Source,
+    directory: SkillsDirectory<'_>,
+    skills: FileOp,
+) -> Result<FileOp> {
+    match directory.provider.mcp {
+        Some(McpSpec::SkillsDirectoryPlugin { directory: plugin }) => {
+            with_mcp_plugin(source, skills, &directory.path.join(plugin))
+        }
+        Some(McpSpec::ConfigFile(_)) | None => Ok(skills),
+    }
+}
+
+/// The skills tree with a plugin at `plugin` that declares the source's MCP servers; unchanged
+/// when the source declares none.
+fn with_mcp_plugin(source: &Source, skills: FileOp, plugin: &Path) -> Result<FileOp> {
+    if source.mcp_servers.is_empty() {
+        return Ok(skills);
+    }
+    let FileOp::ReplaceTree {
+        target,
+        mut contents,
+    } = skills
+    else {
+        bail!("failed to add the MCP server plugin: rendered skills must replace their directory");
+    };
+    ensure!(
+        !writes_under(&contents, plugin),
+        "failed to add the MCP server plugin at {}: a skill already uses that directory",
+        plugin.display()
+    );
+    let manifest = json!({
+        "name": MCP_PLUGIN_NAME,
+        "description": "MCP servers declared in the agent-harness source",
+        "mcpServers": source.mcp_servers.json_map(McpEntry::TypedUrl),
+    });
+    contents.push(FileOp::write(
+        plugin.join(".claude-plugin/plugin.json"),
+        serde_json::to_string_pretty(&manifest)
+            .context("failed to serialize the MCP server plugin manifest")?
+            + "\n",
+    ));
+    Ok(FileOp::ReplaceTree { target, contents })
+}
+
+fn no_mcp_place(relative: &str) -> String {
+    format!("failed to render the MCP servers into {relative}: its sync declares no place for them")
+}
+
+fn writes_under(operations: &[FileOp], directory: &Path) -> bool {
+    operations
+        .iter()
+        .any(|operation| operation.target().starts_with(directory))
+}
+
+/// The plugin name, which prefixes the tool names Claude Code gives the servers'
+/// tools: `mcp__plugin_agent-harness_<server>__<tool>`.
+const MCP_PLUGIN_NAME: &str = "agent-harness";
+
+/// A config file a provider declares, to render into the output.
+#[derive(Clone, Copy)]
+struct ConfigFile {
+    config: ConfigSpec,
+    /// The registry's path of the file.
+    relative: &'static str,
 }
 
 /// A mutable config in the output, which rendering merges the generated config into.

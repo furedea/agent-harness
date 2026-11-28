@@ -11,9 +11,10 @@
       ".codex/hooks.json": {},
       ".codex/rules/default.rules": {},
       ".codex/skills": {
-        "skills_provider": "codex"
+        "skills_directory": true
       }
     },
+    "mcp_sync": null,
     "option_description": "Whether to install Codex harness files.",
     "sync": {
       "activation": "agentHarnessCodexConfig",
@@ -33,10 +34,11 @@
       ".claude/CLAUDE.md": {},
       ".claude/hooks": {},
       ".claude/skills": {
-        "skills_provider": "claude"
+        "skills_directory": true
       },
       ".claude/statusline": {}
     },
+    "mcp_sync": null,
     "option_description": "Whether to install Claude harness files.",
     "sync": {
       "activation": "agentHarnessClaudeSettings",
@@ -53,6 +55,12 @@
     "id": "devin",
     "linked_paths": {
       ".devin/hooks": {}
+    },
+    "mcp_sync": {
+      "activation": "agentHarnessDevinMcpServers",
+      "command": "sync-config --provider devin --file mcp-servers",
+      "source": ".config/devin/mcp_config.json",
+      "target": ".config/devin/mcp_config.json"
     },
     "option_description": "Whether to install Devin harness files.",
     "sync": {
@@ -73,6 +81,7 @@
       ".hermes/hooks.json": {},
       ".hermes/plugins/agent-harness-hooks": {}
     },
+    "mcp_sync": null,
     "option_description": "Whether to install Hermes harness files.",
     "sync": {
       "activation": "agentHarnessHermesConfig",
@@ -92,10 +101,11 @@
       ".pi/agent/extensions/hook_bridge.ts": {},
       ".pi/agent/hooks.json": {},
       ".pi/agent/skills": {
-        "skills_provider": "claude"
+        "skills_directory": true
       },
       ".pi/hooks": {}
     },
+    "mcp_sync": null,
     "option_description": "Whether to install Pi harness files.",
     "sync": {
       "activation": "agentHarnessPiConfig",
@@ -121,9 +131,10 @@
       ".dsh/hooks": {},
       ".dsh/hooks.json": {},
       ".dsh/skills": {
-        "skills_provider": "codex"
+        "skills_directory": true
       }
     },
+    "mcp_sync": null,
     "option_description": "Whether to install DeepSeek harness files.",
     "sync": {
       "activation": "agentHarnessDshConfig",
@@ -143,8 +154,14 @@
       ".gemini/config/hooks": {},
       ".gemini/config/hooks.json": {},
       ".gemini/config/skills": {
-        "skills_provider": "claude"
+        "skills_directory": true
       }
+    },
+    "mcp_sync": {
+      "activation": "agentHarnessAntigravityMcpServers",
+      "command": "sync-config --provider antigravity --file mcp-servers",
+      "source": ".gemini/config/mcp_config.json",
+      "target": ".gemini/config/mcp_config.json"
     },
     "option_description": "Whether to install Antigravity harness files.",
     "sync": {

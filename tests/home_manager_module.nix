@@ -20,6 +20,14 @@ let
           inherit source;
           agentsMd = source + "/AGENTS.md";
           commandPermissions = source + "/command_permissions.json";
+          # Replaces the source's `docs` server and adds one beside its `github` server.
+          mcpServers = {
+            docs.url = "https://docs.example.org/mcp";
+            local = {
+              command = "/nix/store/example-mcp/bin/example-mcp";
+              args = [ "--stdio" ];
+            };
+          };
         };
       }
     ];
@@ -78,6 +86,16 @@ assert pkgs.lib.assertMsg (builtins.all hasHomeFile [
   ".dsh/skills"
   ".dsh/AGENTS.md"
 ]) "dsh files should be installed";
+assert pkgs.lib.assertMsg (builtins.all hasActivation [
+  "agentHarnessDevinMcpServers"
+  "agentHarnessAntigravityMcpServers"
+]) "Devin and Antigravity MCP server files should be synced during activation";
+assert pkgs.lib.assertMsg (
+  !(builtins.any hasHomeFile [
+    ".config/devin/mcp_config.json"
+    ".gemini/config/mcp_config.json"
+  ])
+) "MCP server files the agents also write should not be Home Manager symlinks";
 assert pkgs.lib.assertMsg (hasActivation "agentHarnessAntigravityConfig")
   "Antigravity settings should be materialized during activation";
 assert pkgs.lib.assertMsg (
@@ -89,4 +107,25 @@ assert pkgs.lib.assertMsg (builtins.all hasHomeFile [
   ".gemini/config/skills"
   ".gemini/config/AGENTS.md"
 ]) "Antigravity files should be installed";
-configuration.activationPackage
+let
+  claudeSkills = configuration.config.home.file.".claude/skills".source;
+  piSkills = configuration.config.home.file.".pi/agent/skills".source;
+in
+pkgs.runCommand "home-manager-minimal-check" { } ''
+  plugin=${claudeSkills}/agent-harness/.claude-plugin/plugin.json
+  grep -q '"github-mcp-server"' "$plugin"
+  grep -q '"https://docs.example.org/mcp"' "$plugin"
+  grep -q '"/nix/store/example-mcp/bin/example-mcp"' "$plugin"
+  if grep -q 'docs.example.com' "$plugin"; then
+    echo "the option should replace the source's docs server" >&2
+    exit 1
+  fi
+  if [ -e ${piSkills}/agent-harness ]; then
+    echo "pi skills should not carry the Claude MCP plugin" >&2
+    exit 1
+  fi
+  activation=${configuration.activationPackage}/activate
+  grep -q 'sync-config --provider devin --file mcp-servers' "$activation"
+  grep -q 'sync-config --provider antigravity --file mcp-servers' "$activation"
+  ln -s ${configuration.activationPackage} "$out"
+''

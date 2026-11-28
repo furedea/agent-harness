@@ -33,30 +33,35 @@ let
     lib.mkIf cfg.${provider.id}.enable (
       lib.mapAttrs (path: link: {
         source =
-          if link ? skills_provider then
-            providerSkills link.skills_provider
-          else
-            "${renderedHarness}/${path}";
+          if link.skills_directory or false then providerSkills provider.id else "${renderedHarness}/${path}";
       }) provider.linked_paths
     )
   ) providers;
-  providerActivations = lib.listToAttrs (
-    map (
-      provider:
-      let
-        inherit (provider) sync;
-        target = lib.replaceStrings [ "\${profile}" ] [ (cfg.${provider.id}.profile or "") ] sync.target;
-      in
-      lib.nameValuePair sync.activation (
-        lib.mkIf cfg.${provider.id}.enable (
-          lib.hm.dag.entryAfter [ (sync.after or "linkGeneration") ] ''
-            ${lib.getExe cfg.package} ${sync.command} \
-              --source ${renderedHarness}/${sync.source} \
-              --target "$HOME/${target}"
-          ''
-        )
+  syncActivation =
+    provider: sync:
+    let
+      target = lib.replaceStrings [ "\${profile}" ] [ (cfg.${provider.id}.profile or "") ] sync.target;
+    in
+    lib.nameValuePair sync.activation (
+      lib.mkIf cfg.${provider.id}.enable (
+        lib.hm.dag.entryAfter [ (sync.after or "linkGeneration") ] ''
+          ${lib.getExe cfg.package} ${sync.command} \
+            --source ${renderedHarness}/${sync.source} \
+            --target "$HOME/${target}"
+        ''
       )
-    ) (builtins.filter (provider: provider.sync != null) providers)
+    );
+  # Each provider's config, and the MCP server file of its own when it has one.
+  providerActivations = lib.listToAttrs (
+    lib.concatMap (
+      provider:
+      map (syncActivation provider) (
+        builtins.filter (sync: sync != null) [
+          provider.sync
+          (provider.mcp_sync or null)
+        ]
+      )
+    ) providers
   );
   # Evaluation reads `tree` (a plain path) so it never builds `cfg.source`; the built
   # `cfg.source` only supplies files copied at build time. Path concatenation (`+`) keeps
@@ -99,6 +104,20 @@ let
     builtins.toJSON antigravitySourceSettings
   );
 
+  # Servers are replaced by name: an option entry replaces the source's entry of that name whole.
+  # Every other root key of the source stays, so the harness still rejects a malformed file.
+  sourceMcpServersPath = evalProfileSource + "/mcp_servers.json";
+  sourceMcpServers =
+    if builtins.pathExists sourceMcpServersPath then
+      builtins.fromJSON (builtins.readFile sourceMcpServersPath)
+    else
+      { servers = { }; };
+  mcpServers = pkgs.writeText "agent-harness-mcp-servers.json" (
+    builtins.toJSON (
+      sourceMcpServers // { servers = (sourceMcpServers.servers or { }) // cfg.mcpServers; }
+    )
+  );
+
   composedSource = pkgs.runCommand "agent-harness-${cfg.profile}-source" { } ''
     cp -R ${lib.escapeShellArg "${profileSource}/."} "$out"
     chmod -R u+w "$out"
@@ -109,6 +128,7 @@ let
     install -m 0644 ${codexSettings} "$out/codex/config.toml"
     mkdir -p "$out/antigravity"
     install -m 0644 ${antigravitySettings} "$out/antigravity/settings.json"
+    install -m 0644 ${mcpServers} "$out/mcp_servers.json"
   '';
 
   namedSourceArgs =
@@ -191,6 +211,25 @@ in
       type = lib.types.nullOr lib.types.path;
       default = null;
       description = "Optional provider-neutral command permissions JSON source.";
+    };
+
+    mcpServers = lib.mkOption {
+      type = lib.types.attrsOf (lib.types.attrsOf lib.types.anything);
+      default = { };
+      example = lib.literalExpression ''
+        {
+          github = {
+            command = "''${pkgs.github-mcp-server}/bin/github-mcp-server";
+            args = [ "stdio" ];
+          };
+          docs.url = "https://docs.example.com/mcp";
+        }
+      '';
+      description = ''
+        MCP servers keyed by name, each with `command` (and optional `args` and `env`) or `url`.
+        An entry replaces the source `mcp_servers.json` entry of the same name. Values are written
+        to provider configs as they are, so never put a credential here.
+      '';
     };
 
     skills = lib.mkOption {

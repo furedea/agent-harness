@@ -1,0 +1,19 @@
+{
+  "description": "MCP servers declared in the agent-harness source",
+  "mcpServers": {
+    "docs": {
+      "type": "http",
+      "url": "https://docs.example.com/mcp"
+    },
+    "github": {
+      "args": [
+        "stdio"
+      ],
+      "command": "github-mcp-server",
+      "env": {
+        "GITHUB_TOOLSETS": "repos"
+      }
+    }
+  },
+  "name": "agent-harness"
+}

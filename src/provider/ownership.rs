@@ -108,6 +108,30 @@ pub(crate) enum Ownership {
     },
 }
 
+/// The mapping of a config that holds the MCP servers, and the form of each.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct McpMapping {
+    pub(crate) path: &'static [&'static str],
+    pub(crate) entry: McpEntry,
+}
+
+/// The form a provider reads a remote server in; a command server is `command`, `args`, and
+/// `env` everywhere.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum McpEntry {
+    /// `{"type": "http", "url": ...}`.
+    TypedUrl,
+    /// `{"url": ...}`.
+    Url,
+    /// `{"url": ..., "transport": "http"}`.
+    UrlWithTransport,
+    /// `{"serverUrl": ...}`.
+    ServerUrl,
+}
+
+/// The file next to a config that records the entries the harness wrote.
+pub(crate) const SIDECAR: &str = ".agent-harness-managed.json";
+
 /// How installation keeps a provider's mutable config in step with the rendered one.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct ConfigSync {
@@ -115,6 +139,10 @@ pub(crate) struct ConfigSync {
     /// The parts the harness owns, applied in order.
     pub(crate) ownership: &'static [Ownership],
     pub(crate) when_missing: WhenMissing,
+    /// Where the config holds the MCP servers, the one declaration of that place. The sync tracks
+    /// the servers there in the [`SIDECAR`] so ones the user added stay, and leaves the mapping out
+    /// of every [`Ownership::Keys`] claim.
+    pub(crate) mcp_servers: Option<McpMapping>,
     /// Lists of shell commands whose leading `~/` words become the home directory on a sync.
     pub(crate) home_command_lists: &'static [&'static [&'static str]],
     /// Lists of tool rules such as `write_file(~/x)` whose argument starting with `~/` becomes
@@ -125,10 +153,17 @@ pub(crate) struct ConfigSync {
 impl ConfigSync {
     /// The file next to the config that records what the harness wrote, if any claim needs one.
     pub(crate) fn sidecar_file(&self) -> Option<&'static str> {
-        self.ownership.iter().find_map(|claim| match claim {
+        let declared = self.ownership.iter().find_map(|claim| match claim {
             Ownership::TrackedKeys { sidecar, .. } => Some(*sidecar),
             _ => None,
-        })
+        });
+        declared.or(self.mcp_servers.map(|_| SIDECAR))
+    }
+
+    /// Whether a [`Ownership::Keys`] claim of `scope` owns the top-level `key`: never the key that
+    /// leads to the MCP servers, which the sync tracks on its own.
+    pub(crate) fn key_owned(&self, scope: KeyScope, key: &str) -> bool {
+        scope.owns(key) && self.mcp_servers.and_then(|mcp| mcp.path.first()) != Some(&key)
     }
 
     /// Whether every key of the rendered config replaces the installed one.

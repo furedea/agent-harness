@@ -4,8 +4,8 @@
 use super::spec::{
     Asset, Bridge, BundleCapture, CommandRuleSpec, ConfigFormat, ConfigLocation, ConfigSpec,
     ConfigSync, EntryMatch, HookFormat, HookRegistration, HookSection, HookSpec, KeyScope,
-    Ownership, ProviderId, ProviderSpec, RenderedConfig, SkillSource, SkillSpec, SyncedDirectory,
-    WhenAbsent, WhenMissing,
+    McpEntry, McpMapping, McpSpec, Ownership, ProviderId, ProviderSpec, RenderedConfig, SIDECAR,
+    SkillSource, SkillSpec, SyncedDirectory, WhenAbsent, WhenMissing,
 };
 
 impl ProviderId {
@@ -92,16 +92,22 @@ const CODEX: ProviderSpec = ProviderSpec {
                 },
                 Ownership::TrackedKeys {
                     path: &["shell_environment_policy", "set"],
-                    sidecar: ".agent-harness-managed.json",
+                    sidecar: SIDECAR,
                     formerly_managed: &["GH_CONFIG_DIR"],
                 },
             ],
             when_missing: WhenMissing::Create,
+            mcp_servers: Some(McpMapping {
+                path: &["mcp_servers"],
+                entry: McpEntry::Url,
+            }),
             home_command_lists: &[],
             home_rule_lists: &[],
         },
         directories: &[],
     }),
+    // `codex mcp add` writes the servers into the config too.
+    mcp: None,
     retired_files: &[],
 };
 
@@ -148,6 +154,7 @@ const CLAUDE: ProviderSpec = ProviderSpec {
                 when_absent: WhenAbsent::Keep,
             }],
             when_missing: WhenMissing::Create,
+            mcp_servers: None,
             home_command_lists: &[&["sandbox", "excludedCommands"]],
             home_rule_lists: &[],
         },
@@ -155,6 +162,9 @@ const CLAUDE: ProviderSpec = ProviderSpec {
             source: "claude/statusline",
             destination: ".claude/statusline",
         }],
+    }),
+    mcp: Some(McpSpec::SkillsDirectoryPlugin {
+        directory: "agent-harness",
     }),
     retired_files: &[],
 };
@@ -199,11 +209,17 @@ const DEVIN: ProviderSpec = ProviderSpec {
                 },
             ],
             when_missing: WhenMissing::Create,
+            mcp_servers: None,
             home_command_lists: &[],
             home_rule_lists: &[],
         },
         directories: &[],
     }),
+    // `devin mcp add -s user` writes this file too.
+    mcp: Some(McpSpec::ConfigFile(ConfigSpec::mcp_server_file(
+        ".config/devin/mcp_config.json",
+        McpEntry::UrlWithTransport,
+    ))),
     retired_files: &[],
 };
 
@@ -252,11 +268,16 @@ const HERMES: ProviderSpec = ProviderSpec {
                 },
             ],
             when_missing: WhenMissing::Create,
+            mcp_servers: Some(McpMapping {
+                path: &["mcp_servers"],
+                entry: McpEntry::Url,
+            }),
             home_command_lists: &[],
             home_rule_lists: &[],
         },
         directories: &[],
     }),
+    mcp: None,
     retired_files: &[],
 };
 
@@ -301,11 +322,14 @@ const PI: ProviderSpec = ProviderSpec {
                 when_absent: WhenAbsent::Keep,
             }],
             when_missing: WhenMissing::Create,
+            mcp_servers: None,
             home_command_lists: &[],
             home_rule_lists: &[],
         },
         directories: &[],
     }),
+    // Pi has no MCP client; an MCP extension is not part of what the harness installs.
+    mcp: None,
     // Earlier releases installed an srt sandbox extension here (ADR-0032).
     retired_files: &[
         ".pi/agent/extensions/sandbox/file_operations.mjs",
@@ -366,11 +390,15 @@ const DSH: ProviderSpec = ProviderSpec {
             ],
             // The profile is the user's, and dsh creates it on its first run.
             when_missing: WhenMissing::Skip,
+            mcp_servers: None,
             home_command_lists: &[],
             home_rule_lists: &[],
         },
         directories: &[],
     }),
+    // dsh reaches MCP servers only through a separate client plugin that the profile must
+    // install, which the harness does not.
+    mcp: None,
     retired_files: &[],
 };
 
@@ -418,6 +446,7 @@ const ANTIGRAVITY: ProviderSpec = ProviderSpec {
             ],
             when_missing: WhenMissing::Create,
             // `agy` reads absolute paths only, so the sync expands the home prefix.
+            mcp_servers: None,
             home_command_lists: &[],
             home_rule_lists: &[
                 &["permissions", "allow"],
@@ -427,6 +456,11 @@ const ANTIGRAVITY: ProviderSpec = ProviderSpec {
         },
         directories: &[],
     }),
+    // The editor, app, and `agy` share this file, which the MCP manager also writes.
+    mcp: Some(McpSpec::ConfigFile(ConfigSpec::mcp_server_file(
+        ".gemini/config/mcp_config.json",
+        McpEntry::ServerUrl,
+    ))),
     retired_files: &[],
 };
 

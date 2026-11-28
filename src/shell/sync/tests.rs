@@ -14,8 +14,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use anyhow::Result;
 use serde_json::Value;
 
-use super::{SyncPaths, sync};
-use crate::provider::spec::ProviderId;
+use super::{SyncPaths, SyncedConfig, sync};
+use crate::provider::spec::{ProviderId, SyncedFile};
 use crate::shell::fixtures::{create_dir_all, remove_dir_all, write};
 
 pub(super) struct Sandbox {
@@ -46,7 +46,17 @@ impl Sandbox {
     }
 
     pub(super) fn sync(&self, provider: ProviderId, paths: &SyncPaths<'_>) -> Result<()> {
-        sync(provider.spec(), paths, &self.root)
+        self.sync_file(
+            SyncedConfig {
+                provider: provider.spec(),
+                file: SyncedFile::Config,
+            },
+            paths,
+        )
+    }
+
+    pub(super) fn sync_file(&self, target: SyncedConfig<'_>, paths: &SyncPaths<'_>) -> Result<()> {
+        sync(target, paths, &self.root)
     }
 
     pub(super) fn json(&self, name: &str) -> Result<Value> {
@@ -70,4 +80,5 @@ mod antigravity;
 mod claude;
 mod codex;
 mod devin;
+mod mcp;
 mod other;

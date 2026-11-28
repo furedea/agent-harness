@@ -49,15 +49,15 @@
 
 **6. プロバイダの宣言と処理，I/O を分離する．**
 
-- 判断：Claude，Codex，Devin，Hermes，pi，dsh の 6 つすべてを `ProviderSpec` に宣言し，Data / Functions / Capabilities に分ける．すべてのフィールドは，多くの provider が共有する 5 つの概念のどれかに属する．hook（`HookSpec`：スクリプト，登録先，ブリッジファイル），skill，instructions，コマンドルール，config（`ConfigSpec`：パス，生成のしかた，所有範囲を宣言する `ConfigSync`）である．hook はすべての provider が持つので必須とし，ほかの概念は `Option` にする．provider ごとの違いは，その provider だけのフィールドではなく enum の variant で表す．
+- 判断：Claude，Codex，Devin，Hermes，pi，dsh の 6 つすべてを `ProviderSpec` に宣言し，Data / Functions / Capabilities に分ける．すべてのフィールドは，多くの provider が共有する 6 つの概念のどれかに属する．hook（`HookSpec`：スクリプト，登録先，ブリッジファイル），skill，instructions，コマンドルール，config（`ConfigSpec`：パス，生成のしかた，所有範囲を宣言する `ConfigSync`），MCP サーバー（`McpSpec`：スキルディレクトリのプラグインか，2 つ目の `ConfigSpec` として同期する専用ファイル．サーバーを持つ config は，その場所を `ConfigSync` で宣言する）である．hook はすべての provider が持つので必須とし，ほかの概念は `Option` にする．provider ごとの違いは，その provider だけのフィールドではなく enum の variant で表す．
 - 理由：パス，資産の出力先，同期の宣言を共有して一覧のずれを防ぎ，`HookRegistration` や `CommandRuleSpec` などの variant で違いを見える形にして網羅的に match する．一覧の並びは registry の順序に従う．Rust を唯一の source とし，`nix/providers.json` はそこから生成する．コミット済みのファイルと差があるとテストが失敗し，`UPDATE_PROVIDERS_JSON=1` で再生成できる．Home Manager は管理対象のファイルとサブディレクトリを明示してリンクする．
-- ADR: [0026]，[0027]，[0028]，[0029]．
+- ADR: [0026]，[0027]，[0028]，[0029]，[0033]．
 
 ```mermaid
 flowchart LR
   subgraph D["Data (declarations only)"]
     SPEC["PROVIDERS (six ProviderSpec)"]
-    CONCEPTS["five concepts: hooks, skills, instructions, command rules, config"]
+    CONCEPTS["six concepts: hooks, skills, instructions, command rules, config, MCP servers"]
     VARIANTS["variants: HookRegistration (InSettings, File), HookFormat (SettingsSection, WrappedEvents, BareEvents), CommandRuleSpec (InHookRegistration, RuleFiles, ExecpolicyFile), SkillSource (RenderFrontmatter, RenderWithInvocationPolicy, CopyRendered), ConfigLocation"]
     JSON["nix/providers.json (generated from PROVIDERS)"]
     KINDS["ConfigSync: ConfigFormat (Json, Toml, Yaml) and Ownership claims (Keys, Entries, ListUnion, MappingEntries, TrackedKeys)"]
@@ -218,7 +218,7 @@ CodeQL による解析はワークフローファイルではなく，GitHub の
 - **v0.9.3–v0.9.5**: Claude サンドボックスと Codex のシェルコマンドのためのオプトインのエージェント用 GitHub トークンを追加し，GitHub App から更新するようにした（[0019]–[0023]）．
 - **v0.9.10**: DeepSeek Harness（dsh）プロバイダを，埋め込みのフックブリッジ付きで追加した（[0025]）．
 - **v0.9.13**: Pi のシェルとファイルのツールを srt の内側で動かし，秘密パスポリシーを Codex のガード用ファイルシステムと Pi の srt ポリシーに適用した（[0030]）．
-- **Unreleased**: Antigravity プロバイダを，サンドボックスとパス権限によるガード付きで追加した（[0031]）．また harness を生成と配置に限定し，Pi の srt 拡張，エージェント用 GitHub トークン，インストールしたファイルの生成による保護を削除した（[0032]）．
+- **Unreleased**: Antigravity プロバイダを，サンドボックスとパス権限によるガード付きで追加した（[0031]）．また harness を生成と配置に限定し，Pi の srt 拡張，エージェント用 GitHub トークン，インストールしたファイルの生成による保護を削除した（[0032]）．さらに，ソースに 1 回だけ宣言した MCP サーバーを Claude Code と Codex に生成するようにした（[0033]）．
 
 [#140]: https://github.com/furedea/agent-harness/pull/140
 [0001]: adr/0001_separate_codex_conformance_from_required_ci.md
@@ -242,3 +242,4 @@ CodeQL による解析はワークフローファイルではなく，GitHub の
 [0030]: adr/0030_run_pi_file_operations_inside_srt.md
 [0031]: adr/0031_guard_antigravity_with_sandbox_and_path_permissions.md
 [0032]: adr/0032_limit_the_harness_to_rendering_and_installing.md
+[0033]: adr/0033_render_mcp_servers_from_one_declaration.md

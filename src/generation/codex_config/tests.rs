@@ -262,3 +262,56 @@ fn write_file(path: &Path, content: &str) -> Result<()> {
     crate::shell::fixtures::write(path, content)?;
     Ok(())
 }
+
+#[test]
+fn write_config_source_adds_the_source_mcp_servers_beside_those_codex_config_declares() -> Result<()>
+{
+    let root = test_root("write_config_source_adds_the_source_mcp_servers")?;
+    write_minimal_source(&root)?;
+    write_file(
+        &root.join("codex/config.toml"),
+        "model = \"gpt-5.5\"\n\n[mcp_servers.codex-only]\ncommand = \"codex-only\"\n",
+    )?;
+    write_file(
+        &root.join("mcp_servers.json"),
+        r#"{"servers":{"github":{"command":"github-mcp-server","args":["stdio"]}}}"#,
+    )?;
+    let out = root.join("config.toml");
+
+    write_config_source(&root, &out, &[])?;
+
+    let config: DocumentMut = crate::shell::fixtures::read_to_string(&out)?.parse()?;
+    let servers = &config["mcp_servers"];
+    assert_eq!(
+        servers["codex-only"]["command"].as_str(),
+        Some("codex-only")
+    );
+    assert_eq!(
+        servers["github"]["command"].as_str(),
+        Some("github-mcp-server")
+    );
+    assert_eq!(servers["github"]["args"][0].as_str(), Some("stdio"));
+    crate::shell::fixtures::remove_dir_all(root)?;
+    Ok(())
+}
+
+#[test]
+fn a_server_in_both_mcp_servers_json_and_codex_config_is_rejected() -> Result<()> {
+    let root = test_root("a_server_in_both_sources_is_rejected")?;
+    write_minimal_source(&root)?;
+    write_file(
+        &root.join("codex/config.toml"),
+        "[mcp_servers.github]\ncommand = \"other\"\n",
+    )?;
+    write_file(
+        &root.join("mcp_servers.json"),
+        r#"{"servers":{"github":{"command":"github-mcp-server"}}}"#,
+    )?;
+
+    let message = write_config_source(&root, &root.join("config.toml"), &[])
+        .map_or_else(|error| format!("{error:#}"), |()| String::new());
+
+    assert!(message.contains("github"), "{message}");
+    crate::shell::fixtures::remove_dir_all(root)?;
+    Ok(())
+}

@@ -174,6 +174,7 @@ mod tests {
             format: ConfigFormat::Json,
             ownership: &[],
             when_missing: WhenMissing::Create,
+            mcp_servers: None,
             home_command_lists: &[],
             home_rule_lists: &[],
         };

@@ -26,6 +26,7 @@ use crate::{
         command_permissions::{CommandPermissions, RegexPolicy},
         external_hooks::ExternalHookBundle,
         hooks::HookConfig,
+        mcp_servers::McpServers,
         secret_path_policy::SecretPathPolicy,
         skills::{ExternalSkill, SkillFiles, SourceSkills, SupportEntry},
     },
@@ -76,6 +77,7 @@ pub(crate) fn load_source(root: &Path, inputs: &LoadInputs<'_>) -> Result<Source
         skills,
         claude_settings: read_json(&layout.claude_settings())?,
         codex_config: read_toml(&layout.codex_config())?,
+        mcp_servers: load_mcp_servers(&layout)?,
         provider_configs: load_provider_configs(root, inputs.providers)?,
         directories,
         hook_bundles: load_bundles(inputs)?,
@@ -170,7 +172,7 @@ pub(crate) fn load_installed(
 fn merged_configs(providers: &[ProviderSpec]) -> impl Iterator<Item = (ConfigSpec, &'static str)> {
     providers
         .iter()
-        .filter_map(|spec| spec.config.zip(spec.config_path()))
+        .flat_map(ProviderSpec::synced_files)
         .filter(|(config, _)| merges_installed(config))
 }
 
@@ -272,6 +274,14 @@ fn load_secret_paths(layout: &SourceLayout<'_>) -> Result<SecretPathPolicy> {
     SecretPathPolicy::parse(&path, &read_text(&path)?)
 }
 
+fn load_mcp_servers(layout: &SourceLayout<'_>) -> Result<McpServers> {
+    let path = layout.mcp_servers();
+    read_text_if_present(&path)?.map_or_else(
+        || Ok(McpServers::default()),
+        |text| McpServers::parse(&path, &text),
+    )
+}
+
 fn load_provider_configs(
     root: &Path,
     providers: &[ProviderSpec],
@@ -293,7 +303,8 @@ fn source_config_path(config: &ConfigSpec) -> Option<&'static str> {
         | RenderedConfig::SourceJsonWithToolPermissions(relative) => Some(relative),
         RenderedConfig::WithHooks
         | RenderedConfig::Fixed(_)
-        | RenderedConfig::SourceTomlWithGuardedFilesystem => None,
+        | RenderedConfig::SourceTomlWithGuardedFilesystem
+        | RenderedConfig::McpServers => None,
     }
 }
 

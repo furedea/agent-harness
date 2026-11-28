@@ -45,7 +45,7 @@ mod registry;
 #[path = "../src/provider/spec.rs"]
 mod spec;
 
-use spec::{ConfigFormat, ConfigLocation, ConfigSpec, ProviderSpec, RenderedConfig, SkillSource};
+use spec::{ConfigFormat, ConfigLocation, ConfigSpec, ProviderSpec, RenderedConfig};
 
 const UPDATE_VARIABLE: &str = "UPDATE_PROVIDERS_JSON";
 
@@ -87,6 +87,7 @@ fn provider_json(spec: &ProviderSpec) -> Value {
         "hook_manifest": spec.hook.registration.path(),
         "linked_paths": linked_paths(spec),
         "sync": spec.config.map_or(Value::Null, |config| sync_json(spec, config)),
+        "mcp_sync": spec.mcp_file().map_or(Value::Null, |(_, path)| mcp_sync_json(spec, path)),
         "extra_options": extra_options(spec),
     })
 }
@@ -146,19 +147,9 @@ fn bridge_destinations(spec: &ProviderSpec) -> BTreeSet<&'static str> {
 
 fn link_json(spec: &ProviderSpec, path: &str) -> Value {
     match spec.skill.filter(|skill| skill.destination == path) {
-        Some(skill) => json!({ "skills_provider": skills_provider(skill.source) }),
+        // Home Manager builds it with `generate-skills --provider <id>` for this provider.
+        Some(_) => json!({ "skills_directory": true }),
         None => json!({}),
-    }
-}
-
-fn skills_provider(source: SkillSource) -> &'static str {
-    match source {
-        SkillSource::RenderFrontmatter => "claude",
-        SkillSource::RenderWithInvocationPolicy => "codex",
-        SkillSource::CopyRendered(from) => from
-            .spec()
-            .skill
-            .map_or("codex", |skill| skills_provider(skill.source)),
     }
 }
 
@@ -184,6 +175,16 @@ fn sync_json(spec: &ProviderSpec, config: ConfigSpec) -> Value {
         sync["after"] = json!("writeBoundary");
     }
     sync
+}
+
+/// The provider's own MCP server file, synced so servers its CLI added stay.
+fn mcp_sync_json(spec: &ProviderSpec, path: &str) -> Value {
+    json!({
+        "activation": format!("agentHarness{}McpServers", capitalized(spec.key)),
+        "command": format!("sync-config --provider {} --file mcp-servers", spec.key),
+        "source": path,
+        "target": path,
+    })
 }
 
 fn capitalized(key: &str) -> String {
