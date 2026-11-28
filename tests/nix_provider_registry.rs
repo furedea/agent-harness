@@ -147,8 +147,8 @@ fn bridge_destinations(spec: &ProviderSpec) -> BTreeSet<&'static str> {
 
 fn link_json(spec: &ProviderSpec, path: &str) -> Value {
     match spec.skill.filter(|skill| skill.destination == path) {
-        // `generate-skills --provider <id>` renders the provider's own skills directory.
-        Some(_) => json!({ "skills_provider": spec.key }),
+        // Home Manager builds it with `generate-skills --provider <id>` for this provider.
+        Some(_) => json!({ "skills_directory": true }),
         None => json!({}),
     }
 }

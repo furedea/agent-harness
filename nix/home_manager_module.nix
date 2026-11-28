@@ -33,10 +33,7 @@ let
     lib.mkIf cfg.${provider.id}.enable (
       lib.mapAttrs (path: link: {
         source =
-          if link ? skills_provider then
-            providerSkills link.skills_provider
-          else
-            "${renderedHarness}/${path}";
+          if link.skills_directory or false then providerSkills provider.id else "${renderedHarness}/${path}";
       }) provider.linked_paths
     )
   ) providers;

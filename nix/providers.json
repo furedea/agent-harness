@@ -11,7 +11,7 @@
       ".codex/hooks.json": {},
       ".codex/rules/default.rules": {},
       ".codex/skills": {
-        "skills_provider": "codex"
+        "skills_directory": true
       }
     },
     "mcp_sync": null,
@@ -34,7 +34,7 @@
       ".claude/CLAUDE.md": {},
       ".claude/hooks": {},
       ".claude/skills": {
-        "skills_provider": "claude"
+        "skills_directory": true
       },
       ".claude/statusline": {}
     },
@@ -101,7 +101,7 @@
       ".pi/agent/extensions/hook_bridge.ts": {},
       ".pi/agent/hooks.json": {},
       ".pi/agent/skills": {
-        "skills_provider": "pi"
+        "skills_directory": true
       },
       ".pi/hooks": {}
     },
@@ -131,7 +131,7 @@
       ".dsh/hooks": {},
       ".dsh/hooks.json": {},
       ".dsh/skills": {
-        "skills_provider": "dsh"
+        "skills_directory": true
       }
     },
     "mcp_sync": null,
@@ -154,7 +154,7 @@
       ".gemini/config/hooks": {},
       ".gemini/config/hooks.json": {},
       ".gemini/config/skills": {
-        "skills_provider": "antigravity"
+        "skills_directory": true
       }
     },
     "mcp_sync": {
