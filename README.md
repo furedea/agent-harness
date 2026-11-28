@@ -197,16 +197,29 @@ The harness writes the values as they are into provider files, so never put a cr
 A server that needs one reads it from its own environment, or its `command` is a wrapper script
 that fetches the credential (for example from the system keychain) and starts the server.
 
-| Provider    | Rendered into                                                          | Servers you added yourself                           |
-| ----------- | ---------------------------------------------------------------------- | ---------------------------------------------------- |
-| Claude Code | the plugin `~/.claude/skills/agent-harness/.claude-plugin/plugin.json` | stay in `~/.claude.json`, which is never touched     |
-| Codex       | `[mcp_servers.<name>]` in `~/.codex/config.toml`                       | stay; only servers a previous sync wrote are removed |
+| Provider    | Rendered into                                                          | A remote server is written as     | Servers you added yourself                           |
+| ----------- | ---------------------------------------------------------------------- | --------------------------------- | ---------------------------------------------------- |
+| Claude Code | the plugin `~/.claude/skills/agent-harness/.claude-plugin/plugin.json` | `type: "http"`, `url`             | stay in `~/.claude.json`, which is never touched     |
+| Codex       | `[mcp_servers.<name>]` in `~/.codex/config.toml`                       | `url`                             | stay; only servers a previous sync wrote are removed |
+| Devin       | `mcpServers` in `~/.config/devin/mcp_config.json`                      | `url`, `transport: "http"`        | stay; only servers a previous sync wrote are removed |
+| Hermes      | `mcp_servers` in `~/.hermes/config.yaml`                               | `url`                             | stay; only servers a previous sync wrote are removed |
+| Antigravity | `mcpServers` in `~/.gemini/config/mcp_config.json`                     | `serverUrl`                       | stay; only servers a previous sync wrote are removed |
 
 Claude Code loads the plugin from the skills directory in place and never writes to it, so a sync
 never races the running agent for `~/.claude.json`. It names the tools
 `mcp__plugin_agent-harness_<server>__<tool>`, so write permission rules with that prefix. A name in
-both `mcp_servers.json` and the source `codex/config.toml` is an error. Devin and Antigravity are
-not rendered yet, and Pi has no MCP support. See
+both `mcp_servers.json` and the source `codex/config.toml` is an error.
+
+Devin and Antigravity keep servers in a file of their own that `devin mcp add -s user` and the
+Antigravity MCP manager also write. Installation renders it next to the provider's config, and
+`sync-config --provider <devin|antigravity> --file mcp-servers` merges it into the real file; the
+Home Manager module runs that sync on activation. The servers a sync wrote are recorded in
+`.agent-harness-managed.json` next to each target, as for Codex.
+
+Pi has no MCP client of its own, and agent-harness installs no MCP extension for it, so Pi gets no
+servers. dsh reaches MCP servers only through the separate `@deepseek-ai/dsh-mcp-client` plugin,
+which each dsh profile must install itself at the version that matches dsh; agent-harness does not
+install it, so dsh gets no servers either. See
 [ADR-0033](docs/adr/0033_render_mcp_servers_from_one_declaration.md).
 
 ## Quick Install
@@ -412,6 +425,7 @@ Devin, Hermes Agent, pi, and dsh config directories.
 | `~/.claude/statusline/`                              | Claude Code status line command              |
 | `~/.devin/hooks/`                                    | Devin hook adapters                          |
 | `~/.config/devin/config.json`                        | Devin hooks and command permissions          |
+| `~/.config/devin/mcp_config.json`                    | Devin MCP servers, synced into the real file |
 | `~/.hermes/hooks.json`                               | Hermes Agent hook manifest                   |
 | `~/.hermes/hooks/`                                   | Hermes Agent hook adapters                   |
 | `~/.hermes/plugins/agent-harness-hooks/`             | Hermes Agent plugin that runs the manifest   |
@@ -427,6 +441,7 @@ Devin, Hermes Agent, pi, and dsh config directories.
 | `~/.dsh/hooks/`                                      | dsh hook adapters                            |
 | `~/.dsh/bridge/`                                     | dsh bridge bundle that runs the manifest     |
 | `~/.dsh/skills/`                                     | Skills copied from the Codex rendering       |
+| `~/.gemini/config/mcp_config.json`                   | Antigravity MCP servers, synced likewise     |
 
 agent-harness gives Pi no OS-level isolation; run Pi inside a sandbox of your own when it needs
 one ([ADR-0032](docs/adr/0032_limit_the_harness_to_rendering_and_installing.md)). Every install
@@ -470,8 +485,8 @@ and `mcp__*` rules stay user-owned. Approvals saved interactively as `Exec(...)`
 next sync; add persistent command rules to `command_permissions.json` instead.
 
 `install` does not edit `~/.hermes/config.yaml`. `sync-config --provider hermes` merges
-`~/.hermes/managed-config.yaml` into it: generated `plugins.enabled` entries are appended once, and
-all other Hermes Agent state is preserved. The Home Manager module runs this sync on activation.
+`~/.hermes/managed-config.yaml` into it: generated `plugins.enabled` entries are appended once,
+`mcp_servers` entries are tracked as for Codex, and all other Hermes Agent state is preserved. The Home Manager module runs this sync on activation.
 
 `sync-config --provider dsh` registers the bridge bundle in a user-owned dsh profile's
 `~/.dsh/profiles/<profile>/package.json`, the Home Manager option `dsh.profile` (default `web`): it
@@ -525,6 +540,7 @@ The CLI also exposes lower-level generation commands for inspecting or composing
 | -------------------------------- | -------------------------------------------------- |
 | `generate-hooks --provider <id>` | Provider hook JSON or config fragment              |
 | `sync-config --provider <id>`    | Sync managed configuration into existing state     |
+| `sync-config --provider <id> --file mcp-servers` | Sync the MCP servers into Devin's or Antigravity's own file |
 | `generate-claude-settings`       | Complete Claude Code settings JSON                 |
 | `generate-codex-config-source`   | Complete managed Codex config source               |
 | `generate-codex-config-fragment` | Guarded-filesystem TOML fragment                   |

@@ -154,12 +154,19 @@ programs.agent-harness.mcpServers.github = {
 
 harness は値をそのままプロバイダのファイルに書くため，認証情報を書いてはならない．認証情報が必要なサーバーは自身の環境変数から読むか，`command` を，認証情報を（たとえばシステムのキーチェーンから）取り出してサーバーを起動するラッパースクリプトにする．
 
-| プロバイダ  | 生成先                                                                 | 自分で追加したサーバー                                     |
-| ----------- | ---------------------------------------------------------------------- | ---------------------------------------------------------- |
-| Claude Code | プラグイン `~/.claude/skills/agent-harness/.claude-plugin/plugin.json` | `~/.claude.json` に残る．harness はこのファイルに触れない  |
-| Codex       | `~/.codex/config.toml` の `[mcp_servers.<name>]`                       | 残る．削除するのは前回の同期が書いたサーバーだけである     |
+| プロバイダ  | 生成先                                                                 | リモートサーバーの書き方   | 自分で追加したサーバー                                    |
+| ----------- | ---------------------------------------------------------------------- | -------------------------- | --------------------------------------------------------- |
+| Claude Code | プラグイン `~/.claude/skills/agent-harness/.claude-plugin/plugin.json` | `type: "http"`，`url`      | `~/.claude.json` に残る．harness はこのファイルに触れない |
+| Codex       | `~/.codex/config.toml` の `[mcp_servers.<name>]`                       | `url`                      | 残る．削除するのは前回の同期が書いたサーバーだけである    |
+| Devin       | `~/.config/devin/mcp_config.json` の `mcpServers`                      | `url`，`transport: "http"` | 残る．削除するのは前回の同期が書いたサーバーだけである    |
+| Hermes      | `~/.hermes/config.yaml` の `mcp_servers`                               | `url`                      | 残る．削除するのは前回の同期が書いたサーバーだけである    |
+| Antigravity | `~/.gemini/config/mcp_config.json` の `mcpServers`                     | `serverUrl`                | 残る．削除するのは前回の同期が書いたサーバーだけである    |
 
-Claude Code はスキルディレクトリのプラグインをその場で読み込み，書き換えない．そのため，同期が実行中のエージェントと `~/.claude.json` を取り合うことはない．ツール名は `mcp__plugin_agent-harness_<server>__<tool>` になるので，権限ルールはこの接頭辞で書く．`mcp_servers.json` とソースの `codex/config.toml` の両方にある名前はエラーになる．Devin と Antigravity にはまだ生成しない．Pi は MCP に対応していない．[ADR-0033](docs/adr/0033_render_mcp_servers_from_one_declaration.md) を参照．
+Claude Code はスキルディレクトリのプラグインをその場で読み込み，書き換えない．そのため，同期が実行中のエージェントと `~/.claude.json` を取り合うことはない．ツール名は `mcp__plugin_agent-harness_<server>__<tool>` になるので，権限ルールはこの接頭辞で書く．`mcp_servers.json` とソースの `codex/config.toml` の両方にある名前はエラーになる．
+
+Devin と Antigravity はサーバーを専用のファイルに持ち，`devin mcp add -s user` や Antigravity の MCP マネージャーもそこへ書く．インストールはこのファイルをプロバイダの設定の隣に生成し，`sync-config --provider <devin|antigravity> --file mcp-servers` が実際のファイルへマージする．Home Manager モジュールは activation でこの同期を実行する．同期が書いたサーバーは，Codex と同じく各ターゲットの隣の `.agent-harness-managed.json` に記録する．
+
+Pi は MCP クライアントを持たず，agent-harness は Pi 用の MCP 拡張もインストールしないので，Pi にはサーバーを生成しない．dsh が MCP サーバーを使うには別パッケージの `@deepseek-ai/dsh-mcp-client` プラグインが必要で，各 dsh プロファイルが dsh に合うバージョンを自分でインストールする．agent-harness はこれをインストールしないので，dsh にも生成しない．[ADR-0033](docs/adr/0033_render_mcp_servers_from_one_declaration.md) を参照．
 
 ## クイックインストール
 
@@ -337,6 +344,7 @@ sha256sum -c agent-harness-x86_64-unknown-linux-musl.tar.xz.sha256
 | `~/.claude/statusline/`                              | Claude Code のステータスラインコマンド               |
 | `~/.devin/hooks/`                                    | Devin のフックアダプタ                               |
 | `~/.config/devin/config.json`                        | Devin のフックとコマンド権限                         |
+| `~/.config/devin/mcp_config.json`                    | Devin の MCP サーバー．実際のファイルへ同期する      |
 | `~/.hermes/hooks.json`                               | Hermes Agent のフックマニフェスト                    |
 | `~/.hermes/hooks/`                                   | Hermes Agent のフックアダプタ                        |
 | `~/.hermes/plugins/agent-harness-hooks/`             | マニフェストを実行する Hermes Agent のプラグイン     |
@@ -352,6 +360,7 @@ sha256sum -c agent-harness-x86_64-unknown-linux-musl.tar.xz.sha256
 | `~/.dsh/hooks/`                                      | dsh のフックアダプタ                                 |
 | `~/.dsh/bridge/`                                     | マニフェストを実行する dsh のブリッジバンドル        |
 | `~/.dsh/skills/`                                     | Codex の生成結果からコピーしたスキル                 |
+| `~/.gemini/config/mcp_config.json`                   | Antigravity の MCP サーバー．同じく同期する          |
 
 agent-harness は Pi に OS レベルの隔離を与えない．隔離が必要なときは，Pi を自分で用意したサンドボックスの中で動かす（[ADR-0032](docs/adr/0032_limit_the_harness_to_rendering_and_installing.md)）．インストールのたびに，以前のリリースが `~/.pi/agent/extensions/` に置いた srt 拡張のファイル（`bash_sandbox.ts`，`sandbox_policy.json`，`sandbox/file_operations.mjs`）を削除する．自分の拡張は別の名前で置く．フックは方針の層にすぎない．Claude と同様に，フックが失敗すると呼び出しは続行される．
 
@@ -371,7 +380,7 @@ default_permissions, permissions
 
 Devin の設定の同期は管理対象のトップレベルキーを置き換え，`permissions` の中では `Exec(...)` のエントリだけを置き換える．`Read(...)`，`Write(...)`，`Fetch(...)`，`mcp__*` などの Exec 以外のルールはユーザーの所有のままである．対話的に `Exec(...)` として保存した承認は次の同期で置き換わるので，永続させたいコマンドルールは `command_permissions.json` に書くこと．
 
-`install` は `~/.hermes/config.yaml` を編集しない．`sync-config --provider hermes` が `~/.hermes/managed-config.yaml` をそこへマージする．生成された `plugins.enabled` のエントリは重複なく追加され，Hermes Agent の他の状態は残る．Home Manager モジュールは activation でこの同期を実行する．
+`install` は `~/.hermes/config.yaml` を編集しない．`sync-config --provider hermes` が `~/.hermes/managed-config.yaml` をそこへマージする．生成された `plugins.enabled` のエントリは重複なく追加され，`mcp_servers` のエントリは Codex と同じく記録して同期し，Hermes Agent の他の状態は残る．Home Manager モジュールは activation でこの同期を実行する．
 
 `sync-config --provider dsh` は，ユーザー所有の dsh プロファイルの `~/.dsh/profiles/<profile>/package.json` にブリッジバンドルを登録する．プロファイル名は Home Manager のオプション `dsh.profile` で指定し（既定は `web`）．この同期が管理するのは `dependencies` のエントリで，`dsh.profile.bundles` にはバンドルを 1 回だけ追加する．dsh がまだ作成していないプロファイルはスキップする．ブリッジの設計は [ADR-0025](docs/adr/0025_embed_the_dsh_hook_bridge.md) に記録している．
 
@@ -414,6 +423,7 @@ CLI は，個々の出力を確認したり合成したりするための低レ�
 | -------------------------------- | ------------------------------------------------ |
 | `generate-hooks --provider <id>` | プロバイダのフック JSON または設定断片           |
 | `sync-config --provider <id>`    | 既存の設定へ管理対象を同期                       |
+| `sync-config --provider <id> --file mcp-servers` | Devin と Antigravity の専用ファイルへ MCP サーバーを同期 |
 | `generate-claude-settings`       | Claude Code の設定 JSON 全体                     |
 | `generate-codex-config-source`   | 管理対象の Codex 設定ソース全体                  |
 | `generate-codex-config-fragment` | ガード付きファイルシステムの TOML 断片           |

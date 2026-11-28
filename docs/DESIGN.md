@@ -78,7 +78,7 @@ agent breaks in predictable ways:
 - Decision: declare all six providers (Claude, Codex, Devin, Hermes, pi, and dsh) in
     `ProviderSpec`, with Data / Functions / Capabilities boundaries. Every field is one of six
     concepts most providers share: hook (`HookSpec`: scripts, registration, bridge files), skill,
-    instructions, command rule, config (`ConfigSpec`: path, how it is rendered, and the `ConfigSync` ownership declaration), and MCP servers (`McpSpec`: a plugin in the skills directory or a tracked mapping of the config). Every
+    instructions, command rule, config (`ConfigSpec`: path, how it is rendered, and the `ConfigSync` ownership declaration), and MCP servers (`McpSpec`: a plugin in the skills directory, a tracked mapping of the config, or a file of its own synced as a second `ConfigSpec`). Every
     provider has hooks; the other concepts are an `Option`. A provider difference is an enum
     variant, not a field only that provider has.
 - Reason: shared paths, asset destinations, and `ConfigSync` declarations prevent parallel lists
