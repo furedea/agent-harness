@@ -14,7 +14,7 @@ use crate::{
     file_op::FileOp,
     generation::{
         GenerationContext, antigravity_config, claude_config, codex_config, command_permissions,
-        hooks, skills,
+        hooks, mcp_servers::McpServers, skills,
     },
     layout::SourceLayout,
     provider::spec::{
@@ -172,10 +172,7 @@ impl ProviderRenderer<'_> {
     fn write_fixed(&self, file: ConfigFile, content: &str) -> Result<Vec<FileOp>> {
         let path = self.out.join(file.relative);
         let sync = &file.config.sync;
-        let text = match file
-            .mcp
-            .filter(|_| !self.context.source.mcp_servers.is_empty())
-        {
+        let text = match file.mcp.filter(|_| !self.mcp_servers().is_empty()) {
             Some(mcp) => self.with_mcp_servers(parse_generated(sync, &path, content)?, mcp)?,
             None => content.to_owned(),
         };
@@ -197,8 +194,12 @@ impl ProviderRenderer<'_> {
         self.merge_into_installed(target, &generated)
     }
 
+    fn mcp_servers(&self) -> &McpServers {
+        &self.context.source.mcp_servers
+    }
+
     fn set_mcp_servers(&self, document: &mut ConfigDocument, mcp: McpMapping) -> Result<()> {
-        let servers = self.context.source.mcp_servers.json_map(mcp.entry);
+        let servers = self.mcp_servers().json_map(mcp.entry);
         document
             .set_json(mcp.path, servers)
             .context("failed to render the MCP servers")

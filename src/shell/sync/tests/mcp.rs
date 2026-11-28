@@ -85,15 +85,28 @@ fn a_provider_without_its_own_mcp_file_refuses_to_sync_one() -> Result<()> {
 
 #[test]
 fn hermes_keeps_servers_the_user_added_to_its_config() -> Result<()> {
-    let sandbox = Sandbox::new("mcp-hermes")?;
-    let target = sandbox.put(
-        "config.yaml",
-        "model: mine\nmcp_servers:\n  mine:\n    command: mine\n",
-    )?;
     let rounds = [
         "plugins:\n  enabled:\n    - agent-harness-hooks\nmcp_servers:\n  docs:\n    url: https://docs.example.com/mcp\n  github:\n    command: gh-mcp\n",
         "plugins:\n  enabled:\n    - agent-harness-hooks\nmcp_servers:\n  github:\n    command: gh-mcp\n",
     ];
+
+    let synced = sync_hermes_config(
+        "model: mine\nmcp_servers:\n  mine:\n    command: mine\n",
+        rounds,
+    )?;
+
+    let servers = &synced["mcp_servers"];
+    assert_eq!(servers["mine"]["command"].as_str(), Some("mine"));
+    assert_eq!(servers["github"]["command"].as_str(), Some("gh-mcp"));
+    assert!(servers.get("docs").is_none(), "{synced:?}");
+    assert_eq!(synced["model"].as_str(), Some("mine"));
+    Ok(())
+}
+
+/// Syncs each rendered managed config into the installed `config.yaml` in turn.
+fn sync_hermes_config(installed: &str, rounds: [&str; 2]) -> Result<serde_norway::Value> {
+    let sandbox = Sandbox::new("mcp-hermes")?;
+    let target = sandbox.put("config.yaml", installed)?;
     for (round, rendered) in rounds.into_iter().enumerate() {
         let source = sandbox.put(&format!("managed-{round}.yaml"), rendered)?;
         sandbox.sync(
@@ -104,12 +117,5 @@ fn hermes_keeps_servers_the_user_added_to_its_config() -> Result<()> {
             },
         )?;
     }
-
-    let synced: serde_norway::Value = serde_norway::from_str(&sandbox.text("config.yaml")?)?;
-    let servers = &synced["mcp_servers"];
-    assert_eq!(servers["mine"]["command"].as_str(), Some("mine"));
-    assert_eq!(servers["github"]["command"].as_str(), Some("gh-mcp"));
-    assert!(servers.get("docs").is_none(), "{synced:?}");
-    assert_eq!(synced["model"].as_str(), Some("mine"));
-    Ok(())
+    Ok(serde_norway::from_str(&sandbox.text("config.yaml")?)?)
 }

@@ -470,9 +470,9 @@ impl ConfigDocument {
             Self::Yaml(yaml) => serde_norway::to_value(value)
                 .map_err(anyhow::Error::from)
                 .and_then(|value| yaml.set(path, value)),
-            Self::Toml(_) => bail!("a TOML config takes no JSON value"),
+            Self::Toml(_) => bail!("failed to set {key}: a TOML config takes no JSON value"),
         }
-        .with_context(|| format!("failed to set {key}"))
+        .with_context(|| format!("failed to set {key} in the {:?} config", self.format()))
     }
 
     /// # Errors
